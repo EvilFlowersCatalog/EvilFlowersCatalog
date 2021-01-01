@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "evil_flowers_catalog"
+version = "0.1.0"
+description = "Simple books catalog compatible with OPDS 1.2 written in Python"
+authors = ["Arthur Dent <arthur.dent@backbone.sk>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+django = "^3.1.1"
+django_api_forms = "^0.16.0"
+python-dotenv = "^0.14.0"
+django-enum-choices = "^2.1.2"
+argon2-cffi = "^20.1.0"
+sentry-sdk = "^0.17.6"
+psycopg2-binary = "^2.8.6"
+porcupine-python = "^0.2.0"
+django-imap-backend = "^0.2.3"
+requests = "^2.24.0"
+
+[tool.poetry.dev-dependencies]
+fabric = "^2.5.0"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"

@@ -1,0 +1,17 @@
+.idea/
+venv
+__pycache__
+node_modules/
+/logs/
+!logs/.gitkeep
+/media/*
+!/media/.gitkeep
+*.DS_Store
+*.pyc
+*.pyo
+*.log
+*.mwb.bak
+.env
+*.xd
+~*.docx
+/evil_flowers_catalog.egg-info
