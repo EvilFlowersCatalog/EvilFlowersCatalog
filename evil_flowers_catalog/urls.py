@@ -19,10 +19,12 @@ from django.urls import path, include
 from django.views.static import serve
 
 from apps.api import urls as api_urlpatterns
+from apps.opds import urls as opds_urlpatterns
 
 urlpatterns = []
 urlpatterns += [
     path(r'api/v1/', include(api_urlpatterns)),
+    path(r'opds/', include(opds_urlpatterns)),
 ]
 
 if settings.DEBUG:

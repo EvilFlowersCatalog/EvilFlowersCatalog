@@ -12,15 +12,15 @@ class ApiKey(BaseModel):
         app_label = 'core'
         db_table = 'api_keys'
         default_permissions = ()
-        verbose_name = _('api_key')
-        verbose_name_plural = _('api_keys')
+        verbose_name = _('API key')
+        verbose_name_plural = _('API keys')
 
     class DevicePlatform(Enum):
         WEB = 'web'
         DEBUG = 'debug'
 
         def __str__(self):
-            return _(f"api_key_{self.value}")
+            return _(f"api_key({self.value})")
 
     name = models.CharField(max_length=200, null=True)
     platform = EnumChoiceField(DevicePlatform, null=False, default=DevicePlatform.DEBUG)

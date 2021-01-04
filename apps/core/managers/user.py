@@ -11,3 +11,20 @@ class UserManager(BaseUserManager, BaseManager):
             f"{self.model.USERNAME_FIELD}__iexact": username
         }
         return self.get(**conditions)
+
+    def _create_user(self, email, name, surname, password):
+        user = self.model(email=email, name=name, surname=surname)
+        user.set_password(password)
+        return user
+
+    def create_user(self, email, name, surname, password):
+        user = self._create_user(email, name, surname, password)
+        user.is_superuser = False
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, name, surname, password):
+        user = self._create_user(email, name, surname, password)
+        user.is_superuser = True
+        user.save(using=self._db)
+        return user

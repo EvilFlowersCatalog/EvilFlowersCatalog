@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opds="http://opds-spec.org/2010/catalog">
+  <id>urn:uuid:{{ catalog.id }}</id>
+  <link rel="self"
+        href="/opds/{{ catalog.url_name }}/root.xml"
+        type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+  <link rel="start"
+        href="/opds/{{ catalog.url_name }}/root.xml"
+        type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+  <title>{{ catalog.title }}</title>
+  <updated>{{ catalog.updated_at|date:"c" }}</updated>
+  <author>
+    <name>{{ catalog.creator.name }} {{ catalog.creator.surname }}</name>
+  </author>
+
+    {% for feed in catalog.feeds.all %}
+        <title>{{ feed.title }}</title>
+        <link
+                rel="{{ feed.relation }}"
+                href="/opds/{{ user.username }}/{{ catalog.id }}"
+                type="application/atom+xml;profile=opds-catalog;kind=acquisition"
+        />
+        <id>urn:uuid:{{ catalog.id }}</id>
+        <content type="text">{{ catalog.content }}</content>
+    {% endfor %}
+</feed>
