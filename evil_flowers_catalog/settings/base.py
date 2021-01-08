@@ -60,7 +60,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'apps.api.middleware.exceptions.ExceptionMiddleware',
-    'apps.api.middleware.signature.SignatureMiddleware',
+    'apps.api.middleware.api_key.ApiKeyMiddleware',
 ]
 
 ROOT_URLCONF = 'evil_flowers_catalog.urls'

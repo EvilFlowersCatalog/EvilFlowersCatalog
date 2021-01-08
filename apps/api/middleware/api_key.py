@@ -10,7 +10,7 @@ from apps.api.response import ErrorResponse
 from apps.core.models import ApiKey
 
 
-class SignatureMiddleware(object):
+class ApiKeyMiddleware(object):
     def __init__(self, get_response=None):
         self.get_response = get_response
 
@@ -19,17 +19,17 @@ class SignatureMiddleware(object):
 
     @staticmethod
     def process_view(request, view_func, view_args, view_kwargs):
-        # View functions
-        if not hasattr(view_func, 'require_apikey'):
-            return None
-
-        if hasattr(view_func, 'require_apikey') and not view_func.require_apikey:
-            return None
-
         # View classes
         if hasattr(view_func, 'view_class') and \
            hasattr(view_func.view_class, 'require_apikey') and \
            request.method.lower() not in view_func.view_class.require_apikey:
+            return None
+
+        # Function views
+        if not hasattr(view_func, 'view_class') and not hasattr(view_func, 'require_apikey'):
+            return None
+
+        if hasattr(view_func, 'require_apikey') and not view_func.require_apikey:
             return None
 
         api_key = request.headers.get('X-Apikey')
@@ -37,13 +37,11 @@ class SignatureMiddleware(object):
         try:
             api_key_model = ApiKey.objects.get(pk=api_key, is_active=True)
         except ApiKey.DoesNotExist:
-            return ErrorResponse.create_from_exception(ApiException(request, _('Invalid api key.')))
+            return ErrorResponse.create_from_exception(
+                ApiException(request, _('Invalid api key.'), status_code=HTTPStatus.UNAUTHORIZED)
+            )
 
         request.api_key = api_key_model
-
-        # Do not check signature for GitLab API keys
-        if api_key_model.platform == ApiKey.DevicePlatform.GILTAB:
-            return None
 
         message = f"{request.body.decode('utf-8')}:{request.path}"
         signature_check = hmac.new(
@@ -74,5 +72,5 @@ class SignatureMiddleware(object):
 
 
 __all__ = [
-    'SignatureMiddleware'
+    'ApiKeyMiddleware'
 ]

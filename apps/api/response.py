@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 from http import HTTPStatus
-from typing import Type, Union
+from typing import Type, Union, Optional, Any
 
 from django.core.paginator import Paginator
 from django.http import HttpResponse
@@ -11,6 +11,7 @@ from porcupine.base import Serializer
 
 from apps.api.encoders import ApiJSONEncoder
 from apps.api.errors import ValidationException, ApiException
+from apps.core.models.base import BaseModel
 
 
 @dataclass
@@ -41,7 +42,10 @@ class Ordering:
 
 
 class GeneralResponse(HttpResponse):
-    def __init__(self, request, data: dict = None, serializer: Type[Serializer] = None, **kwargs):
+    def __init__(
+        self, request, data: Optional[Any] = None,
+        serializer: Type[Serializer] = None, **kwargs
+    ):
         params = {}
         if data is not None:
             content_type = request.headers.get('accept', 'application/json')
