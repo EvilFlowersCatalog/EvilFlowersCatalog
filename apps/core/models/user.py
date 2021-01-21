@@ -26,7 +26,8 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     EMAIL_FIELD = 'email'
     REQUIRED_FIELDS = ['name', 'surname']
 
-    def get_full_name(self) -> str:
+    @property
+    def full_name(self) -> str:
         return f'{self.name} {self.surname}'
 
 

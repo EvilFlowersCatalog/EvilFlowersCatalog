@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+{% load i18n %}<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:opds="http://opds-spec.org/2010/catalog">
   <id>urn:uuid:{{ catalog.id }}</id>
   <link rel="self"
@@ -10,17 +10,39 @@
   <title>{{ catalog.title }}</title>
   <updated>{{ catalog.updated_at|date:"c" }}</updated>
   <author>
-    <name>{{ catalog.creator.name }} {{ catalog.creator.surname }}</name>
+    <name>{{ catalog.creator.full_name }}</name>
   </author>
 
+    <entry>
+        <title>{% translate "Popular Publications" %}</title>
+        <link rel="http://opds-spec.org/sort/popular"
+              href="/opds/{{ catalog.url_name }}/popular.xml"
+              type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+        <updated>2010-01-10T10:01:01Z</updated>
+        <id>urn:uuid:d49e8018-a0e0-499e-9423-7c175fa0c56e</id>
+        <content type="text">{% translate "Popular publications from this catalog based on downloads." %}</content>
+    </entry>
+
+    <entry>
+        <title>{% translate "New Publications" %}</title>
+        <link rel="http://opds-spec.org/sort/new"
+              href="/opds/{{ catalog.url_name }}/new.xml"
+              type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+        <updated>2010-01-10T10:02:00Z</updated>
+        <id>urn:uuid:d49e8018-a0e0-499e-9423-7c175fa0c56c</id>
+        <content type="text">{% translate "Recent publications from this catalog." %}</content>
+    </entry>
+
     {% for feed in catalog.feeds.all %}
-        <title>{{ feed.title }}</title>
-        <link
-                rel="{{ feed.relation }}"
-                href="/opds/{{ user.username }}/{{ catalog.id }}"
-                type="application/atom+xml;profile=opds-catalog;kind=acquisition"
-        />
-        <id>urn:uuid:{{ catalog.id }}</id>
-        <content type="text">{{ catalog.content }}</content>
+    <entry>
+            <title>{{ feed.title }}</title>
+            <link
+                    rel="subsection"
+                    href="/opds/{{ feed.catalog.url_name }}/{{ feed.url_name }}.xml"
+                    type="application/atom+xml;profile=opds-catalog;kind=acquisition"
+            />
+            <id>urn:uuid:{{ feed.id }}</id>
+            <content type="text">{{ feed.content }}</content>
+    </entry>
     {% endfor %}
 </feed>

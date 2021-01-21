@@ -30,4 +30,3 @@ class BaseModel(models.Model):
             if hasattr(self, key):
                 setattr(self, key, value)
         self.save()
-
