@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models.user import User
@@ -24,10 +25,11 @@ class Feed(BaseModel):
     title = models.CharField(max_length=100)
     url_name = models.SlugField()
     content = models.TextField()
+    per_page = models.IntegerField(null=True)
 
     @property
     def url(self):
-        return f"{settings.BASE_URL}/opds/{self.catalog.url_name}/{self.url_name}.xml"
+        return f"{settings.BASE_URL}{reverse('feed-detail', args=[self.catalog.url_name, self.url_name])}"
 
 
 __all__ = [

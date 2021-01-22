@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
 from django_api_forms import Form
 
-from apps.core.models import Catalog, Feed
+from apps.core.models import Catalog
 
 
 class FeedForm(Form):
@@ -11,6 +11,7 @@ class FeedForm(Form):
     title = forms.CharField(max_length=100)
     url_name = forms.SlugField(max_length=50)
     content = forms.CharField()
+    per_page = forms.IntegerField(min_value=1, required=False)
 
     def clean_url_name(self):
         if self.cleaned_data['url_name'] == 'new':

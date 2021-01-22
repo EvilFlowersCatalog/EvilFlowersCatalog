@@ -1,22 +1,24 @@
 {% load i18n %}<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:opds="http://opds-spec.org/2010/catalog">
-  <id>urn:uuid:{{ catalog.id }}</id>
-  <link rel="self"
-        href="/opds/{{ catalog.url_name }}/root.xml"
-        type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
-  <link rel="start"
-        href="/opds/{{ catalog.url_name }}/root.xml"
-        type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
-  <title>{{ catalog.title }}</title>
-  <updated>{{ catalog.updated_at|date:"c" }}</updated>
-  <author>
-    <name>{{ catalog.creator.full_name }}</name>
+    <id>urn:uuid:{{ catalog.id }}</id>
+    <link rel="self"
+          href="{% url 'catalog-detail' catalog_name=catalog.url_name %}"
+          type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+    <link rel="start"
+          href="{% url 'catalog-detail' catalog_name=catalog.url_name %}"
+          type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+    <title>{{ catalog.title }}</title>
+    <updated>{{ catalog.updated_at|date:"c" }}</updated>
+    <author>
+        <name>{{ catalog.creator.full_name }}</name>
+        <emai>{{ catalog.creator.email }}</emai>
+        <uri>{% url 'relation-shelf' catalog_name=catalog.url_name %}</uri>
   </author>
 
     <entry>
         <title>{% translate "Popular Publications" %}</title>
         <link rel="http://opds-spec.org/sort/popular"
-              href="/opds/{{ catalog.url_name }}/popular.xml"
+              href="{% url 'relation-popular' catalog_name=catalog.url_name %}"
               type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
         <updated>2010-01-10T10:01:01Z</updated>
         <id>urn:uuid:d49e8018-a0e0-499e-9423-7c175fa0c56e</id>
@@ -26,7 +28,7 @@
     <entry>
         <title>{% translate "New Publications" %}</title>
         <link rel="http://opds-spec.org/sort/new"
-              href="/opds/{{ catalog.url_name }}/new.xml"
+              href="{% url 'relation-new' catalog_name=catalog.url_name %}"
               type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
         <updated>2010-01-10T10:02:00Z</updated>
         <id>urn:uuid:d49e8018-a0e0-499e-9423-7c175fa0c56c</id>
@@ -38,7 +40,7 @@
             <title>{{ feed.title }}</title>
             <link
                     rel="subsection"
-                    href="/opds/{{ feed.catalog.url_name }}/{{ feed.url_name }}.xml"
+                    href="{% url 'feed-detail' catalog_name=catalog.url_name feed_name=feed.url_name %}"
                     type="application/atom+xml;profile=opds-catalog;kind=acquisition"
             />
             <id>urn:uuid:{{ feed.id }}</id>

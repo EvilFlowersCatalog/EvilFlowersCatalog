@@ -13,5 +13,6 @@ class FeedSerializer:
         url_name: str
         url: str
         content: str
+        per_page: int = None
         created_at: datetime
         updated_at: datetime

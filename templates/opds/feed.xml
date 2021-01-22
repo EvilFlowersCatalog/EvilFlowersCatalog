@@ -5,20 +5,21 @@
     <id>urn:uuid:{{ feed.pk }}</id>
 
     <link rel="self"
-          href="/opds/{{ feed.catalog.url_name }}/{{ feed.url_name }}.xml"
+          href="{% url 'feed-detail' catalog_name=feed.catalog.url_name feed_name=feed.url_name %}"
           type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
     <link rel="start"
-          href="/opds/{{ feed.catalog.url_name }}/root.xml"
+          href="{% url 'catalog-detail' catalog_name=feed.catalog.url_name %}"
           type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
     <link rel="up"
-          href="/opds/{{ feed.catalog.url_name }}/root.xml"
+          href="{% url 'catalog-detail' catalog_name=feed.catalog.url_name %}"
           type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
 
     <title>{{ feed.title }}</title>
     <updated>{{ feed.updated_at|time:"c" }}</updated>
     <author>
-        <name>{{ catalog.creator.full_name }}</name>
-        <uri>http://opds-spec.org</uri>
+        <name>{{ feed.catalog.creator.full_name }}</name>
+        <emai>{{ feed.catalog.creator.email }}</emai>
+        <uri>{% url 'relation-shelf' catalog_name=feed.catalog.url_name %}</uri>
     </author>
 
     <entry>
