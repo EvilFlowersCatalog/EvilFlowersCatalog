@@ -4,3 +4,6 @@ from .catalog import Catalog
 from .feed import Feed
 from .currency import Currency
 from .language import Language
+from .category import Category
+from .entry import Entry
+from .price import Price
