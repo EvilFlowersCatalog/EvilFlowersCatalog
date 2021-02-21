@@ -16,3 +16,5 @@ node_modules/
 ~*.docx
 /evil_flowers_catalog.egg-info
 /docs/schemas
+/private/
+!/private/.gitkeep

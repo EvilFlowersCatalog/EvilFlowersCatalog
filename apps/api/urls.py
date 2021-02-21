@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.api.views import catalogs, feeds
+from apps.api.views import catalogs, feeds, entries
 
 urlpatterns = [
     # Catalogs
@@ -10,4 +10,7 @@ urlpatterns = [
     # Feeds
     path("feeds", feeds.FeedManagement.as_view()),
     path("feeds/<uuid:feed_id>", feeds.FeedDetail.as_view()),
+
+    # Entries
+    path("entries", entries.EntryManagement.as_view()),
 ]

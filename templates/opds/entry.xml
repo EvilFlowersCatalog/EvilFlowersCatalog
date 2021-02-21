@@ -1,0 +1,53 @@
+<entry>
+    <title>{{ entry.title }}</title>
+    <id>urn:uuid:{{ entry.id }}</id>
+    <updated>{{ entry.updated_at }}</updated>
+    {% if entry.author %}
+        <author>
+            <name>{{ entry.author.full_name }}</name>
+        </author>
+    {% endif %}
+
+    {% if entry.language %}
+        <dc:language>{{ entry.language.code }}</dc:language>
+    {% endif%}
+
+    {% if entry.category %}
+        <category
+                {% if entry.category.scheme %}scheme="{{ entry.category.scheme }}"{% endif %}
+                term="{{ entry.category.term }}"
+                {% if entry.category.label %}label="{{ entry.category.label }}"{% endif %}
+        />
+    {% endif %}
+
+    {% if entry.summary %}
+        <summary type="text">
+        {{ entry.summary }}
+        </summary>
+    {% endif %}
+
+    {% if entry.summary %}
+        <content type="text">
+        {{ entry.content }}
+        </content>
+    {% endif %}
+
+    <link rel="http://opds-spec.org/image"
+          href="/covers/4561.lrg.png"
+          type="image/png"/>
+    <link rel="http://opds-spec.org/image/thumbnail"
+          href="/covers/4561.thmb.gif"
+          type="image/gif"/>
+
+    <link rel="alternate"
+          href="/opds-catalogs/entries/4571.complete.xml"
+          type="application/atom+xml;type=entry;profile=opds-catalog"
+          title="Complete Catalog Entry for Bob, Son of Bob"/>
+
+    <link rel="http://opds-spec.org/acquisition"
+          href="/content/free/4561.epub"
+          type="application/epub+zip"/>
+    <link rel="http://opds-spec.org/acquisition"
+          href="/content/free/4561.mobi"
+          type="application/x-mobipocket-ebook"/>
+</entry>

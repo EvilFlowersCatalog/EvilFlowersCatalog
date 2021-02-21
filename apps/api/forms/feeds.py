@@ -3,27 +3,22 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
 from django_api_forms import Form
 
-from apps.core.models import Catalog
+from apps.core.models import Catalog, Feed, Entry
 
 
 class FeedForm(Form):
     catalog_id = forms.ModelChoiceField(queryset=Catalog.objects.all())
+    parent_id = forms.ModelChoiceField(queryset=Feed.objects.all(), required=False)
     title = forms.CharField(max_length=100)
     url_name = forms.SlugField(max_length=50)
+    kind = forms.ChoiceField(choices=Feed.FeedKind.choices)
     content = forms.CharField()
     per_page = forms.IntegerField(min_value=1, required=False)
+    entries = forms.ModelMultipleChoiceField(queryset=Entry.objects.all(), required=False)
 
-    def clean_url_name(self):
-        if self.cleaned_data['url_name'] == 'new':
-            raise ValidationError(
-                _("URL name (url_name property) is reserved for http://opds-spec.org/sort/new implementation"),
-                code="reserved"
-            )
-
-        if self.cleaned_data['url_name'] == 'popular':
-            raise ValidationError(
-                _("URL name (url_name property) is reserved for http://opds-spec.org/sort/popular implementation"),
-                code="reserved"
-            )
-
-        return self.cleaned_data['url_name']
+    def clean(self):
+        if self.cleaned_data.get('parent_id') and self.cleaned_data['parent_id'].kind == Feed.FeedKind.ACQUISITION:
+            raise ValidationError(_("Cannot have acquisition feed as a parent"))
+        if self.cleaned_data.get('entries') and self.cleaned_data['kind'] == Feed.FeedKind.NAVIGATION:
+            raise ValidationError(_("Navigation feed cannot have entries"))
+        return self.cleaned_data

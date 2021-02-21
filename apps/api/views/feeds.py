@@ -36,6 +36,9 @@ class FeedManagement(View):
         form.fill(feed)
         feed.save()
 
+        if 'entries' in form.cleaned_data.keys():
+            feed.entries.add(*form.cleaned_data['entries'])
+
         return SingleResponse(request, feed, serializer=FeedSerializer.Base, status=HTTPStatus.CREATED)
 
     def get(self, request):
@@ -84,6 +87,10 @@ class FeedDetail(View):
 
         form.fill(feed)
         feed.save()
+
+        if feed.kind == Feed.FeedKind.ACQUISITION and 'entries' in form.cleaned_data.keys():
+            feed.entries.clear()
+            feed.entries.add(*form.cleaned_data['entries'])
 
         return SingleResponse(request, feed, serializer=FeedSerializer.Base)
 

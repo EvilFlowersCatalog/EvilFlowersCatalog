@@ -17,6 +17,10 @@ class Author(BaseModel):
     name = models.CharField(max_length=255)
     surname = models.CharField(max_length=255)
 
+    @property
+    def full_name(self) -> str:
+        return f'{self.name} {self.surname}'
+
 
 __all__ = [
     'Author'

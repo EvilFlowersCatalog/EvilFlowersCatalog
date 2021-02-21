@@ -5,56 +5,46 @@
     <id>urn:uuid:{{ feed.pk }}</id>
 
     <link rel="self"
-          href="{% url 'feed-detail' catalog_name=feed.catalog.url_name feed_name=feed.url_name %}"
-          type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+          href="{% url 'subsection' catalog_name=feed.catalog.url_name feed_name=feed.url_name %}"
+          type="application/atom+xml;profile=opds-catalog;kind={{ feed.kind }}"/>
     <link rel="start"
-          href="{% url 'catalog-detail' catalog_name=feed.catalog.url_name %}"
-          type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
-    <link rel="up"
-          href="{% url 'catalog-detail' catalog_name=feed.catalog.url_name %}"
-          type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+          href="{% url 'subsection' catalog_name=feed.catalog.url_name feed_name=feed.url_name %}"
+          type="application/atom+xml;profile=opds-catalog;kind={{ feed.kind }}"/>
+
+    {% if feed.parent %}
+        <link rel="up"
+              href="{% url 'subsection' catalog_name=feed.catalog.url_name feed_name=feed.url_name %}"
+              type="application/atom+xml;profile=opds-catalog;kind={{ feed.kind }}"/>
+    {% else %}
+        <link rel="up"
+              href="{% url 'root' catalog_name=feed.catalog.url_name %}"
+              type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+    {% endif %}
+
 
     <title>{{ feed.title }}</title>
     <updated>{{ feed.updated_at|time:"c" }}</updated>
     <author>
         <name>{{ feed.catalog.creator.full_name }}</name>
         <emai>{{ feed.catalog.creator.email }}</emai>
-        <uri>{% url 'relation-shelf' catalog_name=feed.catalog.url_name %}</uri>
     </author>
 
-    <entry>
-        <title>Bob, Son of Bob</title>
-        <id>urn:uuid:6409a00b-7bf2-405e-826c-3fdff0fd0734</id>
-        <updated>2010-01-10T10:01:11Z</updated>
-        <author>
-            <name>Bob the Recursive</name>
-            <uri>http://opds-spec.org/authors/1285</uri>
-        </author>
-        <dc:language>en</dc:language>
-        <dc:issued>1917</dc:issued>
-        <category scheme="http://www.bisg.org/standards/bisac_subject/index.html"
-                  term="FIC020000"
-                  label="FICTION / Men's Adventure"/>
-        <summary>The story of the son of the Bob and the gallant part he played in
-            the lives of a man and a woman.
-        </summary>
-        <link rel="http://opds-spec.org/image"
-              href="/covers/4561.lrg.png"
-              type="image/png"/>
-        <link rel="http://opds-spec.org/image/thumbnail"
-              href="/covers/4561.thmb.gif"
-              type="image/gif"/>
-
-        <link rel="alternate"
-              href="/opds-catalogs/entries/4571.complete.xml"
-              type="application/atom+xml;type=entry;profile=opds-catalog"
-              title="Complete Catalog Entry for Bob, Son of Bob"/>
-
-        <link rel="http://opds-spec.org/acquisition"
-              href="/content/free/4561.epub"
-              type="application/epub+zip"/>
-        <link rel="http://opds-spec.org/acquisition"
-              href="/content/free/4561.mobi"
-              type="application/x-mobipocket-ebook"/>
-    </entry>
+    {% if feed.kind == 'acquisition' %}
+        {% for entry in feed.entries.all %}
+            {% include "opds/entry.xml" with entry=entry %}
+        {% endfor %}
+    {% else %}
+        {% for entry in feed.subsections.all %}
+            <entry>
+                <title>{{ entry.title }}</title>
+                <link
+                        rel="subsection"
+                        href="{% url 'subsection' catalog_name=entry.catalog.url_name feed_name=entry.url_name %}"
+                        type="application/atom+xml;profile=opds-catalog;kind={{ entry.kind }}"
+                />
+                <id>urn:uuid:{{ entry.id }}</id>
+                <content type="text">{{ entry.content }}</content>
+            </entry>
+        {% endfor %}
+    {% endif %}
 </feed>

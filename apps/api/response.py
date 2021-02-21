@@ -11,7 +11,6 @@ from porcupine.base import Serializer
 
 from apps.api.encoders import ApiJSONEncoder
 from apps.api.errors import ValidationException, ApiException
-from apps.core.models.base import BaseModel
 
 
 @dataclass

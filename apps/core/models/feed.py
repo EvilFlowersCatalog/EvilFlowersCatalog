@@ -3,6 +3,7 @@ from django.db import models
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
+from apps.core.models.entry import Entry
 from apps.core.models.user import User
 from apps.core.models.base import BaseModel
 from apps.core.models.catalog import Catalog
@@ -20,16 +21,27 @@ class Feed(BaseModel):
             ('creator_id', 'url_name')
         )
 
+    class FeedKind(models.TextChoices):
+        NAVIGATION = 'navigation', _('navigation')
+        ACQUISITION = 'acquisition', _('acquisition')
+
+    class FeedSource(models.TextChoices):
+        RELATION = 'relation', _('relation')
+
     catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE, related_name='feeds')
     creator = models.ForeignKey(User, on_delete=models.CASCADE)
+    parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, related_name='subsections')
     title = models.CharField(max_length=100)
     url_name = models.SlugField()
+    kind = models.CharField(max_length=20, choices=FeedKind.choices)
+    source = models.CharField(max_length=20, choices=FeedSource.choices)
     content = models.TextField()
     per_page = models.IntegerField(null=True)
+    entries = models.ManyToManyField(Entry, related_name='feeds')
 
     @property
     def url(self):
-        return f"{settings.BASE_URL}{reverse('feed-detail', args=[self.catalog.url_name, self.url_name])}"
+        return f"{settings.BASE_URL}{reverse('subsection', args=[self.catalog.url_name, self.url_name])}"
 
 
 __all__ = [

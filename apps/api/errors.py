@@ -73,4 +73,3 @@ class ValidationException(ApiException):
     @property
     def payload(self) -> dict:
         return self._form.errors
-
