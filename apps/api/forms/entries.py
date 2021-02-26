@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
 from django_api_forms import Form, FormField, FileField, FormFieldList
 
-from apps.core.models import Catalog, Language, Author, Category, Currency
+from apps.core.models import Catalog, Language, Author, Category, Currency, Entry
 from apps.core.models import Acquisition
 
 
@@ -29,8 +29,7 @@ class AcquisitionForm(Form):
     prices = FormFieldList(PriceForm, required=False)
 
 
-class EntryForm(Form):
-    catalog_id = forms.ModelChoiceField(queryset=Catalog.objects.all())
+class UpdateEntryForm(Form):
     language_code = forms.ModelChoiceField(queryset=Language.objects.all(), to_field_name='code')
     author_id = forms.ModelChoiceField(queryset=Author.objects.all(), required=False)
     author = FormField(AuthorForm, required=False)
@@ -40,6 +39,9 @@ class EntryForm(Form):
     summary = forms.CharField(required=False)
     content = forms.CharField(required=False)
     acquisitions = FormFieldList(AcquisitionForm, required=False)
+
+
+class CreateEntryForm(UpdateEntryForm):
     contributors = FormFieldList(AuthorForm)
 
     def clean(self):

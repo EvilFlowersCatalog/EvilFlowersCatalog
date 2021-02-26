@@ -1,4 +1,8 @@
+from typing import Optional
+
+from django.conf import settings
 from django.db import models
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models.entry import Entry
@@ -36,6 +40,12 @@ class Acquisition(BaseModel):
     content = models.FileField(
         upload_to=_upload_to_path, null=True, max_length=255, storage=private_storage
     )
+
+    @property
+    def url(self) -> Optional[str]:
+        if not self.content:
+            return None
+        return f"{settings.BASE_URL}{reverse('acquisition_download', kwargs={'acquisition_id': self.pk})}"
 
 
 __all__ = [
