@@ -82,8 +82,7 @@ class SingleResponse(GeneralResponse):
 class ErrorResponse(GeneralResponse):
     def __init__(self, request, payload: dict, **kwargs):
         data = {
-            'errors': payload,
-            'metadata': {}
+            'error': payload
         }
 
         super().__init__(request=request, data=data, **kwargs)

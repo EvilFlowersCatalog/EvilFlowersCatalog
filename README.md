@@ -1,4 +1,4 @@
-# EvilFlowersCatalog
+# Evil Flowers Catalog
 
 Simple e-book catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2) written in Python with simple
 management REST API (basic CRUD operations).

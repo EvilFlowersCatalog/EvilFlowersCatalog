@@ -1,0 +1,282 @@
+openapi: 3.0.0
+info:
+  title: Evil Flowers Catalog
+  description: >
+    Simple e-book catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2) written in
+    Python with simple management REST API (basic CRUD operations). This document describes management REST API,
+    not OPDS.
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1:8000/api
+    description: Local development server
+tags:
+- name: "Entries"
+- name: "Catalogs"
+- name: "Feeds"
+paths:
+  /v1/catalogs:
+    get:
+      tags:
+        - "Catalogs"
+      summary: List of catalogs
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Number of current page
+          schema:
+            type: integer
+            format: int64
+        - name: limit
+          in: query
+          required: false
+          description: Number of records per page
+          schema:
+            type: integer
+            format: int64
+        - name: order_by
+          in: query
+          required: false
+          description: Ordering property name
+          schema:
+            type: string
+            enum:
+              - url_name
+              - title
+              - created_at
+              - updated_at
+            default: created_at
+        - name: order
+          in: query
+          required: false
+          description: Order orientation
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: asc
+        - name: title
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Search records using their title (unaccent case-insensitive lookup is used)
+          example: publications
+        - name: url_name
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Search records using their url_name (unaccent case-insensitive lookup is used)
+          example: bat
+      responses:
+        '200':
+          description: Paginated list of catalog objects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Catalog'
+                  metadata:
+                    $ref: '#/components/schemas/Metadata'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+        - "Catalogs"
+      summary: Create catalog entry
+      requestBody:
+        $ref: "#/components/requestBodies/CatalogBody"
+      responses:
+        201:
+          $ref: "#/components/responses/CatalogDetail"
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        409:
+          $ref: '#/components/responses/Conflict'
+        422:
+          $ref: '#/components/responses/CatalogValidation'
+  /v1/catalogs/{catalogId}:
+    parameters:
+      - in: path
+        name: catalogId
+        schema:
+          type: string
+          format: uuid
+        required: true
+        description: UUID of the catalog object
+    get:
+      summary: Retrieve single catalog object
+      tags:
+        - "Catalogs"
+      responses:
+        '200':
+          $ref: "#/components/responses/CatalogDetail"
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update catalog object
+      tags:
+        - "Catalogs"
+      requestBody:
+        $ref: "#/components/requestBodies/CatalogBody"
+      responses:
+        200:
+          $ref: "#/components/responses/CatalogDetail"
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        409:
+          $ref: '#/components/responses/Conflict'
+        422:
+          $ref: "#/components/responses/CatalogValidation"
+    delete:
+      summary: Delete catalog object
+      tags:
+        - "Catalogs"
+      responses:
+        204:
+          description: Catalog was sucessfuly deleted
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-APIKEY
+  schemas:
+    Catalog:
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 13e7c89c-2cb0-494a-bfac-72f52300d62f
+        creator_id:
+          type: string
+          format: uuid
+          example: 0d87f6d9-4f11-406c-a712-58c9bf169682
+        url_name:
+          type: string
+          example: general
+        title:
+          type: string
+          example: General
+        created_at:
+          type: string
+          format: date-time
+          example: 2021-02-21T19:05:35.538Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2021-02-21T19:05:35.538Z
+    CatalogForm:
+      properties:
+        url_name:
+          type: string
+          example: general
+        title:
+          type: string
+          example: General
+    Metadata:
+      properties:
+        page:
+          type: number
+          example: 1
+        limit:
+          type: number
+          example: 10
+        pages:
+          type: number
+          example: 1
+        total:
+          type: number
+          example: 4
+    Error:
+      properties:
+        message:
+          type: string
+        trace:
+          type: string
+          required: false
+          description: This property is present only in debug mode
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Object not found on the server
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Permission denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    CatalogValidation:
+      description: Catalog validation object
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              errors:
+                type: array
+                items:
+                  properties:
+                    field:
+                      type: string
+                    messages:
+                      type: array
+                example:
+                  - field: url_name
+                    messages: [required]
+                  - field: title
+                    messages: [required]
+    CatalogDetail:
+      description: Response object with catalog detail
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              response:
+                $ref: '#/components/schemas/Catalog'
+  requestBodies:
+    CatalogBody:
+      description: A JSON object containing catalog information
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CatalogForm'
+security:
+  - ApiKeyAuth: []

@@ -55,8 +55,7 @@ class ApiException(Exception):
     @property
     def payload(self) -> dict:
         result = {
-            'message': self.message,
-            'code': self.status_code
+            'message': self.message
         }
 
         if settings.DEBUG:
