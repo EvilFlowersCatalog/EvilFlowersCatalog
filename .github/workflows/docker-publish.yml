@@ -1,4 +1,4 @@
-name: Docker
+name: Docker image publish
 
 on:
   push:
@@ -14,7 +14,7 @@ on:
   pull_request:
 
 env:
-  IMAGE_NAME: evil_flowers
+  IMAGE_NAME: evilflowers
 
 jobs:
   # Run tests.

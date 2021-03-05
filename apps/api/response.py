@@ -94,8 +94,12 @@ class ErrorResponse(GeneralResponse):
 
 class ValidationResponse(GeneralResponse):
     def __init__(self, request, payload: dict, **kwargs):
+        kwargs.setdefault("content_type", "application/problem+json")
         data = {
-            'errors': payload
+            "type": "/validation-error",
+            "title": "Invalid request parameters",
+            "status": HTTPStatus.UNPROCESSABLE_ENTITY,
+            'errors': payload,
         }
 
         super().__init__(request, data, status=HTTPStatus.UNPROCESSABLE_ENTITY, **kwargs)
