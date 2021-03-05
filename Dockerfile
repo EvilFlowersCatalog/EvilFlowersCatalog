@@ -17,6 +17,3 @@ RUN pip install -U pip
 RUN pip install -U gunicorn
 RUN poetry export -f requirements.txt > requirements.txt
 RUN pip install -r requirements.txt
-RUN python manage.py migrate
-RUN python manage.py loaddata users.json api_keys.json
-RUN python manage.py basic_setup
