@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:13-alpine
+    environment:
+      - POSTGRES_DB=evil_flowers_catalog
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+  django:
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/code
+    environment:
+      - DATABASE_HOST=db
+      - DATABASE_NAME=evil_flowers_catalog
+      - DATABASE_USER=postgres
+      - DATABASE_PASSWORD=postgres
+      - DJANGO_SETTINGS_MODULE=evil_flowers_catalog.settings.development
+    ports:
+      - 8000:8000
+    depends_on:
+      - db
