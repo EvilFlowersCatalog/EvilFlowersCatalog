@@ -1,8 +1,7 @@
 import json
 from dataclasses import dataclass
-from enum import Enum
 from http import HTTPStatus
-from typing import Type, Union, Optional, Any
+from typing import Type, Union, Optional, Any, List
 
 from django.core.paginator import Paginator
 from django.http import HttpResponse
@@ -15,26 +14,27 @@ from apps.api.errors import ValidationException, ProblemDetailException
 
 @dataclass
 class Ordering:
-    class Order(Enum):
-        ASC = 'asc'
-        DESC = 'desc'
-
-    column: str
-    order: Order = Order.ASC
+    columns: List[str]
 
     @classmethod
     def create_from_request(cls, request, aliases: dict = None) -> 'Ordering':
-        column = request.GET.get('order_by', 'created_at')
+        columns = []
         aliases = aliases or {}
 
-        if column in aliases:
-            column = aliases.get(column)
+        for column in request.GET.get('order_by', 'created_at').split(','):
+            column_name = column[1:] if column.startswith("-") else column
+            if column_name in aliases.keys():
+                columns.append(
+                    f"-{aliases[column_name]}" if column.startswith("-") else aliases[column_name]
+                )
+            else:
+                columns.append(column)
 
-        result = Ordering(column, Ordering.Order(request.GET.get('order', 'asc')))
+        result = Ordering(columns)
         return result
 
     def __str__(self):
-        return self.column if self.order == self.Order.ASC else f"-{self.column}"
+        return ",".join(self.columns)
 
     def __repr__(self):
         return self.__str__()
@@ -112,7 +112,7 @@ class PaginationResponse(GeneralResponse):
         kwargs.setdefault('content_type', 'application/json')
 
         # Ordering
-        ordering = ordering if ordering else Ordering('created_at')
+        ordering = ordering if ordering else Ordering.create_from_request(request)
         qs = qs.order_by(str(ordering))
 
         if limit is None:

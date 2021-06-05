@@ -4,9 +4,7 @@
     "pk": "ef5e1ce3-d693-4310-a6dd-4e7fe7dbab39",
     "fields": {
       "name": "Debug key",
-      "platform": "debug",
-      "is_active": true,
-      "secret": "DontPanic",
+      "type": "debug",
       "user_id": "0d87f6d9-4f11-406c-a712-58c9bf169682",
       "created_at": "2021-01-03T22:02:37.133Z",
       "updated_at": "2021-01-03T22:02:37.133Z",

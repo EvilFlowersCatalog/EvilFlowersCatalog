@@ -9,7 +9,7 @@
       "created_at": "2021-01-03T22:02:37.133Z",
       "updated_at": "2021-01-03T22:02:37.133Z",
       "deleted_at": null,
-      "email": "arthur.dent@backbone.sk",
+      "email": "arthur.dent@example.com",
       "name": "Arthur",
       "surname": "Dent",
       "is_active": true,

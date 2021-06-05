@@ -13,16 +13,10 @@ class ApiKey(BaseModel):
         verbose_name = _('API key')
         verbose_name_plural = _('API keys')
 
-    class DevicePlatform(models.TextChoices):
-        DEBUG = 'debug', _('debug')
-        CUSTOM = 'custom', _('custom')
-        USER = 'user', _('user')
-
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=200, null=True)
-    platform = models.TextField(max_length=20, choices=DevicePlatform.choices, null=False, default=DevicePlatform.USER)
-    secret = models.CharField(max_length=30, null=False)
-    is_active = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(null=True)
+    is_active = models.BooleanField(default=True)
 
 
 __all__ = [

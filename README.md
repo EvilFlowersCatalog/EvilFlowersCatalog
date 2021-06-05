@@ -3,6 +3,8 @@
 Simple e-book catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2) written in Python with simple
 management REST API (basic CRUD operations).
 
+[![Run in Insomnia}](https://insomnia.rest/images/run.svg)](https://insomnia.rest/run/?label=Evil%20Flowers%20Catalog%20API&uri=https%3A%2F%2Fgithub.com%2FSibyx%2FEvilFlowersCatalog%2Fblob%2Fmaster%2Fdocs%2FInsomnia_EvilFlowers.json
+
 ## Features
 
 **Work in progress**
@@ -40,8 +42,8 @@ as a store data. To set up instance with demo database follow these simple steps
 6. Load example database `python manage.py loaddata users.json api_keys.json`
 7. You can import currencies and languages using `python manage.py basic_setup`
 
-Demo superuser name: `arthur.dent@backbone.sk`
-Demo superuser password: `admin`
+Default superuser name: `arthur.dent@example.com`
+Default superuser password: `admin`
 
 ---
 Made with ❤️ and ☕️ Jakub Dubec

@@ -1,8 +1,9 @@
 import base64
 from http import HTTPStatus
 
-from django.contrib.auth.backends import UserModel, ModelBackend
+from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from apps.api.errors import ProblemDetailException
@@ -15,6 +16,9 @@ class BearerBackend(ModelBackend):
             api_key = ApiKey.objects.get(pk=bearer, is_active=True)
         except (ApiKey.DoesNotExist, ValidationError):
             raise ProblemDetailException(request, _('Invalid api key.'), status=HTTPStatus.UNAUTHORIZED)
+
+        api_key.last_seen_at = timezone.now()
+        api_key.save()
 
         setattr(request, 'api_key', api_key)
         return api_key.user
