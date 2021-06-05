@@ -1,5 +1,6 @@
 import traceback
 from http import HTTPStatus
+from typing import Tuple
 
 import sentry_sdk
 from django.conf import settings
@@ -8,22 +9,28 @@ from django_api_forms.forms import Form
 from django.utils.translation import gettext as _
 
 
-class ApiException(Exception):
+class ProblemDetailException(Exception):
     def __init__(
         self,
         request,
-        message: str,
-        status_code: int = HTTPStatus.INTERNAL_SERVER_ERROR,
+        title: str,
+        status: int = HTTPStatus.INTERNAL_SERVER_ERROR,
         previous: Exception = None,
         to_sentry: bool = False,
-        additional_data: dict = None
+        additional_data: dict = None,
+        detail_type: str = None,
+        detail: str = None,
+        extra_headers: Tuple[Tuple] = None
     ):
-        super().__init__(message)
+        super().__init__(title)
 
         self._request = request
-        self._status_code = status_code
-        self._message = message
+        self._status_code = status
+        self._title = title
+        self._type = detail_type
+        self._detail = detail
         self._previous = previous
+        self._extra_headers = extra_headers
 
         if additional_data:
             self._additional_data = additional_data
@@ -41,21 +48,33 @@ class ApiException(Exception):
         return self._request
 
     @property
-    def status_code(self) -> int:
+    def status(self) -> int:
         return self._status_code
 
     @property
-    def message(self) -> str:
-        return self._message
+    def title(self) -> str:
+        return self._title
+
+    @property
+    def detail(self) -> str:
+        return self._detail
+
+    @property
+    def type(self) -> str:
+        return self._type
 
     @property
     def previous(self) -> Exception:
         return self._previous
 
     @property
+    def extra_headers(self) -> Tuple[Tuple]:
+        return self._extra_headers
+
+    @property
     def payload(self) -> dict:
         result = {
-            'message': self.message
+            'title': self.title
         }
 
         if settings.DEBUG:
@@ -64,11 +83,13 @@ class ApiException(Exception):
         return result
 
 
-class ValidationException(ApiException):
+class ValidationException(ProblemDetailException):
     def __init__(self, request, form: Form):
-        super().__init__(request, _("Validation error!"), status_code=HTTPStatus.UNPROCESSABLE_ENTITY)
+        super().__init__(request, _("Validation error!"), status=HTTPStatus.UNPROCESSABLE_ENTITY)
         self._form = form
 
     @property
     def payload(self) -> dict:
-        return self._form.errors
+        payload = super(ValidationException, self).payload
+        payload['validation_errors'] = self._form.errors
+        return payload

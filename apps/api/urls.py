@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.api.views import catalogs, feeds, entries
+from apps.api.views import catalogs, feeds, entries, acquisitions
 
 urlpatterns = [
     # Catalogs
@@ -12,10 +12,10 @@ urlpatterns = [
     path("feeds/<uuid:feed_id>", feeds.FeedDetail.as_view()),
 
     # Entries
-    path("entries", entries.list_entries),
-    path("catalogs/<uuid:catalog_id>/entries", entries.create_entry),
+    path("entries", entries.EntryPaginator.as_view()),
+    path("catalogs/<uuid:catalog_id>/entries", entries.EntryManagement.as_view()),
     path("catalogs/<uuid:catalog_id>/entries/<uuid:entry_id>", entries.EntryDetail.as_view()),
 
     # Acquisitions
-    path("acquisitions/<uuid:acquisition_id>/download", entries.download, name='acquisition_download')
+    path("acquisitions/<uuid:acquisition_id>/download", acquisitions.AcquisitionDownload.as_view(), name='acquisition_download')
 ]

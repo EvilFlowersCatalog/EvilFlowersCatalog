@@ -19,12 +19,12 @@ class EntryFilter(django_filters.FilterSet):
     @property
     def qs(self):
         qs = super().qs
-        api_key = getattr(self.request, 'api_key', None)
+        user = getattr(self.request, 'user', None)
 
-        if not api_key:
+        if not user:
             return qs.none()
 
-        if not api_key.user.is_superuser:
-            qs = qs.filter(creator=api_key)
+        if not user.is_superuser:
+            qs = qs.filter(creator=user)
 
         return qs

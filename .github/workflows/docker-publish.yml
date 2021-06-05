@@ -17,34 +17,20 @@ env:
   IMAGE_NAME: evilflowers
 
 jobs:
-  # Run tests.
-  # See also https://docs.docker.com/docker-hub/builds/automated-testing/
-  test:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v2
-
-      - name: Run tests
-        run: |
-          if [ -f docker-compose.test.yml ]; then
-            docker-compose --file docker-compose.test.yml build
-            docker-compose --file docker-compose.test.yml run sut
-          else
-            docker build . --file Dockerfile
-          fi
-
   # Push image to GitHub Packages.
   # See also https://docs.docker.com/docker-hub/builds/
   push:
-    # Ensure test job passes before pushing image.
-    needs: test
-
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v2
+
+      - name: Install dependencies
+        run: pip3 install --user poetry
+
+      - name: Create requirements.txt
+        run: poetry export -f requirements.txt > requirements.txt
 
       - name: Build image
         run: docker build . --file Dockerfile --tag $IMAGE_NAME

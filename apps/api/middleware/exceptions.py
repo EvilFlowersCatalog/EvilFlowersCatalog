@@ -1,4 +1,4 @@
-from apps.api.errors import ApiException, ValidationException
+from apps.api.errors import ProblemDetailException, ValidationException
 from apps.api.response import ErrorResponse, ValidationResponse
 
 
@@ -12,7 +12,7 @@ class ExceptionMiddleware(object):
 
     @staticmethod
     def process_exception(request, exception):
-        if isinstance(exception, ApiException):
+        if isinstance(exception, ProblemDetailException):
             return ErrorResponse.create_from_exception(exception)
         if isinstance(exception, ValidationException):
             return ValidationResponse.create_from_exception(exception)

@@ -2,19 +2,17 @@ from http import HTTPStatus
 from uuid import UUID
 
 from django.utils.translation import gettext as _
-from django.views.generic.base import View
 
-from apps.api.errors import ValidationException, ApiException
+from apps.api.errors import ValidationException, ProblemDetailException
 from apps.api.filters.catalogs import CatalogFilter
 from apps.api.forms.catalogs import CatalogForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.catalogs import CatalogSerializer
+from apps.api.views.base import SecuredView
 from apps.core.models import Catalog
 
 
-class CatalogManagement(View):
-    require_apikey = ['post', 'get']
-
+class CatalogManagement(SecuredView):
     def post(self, request):
         form = CatalogForm.create_from_request(request)
 
@@ -22,7 +20,7 @@ class CatalogManagement(View):
             raise ValidationException(request, form)
 
         if Catalog.objects.filter(url_name=form.cleaned_data['url_name']).exists():
-            raise ApiException(request, message=_('Catalog url_name already taken'), status_code=HTTPStatus.CONFLICT)
+            raise ProblemDetailException(request, title=_('Catalog url_name already taken'), status=HTTPStatus.CONFLICT)
 
         catalog = Catalog(creator=request.api_key.user)
         form.fill(catalog)
@@ -38,18 +36,16 @@ class CatalogManagement(View):
         )
 
 
-class CatalogDetail(View):
-    require_apikey = ['put', 'get', 'delete']
-
+class CatalogDetail(SecuredView):
     @staticmethod
     def _get_catalog(request, catalog_id: UUID) -> Catalog:
         try:
             catalog = Catalog.objects.get(pk=catalog_id)
         except Catalog.DoesNotExist as e:
-            raise ApiException(request, _("Catalog not found"), status_code=HTTPStatus.NOT_FOUND, previous=e)
+            raise ProblemDetailException(request, _("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        if not request.api_key.user.is_superuser and catalog.creator_id != request.api_key.user_id:
-            raise ApiException(request, _("Insufficient permissions"), status_code=HTTPStatus.FORBIDDEN)
+        if not request.user.is_superuser and catalog.creator_id != request.user.id:
+            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return catalog
 
@@ -67,7 +63,7 @@ class CatalogDetail(View):
         catalog = self._get_catalog(request, catalog_id)
 
         if Catalog.objects.exclude(pk=catalog.pk).filter(url_name=form.cleaned_data['url_name']).exists():
-            raise ApiException(request, message=_('Catalog url_name already taken'), status_code=HTTPStatus.CONFLICT)
+            raise ProblemDetailException(request, title=_('Catalog url_name already taken'), status=HTTPStatus.CONFLICT)
 
         form.fill(catalog)
         catalog.save()

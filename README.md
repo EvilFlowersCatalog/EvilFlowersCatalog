@@ -21,6 +21,12 @@ and [OPDS 2.0](https://drafts.opds.io/opds-2.0) specification. Ordered list bell
     - [ ] Additional Link Relations
 2. [ ] OPDS 2
 
+Implementation is based on these RFCs:
+
+- [RFC7807: Problem Details for HTTP APIs](https://datatracker.ietf.org/doc/html/rfc7807)
+- [RFC7617: The 'Basic' HTTP Authentication Scheme](https://datatracker.ietf.org/doc/html/rfc7617)
+- [RFC6705: The OAuth 2.0 Authorization Framework: Bearer Token Usage](https://datatracker.ietf.org/doc/html/rfc6750)
+
 ## Install
 
 We use [poetry](https://python-poetry.org/) for dependency management and [PostgreSQL](https://www.postgresql.org/) 10+

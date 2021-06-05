@@ -2,37 +2,35 @@ from http import HTTPStatus
 from uuid import UUID
 
 from django.utils.translation import gettext as _
-from django.views.generic.base import View
 
-from apps.api.errors import ValidationException, ApiException
+from apps.api.errors import ValidationException, ProblemDetailException
 from apps.api.filters.feeds import FeedFilter
 from apps.api.forms.feeds import FeedForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.feeds import FeedSerializer
+from apps.api.views.base import SecuredView
 from apps.core.models import Feed
 
 
-class FeedManagement(View):
-    require_apikey = ['post', 'get']
-
+class FeedManagement(SecuredView):
     def post(self, request):
         form = FeedForm.create_from_request(request)
 
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        if form.cleaned_data['catalog_id'].creator_id != request.api_key.user_id:
-            raise ApiException(request, _("Insufficient permissions"), status_code=HTTPStatus.FORBIDDEN)
+        if form.cleaned_data['catalog_id'].creator_id != request.user.id:
+            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         if Feed.objects.filter(
             catalog=form.cleaned_data['catalog_id'],
             url_name=form.cleaned_data['url_name']
         ):
-            raise ApiException(
-                request, _("Feed with same url_name already exists in same catalog"), status_code=HTTPStatus.CONFLICT
+            raise ProblemDetailException(
+                request, _("Feed with same url_name already exists in same catalog"), status=HTTPStatus.CONFLICT
             )
 
-        feed = Feed(creator=request.api_key.user)
+        feed = Feed(creator=request.user)
         form.fill(feed)
         feed.save()
 
@@ -49,18 +47,16 @@ class FeedManagement(View):
         )
 
 
-class FeedDetail(View):
-    require_apikey = ['put', 'get', 'delete']
-
+class FeedDetail(SecuredView):
     @staticmethod
     def _get_feed(request, feed_id: UUID) -> Feed:
         try:
             feed = Feed.objects.get(pk=feed_id)
         except Feed.DoesNotExist as e:
-            raise ApiException(request, _("Feed not found"), status_code=HTTPStatus.NOT_FOUND, previous=e)
+            raise ProblemDetailException(request, _("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        if not request.api_key.user.is_superuser and feed.creator_id != request.api_key.user_id:
-            raise ApiException(request, _("Insufficient permissions"), status_code=HTTPStatus.FORBIDDEN)
+        if not request.user.is_superuser and feed.creator_id != request.user.id:
+            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return feed
 
@@ -81,8 +77,8 @@ class FeedDetail(View):
             catalog=form.cleaned_data['catalog_id'],
             url_name=form.cleaned_data['url_name']
         ).exclude(pk=feed.id).exists():
-            raise ApiException(
-                request, _("Feed with same url_name already exists in same catalog"), status_code=HTTPStatus.CONFLICT
+            raise ProblemDetailException(
+                request, _("Feed with same url_name already exists in same catalog"), status=HTTPStatus.CONFLICT
             )
 
         form.fill(feed)

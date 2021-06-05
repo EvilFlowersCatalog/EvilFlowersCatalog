@@ -10,7 +10,7 @@ from django.utils.translation import gettext as _
 from porcupine.base import Serializer
 
 from apps.api.encoders import ApiJSONEncoder
-from apps.api.errors import ValidationException, ApiException
+from apps.api.errors import ValidationException, ProblemDetailException
 
 
 @dataclass
@@ -81,15 +81,11 @@ class SingleResponse(GeneralResponse):
 
 class ErrorResponse(GeneralResponse):
     def __init__(self, request, payload: dict, **kwargs):
-        data = {
-            'error': payload
-        }
-
-        super().__init__(request=request, data=data, **kwargs)
+        super().__init__(request=request, data=payload, **kwargs)
 
     @staticmethod
-    def create_from_exception(e: ApiException) -> 'ErrorResponse':
-        return ErrorResponse(e.request, e.payload, status=e.status_code)
+    def create_from_exception(e: ProblemDetailException) -> 'ErrorResponse':
+        return ErrorResponse(e.request, e.payload, status=e.status, headers=e.extra_headers)
 
 
 class ValidationResponse(GeneralResponse):

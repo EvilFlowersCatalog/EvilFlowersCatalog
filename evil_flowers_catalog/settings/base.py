@@ -62,7 +62,6 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'apps.api.middleware.exceptions.ExceptionMiddleware',
-    'apps.api.middleware.api_key.ApiKeyMiddleware',
 ]
 
 ROOT_URLCONF = 'evil_flowers_catalog.urls'
@@ -129,6 +128,10 @@ PASSWORD_HASHERS = [
 
 AUTH_USER_MODEL = "core.User"
 
+AUTHENTICATION_BACKENDS = [
+    'apps.core.auth.BearerBackend',
+    'apps.core.auth.BasicBackend',
+]
 
 # Internationalization
 # https://docs.djangoproject.com/en/3.1/topics/i18n/

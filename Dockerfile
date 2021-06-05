@@ -11,9 +11,6 @@ RUN apt install curl -y
 COPY . /code/
 
 # Dependencies
-RUN curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
-ENV PATH="${PATH}:/root/.poetry/bin"
 RUN pip install -U pip
 RUN pip install -U gunicorn
-RUN poetry export -f requirements.txt > requirements.txt
 RUN pip install -r requirements.txt
