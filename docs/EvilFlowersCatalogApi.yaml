@@ -178,10 +178,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
 components:
   securitySchemes:
-    ApiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-APIKEY
+    apiKeyAuth:
+      type: http
+      scheme: basic
+    basicAuth:
+      type: http
+      scheme: bearer
   schemas:
     Catalog:
       properties:
@@ -300,4 +302,5 @@ components:
           schema:
             $ref: '#/components/schemas/CatalogForm'
 security:
-  - ApiKeyAuth: []
+  - apiKeyAuth: []
+  - basicAuth: []

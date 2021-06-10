@@ -18,3 +18,4 @@ node_modules/
 /docs/schemas
 /private/
 !/private/.gitkeep
+requirements.txt

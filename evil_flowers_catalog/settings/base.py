@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'django.contrib.postgres',
 
     'django_api_forms',
+    'django_celery_beat',
 
     'apps.core',
     'apps.api',
@@ -183,3 +184,10 @@ if os.getenv('SENTRY_DSN', False):
         request_bodies='always',
         before_send=before_send,
     )
+
+# Celery
+
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://127.0.0.1:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_BROKER_URL', 'redis://127.0.0.1:6379/0')
+CELERY_ENABLE_UTC = True
+CELERY_TIMEZONE = 'UTC'

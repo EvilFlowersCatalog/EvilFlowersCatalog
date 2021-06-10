@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
 from django_api_forms import Form, FormField, FileField, FormFieldList
 
-from apps.core.models import Catalog, Language, Author, Category, Currency, Entry
+from apps.core.models import Language, Author, Category, Currency
 from apps.core.models import Acquisition
 
 

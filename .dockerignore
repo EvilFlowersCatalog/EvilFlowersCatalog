@@ -1,0 +1,9 @@
+.idea/
+venv/
+.github/
+evil_flowers_catalog.egg-info/
+.editorconfig
+.env
+.env.example
+.flake8
+.gitignore
