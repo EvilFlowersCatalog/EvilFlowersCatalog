@@ -10,7 +10,8 @@ services:
   django:
     build: .
     volumes:
-      - .:/usr/local/app
+      - ./media:/usr/local/app/media
+      - ./private:/usr/local/app/private
     environment:
       - DATABASE_HOST=db
       - DATABASE_NAME=evil_flowers_catalog

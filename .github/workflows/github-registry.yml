@@ -1,4 +1,4 @@
-name: Docker image publish
+name: Github Docker registry publish
 
 on:
   push:
