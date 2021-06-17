@@ -22,6 +22,12 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Install dependencies
+        run: pip3 install --user poetry
+
+      - name: Create requirements.txt
+        run: poetry export -f requirements.txt > requirements.txt
+
       - name: Build image
         run: docker build . --file Dockerfile --tag $IMAGE_NAME
 
