@@ -19,7 +19,7 @@ class ApiKeyManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        if 'user_id' not in form.cleaned_data.keys() and not request.user.is_superuser:
+        if 'user_id' in form.cleaned_data.keys() and not request.user.is_superuser:
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         api_key = ApiKey(user=request.user)
