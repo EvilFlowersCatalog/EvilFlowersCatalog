@@ -29,7 +29,28 @@ Implementation is based on these RFCs:
 - [RFC7617: The 'Basic' HTTP Authentication Scheme](https://datatracker.ietf.org/doc/html/rfc7617)
 - [RFC6705: The OAuth 2.0 Authorization Framework: Bearer Token Usage](https://datatracker.ietf.org/doc/html/rfc6750)
 
-## Install
+## Installation
+
+### Docker
+
+Pre-build Docker images are available on these registries:
+
+- DockerHub: [sibyx/evilflowers](https://hub.docker.com/repository/docker/sibyx/evilflowers)
+- GitHub Package Registry: [evilflowers](https://github.com/Sibyx/EvilFlowersCatalog/packages/653168)
+
+Repository contains working example of `docker-compose.yml` configured for development environment. You can use
+similar configuration also for production usage.  The application image will be build from the source.
+
+Setup steps (container name may differ):
+
+1. Initialize containers `docker-compose up`
+2. Import languages and currencies `docker exec -it evilflowerscatalog_django_1 python manage.py basic_setup`
+   (optional)
+3. Create superuser `docker exec -it evilflowerscatalog_django_1 python manage.py createsuperuser`
+
+Server started on port 8000.
+
+### From source
 
 We use [poetry](https://python-poetry.org/) for dependency management and [PostgreSQL](https://www.postgresql.org/) 10+
 as a store data. To set up instance with demo database follow these simple steps:
@@ -39,11 +60,8 @@ as a store data. To set up instance with demo database follow these simple steps
 3. Install dependencies `poetry install`
 4. Create `.env` file according `.env.example`
 5. Execute migrations `python manage.py migrate`
-6. Load example database `python manage.py loaddata users.json api_keys.json`
-7. You can import currencies and languages using `python manage.py basic_setup`
-
-Default superuser name: `arthur.dent@example.com`
-Default superuser password: `admin`
+6. You can import currencies and languages using `python manage.py basic_setup`
+7. Create superuser using `python manage.py createsuperuser`
 
 ---
 Made with ❤️ and ☕️ Jakub Dubec

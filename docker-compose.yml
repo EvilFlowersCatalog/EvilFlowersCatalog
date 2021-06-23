@@ -2,7 +2,7 @@ services:
   db:
     image: postgres:13-alpine
     volumes:
-      - ./data/evil_flowers_catalog/db:/var/lib/postgresql/data
+      - ./data/db:/var/lib/postgresql/data
     environment:
       - POSTGRES_DB=evil_flowers_catalog
       - POSTGRES_USER=postgres

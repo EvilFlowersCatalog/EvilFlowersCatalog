@@ -19,3 +19,4 @@ node_modules/
 /private/
 !/private/.gitkeep
 requirements.txt
+/data/

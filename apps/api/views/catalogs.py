@@ -20,7 +20,9 @@ class CatalogManagement(SecuredView):
             raise ValidationException(request, form)
 
         if Catalog.objects.filter(url_name=form.cleaned_data['url_name']).exists():
-            raise ProblemDetailException(request, title=_('Catalog url_name already taken'), status=HTTPStatus.CONFLICT)
+            raise ProblemDetailException(
+                request, title=_('Catalog url_name already taken'), status=HTTPStatus.CONFLICT
+            )
 
         catalog = Catalog(creator=request.api_key.user)
         form.fill(catalog)
@@ -63,7 +65,9 @@ class CatalogDetail(SecuredView):
         catalog = self._get_catalog(request, catalog_id)
 
         if Catalog.objects.exclude(pk=catalog.pk).filter(url_name=form.cleaned_data['url_name']).exists():
-            raise ProblemDetailException(request, title=_('Catalog url_name already taken'), status=HTTPStatus.CONFLICT)
+            raise ProblemDetailException(
+                request, title=_('Catalog url_name already taken'), status=HTTPStatus.CONFLICT
+            )
 
         form.fill(catalog)
         catalog.save()

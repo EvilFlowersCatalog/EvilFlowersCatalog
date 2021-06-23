@@ -25,7 +25,7 @@ FROM python:3.9-alpine
 WORKDIR /usr/src/app
 
 # Dependencies
-RUN apk add --no-cache supervisor curl libpq redis
+RUN apk add --no-cache supervisor curl libpq redis postgresql-client
 COPY --from=builder /root/.local /root/.local
 COPY --from=builder /usr/src/app /usr/src/app
 
