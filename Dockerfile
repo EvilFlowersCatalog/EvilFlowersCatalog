@@ -7,10 +7,14 @@ ENV PYTHONUNBUFFERED 1
 
 # System setup
 RUN apk update
-RUN apk add --no-cache pkgconfig libffi-dev make gcc musl-dev python3-dev openssl-dev cargo postgresql-dev
+RUN apk add --no-cache pkgconfig libffi-dev make gcc musl-dev python3-dev openssl-dev cargo postgresql-dev curl
 
 # Copy source
 COPY . .
+
+# Poetry
+RUN curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
+RUN /root/.poetry/bin/poetry export -f requirements.txt > requirements.txt
 
 # Dependencies
 RUN pip install --user gunicorn
