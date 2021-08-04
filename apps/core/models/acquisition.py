@@ -1,3 +1,4 @@
+import base64
 from typing import Optional
 
 from django.conf import settings
@@ -46,6 +47,11 @@ class Acquisition(BaseModel):
         if not self.content:
             return None
         return f"{settings.BASE_URL}{reverse('acquisition_download', kwargs={'acquisition_id': self.pk})}"
+
+    @property
+    def base64(self) -> Optional[str]:
+        encoded = base64.b64encode(self.content.read()).decode('ascii')
+        return f"data:{self.mime};base64,{encoded}"
 
 
 __all__ = [

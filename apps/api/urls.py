@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.api.views import catalogs, feeds, entries, api_keys, users
+from apps.api.views import catalogs, feeds, entries, api_keys, users, acquisitions
 
 urlpatterns = [
     # API keys
@@ -23,4 +23,7 @@ urlpatterns = [
     path("entries", entries.EntryPaginator.as_view()),
     path("catalogs/<uuid:catalog_id>/entries", entries.EntryManagement.as_view()),
     path("catalogs/<uuid:catalog_id>/entries/<uuid:entry_id>", entries.EntryDetail.as_view()),
+
+    # Acquisitions
+    path("acquisitions/<uuid:acquisition_id>", acquisitions.AcquisitionDetail.as_view()),
 ]

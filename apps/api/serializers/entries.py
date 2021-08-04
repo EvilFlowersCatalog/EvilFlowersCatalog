@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from porcupine.base import Serializer
@@ -40,6 +40,13 @@ class AcquisitionSerializer:
     class Base(Nested):
         id: UUID
 
+    class Detailed(Base):
+        content: str = None
+
+        @staticmethod
+        def resolve_content(data: Acquisition) -> Optional[str]:
+            return data.base64
+
 
 class EntrySerializer:
     class Base(Serializer):
@@ -57,5 +64,5 @@ class EntrySerializer:
         summary: str = None
         content: str = None
         identifiers: List[str] = None
-        acquisitions: List[AcquisitionSerializer.Nested] = None
+        acquisitions: List[AcquisitionSerializer.Base] = None
         # contributors: List[AuthorSerializer.Base] = None
