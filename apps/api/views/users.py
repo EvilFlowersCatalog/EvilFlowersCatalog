@@ -37,9 +37,7 @@ class UserManagement(SecuredView):
     def get(self, request):
         users = UserFilter(request.GET, queryset=User.objects.all(), request=request).qs
 
-        return PaginationResponse(
-            request, users, page=request.GET.get('page', 1), serializer=UserSerializer.Base
-        )
+        return PaginationResponse(request, users, serializer=UserSerializer.Base)
 
 
 class UserDetail(SecuredView):

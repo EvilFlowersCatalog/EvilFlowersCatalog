@@ -33,9 +33,7 @@ class CatalogManagement(SecuredView):
     def get(self, request):
         catalogs = CatalogFilter(request.GET, queryset=Catalog.objects.all(), request=request).qs
 
-        return PaginationResponse(
-            request, catalogs, page=request.GET.get('page', 1), serializer=CatalogSerializer.Base
-        )
+        return PaginationResponse(request, catalogs, serializer=CatalogSerializer.Base)
 
 
 class CatalogDetail(SecuredView):

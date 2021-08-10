@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Type, Union, Optional, Any, List
 
-from django.core.paginator import Paginator
+from django.conf import settings
+from django.core.paginator import Paginator, EmptyPage
 from django.http import HttpResponse
 from django.utils.translation import gettext as _
 from porcupine.base import Serializer
@@ -107,36 +108,41 @@ class ValidationResponse(GeneralResponse):
 
 class PaginationResponse(GeneralResponse):
     def __init__(
-        self, request, qs, page: int, limit: Union[int, None] = None, ordering: Ordering = None, **kwargs
+        self, request, qs, ordering: Ordering = None, **kwargs
     ):
         kwargs.setdefault('content_type', 'application/json')
+
+        # Pagination
+        limit = int(request.GET.get('limit', settings.PAGINATION['DEFAULT_LIMIT']))
+        page = int(request.GET.get('page', 1))
 
         # Ordering
         ordering = ordering if ordering else Ordering.create_from_request(request)
         qs = qs.order_by(str(ordering))
 
-        if limit is None:
-            data = {
-                'items': qs,
-                'metadata': {
-                    'page': int(page),
-                    'limit': None,
-                    'pages': 1,
-                    'total': qs.count()
-                }
-            }
-        else:
-            paginator = Paginator(qs, limit)
+        paginator = Paginator(qs, limit)
 
-            data = {
-                'items': paginator.get_page(page),
-                'metadata': {
-                    'page': int(page),
-                    'limit': paginator.per_page,
-                    'pages': paginator.num_pages,
-                    'total': paginator.count
-                }
+        try:
+            paginator.validate_number(page)
+        except EmptyPage as e:
+            raise ProblemDetailException(
+                request,
+                title=_('Page not found'),
+                status=HTTPStatus.NOT_FOUND,
+                previous=e,
+                detail_type='out_of_range',
+                detail=_('That page contains no results')
+            )
+
+        data = {
+            'items': paginator.get_page(page),
+            'metadata': {
+                'page': page,
+                'limit': paginator.per_page,
+                'pages': paginator.num_pages,
+                'total': paginator.count
             }
+        }
 
         super().__init__(request, data, **kwargs)
 

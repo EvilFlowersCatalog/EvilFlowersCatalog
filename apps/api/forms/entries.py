@@ -23,10 +23,13 @@ class PriceForm(Form):
     value = forms.DecimalField(max_digits=12, decimal_places=4)
 
 
-class AcquisitionForm(Form):
+class AcquisitionMetaForm(Form):
     relation = forms.ChoiceField(choices=Acquisition.AcquisitionType.choices, required=False)
-    content = FileField(mime=Acquisition.AcquisitionMIME.values)
     prices = FormFieldList(PriceForm, required=False)
+
+
+class AcquisitionForm(AcquisitionMetaForm):
+    content = FileField(mime=Acquisition.AcquisitionMIME.values)
 
 
 class UpdateEntryForm(Form):

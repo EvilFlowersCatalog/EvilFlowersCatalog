@@ -31,9 +31,7 @@ class ApiKeyManagement(SecuredView):
     def get(self, request):
         api_keys = ApiKeyFilter(request.GET, queryset=ApiKey.objects.all(), request=request).qs
 
-        return PaginationResponse(
-            request, api_keys, page=request.GET.get('page', 1), serializer=ApiKeySerializer.Base
-        )
+        return PaginationResponse(request, api_keys, serializer=ApiKeySerializer.Base)
 
 
 class ApiKeyDetail(SecuredView):

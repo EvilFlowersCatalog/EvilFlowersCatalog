@@ -42,9 +42,7 @@ class FeedManagement(SecuredView):
     def get(self, request):
         feeds = FeedFilter(request.GET, queryset=Feed.objects.all(), request=request).qs
 
-        return PaginationResponse(
-            request, feeds, page=request.GET.get('page', 1), serializer=FeedSerializer.Base
-        )
+        return PaginationResponse(request, feeds, serializer=FeedSerializer.Base)
 
 
 class FeedDetail(SecuredView):

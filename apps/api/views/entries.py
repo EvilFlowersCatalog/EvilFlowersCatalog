@@ -1,3 +1,4 @@
+import json
 import mimetypes
 import uuid
 from http import HTTPStatus
@@ -8,9 +9,9 @@ from django.utils.translation import gettext as _
 
 from apps.api.errors import ValidationException, ProblemDetailException
 from apps.api.filters.entries import EntryFilter
-from apps.api.forms.entries import CreateEntryForm, UpdateEntryForm
+from apps.api.forms.entries import CreateEntryForm, UpdateEntryForm, AcquisitionMetaForm
 from apps.api.response import SingleResponse, PaginationResponse
-from apps.api.serializers.entries import EntrySerializer
+from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer
 from apps.api.views.base import SecuredView
 from apps.core.models import Entry, Acquisition, Price, Catalog
 
@@ -19,9 +20,7 @@ class EntryPaginator(SecuredView):
     def get(self, request):
         entries = EntryFilter(request.GET, queryset=Entry.objects.all(), request=request).qs
 
-        return PaginationResponse(
-            request, entries, page=request.GET.get('page', 1), serializer=EntrySerializer.Base
-        )
+        return PaginationResponse(request, entries, serializer=EntrySerializer.Base)
 
 
 class EntryManagement(SecuredView):
@@ -87,9 +86,49 @@ class EntryDetail(SecuredView):
 
         return SingleResponse(request, entry, serializer=EntrySerializer.Detailed)
 
-    def put(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
+    def post(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
         entry = self._get_entry(request, catalog_id, entry_id)
 
+        try:
+            metadata = json.loads(request.POST.get('metadata', '{}'))
+        except json.JSONDecodeError as e:
+            raise ProblemDetailException(
+                request,
+                title=_('Unable to parse metadata for request file'),
+                status=HTTPStatus.BAD_REQUEST,
+                previous=e
+            )
+
+        form = AcquisitionMetaForm(metadata, request)
+
+        if not form.is_valid():
+            raise ValidationException(request, form)
+
+        acquisition = Acquisition(
+            entry=entry,
+            relation=form.cleaned_data.get('relation', Acquisition.AcquisitionType.ACQUISITION),
+            mime=request.FILES['content'].content_type
+        )
+
+        if 'content' in request.FILES.keys():
+            acquisition.content.save(
+                f"{uuid.uuid4()}{mimetypes.guess_extension(acquisition.mime)}",
+                request.FILES['content']
+            )
+
+        for price in form.cleaned_data.get('prices', []):
+            Price.objects.create(
+                acquisition=acquisition,
+                currency=price['currency_code'],
+                value=price['value']
+            )
+
+        return SingleResponse(
+            request, acquisition, serializer=AcquisitionSerializer.Detailed, status=HTTPStatus.CREATED
+        )
+
+    def put(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
+        entry = self._get_entry(request, catalog_id, entry_id)
         form = UpdateEntryForm.create_from_request(request)
 
         if not form.is_valid():
