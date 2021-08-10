@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Type, Union, Optional, Any, List
+from typing import Type, Optional, Any, List
 
 from django.conf import settings
 from django.core.paginator import Paginator, EmptyPage
