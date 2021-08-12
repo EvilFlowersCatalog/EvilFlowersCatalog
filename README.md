@@ -35,10 +35,8 @@ Implementation is based on these RFCs:
 
 ### Docker
 
-Pre-build Docker images are available on these registries:
-
-- DockerHub: [sibyx/evilflowers](https://hub.docker.com/repository/docker/sibyx/evilflowers)
-- GitHub Package Registry: [evilflowers](https://github.com/Sibyx/EvilFlowersCatalog/packages/653168)
+Pre-build Docker image is available on GitHub Container registry as
+[evilflowers](https://github.com/Sibyx/EvilFlowersCatalog/pkgs/container/EvilFlowersCatalog%2Fevilflowers).
 
 Repository contains working example of `docker-compose.yml` configured for development environment. You can use
 similar configuration also for production usage.  The application image will be build from the source.
