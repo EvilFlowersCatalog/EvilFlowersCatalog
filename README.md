@@ -44,16 +44,17 @@ similar configuration also for production usage.  The application image will be 
 Setup steps (container name may differ):
 
 1. Initialize containers `docker-compose up`
-2. Import languages and currencies `docker exec -it evilflowerscatalog_django_1 python manage.py basic_setup`
+2. Import languages and currencies `docker exec -it evilflowerscatalog_django_1 python3 manage.py basic_setup`
    (optional)
-3. Create superuser `docker exec -it evilflowerscatalog_django_1 python manage.py createsuperuser`
+3. Create superuser `docker exec -it evilflowerscatalog_django_1 python3 manage.py createsuperuser`
 
 Server started on port 8000.
 
 ### From source
 
-We use [poetry](https://python-poetry.org/) for dependency management and [PostgreSQL](https://www.postgresql.org/) 10+
-as a store data. To set up instance with demo database follow these simple steps:
+We use [poetry](https://python-poetry.org/) for dependency management and [PostgreSQL](https://www.postgresql.org/) 13
+(10+ should be compatible) as a data storage (acquisition files are stored on the filesystem, not in the database).
+To set up instance with demo database follow these simple steps:
 
 1. Create python virtual environment (`python -m venv venv`)
 2. Enter environment (`source venv/bin/activate`)

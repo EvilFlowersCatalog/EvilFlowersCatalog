@@ -18,6 +18,7 @@ requests = "^2.24.0"
 django-filter = "^2.4.0"
 django-celery-beat = "^2.2.0"
 redis = "^3.5.3"
+idna = "^3.2"
 
 [tool.poetry.dev-dependencies]
 fabric = "^2.5.0"
