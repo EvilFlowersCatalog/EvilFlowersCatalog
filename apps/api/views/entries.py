@@ -9,7 +9,7 @@ from django.utils.translation import gettext as _
 
 from apps.api.errors import ValidationException, ProblemDetailException
 from apps.api.filters.entries import EntryFilter
-from apps.api.forms.entries import CreateEntryForm, UpdateEntryForm, AcquisitionMetaForm
+from apps.api.forms.entries import EntryForm, AcquisitionMetaForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer
 from apps.api.views.base import SecuredView
@@ -34,7 +34,7 @@ class EntryManagement(SecuredView):
         if catalog.creator != request.api_key.user:
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-        form = CreateEntryForm.create_from_request(request)
+        form = EntryForm.create_from_request(request)
         form.fields['category_id'].queryset = form.fields['category_id'].queryset.filter(catalog=catalog)
         form.fields['author_id'].queryset = form.fields['author_id'].queryset.filter(catalog=catalog)
 
@@ -64,6 +64,12 @@ class EntryManagement(SecuredView):
                     currency=price['currency_code'],
                     value=price['value']
                 )
+
+        for contributor in form.cleaned_data.get('contributor_ids', []):
+            entry.contributor_set.add(contributor)
+
+        for feed in form.cleaned_data.get('feeds', []):
+            entry.feeds.add(feed)
 
         return SingleResponse(request, entry, serializer=EntrySerializer.Detailed, status=HTTPStatus.CREATED)
 
@@ -129,13 +135,17 @@ class EntryDetail(SecuredView):
 
     def put(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
         entry = self._get_entry(request, catalog_id, entry_id)
-        form = UpdateEntryForm.create_from_request(request)
+        form = EntryForm.create_from_request(request)
 
         if not form.is_valid():
             raise ValidationException(request, form)
 
         entry.fill(form, request.api_key.user)
         entry.save()
+
+        entry.feeds.clear()
+        for feed in form.cleaned_data.get('feeds', []):
+            entry.feeds.add(feed)
 
         return SingleResponse(request, entry, serializer=EntrySerializer.Detailed)
 

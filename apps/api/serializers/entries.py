@@ -4,6 +4,7 @@ from uuid import UUID
 
 from porcupine.base import Serializer
 
+from apps.api.serializers.feeds import FeedSerializer
 from apps.core.models import Acquisition
 
 
@@ -65,4 +66,5 @@ class EntrySerializer:
         content: str = None
         identifiers: List[str] = None
         acquisitions: List[AcquisitionSerializer.Base] = None
+        feeds: List[FeedSerializer.Base] = None
         # contributors: List[AuthorSerializer.Base] = None
