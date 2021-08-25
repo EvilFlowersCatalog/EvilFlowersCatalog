@@ -8,5 +8,4 @@ from .category import Category
 from .entry import Entry
 from .price import Price
 from .author import Author
-from .contributor import Contributor
 from .acquisition import Acquisition

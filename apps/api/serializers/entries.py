@@ -67,4 +67,4 @@ class EntrySerializer:
         identifiers: List[str] = None
         acquisitions: List[AcquisitionSerializer.Base] = None
         feeds: List[FeedSerializer.Base] = None
-        # contributors: List[AuthorSerializer.Base] = None
+        contributors: List[AuthorSerializer.Base] = None

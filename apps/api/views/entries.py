@@ -12,6 +12,7 @@ from apps.api.filters.entries import EntryFilter
 from apps.api.forms.entries import EntryForm, AcquisitionMetaForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer
+from apps.api.services.entry import EntryService
 from apps.api.views.base import SecuredView
 from apps.core.models import Entry, Acquisition, Price, Catalog
 
@@ -31,7 +32,7 @@ class EntryManagement(SecuredView):
         except Catalog.DoesNotExist as e:
             raise ProblemDetailException(request, _("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        if catalog.creator != request.api_key.user:
+        if catalog.creator != request.user:
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         form = EntryForm.create_from_request(request)
@@ -41,35 +42,9 @@ class EntryManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        entry = Entry(creator=request.api_key.user, catalog=catalog)
-        entry.fill(form, request.api_key.user)
-        entry.save()
-
-        for record in form.cleaned_data.get('acquisitions', []):
-            acquisition = Acquisition(
-                entry=entry,
-                relation=record.get('relation'),
-                mime=record['content'].content_type
-            )
-
-            if 'content' in record.keys():
-                acquisition.content.save(
-                    f"{uuid.uuid4()}{mimetypes.guess_extension(acquisition.mime)}",
-                    record['content']
-                )
-
-            for price in record.get('prices', []):
-                Price.objects.create(
-                    acquisition=acquisition,
-                    currency=price['currency_code'],
-                    value=price['value']
-                )
-
-        for contributor in form.cleaned_data.get('contributor_ids', []):
-            entry.contributor_set.add(contributor)
-
-        for feed in form.cleaned_data.get('feeds', []):
-            entry.feeds.add(feed)
+        entry = Entry(creator=request.user, catalog=catalog)
+        service = EntryService(catalog, request.user)
+        service.fill(entry, form)
 
         return SingleResponse(request, entry, serializer=EntrySerializer.Detailed, status=HTTPStatus.CREATED)
 
@@ -140,12 +115,10 @@ class EntryDetail(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        entry.fill(form, request.api_key.user)
-        entry.save()
-
-        entry.feeds.clear()
-        for feed in form.cleaned_data.get('feeds', []):
-            entry.feeds.add(feed)
+        service = EntryService(
+            Catalog.objects.get(pk=catalog_id), request.user
+        )
+        service.fill(entry, form)
 
         return SingleResponse(request, entry, serializer=EntrySerializer.Detailed)
 

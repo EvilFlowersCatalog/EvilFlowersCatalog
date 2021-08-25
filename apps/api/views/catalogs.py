@@ -24,7 +24,7 @@ class CatalogManagement(SecuredView):
                 request, title=_('Catalog url_name already taken'), status=HTTPStatus.CONFLICT
             )
 
-        catalog = Catalog(creator=request.api_key.user)
+        catalog = Catalog(creator=request.user)
         form.fill(catalog)
         catalog.save()
 

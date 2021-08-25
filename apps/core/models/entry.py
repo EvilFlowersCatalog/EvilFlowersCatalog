@@ -1,7 +1,6 @@
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.utils.translation import gettext as _
-from django_api_forms import Form
 
 from apps.core.models.author import Author
 from apps.core.models.language import Language
@@ -28,31 +27,9 @@ class Entry(BaseModel):
     title = models.CharField(max_length=255)
     summary = models.TextField(null=True)
     content = models.TextField(null=True)
-
-    def fill(self, form: Form, creator: User) -> 'Entry':
-        form.fill(self)
-
-        if 'author' in form.cleaned_data.keys():
-            author, created = Author.objects.get_or_create(
-                catalog=self.catalog,
-                name=form.cleaned_data['author']['name'],
-                surname=form.cleaned_data['author']['surname']
-            )
-            self.author = author
-
-        if 'category' in form.cleaned_data.keys():
-            category, created = Category.objects.get_or_create(
-                creator=creator,
-                catalog=self.catalog,
-                term=form.cleaned_data['category']['term']
-            )
-            if created:
-                category.label = form.cleaned_data['category'].get('label')
-                category.scheme = form.cleaned_data['category'].get('scheme')
-                category.save()
-            self.category = category
-
-        return self
+    contributors = models.ManyToManyField(
+        Author, related_name='contribution_entries', db_table='contributors', verbose_name=_('Contributor'),
+    )
 
 
 __all__ = [
