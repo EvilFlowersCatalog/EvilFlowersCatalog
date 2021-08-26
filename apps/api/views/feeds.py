@@ -25,7 +25,7 @@ class FeedManagement(SecuredView):
         if Feed.objects.filter(
             catalog=form.cleaned_data['catalog_id'],
             url_name=form.cleaned_data['url_name']
-        ):
+        ).exists():
             raise ProblemDetailException(
                 request, _("Feed with same url_name already exists in same catalog"), status=HTTPStatus.CONFLICT
             )

@@ -14,13 +14,18 @@ class AuthorSerializer:
         name: str
         surname: str
 
+    class Detailed(Base):
+        catalog_id: UUID
+        created_at: datetime
+        updated_at: datetime
+
 
 class CategorySerializer:
     class Base(Serializer):
         id: UUID
         term: str
 
-    class Detail(Base):
+    class Detailed(Base):
         label: str = None
         scheme: str = None
 

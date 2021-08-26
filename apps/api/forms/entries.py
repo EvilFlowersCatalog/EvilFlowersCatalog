@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
 from django_api_forms import Form, FormField, FileField, FormFieldList, FieldList
 
-from apps.core.models import Language, Author, Category, Currency, Feed
+from apps.core.models import Language, Author, Category, Currency, Feed, Catalog
 from apps.core.models import Acquisition
 
 
@@ -16,6 +16,10 @@ class CategoryForm(Form):
 class AuthorForm(Form):
     name = forms.CharField(max_length=255)
     surname = forms.CharField(max_length=255)
+
+
+class CreateAuthorForm(AuthorForm):
+    catalog_id = forms.ModelChoiceField(queryset=Catalog.objects.all())
 
 
 class PriceForm(Form):
