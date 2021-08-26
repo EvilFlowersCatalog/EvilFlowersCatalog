@@ -17,8 +17,7 @@ class AuthorFilter(django_filters.FilterSet):
     @staticmethod
     def filter_query(qs, name, value):
         return qs.filter(
-            Q(name__unaccent__icontains=value) |
-            Q(surname__unaccent__icontains=value)
+            Q(name__unaccent__icontains=value) | Q(surname__unaccent__icontains=value)
         )
 
     @property
