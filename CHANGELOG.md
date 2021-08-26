@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 - 2021-08-26
+
+- **Feature**: Extended CRUDs in RESTful API (authors, entries)
+- **Feature**: Containerisation
+- **Feature**: Acquisition uploads
+
 ## 0.1.0 - 2021-06-23
 
 Initial minimum valuable product pre-release.
