@@ -1,6 +1,5 @@
 from http import HTTPStatus
 
-from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils.translation import gettext as _
@@ -8,7 +7,7 @@ from django.views import View
 
 from apps.api.views.base import SecuredView
 from apps.core.errors import ProblemDetailException
-from apps.core.models import Catalog, Feed, Entry
+from apps.core.models import Catalog, Feed
 
 
 class OpdsView(SecuredView):
@@ -46,7 +45,7 @@ class FeedView(OpdsView):
         except Feed.DoesNotExist:
             return HttpResponse("Feed not found", status=HTTPStatus.NOT_FOUND)
 
-        return render(request, f'opds/feed.xml', {
+        return render(request, 'opds/feed.xml', {
             'feed': feed
         }, content_type=f'application/atom+xml;profile=opds-catalog;kind={feed.kind}')
 
@@ -63,7 +62,7 @@ class ShelfFeedView(OpdsView):
 
 class LatestFeedView(OpdsView):
     def get(self, request, catalog_name: str):
-        entries = Entry.objects.filter(catalog=self.catalog).order_by('created_at')[settings.OPDS['NEW_LIMIT']]
+        # entries = Entry.objects.filter(catalog=self.catalog).order_by('created_at')[settings.OPDS['NEW_LIMIT']]
 
         # return render(request, f'opds/new_feed.xml', {
         #     'entries': entries
