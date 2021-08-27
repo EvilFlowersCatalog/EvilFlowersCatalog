@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import List
 from uuid import UUID
 
 from porcupine.base import Serializer
@@ -10,7 +11,8 @@ class FeedSerializer:
     class Base(Serializer):
         id: UUID
         catalog_id: UUID
-        parent_id: UUID = None
+        parents: list = []
+        children: list = []
         creator_id: UUID
         title: str
         kind: Feed.FeedKind
@@ -20,3 +22,11 @@ class FeedSerializer:
         per_page: int = None
         created_at: datetime
         updated_at: datetime
+
+        @staticmethod
+        def resolve_parents(data: Feed) -> List[UUID]:
+            return list(data.parents.all().values_list('id', flat=True))
+
+        @staticmethod
+        def resolve_children(data: Feed) -> List[UUID]:
+            return list(data.children.all().values_list('id', flat=True))

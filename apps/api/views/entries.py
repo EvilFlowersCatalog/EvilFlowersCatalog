@@ -7,7 +7,7 @@ from django.db import transaction
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext as _
 
-from apps.api.errors import ValidationException, ProblemDetailException
+from apps.core.errors import ValidationException, ProblemDetailException
 from apps.api.filters.entries import EntryFilter
 from apps.api.forms.entries import EntryForm, AcquisitionMetaForm
 from apps.api.response import SingleResponse, PaginationResponse

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 : TBD
+
+- **Feature**: `Feed` can have multiple parents
+- **Feature**: `OpdsView` introduced
+- **Feature**: Public/Private `Catalog`
+
 ## 0.2.0 - 2021-08-26
 
 - **Feature**: Extended CRUDs in RESTful API (authors, entries)

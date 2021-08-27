@@ -4,7 +4,7 @@ from http import HTTPStatus
 from django.http import FileResponse
 from django.utils.translation import gettext as _
 
-from apps.api.errors import ProblemDetailException
+from apps.core.errors import ProblemDetailException
 from apps.api.views.base import SecuredView
 from apps.core.models import Acquisition
 

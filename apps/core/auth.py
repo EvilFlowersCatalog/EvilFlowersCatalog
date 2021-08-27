@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
-from apps.api.errors import ProblemDetailException
+from apps.core.errors import ProblemDetailException
 from apps.core.models import ApiKey
 
 

@@ -4,7 +4,7 @@ from django.contrib.auth import authenticate
 from django.utils.translation import gettext as _
 from django.views import View
 
-from apps.api.errors import ProblemDetailException
+from apps.core.errors import ProblemDetailException
 
 
 class SecuredView(View):

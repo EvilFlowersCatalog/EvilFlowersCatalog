@@ -10,7 +10,7 @@ from django.utils.translation import gettext as _
 from porcupine.base import Serializer
 
 from apps.api.encoders import ApiJSONEncoder
-from apps.api.errors import ValidationException, ProblemDetailException
+from apps.core.errors import ValidationException, ProblemDetailException
 
 
 @dataclass

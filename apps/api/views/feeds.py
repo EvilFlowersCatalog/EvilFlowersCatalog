@@ -3,7 +3,7 @@ from uuid import UUID
 
 from django.utils.translation import gettext as _
 
-from apps.api.errors import ValidationException, ProblemDetailException
+from apps.core.errors import ValidationException, ProblemDetailException
 from apps.api.filters.feeds import FeedFilter
 from apps.api.forms.feeds import FeedForm
 from apps.api.response import SingleResponse, PaginationResponse
@@ -37,6 +37,9 @@ class FeedManagement(SecuredView):
         if 'entries' in form.cleaned_data.keys():
             feed.entries.add(*form.cleaned_data['entries'])
 
+        if 'parents' in form.cleaned_data.keys():
+            feed.parents.add(*form.cleaned_data['parents'])
+
         return SingleResponse(request, feed, serializer=FeedSerializer.Base, status=HTTPStatus.CREATED)
 
     def get(self, request):
@@ -64,9 +67,10 @@ class FeedDetail(SecuredView):
         return SingleResponse(request, feed, serializer=FeedSerializer.Base)
 
     def put(self, request, feed_id: UUID):
-        form = FeedForm.create_from_request(request)
-
         feed = self._get_feed(request, feed_id)
+
+        form = FeedForm.create_from_request(request)
+        form['parents'].queryset = form['parents'].queryset.exclude(pk=feed.pk)
 
         if not form.is_valid():
             raise ValidationException(request, form)
@@ -85,6 +89,10 @@ class FeedDetail(SecuredView):
         if feed.kind == Feed.FeedKind.ACQUISITION and 'entries' in form.cleaned_data.keys():
             feed.entries.clear()
             feed.entries.add(*form.cleaned_data['entries'])
+
+        if feed.kind == Feed.FeedKind.NAVIGATION and 'parents' in form.cleaned_data.keys():
+            feed.parents.clear()
+            feed.parents.add(*form.cleaned_data['parents'])
 
         return SingleResponse(request, feed, serializer=FeedSerializer.Base)
 

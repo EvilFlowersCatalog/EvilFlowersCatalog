@@ -14,8 +14,8 @@ class Feed(BaseModel):
         app_label = 'core'
         db_table = 'feeds'
         default_permissions = ()
-        verbose_name = _('Catalog')
-        verbose_name_plural = _('Catalogs')
+        verbose_name = _('Feed')
+        verbose_name_plural = _('Feeds')
         unique_together = (
             ('creator_id', 'title'),
             ('creator_id', 'url_name')
@@ -30,7 +30,6 @@ class Feed(BaseModel):
 
     catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE, related_name='feeds')
     creator = models.ForeignKey(User, on_delete=models.CASCADE)
-    parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, related_name='subsections')
     title = models.CharField(max_length=100)
     url_name = models.SlugField()
     kind = models.CharField(max_length=20, choices=FeedKind.choices)
@@ -38,10 +37,11 @@ class Feed(BaseModel):
     content = models.TextField()
     per_page = models.IntegerField(null=True)
     entries = models.ManyToManyField(Entry, related_name='feeds')
+    parents = models.ManyToManyField('self', related_name='children', db_table='feed_parents', symmetrical=False)
 
     @property
     def url(self):
-        return f"{settings.BASE_URL}{reverse('subsection', args=[self.catalog.url_name, self.url_name])}"
+        return f"{settings.BASE_URL}{reverse('feed', args=[self.catalog.url_name, self.url_name])}"
 
 
 __all__ = [

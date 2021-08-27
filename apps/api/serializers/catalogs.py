@@ -10,5 +10,6 @@ class CatalogSerializer:
         creator_id: UUID
         url_name: str
         title: str
+        is_public: bool
         created_at: datetime
         updated_at: datetime

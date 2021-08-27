@@ -3,7 +3,7 @@ from uuid import UUID
 
 from django.utils.translation import gettext as _
 
-from apps.api.errors import ProblemDetailException
+from apps.core.errors import ProblemDetailException
 from apps.api.response import SingleResponse
 from apps.api.serializers.entries import AcquisitionSerializer
 from apps.api.views.base import SecuredView

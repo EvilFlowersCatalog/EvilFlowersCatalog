@@ -32,22 +32,21 @@
         </content>
     {% endif %}
 
-    <link rel="http://opds-spec.org/image"
-          href="/covers/4561.lrg.png"
-          type="image/png"/>
-    <link rel="http://opds-spec.org/image/thumbnail"
-          href="/covers/4561.thmb.gif"
-          type="image/gif"/>
+{#    <link rel="http://opds-spec.org/image"#}
+{#          href="/covers/4561.lrg.png"#}
+{#          type="image/png"/>#}
+{#    <link rel="http://opds-spec.org/image/thumbnail"#}
+{#          href="/covers/4561.thmb.gif"#}
+{#          type="image/gif"/>#}
 
     <link rel="alternate"
           href="/opds-catalogs/entries/4571.complete.xml"
           type="application/atom+xml;type=entry;profile=opds-catalog"
           title="Complete Catalog Entry for Bob, Son of Bob"/>
 
-    <link rel="http://opds-spec.org/acquisition"
-          href="/content/free/4561.epub"
-          type="application/epub+zip"/>
-    <link rel="http://opds-spec.org/acquisition"
-          href="/content/free/4561.mobi"
-          type="application/x-mobipocket-ebook"/>
+    {% for acquisition in entry.acquisitions.all %}
+        <link rel="{{ acquisition.relation }}"
+          href="{{ acquisition.url }}"
+          type="{{ acquisition.mime }}"/>
+    {% endfor %}
 </entry>

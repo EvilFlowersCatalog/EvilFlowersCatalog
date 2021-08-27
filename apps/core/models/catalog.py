@@ -20,6 +20,7 @@ class Catalog(BaseModel):
     url_name = models.SlugField(unique=True)
     title = models.CharField(max_length=100)
     users = models.ManyToManyField(User, related_name='catalogs')
+    is_public = models.BooleanField(default=False)
 
 
 __all__ = [

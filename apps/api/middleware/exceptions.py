@@ -1,4 +1,4 @@
-from apps.api.errors import ProblemDetailException, ValidationException
+from apps.core.errors import ProblemDetailException, ValidationException
 from apps.api.response import ErrorResponse, ValidationResponse
 
 

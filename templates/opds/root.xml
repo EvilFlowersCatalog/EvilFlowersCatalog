@@ -34,12 +34,12 @@
         <content type="text">{% translate "Recent publications from this catalog." %}</content>
     </entry>
 
-    {% for feed in catalog.feeds.all %}
+    {% for feed in feeds %}
     <entry>
             <title>{{ feed.title }}</title>
             <link
                     rel="subsection"
-                    href="{% url 'subsection' catalog_name=catalog.url_name feed_name=feed.url_name %}"
+                    href="{{ feed.url }}"
                     type="application/atom+xml;profile=opds-catalog;kind={{ feed.kind }}"
             />
             <id>urn:uuid:{{ feed.id }}</id>

@@ -3,7 +3,7 @@ from uuid import UUID
 
 from django.utils.translation import gettext as _
 
-from apps.api.errors import ValidationException, ProblemDetailException
+from apps.core.errors import ValidationException, ProblemDetailException
 from apps.api.filters.authors import AuthorFilter
 from apps.api.forms.entries import CreateAuthorForm
 from apps.api.response import SingleResponse, PaginationResponse
