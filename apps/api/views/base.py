@@ -1,6 +1,8 @@
 from http import HTTPStatus
 
+from django.conf import settings
 from django.contrib.auth import authenticate
+from django.utils.text import slugify
 from django.utils.translation import gettext as _
 from django.views import View
 
@@ -16,7 +18,7 @@ class SecuredView(View):
             raise ProblemDetailException(
                 request, _("Invalid or missing Authorization header"), status=HTTPStatus.UNAUTHORIZED,
                 extra_headers=(
-                    ('WWW-Authenticate', 'Bearer realm="evil-flowers-catalog'),  # TODO: application name
+                    ('WWW-Authenticate', f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),
                 )
             )
 
@@ -30,7 +32,7 @@ class SecuredView(View):
                 _("Unauthorized"),
                 status=HTTPStatus.UNAUTHORIZED,
                 extra_headers=(
-                    ('WWW-Authenticate', 'Bearer realm="evil-flowers-catalog'),  # TODO: application name
+                    ('WWW-Authenticate', f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),
                 )
             )
 

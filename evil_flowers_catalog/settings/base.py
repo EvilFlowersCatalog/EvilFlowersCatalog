@@ -26,6 +26,7 @@ if os.path.exists(ENV_FILE):
     load_dotenv(dotenv_path=ENV_FILE, verbose=True)
 
 BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:8000')
+INSTANCE_NAME = os.getenv('INSTANCE_NAME', 'Evil Flowers Catalog')
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/3.1/howto/deployment/checklist/
@@ -71,8 +72,7 @@ ROOT_URLCONF = 'evil_flowers_catalog.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates']
-        ,
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -80,6 +80,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'apps.opds.context_processors.basic_settings'
             ],
         },
     },

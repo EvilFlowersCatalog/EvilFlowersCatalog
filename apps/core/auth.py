@@ -1,9 +1,11 @@
 import base64
 from http import HTTPStatus
 
+from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from django.utils.text import slugify
 from django.utils.translation import gettext as _
 
 from apps.core.errors import ProblemDetailException
@@ -34,7 +36,7 @@ class BasicBackend(ModelBackend):
                 _('Invalid credentials'),
                 status=HTTPStatus.UNAUTHORIZED,
                 extra_headers=(
-                    ('WWW-Authenticate', 'Bearer realm="ewil-flowers-catalog'),  # TODO: application name
+                    ('WWW-Authenticate', f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),
                 )
             )
         return user

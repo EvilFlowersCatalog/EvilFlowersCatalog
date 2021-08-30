@@ -25,7 +25,7 @@ from apps.opds import urls as opds_urlpatterns
 urlpatterns = []
 urlpatterns += [
     path(r'api/v1/', include(api_urlpatterns)),
-    path(r'opds/', include(opds_urlpatterns)),
+    path(r'opds/1.2/', include(opds_urlpatterns)),
     path(r'data/', include(files_urlpatterns)),
 ]
 

@@ -1,7 +1,8 @@
+{% load i18n %}
 <entry>
     <title>{{ entry.title }}</title>
     <id>urn:uuid:{{ entry.id }}</id>
-    <updated>{{ entry.updated_at }}</updated>
+    <updated>{{ entry.updated_at|date:"c" }}</updated>
     {% if entry.author %}
         <author>
             <name>{{ entry.author.full_name }}</name>
@@ -26,9 +27,9 @@
         </summary>
     {% endif %}
 
-    {% if entry.summary %}
+    {% if is_complete and entry.content %}
         <content type="text">
-        {{ entry.content }}
+            {{ entry.content }}
         </content>
     {% endif %}
 
@@ -40,9 +41,9 @@
 {#          type="image/gif"/>#}
 
     <link rel="alternate"
-          href="/opds-catalogs/entries/4571.complete.xml"
+          href="{% url 'complete_entry' catalog_name=entry.catalog.url_name entry_id=entry.id %}"
           type="application/atom+xml;type=entry;profile=opds-catalog"
-          title="Complete Catalog Entry for Bob, Son of Bob"/>
+          title="{% translate "Complete Catalog Entry for" %} {{ entry.title }}"/>
 
     {% for acquisition in entry.acquisitions.all %}
         <link rel="{{ acquisition.relation }}"

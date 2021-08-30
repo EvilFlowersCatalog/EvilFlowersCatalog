@@ -1,5 +1,9 @@
 {% load i18n %}<?xml version="1.0" encoding="UTF-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opds="http://opds-spec.org/2010/catalog">
+<feed
+        xmlns="http://www.w3.org/2005/Atom"
+        xmlns:opds="http://opds-spec.org/2010/catalog"
+        xml:base="{{ BASIC_SETTINGS.BASE_URL }}"
+>
     <id>urn:uuid:{{ catalog.id }}</id>
     <link rel="self"
           href="{% url 'root' catalog_name=catalog.url_name %}"
@@ -20,7 +24,7 @@
               href="{% url 'popular' catalog_name=catalog.url_name %}"
               type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
         <updated>2010-01-10T10:01:01Z</updated>
-        <id>urn:uuid:d49e8018-a0e0-499e-9423-7c175fa0c56e</id>
+        <id>{% url 'popular' catalog_name=catalog.url_name %}</id>
         <content type="text">{% translate "Popular publications from this catalog based on downloads." %}</content>
     </entry>
 
@@ -30,7 +34,7 @@
               href="{% url 'new' catalog_name=catalog.url_name %}"
               type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
         <updated>2010-01-10T10:02:00Z</updated>
-        <id>urn:uuid:d49e8018-a0e0-499e-9423-7c175fa0c56c</id>
+        <id>{% url 'new' catalog_name=catalog.url_name %}</id>
         <content type="text">{% translate "Recent publications from this catalog." %}</content>
     </entry>
 

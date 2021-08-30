@@ -14,12 +14,9 @@ and [OPDS 2.0](https://drafts.opds.io/opds-2.0) specification. Ordered list bell
 
 1. [ ] OPDS 1.2
     - [ ] Feeds and catalogs
-        - [ ] Listing Acquisition Feeds
-        - [ ] Complete Acquisition Feeds (`/opds/catalogs/:catalog.xml`)
-        - [ ] Shelves (`/opds/shelves/:user.xml`)
+        - [ ] Shelves (`/opds/shelves/:user`)
     - [ ] Search
-    - [ ] Facets
-    - [ ] OPDS Catalog Entry Documents
+    - [ ] Pagination
     - [ ] Additional Link Relations
 2. [ ] OPDS 2
 3. [ ] Permissions system for API

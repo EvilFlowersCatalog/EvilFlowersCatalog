@@ -1,0 +1,30 @@
+{% extends 'opds/feeds/feed.xml' %}
+{% load i18n %}
+<?xml version="1.0" encoding="UTF-8"?>
+
+{% block id %}
+    <id>
+        tag:{{ catalog.creator.email }},{% now 'Y-m-d' %}:{{ INSTANCE_NAME|slugify }}:{{ catalog.pk }}:/sort/latest
+    </id>
+{% endblock %}
+
+{% block navigation %}
+    <link rel="self"
+          href="{% url 'new' catalog_name=catalog.url_name %}"
+          type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+    <link rel="start"
+          href="{% url 'new' catalog_name=catalog.url_name  %}"
+          type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+    <link rel="up"
+              href="{% url 'root' catalog_name=catalog.url_name %}"
+              type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+{% endblock %}
+
+{% block basic_info %}
+    <title>{% translate "The latest entries" %}</title>
+    <updated>{{ updated_at|date:"c" }}</updated>
+    <author>
+        <name>{{ catalog.creator.full_name }}</name>
+        <email>{{ catalog.creator.email }}</email>
+    </author>
+{% endblock %}

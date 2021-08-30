@@ -22,7 +22,7 @@ class Entry(BaseModel):
     catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE, related_name='entries')
     author = models.ForeignKey(Author, on_delete=models.CASCADE, null=True, related_name='entries')
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='entries', null=True)
-    language = models.ForeignKey(Language, on_delete=models.CASCADE, related_name='+', null=True)
+    language = models.ForeignKey(Language, on_delete=models.CASCADE, related_name='entries', null=True)
     identifiers = ArrayField(models.CharField(max_length=100), null=True)
     title = models.CharField(max_length=255)
     summary = models.TextField(null=True)

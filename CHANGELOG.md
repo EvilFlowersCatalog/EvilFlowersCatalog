@@ -1,10 +1,13 @@
 # Changelog
 
-## 0.3.0 : TBD
+## 0.3.0 : 2021-08-30
 
 - **Feature**: `Feed` can have multiple parents
 - **Feature**: `OpdsView` introduced
 - **Feature**: Public/Private `Catalog`
+- **Feature**: OPDS facets
+- **Feature**: Complete OPDS catalog acquisition feed
+- **Change**: URL routes for OPDS
 
 ## 0.2.0 - 2021-08-26
 
