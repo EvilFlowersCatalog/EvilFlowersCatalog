@@ -112,35 +112,47 @@ class PaginationResponse(GeneralResponse):
     ):
         kwargs.setdefault('content_type', 'application/json')
 
-        # Pagination
-        limit = int(request.GET.get('limit', settings.PAGINATION['DEFAULT_LIMIT']))
-        page = int(request.GET.get('page', 1))
-
         # Ordering
         ordering = ordering if ordering else Ordering.create_from_request(request)
         qs = qs.order_by(str(ordering))
 
-        paginator = Paginator(qs, limit)
+        # Pagination
+        paginate = request.GET.get('paginate', 'true') == 'true'
+        if paginate:
+            limit = int(request.GET.get('limit', settings.PAGINATION['DEFAULT_LIMIT']))
+            page = int(request.GET.get('page', 1))
 
-        try:
-            paginator.validate_number(page)
-        except EmptyPage as e:
-            raise ProblemDetailException(
-                request,
-                title=_('Page not found'),
-                status=HTTPStatus.NOT_FOUND,
-                previous=e,
-                detail_type='out_of_range',
-                detail=_('That page contains no results')
-            )
+            paginator = Paginator(qs, limit)
+
+            try:
+                paginator.validate_number(page)
+            except EmptyPage as e:
+                raise ProblemDetailException(
+                    request,
+                    title=_('Page not found'),
+                    status=HTTPStatus.NOT_FOUND,
+                    previous=e,
+                    detail_type='out_of_range',
+                    detail=_('That page contains no results')
+                )
+
+            items = paginator.get_page(page)
+            num_pages = paginator.num_pages
+            total = paginator.count
+        else:
+            limit = None
+            page = 1
+            items = qs
+            num_pages = 1
+            total = qs.count()
 
         data = {
-            'items': paginator.get_page(page),
+            'items': items,
             'metadata': {
                 'page': page,
-                'limit': paginator.per_page,
-                'pages': paginator.num_pages,
-                'total': paginator.count
+                'limit': limit,
+                'pages': num_pages,
+                'total': total
             }
         }
 
