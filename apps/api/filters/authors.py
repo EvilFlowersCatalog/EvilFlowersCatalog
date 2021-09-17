@@ -1,5 +1,6 @@
 import django_filters
-from django.db.models import Q
+from django.db.models import Q, Value, CharField
+from django.db.models.functions import Concat
 
 from apps.core.models import Author
 
@@ -16,9 +17,16 @@ class AuthorFilter(django_filters.FilterSet):
 
     @staticmethod
     def filter_query(qs, name, value):
-        return qs.filter(
-            Q(name__unaccent__icontains=value) | Q(surname__unaccent__icontains=value)
-        )
+        return qs.annotate(
+            search_query=Concat(
+                'name',
+                Value(' '),
+                'surname',
+                output_field=CharField()
+            )
+        ).filter(
+            search_query__unaccent__icontains=value
+        ).distinct()
 
     @property
     def qs(self):
