@@ -1,5 +1,5 @@
 import django_filters
-from django.db.models import Q, Value, CharField
+from django.db.models import Value, CharField
 from django.db.models.functions import Concat
 
 from apps.core.models import Author
