@@ -200,5 +200,12 @@ PAGINATION = {
 }
 
 OPDS = {
-    'NEW_LIMIT': 20
+    'NEW_LIMIT': 20,
+    'IMAGE_UPLOAD_MAX_SIZE': 1024 * 1024 * 5,  # 5MB
+    'IMAGE_MIME': (
+        'image/gif',
+        'image/jpeg',
+        'image/png',
+    ),
+    'IMAGE_THUMBNAIL': (768, 480)
 }

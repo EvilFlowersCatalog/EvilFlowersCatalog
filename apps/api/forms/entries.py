@@ -1,7 +1,8 @@
 from django import forms
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
-from django_api_forms import Form, FormField, FileField, FormFieldList, FieldList
+from django_api_forms import Form, FormField, FileField, FormFieldList, FieldList, ImageField
 
 from apps.core.models import Language, Author, Category, Currency, Feed, Catalog
 from apps.core.models import Acquisition
@@ -50,6 +51,9 @@ class EntryForm(Form):
     content = forms.CharField(required=False)
     acquisitions = FormFieldList(AcquisitionForm, required=False)
     identifiers = FieldList(forms.CharField(max_length=100), required=False)
+    image = ImageField(
+        max_length=settings.OPDS['IMAGE_UPLOAD_MAX_SIZE'], mime=settings.OPDS['IMAGE_MIME'], required=False
+    )
 
     def clean(self):
         if 'author_id' in self.cleaned_data.keys() and 'author' in self.cleaned_data.keys():

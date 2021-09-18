@@ -17,7 +17,6 @@ and [OPDS 2.0](https://drafts.opds.io/opds-2.0) specification. Ordered list bell
         - [ ] Shelves (`/opds/shelves/:user`)
     - [ ] Search
     - [ ] Pagination
-    - [ ] Additional Link Relations
 2. [ ] OPDS 2
 3. [ ] Permissions system for API
    - [ ] Use [django-object-checker](https://github.com/zurek11/django-object-checker) for permission checking

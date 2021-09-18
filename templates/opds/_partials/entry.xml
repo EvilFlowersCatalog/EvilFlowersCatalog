@@ -33,12 +33,14 @@
         </content>
     {% endif %}
 
-{#    <link rel="http://opds-spec.org/image"#}
-{#          href="/covers/4561.lrg.png"#}
-{#          type="image/png"/>#}
-{#    <link rel="http://opds-spec.org/image/thumbnail"#}
-{#          href="/covers/4561.thmb.gif"#}
-{#          type="image/gif"/>#}
+    {% if entry.image %}
+        <link rel="http://opds-spec.org/image"
+          href="{% url 'cover_download' entry.id %}"
+          type="{{ entry.image_mime }}"/>
+    <link rel="http://opds-spec.org/image/thumbnail"
+          href="{{ entry.thumbnail_base64 }}"
+          type="{{ entry.image_mime }}"/>
+    {% endif %}
 
     <link rel="alternate"
           href="{% url 'complete_entry' catalog_name=entry.catalog.url_name entry_id=entry.id %}"

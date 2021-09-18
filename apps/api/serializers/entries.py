@@ -5,7 +5,7 @@ from uuid import UUID
 from porcupine.base import Serializer
 
 from apps.api.serializers.feeds import FeedSerializer
-from apps.core.models import Acquisition
+from apps.core.models import Acquisition, Entry
 
 
 class AuthorSerializer:
@@ -63,8 +63,23 @@ class EntrySerializer:
         category: CategorySerializer.Base = None
         language: LanguageSerializer.Base = None
         title: str
+        image: str = None
+        image_mime: str = None
+        thumbnail: str = None
         created_at: datetime
         updated_at: datetime
+
+        @staticmethod
+        def resolve_image(data: Entry) -> Optional[str]:
+            if not data.image:
+                return None
+            return data.image_url
+
+        @staticmethod
+        def resolve_thumbnail(data: Entry) -> Optional[str]:
+            if not data.image:
+                return None
+            return data.thumbnail_base64
 
     class Detailed(Base):
         summary: str = None

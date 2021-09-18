@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0 : TBD
+
+- **Feature**: Images and thumbnails
+
 ## 0.3.0 : 2021-08-30
 
 - **Feature**: `Feed` can have multiple parents

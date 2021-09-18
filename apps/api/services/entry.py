@@ -1,5 +1,9 @@
 import mimetypes
 import uuid
+from io import BytesIO
+
+from django.conf import settings
+from django.core.files import File
 
 from apps.api.forms.entries import EntryForm
 from apps.core.models import Catalog, User, Entry, Author, Category, Acquisition, Price
@@ -74,5 +78,27 @@ class EntryService:
             entry.feeds.clear()
             for feed in form.cleaned_data.get('feeds', []):
                 entry.feeds.add(feed)
+
+        if 'image' in form.cleaned_data:
+            if form.cleaned_data['image'] is None:
+                entry.image = None
+                entry.image_mime = None
+                entry.thumbnail = None
+            else:
+                entry.image_mime = form.cleaned_data['image'].content_type
+
+                entry.image.save(
+                    f"cover{mimetypes.guess_extension(entry.image_mime)}",
+                    form.cleaned_data['image']
+                )
+
+                buffer = BytesIO()
+                thumbnail = form.cleaned_data['image'].image.copy()
+                thumbnail.thumbnail(settings.OPDS['IMAGE_THUMBNAIL'])
+                thumbnail.save(buffer, format=form.cleaned_data['image'].image.format)
+                entry.thumbnail.save(
+                    f"thumbnail{mimetypes.guess_extension(entry.image_mime)}",
+                    File(buffer)
+                )
 
         return entry
