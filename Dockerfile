@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED 1
 
 # System setup
 RUN apk update
-RUN apk add --no-cache pkgconfig libffi-dev make gcc musl-dev python3 python3-dev openssl-dev cargo postgresql-dev curl py3-pip
+RUN apk add --no-cache pkgconfig libffi-dev make gcc musl-dev python3 python3-dev openssl-dev cargo postgresql-dev curl py3-pip jpeg-dev zlib-dev
 
 # Copy source
 COPY . .
