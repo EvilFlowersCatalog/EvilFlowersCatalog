@@ -1,6 +1,6 @@
 FROM alpine:3.14 as builder
 
-WORKDIR /usr/src/app
+WORKDIR /root
 
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
@@ -9,14 +9,17 @@ ENV PYTHONUNBUFFERED 1
 RUN apk update
 RUN apk add --no-cache pkgconfig libffi-dev make gcc musl-dev python3 python3-dev openssl-dev cargo postgresql-dev curl py3-pip jpeg-dev zlib-dev
 
+# Prepare Poetry
+RUN python3 -m venv poetry
+RUN env VIRTUAL_ENV=/root/poetry pip install poetry
+
+WORKDIR /usr/src/app
+
 # Copy source
 COPY . .
 
-# Poetry
-RUN curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python3 -
-RUN /root/.poetry/bin/poetry export -f requirements.txt > requirements.txt
-
 # Dependencies
+RUN env VIRTUAL_ENV=/root/poetry poetry export -f requirements.txt > requirements.txt
 RUN pip3 install --user gunicorn
 RUN pip3 install --user -r requirements.txt
 
@@ -25,7 +28,7 @@ FROM alpine:3.14
 WORKDIR /usr/src/app
 
 # Dependencies
-RUN apk add --no-cache python3 supervisor curl libpq redis postgresql-client
+RUN apk add --no-cache python3 supervisor curl libpq postgresql-client jpeg zlib py3-argon2-cffi
 COPY --from=builder /root/.local /root/.local
 COPY --from=builder /usr/src/app /usr/src/app
 

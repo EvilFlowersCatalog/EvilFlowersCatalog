@@ -9,18 +9,32 @@ services:
       - POSTGRES_DB=evil_flowers_catalog
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
   django:
     build: .
     volumes:
       - ./media:/usr/local/app/media
       - ./private:/usr/local/app/private
+      - ./logs:/var/log
     environment:
       - DATABASE_HOST=db
       - DATABASE_NAME=evil_flowers_catalog
       - DATABASE_USER=postgres
       - DATABASE_PASSWORD=postgres
       - DJANGO_SETTINGS_MODULE=evil_flowers_catalog.settings.development
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
     ports:
       - 8000:8000
     depends_on:
       - db
+  redis:
+    image: "redis:alpine"
+    command: redis-server
+    ports:
+     - "6379:6379"
+    volumes:
+      - ./data/redis:/var/lib/redis
+    environment:
+     - REDIS_REPLICATION_MODE=master

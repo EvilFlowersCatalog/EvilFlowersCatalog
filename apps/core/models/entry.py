@@ -22,6 +22,9 @@ class Entry(BaseModel):
         default_permissions = ()
         verbose_name = _('Entry')
         verbose_name_plural = _('Entries')
+        indexes = [
+            models.Index(fields=['deleted_at', 'catalog_id', '-popularity']),
+        ]
 
     def _upload_to_path(self, filename):
         return f"catalogs/{self.catalog.url_name}/{self.pk}/{filename}"
@@ -41,6 +44,7 @@ class Entry(BaseModel):
     image = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=private_storage)
     image_mime = models.CharField(max_length=100, null=True)
     thumbnail = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=private_storage)
+    popularity = models.PositiveBigIntegerField(default=0, null=False)
 
     @property
     def image_url(self) -> Optional[str]:
