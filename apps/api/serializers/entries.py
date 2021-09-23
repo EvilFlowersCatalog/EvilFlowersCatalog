@@ -62,6 +62,7 @@ class EntrySerializer:
         author: AuthorSerializer.Base = None
         category: CategorySerializer.Base = None
         language: LanguageSerializer.Base = None
+        popularity: int
         title: str
         image: str = None
         image_mime: str = None
