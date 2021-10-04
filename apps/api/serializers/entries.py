@@ -60,7 +60,7 @@ class EntrySerializer:
         creator_id: UUID
         catalog_id: UUID
         author: AuthorSerializer.Base = None
-        category: CategorySerializer.Base = None
+        categories: List[CategorySerializer.Base] = None
         language: LanguageSerializer.Base = None
         popularity: int
         title: str

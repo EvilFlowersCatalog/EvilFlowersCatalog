@@ -25,19 +25,26 @@ class EntryService:
             )
             entry.author = author
 
-        if 'category' in form.cleaned_data.keys():
-            category, created = Category.objects.get_or_create(
-                creator=self._creator,
-                catalog=self._catalog,
-                term=form.cleaned_data['category']['term']
-            )
-            if created:
-                category.label = form.cleaned_data['category'].get('label')
-                category.scheme = form.cleaned_data['category'].get('scheme')
-                category.save()
-            entry.category = category
-
         entry.save()
+
+        if 'categories' in form.cleaned_data.keys():
+            entry.categories.clear()
+            for record in form.cleaned_data.get('categories', []):
+                category, created = Category.objects.get_or_create(
+                    creator=self._creator,
+                    catalog=self._catalog,
+                    term=record['term']
+                )
+                if created:
+                    category.label = record.get('label')
+                    category.scheme = record.get('scheme')
+                    category.save()
+                entry.categories.add(category)
+
+        if 'category_ids' in form.cleaned_data.keys():
+            entry.contributors.clear()
+            for contributor in form.cleaned_data.get('category_ids', []):
+                entry.categories.add(contributor)
 
         for record in form.cleaned_data.get('acquisitions', []):
             acquisition = Acquisition(

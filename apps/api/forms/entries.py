@@ -41,11 +41,11 @@ class EntryForm(Form):
     language_code = forms.ModelChoiceField(queryset=Language.objects.all(), to_field_name='code')
     author_id = forms.ModelChoiceField(queryset=Author.objects.all(), required=False)
     author = FormField(AuthorForm, required=False)
-    category_id = forms.ModelChoiceField(queryset=Category.objects.all(), required=False)
+    category_ids = forms.ModelMultipleChoiceField(queryset=Category.objects.all(), required=False)
     contributors = FormFieldList(AuthorForm, required=False)
     contributor_ids = forms.ModelMultipleChoiceField(queryset=Author.objects.all(), required=False)
     feeds = forms.ModelMultipleChoiceField(queryset=Feed.objects.all(), required=False)
-    category = FormField(CategoryForm, required=False)
+    categories = FormFieldList(CategoryForm, required=False)
     title = forms.CharField(max_length=255)
     summary = forms.CharField(required=False)
     content = forms.CharField(required=False)
@@ -59,8 +59,8 @@ class EntryForm(Form):
         if 'author_id' in self.cleaned_data.keys() and 'author' in self.cleaned_data.keys():
             raise ValidationError(_("You have to provide author_id or author object (not both)"), 'invalid')
 
-        if 'category_id' in self.cleaned_data.keys() and 'category' in self.cleaned_data.keys():
-            raise ValidationError(_("You have to provide category_id or category object (not both)"), 'invalid')
+        if 'category_ids' in self.cleaned_data.keys() and 'categories' in self.cleaned_data.keys():
+            raise ValidationError(_("You have to provide category_ids or categories object (not both)"), 'invalid')
 
         if 'contributor_ids' in self.cleaned_data.keys() and 'contributors' in self.cleaned_data.keys():
             raise ValidationError(

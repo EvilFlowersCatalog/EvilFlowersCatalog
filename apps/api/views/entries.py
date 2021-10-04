@@ -36,7 +36,7 @@ class EntryManagement(SecuredView):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         form = EntryForm.create_from_request(request)
-        form.fields['category_id'].queryset = form.fields['category_id'].queryset.filter(catalog=catalog)
+        form.fields['category_ids'].queryset = form.fields['category_ids'].queryset.filter(catalog=catalog)
         form.fields['author_id'].queryset = form.fields['author_id'].queryset.filter(catalog=catalog)
 
         if not form.is_valid():
@@ -110,7 +110,10 @@ class EntryDetail(SecuredView):
 
     def put(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
         entry = self._get_entry(request, catalog_id, entry_id)
+
         form = EntryForm.create_from_request(request)
+        form.fields['category_ids'].queryset = form.fields['category_ids'].queryset.filter(catalog_id=catalog_id)
+        form.fields['author_id'].queryset = form.fields['author_id'].queryset.filter(catalog_id=catalog_id)
 
         if not form.is_valid():
             raise ValidationException(request, form)

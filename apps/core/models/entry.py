@@ -32,7 +32,6 @@ class Entry(BaseModel):
     creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name='+')
     catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE, related_name='entries')
     author = models.ForeignKey(Author, on_delete=models.CASCADE, null=True, related_name='entries')
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='entries', null=True)
     language = models.ForeignKey(Language, on_delete=models.CASCADE, related_name='entries', null=True)
     identifiers = ArrayField(models.CharField(max_length=100), null=True)
     title = models.CharField(max_length=255)
@@ -40,6 +39,9 @@ class Entry(BaseModel):
     content = models.TextField(null=True)
     contributors = models.ManyToManyField(
         Author, related_name='contribution_entries', db_table='contributors', verbose_name=_('Contributor'),
+    )
+    categories = models.ManyToManyField(
+        Category, related_name='entries', db_table='entry_categories', verbose_name=_('Category')
     )
     image = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=private_storage)
     image_mime = models.CharField(max_length=100, null=True)
