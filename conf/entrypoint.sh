@@ -6,5 +6,6 @@ until PGPASSWORD=$DATABASE_PASSWORD psql -h "$DATABASE_HOST" -U "$DATABASE_USER"
 done
 
 python3 manage.py migrate
+python3 manage.py setup
 
 supervisord -c /etc/supervisord.conf

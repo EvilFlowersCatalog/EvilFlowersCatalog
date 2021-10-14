@@ -14,8 +14,8 @@ class EntryService:
         self._catalog = catalog
         self._creator = creator
 
-    def fill(self, entry: Entry, form: EntryForm) -> Entry:
-        form.fill(entry)
+    def populate(self, entry: Entry, form: EntryForm) -> Entry:
+        form.populate(entry)
 
         if 'author' in form.cleaned_data.keys():
             author, created = Author.objects.get_or_create(

@@ -23,7 +23,7 @@ class ApiKeyManagement(SecuredView):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         api_key = ApiKey(user=request.user)
-        form.fill(api_key)
+        form.populate(api_key)
         api_key.save()
 
         return SingleResponse(request, api_key, serializer=ApiKeySerializer.Base, status=HTTPStatus.CREATED)

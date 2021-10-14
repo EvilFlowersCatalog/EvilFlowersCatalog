@@ -40,9 +40,9 @@ similar configuration also for production usage.  The application image will be 
 Setup steps (container name may differ):
 
 1. Initialize containers `docker-compose up`
-2. Import languages and currencies `docker exec -it evilflowerscatalog_django_1 python3 manage.py basic_setup`
-   (optional)
-3. Create superuser `docker exec -it evilflowerscatalog_django_1 python3 manage.py createsuperuser`
+2. Import languages, currencies and setup CRON jobs
+`docker exec -it evilflowerscatalog_django_1 python3 manage.py setup`
+4. Create superuser `docker exec -it evilflowerscatalog_django_1 python3 manage.py createsuperuser`
 
 Server started on port 8000.
 
@@ -57,7 +57,7 @@ To set up instance with demo database follow these simple steps:
 3. Install dependencies `poetry install`
 4. Create `.env` file according `.env.example`
 5. Execute migrations `python manage.py migrate`
-6. You can import currencies and languages using `python manage.py basic_setup`
+6. Import currencies, languages and setup CRON jobs using `python manage.py setup`
 7. Create superuser using `python manage.py createsuperuser`
 
 ---

@@ -4,6 +4,8 @@
 
 - **Feature**: Images and thumbnails
 - **Feature**: Entry and categories are m:n
+- **Change**: Load countries and languages from [pycountry](https://github.com/flyingcircusio/pycountry)
+- **Feature**: Celery replaced by CRON jobs for periodic tasks
 
 ## 0.3.0 : 2021-08-30
 

@@ -37,7 +37,7 @@ class AuthorManagement(SecuredView):
             )
 
         author = Author()
-        form.fill(author)
+        form.populate(author)
         author.save()
 
         return SingleResponse(request, author, serializer=AuthorSerializer.Detailed, status=HTTPStatus.CREATED)
@@ -77,7 +77,7 @@ class AuthorDetail(SecuredView):
                 request, _("Author already exists in the catalog"), status=HTTPStatus.CONFLICT
             )
 
-        form.fill(author)
+        form.populate(author)
         author.save()
 
         return SingleResponse(request, author, serializer=AuthorSerializer.Detailed)

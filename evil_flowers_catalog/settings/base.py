@@ -51,7 +51,6 @@ INSTALLED_APPS = [
     'django.contrib.postgres',
 
     'django_api_forms',
-    'django_celery_beat',
 
     'apps.core',
     'apps.api',
@@ -187,12 +186,6 @@ if os.getenv('SENTRY_DSN', False):
         before_send=before_send,
     )
 
-# Celery
-CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://127.0.0.1:6379/0')
-CELERY_RESULT_BACKEND = os.getenv('CELERY_BROKER_URL', 'redis://127.0.0.1:6379/0')
-CELERY_ENABLE_UTC = True
-CELERY_TIMEZONE = 'UTC'
-
 # Redis
 REDIS_HOST = os.getenv('REDIS_HOST', '127.0.0.1')
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
@@ -211,5 +204,22 @@ OPDS = {
         'image/jpeg',
         'image/png',
     ),
-    'IMAGE_THUMBNAIL': (768, 480)
+    'IMAGE_THUMBNAIL': (768, 480),
+    'CRON_JOBS': {
+        'popularity': '*/5 * * * *'
+    }
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',
+    },
 }

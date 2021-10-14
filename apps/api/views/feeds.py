@@ -31,7 +31,7 @@ class FeedManagement(SecuredView):
             )
 
         feed = Feed(creator=request.user)
-        form.fill(feed)
+        form.populate(feed)
         feed.save()
 
         if 'entries' in form.cleaned_data.keys():
@@ -83,7 +83,7 @@ class FeedDetail(SecuredView):
                 request, _("Feed with same url_name already exists in same catalog"), status=HTTPStatus.CONFLICT
             )
 
-        form.fill(feed)
+        form.populate(feed)
         feed.save()
 
         if feed.kind == Feed.FeedKind.ACQUISITION and 'entries' in form.cleaned_data.keys():

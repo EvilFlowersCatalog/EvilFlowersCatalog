@@ -13,7 +13,6 @@ class Language(BaseModel):
         verbose_name_plural = _('Languages')
 
     name = models.CharField(max_length=100)
-    native_name = models.CharField(max_length=100, null=True)
     code = models.CharField(max_length=2, unique=True)
 
 

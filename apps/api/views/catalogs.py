@@ -25,7 +25,7 @@ class CatalogManagement(SecuredView):
             )
 
         catalog = Catalog(creator=request.user)
-        form.fill(catalog)
+        form.populate(catalog)
         catalog.save()
 
         return SingleResponse(request, catalog, serializer=CatalogSerializer.Base, status=HTTPStatus.CREATED)
@@ -67,7 +67,7 @@ class CatalogDetail(SecuredView):
                 request, title=_('Catalog url_name already taken'), status=HTTPStatus.CONFLICT
             )
 
-        form.fill(catalog)
+        form.populate(catalog)
         catalog.save()
 
         return SingleResponse(request, catalog, serializer=CatalogSerializer.Base)

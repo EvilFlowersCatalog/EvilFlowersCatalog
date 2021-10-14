@@ -28,7 +28,7 @@ class UserManagement(SecuredView):
             )
 
         user = User()
-        form.fill(user)
+        form.populate(user)
         user.set_password(form.cleaned_data['password'])
         user.save()
 
@@ -66,7 +66,7 @@ class UserDetail(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        form.fill(user)
+        form.populate(user)
         if 'password' in form.cleaned_data.keys():
             user.set_password(form.cleaned_data['password'])
         user.save()

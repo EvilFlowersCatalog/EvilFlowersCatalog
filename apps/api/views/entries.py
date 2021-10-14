@@ -44,7 +44,7 @@ class EntryManagement(SecuredView):
 
         entry = Entry(creator=request.user, catalog=catalog)
         service = EntryService(catalog, request.user)
-        service.fill(entry, form)
+        service.populate(entry, form)
 
         return SingleResponse(request, entry, serializer=EntrySerializer.Detailed, status=HTTPStatus.CREATED)
 
@@ -121,7 +121,7 @@ class EntryDetail(SecuredView):
         service = EntryService(
             Catalog.objects.get(pk=catalog_id), request.user
         )
-        service.fill(entry, form)
+        service.populate(entry, form)
 
         return SingleResponse(request, entry, serializer=EntrySerializer.Detailed)
 
