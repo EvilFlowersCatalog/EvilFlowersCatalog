@@ -23,7 +23,6 @@ services:
       - DATABASE_USER=postgres
       - DATABASE_PASSWORD=postgres
       - DJANGO_SETTINGS_MODULE=evil_flowers_catalog.settings.development
-      - CELERY_BROKER_URL=redis://redis:6379/0
       - REDIS_HOST=redis
     ports:
       - 8000:8000
