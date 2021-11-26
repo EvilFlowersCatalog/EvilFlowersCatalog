@@ -1,4 +1,4 @@
-FROM alpine:3.14 as builder
+FROM alpine:3.15 as builder
 
 WORKDIR /root
 
@@ -23,7 +23,7 @@ RUN env VIRTUAL_ENV=/root/poetry poetry export -f requirements.txt > requirement
 RUN pip3 install --user gunicorn
 RUN pip3 install --user -r requirements.txt
 
-FROM alpine:3.14
+FROM alpine:3.15
 
 WORKDIR /usr/src/app
 
