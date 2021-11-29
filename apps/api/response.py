@@ -114,7 +114,7 @@ class PaginationResponse(GeneralResponse):
 
         # Ordering
         ordering = ordering if ordering else Ordering.create_from_request(request)
-        qs = qs.order_by(str(ordering))
+        qs = qs.order_by(*ordering.columns)
 
         # Pagination
         paginate = request.GET.get('paginate', 'true') == 'true'
