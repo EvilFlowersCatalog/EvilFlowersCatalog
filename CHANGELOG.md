@@ -6,6 +6,7 @@
 - **Feature**: Entry and categories are m:n
 - **Change**: Load countries and languages from [pycountry](https://github.com/flyingcircusio/pycountry)
 - **Feature**: Celery replaced by CRON jobs for periodic tasks
+- **Change**: Django 4.0
 
 ## 0.3.0 : 2021-08-30
 

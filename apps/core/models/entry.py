@@ -1,4 +1,5 @@
 import base64
+import logging
 from typing import Optional
 
 from django.conf import settings
@@ -58,7 +59,11 @@ class Entry(BaseModel):
     def thumbnail_base64(self) -> Optional[str]:
         if not self.thumbnail:
             return None
-        encoded = base64.b64encode(self.thumbnail.read()).decode('ascii')
+        try:
+            encoded = base64.b64encode(self.thumbnail.read()).decode('ascii')
+        except FileNotFoundError:
+            logging.warning("Unable to find %s", self.thumbnail.path)
+            return None
         return f"data:{self.image_mime};base64,{encoded}"
 
 

@@ -1,12 +1,12 @@
 [tool.poetry]
 name = "evil_flowers_catalog"
-version = "0.3.0"
+version = "0.4.0"
 description = "Simple books catalog compatible with OPDS written in Python"
 authors = ["Jakub Dubec <jakub.dubec@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.9"
-django = "^3.2.1"
+django = "^4.0.0"
 django_api_forms = "^0"
 python-dotenv = "^0.19.0"
 argon2-cffi = "^21.0.0"
