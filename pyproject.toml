@@ -16,9 +16,9 @@ porcupine-python = "^0"
 django-imap-backend = "^0"
 django-filter = "^21.0"
 redis = "^4.0"
-Pillow = "^8.3.2"
+Pillow = "^9.0"
 python-crontab = "^2.5.1"
-pycountry = "^20.7.3"
+pycountry = "^22.0"
 
 [tool.poetry.dev-dependencies]
 fabric = "^2.6.0"

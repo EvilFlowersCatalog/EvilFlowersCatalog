@@ -33,6 +33,8 @@ RUN pip install -r requirements.txt --no-cache-dir
 
 FROM alpine:3.15
 
+ENV VERSION="0.4.0"
+
 WORKDIR /usr/src/app
 
 # Dependencies

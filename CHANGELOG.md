@@ -1,12 +1,14 @@
 # Changelog
 
-## 0.4.0 : TBD
+## 0.4.0 : 2022-02-03
 
 - **Feature**: Images and thumbnails
 - **Feature**: Entry and categories are m:n
 - **Change**: Load countries and languages from [pycountry](https://github.com/flyingcircusio/pycountry)
 - **Feature**: Celery replaced by CRON jobs for periodic tasks
+- **Feature**: Status endpoint `GET /api/v1/status`
 - **Change**: Django 4.0
+- **Dependency**: Pillow 9.0
 
 ## 0.3.0 : 2021-08-30
 
