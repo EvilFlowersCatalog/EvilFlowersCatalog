@@ -21,7 +21,6 @@ python-crontab = "^2.5.1"
 pycountry = "^22.0"
 
 [tool.poetry.dev-dependencies]
-fabric = "^2.6.0"
 flake8 = "^4.0.0"
 
 [build-system]
