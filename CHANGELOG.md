@@ -8,7 +8,6 @@
 - **Feature**: Celery replaced by CRON jobs for periodic tasks
 - **Feature**: Status endpoint `GET /api/v1/status`
 - **Change**: Django 4.0
-- **Dependency**: Pillow 9.0
 
 ## 0.3.0 : 2021-08-30
 
