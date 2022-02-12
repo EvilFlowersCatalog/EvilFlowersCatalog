@@ -5,7 +5,7 @@ from django.views import View
 
 from apps.core.errors import ProblemDetailException
 from apps.core.models import Catalog
-from apps.view.base import SecuredView
+from apps.core.views import SecuredView
 
 
 class OpdsView(SecuredView):
