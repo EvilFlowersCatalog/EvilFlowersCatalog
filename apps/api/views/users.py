@@ -9,7 +9,7 @@ from apps.api.forms.users import UserForm, CreateUserForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.users import UserSerializer
 from apps.core.models import User
-from apps.view.base import SecuredView
+from apps.core.views import SecuredView
 
 
 class UserManagement(SecuredView):
@@ -78,3 +78,8 @@ class UserDetail(SecuredView):
         user.hard_delete()
 
         return SingleResponse(request)
+
+
+class UserMe(SecuredView):
+    def get(self, request):
+        return SingleResponse(request, request.user, serializer=UserSerializer.Detailed)

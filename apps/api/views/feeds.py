@@ -9,7 +9,7 @@ from apps.api.forms.feeds import FeedForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.feeds import FeedSerializer
 from apps.core.models import Feed
-from apps.view.base import SecuredView
+from apps.core.views import SecuredView
 
 
 class FeedManagement(SecuredView):

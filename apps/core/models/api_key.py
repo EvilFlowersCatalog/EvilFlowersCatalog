@@ -9,7 +9,7 @@ class ApiKey(BaseModel):
     class Meta:
         app_label = 'core'
         db_table = 'api_keys'
-        default_permissions = ()
+        default_permissions = ('add', )
         verbose_name = _('API key')
         verbose_name_plural = _('API keys')
 

@@ -9,7 +9,7 @@ from apps.api.forms.api_keys import ApiKeyForm
 from apps.api.response import PaginationResponse, SingleResponse
 from apps.api.serializers.api_keys import ApiKeySerializer
 from apps.core.models import ApiKey
-from apps.view.base import SecuredView
+from apps.core.views import SecuredView
 
 
 class ApiKeyManagement(SecuredView):

@@ -9,6 +9,7 @@ urlpatterns = [
 
     # Users
     path('users', users.UserManagement.as_view()),
+    path('users/me', users.UserMe.as_view()),
     path('users/<uuid:user_id>', users.UserDetail.as_view()),
 
     # Catalogs

@@ -7,7 +7,7 @@ from apps.core.errors import ProblemDetailException
 from apps.api.response import SingleResponse
 from apps.api.serializers.entries import AcquisitionSerializer
 from apps.core.models import Acquisition
-from apps.view.base import SecuredView
+from apps.core.views import SecuredView
 
 
 class AcquisitionDetail(SecuredView):

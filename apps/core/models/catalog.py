@@ -1,7 +1,6 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from apps.core.models.user import User
 from apps.core.models.base import BaseModel
 
 
@@ -16,13 +15,15 @@ class Catalog(BaseModel):
             ('creator_id', 'title')
         )
 
-    creator = models.ForeignKey(User, on_delete=models.CASCADE)
+    creator = models.ForeignKey('User', on_delete=models.CASCADE)
     url_name = models.SlugField(unique=True)
     title = models.CharField(max_length=100)
-    users = models.ManyToManyField(User, related_name='catalogs')
+    users = models.ManyToManyField(
+        'User', related_name='catalogs', through='UserCatalog'
+    )
     is_public = models.BooleanField(default=False)
 
 
 __all__ = [
-    'Catalog'
+    'Catalog',
 ]

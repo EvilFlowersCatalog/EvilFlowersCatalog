@@ -11,7 +11,7 @@ from apps.api.forms.tokens import AccessTokenForm, RefreshTokenForm
 from apps.core.auth import JWTFactory
 from apps.core.errors import ValidationException, UnauthorizedException, ProblemDetailException
 from apps.api.response import SingleResponse
-from apps.view.base import SecuredView
+from apps.core.views import SecuredView
 
 
 class AccessTokenManagement(SecuredView):

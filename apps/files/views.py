@@ -8,7 +8,7 @@ from redis import Redis
 
 from apps.core.errors import ProblemDetailException
 from apps.core.models import Acquisition, Entry
-from apps.view.base import SecuredView
+from apps.core.views import SecuredView
 
 
 class AcquisitionDownload(SecuredView):

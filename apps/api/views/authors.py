@@ -9,7 +9,7 @@ from apps.api.forms.entries import CreateAuthorForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.entries import AuthorSerializer
 from apps.core.models import Author
-from apps.view.base import SecuredView
+from apps.core.views import SecuredView
 
 
 class AuthorManagement(SecuredView):

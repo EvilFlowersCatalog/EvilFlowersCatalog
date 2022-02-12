@@ -9,7 +9,7 @@ from apps.api.forms.catalogs import CatalogForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.catalogs import CatalogSerializer
 from apps.core.models import Catalog
-from apps.view.base import SecuredView
+from apps.core.views import SecuredView
 
 
 class CatalogManagement(SecuredView):

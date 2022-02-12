@@ -14,7 +14,7 @@ from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer
 from apps.api.services.entry import EntryService
 from apps.core.models import Entry, Acquisition, Price, Catalog
-from apps.view.base import SecuredView
+from apps.core.views import SecuredView
 
 
 class EntryPaginator(SecuredView):
