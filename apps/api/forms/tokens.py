@@ -2,7 +2,7 @@ from django import forms
 from django_api_forms import Form
 
 
-class CreateTokenFrom(Form):
+class AccessTokenForm(Form):
     username = forms.EmailField()
     password = forms.CharField()
 

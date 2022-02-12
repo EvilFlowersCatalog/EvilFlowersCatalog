@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 : TBD
+
+- **Change**: JWT tokens
+- **Change**: Auth refactor
+- **Feature**: Short-live access tokens: `GET /api/v1/token` and `GET /api/v1/token/refresh` introduced
+
 ## 0.4.0 : 2022-02-03
 
 - **Feature**: Images and thumbnails

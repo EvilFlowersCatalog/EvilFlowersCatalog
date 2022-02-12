@@ -8,8 +8,8 @@ from apps.api.filters.authors import AuthorFilter
 from apps.api.forms.entries import CreateAuthorForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.entries import AuthorSerializer
-from apps.api.views.base import SecuredView
 from apps.core.models import Author
+from apps.view.base import SecuredView
 
 
 class AuthorManagement(SecuredView):

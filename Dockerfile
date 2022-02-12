@@ -38,7 +38,7 @@ ENV VERSION="0.4.0"
 WORKDIR /usr/src/app
 
 # Dependencies
-RUN apk add --no-cache python3 supervisor curl libpq postgresql-client jpeg zlib py3-argon2-cffi
+RUN apk add --no-cache python3 supervisor curl libpq postgresql-client jpeg zlib py3-argon2-cffi tzdata
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /usr/src/app /usr/src/app
 

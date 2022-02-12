@@ -41,8 +41,8 @@ Setup steps (container name may differ):
 
 1. Initialize containers `docker-compose up`
 2. Import languages, currencies and setup CRON jobs
-`docker exec -it evilflowerscatalog_django_1 python3 manage.py setup`
-4. Create superuser `docker exec -it evilflowerscatalog_django_1 python3 manage.py createsuperuser`
+`docker exec -it evilflowerscatalog-django-1 python3 manage.py setup`
+4. Create superuser `docker exec -it evilflowerscatalog-django-1 python3 manage.py createsuperuser`
 
 Server started on port 8000.
 
@@ -55,10 +55,11 @@ To set up instance with demo database follow these simple steps:
 1. Create python virtual environment (`python -m venv venv`)
 2. Enter environment (`source venv/bin/activate`)
 3. Install dependencies `poetry install`
-4. Create `.env` file according `.env.example`
-5. Execute migrations `python manage.py migrate`
-6. Import currencies, languages and setup CRON jobs using `python manage.py setup`
-7. Create superuser using `python manage.py createsuperuser`
+4. Create JWK (if you are not sure how, check this [mkjwk](https://mkjwk.org/) generator) and keep it private
+5. Create `.env` file according `.env.example`
+6. Execute migrations `python manage.py migrate`
+7. Import currencies, languages and setup CRON jobs using `python manage.py setup`
+8. Create superuser using `python manage.py createsuperuser`
 
 ---
 Made with ❤️ and ☕️ Jakub Dubec

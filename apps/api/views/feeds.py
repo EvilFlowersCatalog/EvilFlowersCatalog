@@ -8,8 +8,8 @@ from apps.api.filters.feeds import FeedFilter
 from apps.api.forms.feeds import FeedForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.feeds import FeedSerializer
-from apps.api.views.base import SecuredView
 from apps.core.models import Feed
+from apps.view.base import SecuredView
 
 
 class FeedManagement(SecuredView):

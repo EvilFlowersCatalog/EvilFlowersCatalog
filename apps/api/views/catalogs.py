@@ -8,8 +8,8 @@ from apps.api.filters.catalogs import CatalogFilter
 from apps.api.forms.catalogs import CatalogForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.catalogs import CatalogSerializer
-from apps.api.views.base import SecuredView
 from apps.core.models import Catalog
+from apps.view.base import SecuredView
 
 
 class CatalogManagement(SecuredView):

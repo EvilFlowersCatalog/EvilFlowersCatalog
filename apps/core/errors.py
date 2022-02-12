@@ -4,6 +4,7 @@ from typing import Tuple
 
 import sentry_sdk
 from django.conf import settings
+from django.utils.text import slugify
 from django_api_forms.forms import Form
 
 from django.utils.translation import gettext as _
@@ -81,6 +82,18 @@ class ProblemDetailException(Exception):
             result['trace'] = traceback.format_exc().split("\n")
 
         return result
+
+
+class UnauthorizedException(ProblemDetailException):
+    def __init__(self, request):
+        super().__init__(
+            request,
+            _("Unauthorized"),
+            status=HTTPStatus.UNAUTHORIZED,
+            extra_headers=(
+                ('WWW-Authenticate', f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),
+            )
+        )
 
 
 class ValidationException(ProblemDetailException):

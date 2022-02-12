@@ -1,6 +1,9 @@
 import base64
+import uuid
 from http import HTTPStatus
 
+from authlib.jose import JsonWebToken, jwt
+from authlib.jose.errors import JoseError
 from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import ValidationError
@@ -9,21 +12,84 @@ from django.utils.text import slugify
 from django.utils.translation import gettext as _
 
 from apps.core.errors import ProblemDetailException
-from apps.core.models import ApiKey
+from apps.core.models import ApiKey, User
+
+
+class JWTFactory:
+    def __init__(self, user_id: str):
+        self._user_id = str(user_id)
+
+    def _generate(self, additional_payload: dict) -> str:
+        base_payload = {
+            'iss': settings.BASE_URL,
+            'sub': self._user_id,
+            'iat': timezone.now(),
+        }
+
+        return jwt.encode(
+            header={
+                'alg': settings.SECURED_VIEW_JWT_ALGORITHM
+            },
+            payload={**base_payload, **additional_payload},
+            key=settings.SECURED_VIEW_JWK
+        ).decode()
+
+    def refresh(self) -> tuple:
+        jti = str(uuid.uuid4())
+        return jti, self._generate({
+            'type': 'refresh',
+            'jti': jti,
+            'exp': timezone.now() + settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION,
+        })
+
+    def access(self) -> str:
+        return self._generate({
+            'type': 'access',
+            'exp': timezone.now() + settings.SECURED_VIEW_JWT_ACCESS_TOKEN_EXPIRATION,
+        })
+
+    def api_key(self, jti: str) -> str:
+        return self._generate({
+            'type': 'api_key',
+            'jti': jti,
+        })
+
+    @classmethod
+    def decode(cls, token: str):
+        claims = JsonWebToken(settings.SECURED_VIEW_JWT_ALGORITHM).decode(token, settings.SECURED_VIEW_JWK)
+        claims.validate()
+        return claims
 
 
 class BearerBackend(ModelBackend):
-    def authenticate(self, request, bearer=None):
+    def authenticate(self, request, bearer=None, **kwargs):
         try:
-            api_key = ApiKey.objects.get(pk=bearer, is_active=True)
-        except (ApiKey.DoesNotExist, ValidationError):
-            raise ProblemDetailException(request, _('Invalid api key.'), status=HTTPStatus.UNAUTHORIZED)
+            claims = JWTFactory.decode(bearer)
+        except JoseError as e:
+            raise ProblemDetailException(request, _('Invalid token.'), status=HTTPStatus.UNAUTHORIZED, previous=e)
 
-        api_key.last_seen_at = timezone.now()
-        api_key.save()
+        if claims['type'] == 'api_key':
+            try:
+                api_key = ApiKey.objects.get(pk=claims['jti'], is_active=True)
+            except (ApiKey.DoesNotExist, ValidationError):
+                raise ProblemDetailException(request, _('Invalid api key.'), status=HTTPStatus.UNAUTHORIZED)
 
-        setattr(request, 'api_key', api_key)
-        return api_key.user
+            api_key.last_seen_at = timezone.now()
+            api_key.save()
+            setattr(request, 'api_key', api_key)
+            user = api_key.user
+        elif claims['type'] == 'access':
+            try:
+                user = User.objects.get(pk=claims['sub'])
+            except User.DoesNotExist:
+                raise ProblemDetailException(request, _('Inactive user.'), status=HTTPStatus.FORBIDDEN)
+        else:
+            raise ProblemDetailException(request, _('Invalid token'), status=HTTPStatus.UNAUTHORIZED)
+
+        if not self.user_can_authenticate(user):
+            raise ProblemDetailException(request, _('Inactive user.'), status=HTTPStatus.FORBIDDEN)
+
+        return user
 
 
 class BasicBackend(ModelBackend):
@@ -44,5 +110,6 @@ class BasicBackend(ModelBackend):
 
 __all__ = [
     'BasicBackend',
-    'BearerBackend'
+    'BearerBackend',
+    'JWTFactory'
 ]

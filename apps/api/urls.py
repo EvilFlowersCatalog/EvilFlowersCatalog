@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.api.views import catalogs, feeds, entries, api_keys, users, acquisitions, authors, status
+from apps.api.views import catalogs, feeds, entries, api_keys, users, acquisitions, authors, status, tokens
 
 urlpatterns = [
     # API keys
@@ -32,5 +32,9 @@ urlpatterns = [
     path("acquisitions/<uuid:acquisition_id>", acquisitions.AcquisitionDetail.as_view()),
 
     # Status
-    path("status", status.StatusManagement.as_view(), name='status')
+    path("status", status.StatusManagement.as_view(), name='status'),
+
+    # Tokens
+    path('token/refresh', tokens.RefreshTokenManagement.as_view(), name='refresh'),
+    path('token', tokens.AccessTokenManagement.as_view(), name='login'),
 ]

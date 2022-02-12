@@ -6,8 +6,8 @@ from django.utils.translation import gettext as _
 from apps.core.errors import ProblemDetailException
 from apps.api.response import SingleResponse
 from apps.api.serializers.entries import AcquisitionSerializer
-from apps.api.views.base import SecuredView
 from apps.core.models import Acquisition
+from apps.view.base import SecuredView
 
 
 class AcquisitionDetail(SecuredView):

@@ -8,8 +8,8 @@ from apps.api.filters.api_keys import ApiKeyFilter
 from apps.api.forms.api_keys import ApiKeyForm
 from apps.api.response import PaginationResponse, SingleResponse
 from apps.api.serializers.api_keys import ApiKeySerializer
-from apps.api.views.base import SecuredView
 from apps.core.models import ApiKey
+from apps.view.base import SecuredView
 
 
 class ApiKeyManagement(SecuredView):

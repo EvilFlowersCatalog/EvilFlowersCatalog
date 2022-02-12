@@ -8,8 +8,8 @@ from apps.api.filters.users import UserFilter
 from apps.api.forms.users import UserForm, CreateUserForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.users import UserSerializer
-from apps.api.views.base import SecuredView
 from apps.core.models import User
+from apps.view.base import SecuredView
 
 
 class UserManagement(SecuredView):

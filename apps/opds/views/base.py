@@ -3,9 +3,9 @@ from http import HTTPStatus
 from django.utils.translation import gettext as _
 from django.views import View
 
-from apps.api.views.base import SecuredView
 from apps.core.errors import ProblemDetailException
 from apps.core.models import Catalog
+from apps.view.base import SecuredView
 
 
 class OpdsView(SecuredView):

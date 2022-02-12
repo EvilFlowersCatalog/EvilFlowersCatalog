@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.1/ref/settings/
 """
 import os
+from datetime import timedelta
 from pathlib import Path
 
 import sentry_sdk
@@ -27,12 +28,13 @@ if os.path.exists(ENV_FILE):
 
 BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:8000')
 INSTANCE_NAME = os.getenv('INSTANCE_NAME', 'Evil Flowers Catalog')
+VERSION = os.getenv('VERSION')
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/3.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'oqjwv$mob^(qwlil^8ub8%a@o5@a!^x0j1*^*1m@y46k%(6$+w'
+SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
@@ -45,9 +47,7 @@ ALLOWED_HOSTS = []
 INSTALLED_APPS = [
     'django.contrib.auth',
     'django.contrib.contenttypes',
-    'django.contrib.sessions',
     'django.contrib.messages',
-    'django.contrib.staticfiles',
     'django.contrib.postgres',
 
     'django_api_forms',
@@ -132,9 +132,22 @@ PASSWORD_HASHERS = [
 AUTH_USER_MODEL = "core.User"
 
 AUTHENTICATION_BACKENDS = [
-    'apps.core.auth.BearerBackend',
-    'apps.core.auth.BasicBackend',
+    'django.contrib.auth.backends.ModelBackend',
 ]
+
+SECURED_VIEW_AUTHENTICATION_SCHEMAS = {
+    'Basic': 'apps.core.auth.BasicBackend',
+    'Bearer': 'apps.core.auth.BearerBackend'
+}
+
+SECURED_VIEW_JWT_ALGORITHM = 'RS256'
+SECURED_VIEW_JWK = os.getenv('SECURED_VIEW_JWK')
+SECURED_VIEW_JWT_ACCESS_TOKEN_EXPIRATION = timedelta(
+    minutes=int(os.getenv('SECURED_VIEW_JWT_ACCESS_TOKEN_EXPIRATION', 5))
+)
+SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION = timedelta(
+    minutes=int(os.getenv('SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION', 60 * 24))
+)
 
 # Internationalization
 # https://docs.djangoproject.com/en/3.1/topics/i18n/
