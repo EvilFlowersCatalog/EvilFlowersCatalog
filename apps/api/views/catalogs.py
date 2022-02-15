@@ -3,12 +3,13 @@ from uuid import UUID
 
 from django.utils.translation import gettext as _
 
+from apps.api.services.catalog import CatalogService
 from apps.core.errors import ValidationException, ProblemDetailException
 from apps.api.filters.catalogs import CatalogFilter
 from apps.api.forms.catalogs import CatalogForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.catalogs import CatalogSerializer
-from apps.core.models import Catalog
+from apps.core.models import Catalog, UserCatalog
 from apps.core.views import SecuredView
 
 
@@ -24,11 +25,20 @@ class CatalogManagement(SecuredView):
                 request, title=_('Catalog url_name already taken'), status=HTTPStatus.CONFLICT
             )
 
-        catalog = Catalog(creator=request.user)
-        form.populate(catalog)
-        catalog.save()
+        service = CatalogService()
+        catalog = service.populate(
+            catalog=Catalog(creator=request.user),
+            form=form
+        )
 
-        return SingleResponse(request, catalog, serializer=CatalogSerializer.Base, status=HTTPStatus.CREATED)
+        if not catalog.users.contains(request.user):
+            UserCatalog.objects.create(
+                catalog=catalog,
+                user=request.user,
+                mode=UserCatalog.Mode.MANAGE
+            )
+
+        return SingleResponse(request, catalog, serializer=CatalogSerializer.Detailed, status=HTTPStatus.CREATED)
 
     def get(self, request):
         catalogs = CatalogFilter(request.GET, queryset=Catalog.objects.all(), request=request).qs
@@ -52,7 +62,7 @@ class CatalogDetail(SecuredView):
     def get(self, request, catalog_id: UUID):
         catalog = self._get_catalog(request, catalog_id)
 
-        return SingleResponse(request, catalog, serializer=CatalogSerializer.Base)
+        return SingleResponse(request, catalog, serializer=CatalogSerializer.Detailed)
 
     def put(self, request, catalog_id: UUID):
         form = CatalogForm.create_from_request(request)
@@ -67,10 +77,13 @@ class CatalogDetail(SecuredView):
                 request, title=_('Catalog url_name already taken'), status=HTTPStatus.CONFLICT
             )
 
-        form.populate(catalog)
-        catalog.save()
+        service = CatalogService()
+        catalog = service.populate(
+            catalog=catalog,
+            form=form
+        )
 
-        return SingleResponse(request, catalog, serializer=CatalogSerializer.Base)
+        return SingleResponse(request, catalog, serializer=CatalogSerializer.Detailed)
 
     def delete(self, request, catalog_id: UUID):
         catalog = self._get_catalog(request, catalog_id)

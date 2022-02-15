@@ -8,11 +8,13 @@ from apps.core.models import User
 
 
 class UserSerializer:
-    class Base(Serializer):
+    class Minimal(Serializer):
         id: UUID
         email: str
         name: str
         surname: str
+
+    class Base(Minimal):
         is_superuser: bool
         is_active: bool
         last_login: datetime = None

@@ -9,3 +9,4 @@ from .entry import Entry
 from .price import Price
 from .author import Author
 from .acquisition import Acquisition
+from .user_catalog import UserCatalog
