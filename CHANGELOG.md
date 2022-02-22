@@ -5,6 +5,7 @@
 - **Change**: JWT tokens
 - **Change**: Auth refactor
 - **Feature**: Short-live access tokens: `GET /api/v1/token` and `GET /api/v1/token/refresh` introduced
+- **Change**: [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) enabled for all origins
 
 ## 0.4.0 : 2022-02-03
 

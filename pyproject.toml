@@ -22,6 +22,7 @@ pycountry = "^22.0"
 django-object-checker = "^1.0.0"
 Authlib = "^0.15.5"
 tzdata = "^2021.5"
+django-cors-headers = "^3.11.0"
 
 [tool.poetry.dev-dependencies]
 flake8 = "^4.0.0"

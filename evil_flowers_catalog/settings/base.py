@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.postgres',
 
+    'corsheaders',
     'django_api_forms',
 
     'apps.core',
@@ -236,3 +237,5 @@ LOGGING = {
         'level': 'DEBUG',
     },
 }
+
+CORS_ALLOW_ALL_ORIGINS = True
