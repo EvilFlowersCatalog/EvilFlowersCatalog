@@ -9,7 +9,7 @@ from apps.api.filters.feeds import FeedFilter
 from apps.api.forms.feeds import FeedForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.feeds import FeedSerializer
-from apps.core.models import Feed, Catalog
+from apps.core.models import Feed
 from apps.core.views import SecuredView
 
 

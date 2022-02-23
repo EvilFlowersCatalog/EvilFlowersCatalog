@@ -1,4 +1,4 @@
 [flake8]
-ignore = E203,W503,E704
+ignore = W503,E731
 exclude = .git,.pytest_cache,venv,__pycache__,build,dist,docs,evil_flowers_catalog.egg-info,apps/core/models/__init__.py,apps/core/migrations,evil_flowers_catalog/settings
 max-line-length = 119
