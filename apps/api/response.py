@@ -48,10 +48,15 @@ class GeneralResponse(HttpResponse):
     ):
         params = {}
         if data is not None:
-            content_type = request.headers.get('accept', 'application/json')
-            if content_type in ['*/*', 'application/json']:
+            content_types = str(request.headers.get('accept', 'application/json'))
+            content_types = content_types.split(', ')
+            content_types = list(map(lambda r: r.split(';')[0], content_types))
+
+            if any(x in ['*/*', 'application/json'] for x in content_types):
+                params['content_type'] = 'application/json'
                 params['content'] = json.dumps(data, cls=ApiJSONEncoder, serializer=serializer)
             else:
+                params['content_type'] = 'application/json'
                 params['status'] = HTTPStatus.NOT_ACCEPTABLE
                 params['content'] = json.dumps({
                     'message': _("Not Acceptable"),
@@ -59,7 +64,7 @@ class GeneralResponse(HttpResponse):
                         'available': [
                             'application/json',
                         ],
-                        'asked': content_type
+                        'asked': ', '.join(content_types)
                     }
                 })
 
