@@ -11,7 +11,7 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     class Meta:
         app_label = 'core'
         db_table = 'users'
-        default_permissions = ('add', 'delete')
+        default_permissions = ('add', 'delete', 'change', 'view')
 
     # Basic info
     email = models.EmailField(unique=True)

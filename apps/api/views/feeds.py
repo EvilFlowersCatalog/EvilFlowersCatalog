@@ -2,13 +2,14 @@ from http import HTTPStatus
 from uuid import UUID
 
 from django.utils.translation import gettext as _
+from object_checker.base_object_checker import has_object_permission
 
 from apps.core.errors import ValidationException, ProblemDetailException
 from apps.api.filters.feeds import FeedFilter
 from apps.api.forms.feeds import FeedForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.feeds import FeedSerializer
-from apps.core.models import Feed
+from apps.core.models import Feed, Catalog
 from apps.core.views import SecuredView
 
 
@@ -19,7 +20,7 @@ class FeedManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        if form.cleaned_data['catalog_id'].creator_id != request.user.id:
+        if not has_object_permission('check_catalog_manage', request.user, form.cleaned_data['catalog_id']):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         if Feed.objects.filter(
@@ -52,11 +53,11 @@ class FeedDetail(SecuredView):
     @staticmethod
     def _get_feed(request, feed_id: UUID) -> Feed:
         try:
-            feed = Feed.objects.get(pk=feed_id)
+            feed = Feed.objects.select_related('catalog').get(pk=feed_id)
         except Feed.DoesNotExist as e:
             raise ProblemDetailException(request, _("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        if not request.user.is_superuser and feed.creator_id != request.user.id:
+        if not has_object_permission('check_catalog_manage', request.user, feed.catalog):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return feed

@@ -1,6 +1,6 @@
 import django_filters
 
-from apps.core.models import Feed
+from apps.core.models import Feed, UserCatalog
 
 
 class FeedFilter(django_filters.FilterSet):
@@ -16,12 +16,14 @@ class FeedFilter(django_filters.FilterSet):
     @property
     def qs(self):
         qs = super().qs
-        user = getattr(self.request, 'user', None)
 
-        if not user:
-            return qs.none()
+        if not self.request.user.is_authenticated:
+            return qs.filter(catalog__is_public=True)
 
-        if not user.is_superuser:
-            qs = qs.filter(creator=user)
+        if not self.request.user.is_superuser:
+            qs = qs.filter(
+                catalog__user_catalogs__user=self.request.user,
+                catalog__user_catalogs__mode=UserCatalog.Mode.MANAGE
+            )
 
         return qs

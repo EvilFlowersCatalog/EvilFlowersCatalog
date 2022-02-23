@@ -19,12 +19,11 @@ class UserFilter(django_filters.FilterSet):
     @property
     def qs(self):
         qs = super().qs
-        user = getattr(self.request, 'user', None)
 
-        if not user:
+        if not self.request.user.is_authenticated:
             return qs.none()
 
-        if not user.is_superuser:
-            qs = qs.filter(pk=user.id)
+        if not self.request.user.has_perm('core.view_user'):
+            qs = qs.filter(pk=self.request.user.id)
 
         return qs

@@ -1,6 +1,6 @@
 import traceback
 from http import HTTPStatus
-from typing import Tuple
+from typing import Tuple, Optional
 
 import sentry_sdk
 from django.conf import settings
@@ -16,12 +16,12 @@ class ProblemDetailException(Exception):
         request,
         title: str,
         status: int = HTTPStatus.INTERNAL_SERVER_ERROR,
-        previous: Exception = None,
-        to_sentry: bool = False,
-        additional_data: dict = None,
-        detail_type: str = None,
-        detail: str = None,
-        extra_headers: Tuple[Tuple] = None
+        previous: Optional[BaseException] = None,
+        to_sentry: Optional[bool] = False,
+        additional_data: Optional[dict] = None,
+        detail_type: Optional[str] = None,
+        detail: Optional[str] = None,
+        extra_headers: Optional[Tuple[Tuple]] = ()
     ):
         super().__init__(title)
 
@@ -31,7 +31,9 @@ class ProblemDetailException(Exception):
         self._type = detail_type
         self._detail = detail
         self._previous = previous
-        self._extra_headers = extra_headers
+        self._extra_headers = (
+            ('Content-Type', 'application/problem+json'),
+        ) + extra_headers
 
         if additional_data:
             self._additional_data = additional_data
@@ -65,7 +67,7 @@ class ProblemDetailException(Exception):
         return self._type
 
     @property
-    def previous(self) -> Exception:
+    def previous(self) -> BaseException:
         return self._previous
 
     @property
@@ -78,6 +80,12 @@ class ProblemDetailException(Exception):
             'title': self.title
         }
 
+        if self.type:
+            result['type'] = self.type
+
+        if self.detail:
+            result['detail'] = self.detail
+
         if settings.DEBUG:
             result['trace'] = traceback.format_exc().split("\n")
 
@@ -85,14 +93,15 @@ class ProblemDetailException(Exception):
 
 
 class UnauthorizedException(ProblemDetailException):
-    def __init__(self, request):
+    def __init__(self, request, detail: Optional[str] = None):
         super().__init__(
             request,
             _("Unauthorized"),
             status=HTTPStatus.UNAUTHORIZED,
             extra_headers=(
                 ('WWW-Authenticate', f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),
-            )
+            ),
+            detail=detail
         )
 
 

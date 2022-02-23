@@ -2,6 +2,7 @@ from http import HTTPStatus
 from uuid import UUID
 
 from django.utils.translation import gettext as _
+from object_checker.base_object_checker import has_object_permission
 
 from apps.core.errors import ValidationException, ProblemDetailException
 from apps.api.filters.authors import AuthorFilter
@@ -24,7 +25,7 @@ class AuthorManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        if form.cleaned_data['catalog_id'].creator_id != request.user.id:
+        if not has_object_permission('check_catalog_write', request.user, form.cleaned_data['catalog_id']):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         if Author.objects.filter(
@@ -45,19 +46,19 @@ class AuthorManagement(SecuredView):
 
 class AuthorDetail(SecuredView):
     @staticmethod
-    def _get_author(request, author_id: UUID) -> Author:
+    def _get_author(request, author_id: UUID, checker: str = 'check_catalog_manage') -> Author:
         try:
-            author = Author.objects.get(pk=author_id)
+            author = Author.objects.select_related('catalog').get(pk=author_id)
         except Author.DoesNotExist as e:
             raise ProblemDetailException(request, _("Author not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        if not request.user.is_superuser and author.catalog.creator_id != request.user.id:
+        if not has_object_permission(checker, request.user, author.catalog):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return author
 
     def get(self, request, author_id: UUID):
-        author = self._get_author(request, author_id)
+        author = self._get_author(request, author_id, 'check_catalog_read')
 
         return SingleResponse(request, author, serializer=AuthorSerializer.Detailed)
 

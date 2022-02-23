@@ -6,6 +6,7 @@ from http import HTTPStatus
 from django.db import transaction
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext as _
+from object_checker.base_object_checker import has_object_permission
 
 from apps.core.errors import ValidationException, ProblemDetailException
 from apps.api.filters.entries import EntryFilter
@@ -32,7 +33,7 @@ class EntryManagement(SecuredView):
         except Catalog.DoesNotExist as e:
             raise ProblemDetailException(request, _("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        if catalog.creator != request.user:
+        if not has_object_permission('check_catalog_write', request.user, catalog):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         form = EntryForm.create_from_request(request)
@@ -51,19 +52,19 @@ class EntryManagement(SecuredView):
 
 class EntryDetail(SecuredView):
     @staticmethod
-    def _get_entry(request, catalog_id: uuid.UUID, entry_id: uuid.UUID) -> Entry:
+    def _get_entry(request, catalog_id: uuid.UUID, entry_id: uuid.UUID, checker: str = 'check_entry_manage') -> Entry:
         try:
             entry = Entry.objects.get(pk=entry_id, catalog_id=catalog_id)
         except Entry.DoesNotExist:
             raise ProblemDetailException(request, _("Entry not found"), status=HTTPStatus.NOT_FOUND)
 
-        if not request.user.is_superuser and entry.creator_id != request.user_id:
+        if not has_object_permission(checker, request.user, entry):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return entry
 
     def get(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
-        entry = self._get_entry(request, catalog_id, entry_id)
+        entry = self._get_entry(request, catalog_id, entry_id, 'check_entry_read')
 
         return SingleResponse(request, entry, serializer=EntrySerializer.Detailed)
 

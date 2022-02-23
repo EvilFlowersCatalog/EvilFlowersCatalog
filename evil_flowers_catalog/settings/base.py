@@ -61,6 +61,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -135,6 +136,8 @@ AUTH_USER_MODEL = "core.User"
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
 ]
+
+OBJECT_CHECKERS_MODULE = 'apps.core.checkers'
 
 SECURED_VIEW_AUTHENTICATION_SCHEMAS = {
     'Basic': 'apps.core.auth.BasicBackend',

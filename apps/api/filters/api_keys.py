@@ -16,12 +16,11 @@ class ApiKeyFilter(django_filters.FilterSet):
     @property
     def qs(self):
         qs = super().qs
-        user = getattr(self.request, 'user', None)
 
-        if not user:
+        if not self.request.user.is_authenticated:
             return qs.none()
 
-        if not user.is_superuser:
-            qs = qs.filter(user=user)
+        if not self.request.user.is_superuser:
+            qs = qs.filter(user=self.request.user)
 
         return qs

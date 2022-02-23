@@ -2,6 +2,7 @@ from http import HTTPStatus
 from uuid import UUID
 
 from django.utils.translation import gettext as _
+from object_checker.base_object_checker import has_object_permission
 
 from apps.api.services.catalog import CatalogService
 from apps.core.errors import ValidationException, ProblemDetailException
@@ -16,6 +17,9 @@ from apps.core.views import SecuredView
 class CatalogManagement(SecuredView):
     def post(self, request):
         form = CatalogForm.create_from_request(request)
+
+        if not request.user.has_perm('core.add_catalog'):
+            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         if not form.is_valid():
             raise ValidationException(request, form)
@@ -48,19 +52,19 @@ class CatalogManagement(SecuredView):
 
 class CatalogDetail(SecuredView):
     @staticmethod
-    def _get_catalog(request, catalog_id: UUID) -> Catalog:
+    def _get_catalog(request, catalog_id: UUID, checker: str = 'check_catalog_manage') -> Catalog:
         try:
             catalog = Catalog.objects.get(pk=catalog_id)
         except Catalog.DoesNotExist as e:
             raise ProblemDetailException(request, _("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        if not request.user.is_superuser and catalog.creator_id != request.user.id:
+        if not has_object_permission(checker, request.user, catalog):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return catalog
 
     def get(self, request, catalog_id: UUID):
-        catalog = self._get_catalog(request, catalog_id)
+        catalog = self._get_catalog(request, catalog_id, 'check_catalog_read')
 
         return SingleResponse(request, catalog, serializer=CatalogSerializer.Detailed)
 
