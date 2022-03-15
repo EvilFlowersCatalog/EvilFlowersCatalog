@@ -31,9 +31,7 @@ class ProblemDetailException(Exception):
         self._type = detail_type
         self._detail = detail
         self._previous = previous
-        self._extra_headers = (
-            ('Content-Type', 'application/problem+json'),
-        ) + extra_headers
+        self._extra_headers = extra_headers
 
         if additional_data:
             self._additional_data = additional_data
