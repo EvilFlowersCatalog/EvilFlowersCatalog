@@ -2,10 +2,11 @@ from django import forms
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
-from django_api_forms import Form, FormField, FileField, FormFieldList, FieldList, ImageField
+from django_api_forms import Form, FormField, FileField, FormFieldList, ImageField, DictionaryField
 
 from apps.core.models import Language, Author, Category, Currency, Feed, Catalog
 from apps.core.models import Acquisition
+from apps.core.validators import AvailableKeysValidator
 
 
 class CategoryForm(Form):
@@ -50,7 +51,11 @@ class EntryForm(Form):
     summary = forms.CharField(required=False)
     content = forms.CharField(required=False)
     acquisitions = FormFieldList(AcquisitionForm, required=False)
-    identifiers = FieldList(forms.CharField(max_length=100), required=False)
+    identifiers = DictionaryField(
+        required=False,
+        validators=[AvailableKeysValidator(keys=settings.OPDS['IDENTIFIERS'])],
+        value_field=forms.CharField(max_length=100)
+    )
     image = ImageField(
         max_length=settings.OPDS['IMAGE_UPLOAD_MAX_SIZE'], mime=settings.OPDS['IMAGE_MIME'], required=False
     )

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 from uuid import UUID
 
 from porcupine.base import Serializer
@@ -85,7 +85,7 @@ class EntrySerializer:
     class Detailed(Base):
         summary: str = None
         content: str = None
-        identifiers: List[str] = None
+        identifiers: Dict[str, str] = None
         acquisitions: List[AcquisitionSerializer.Base] = None
         feeds: List[FeedSerializer.Base] = None
         contributors: List[AuthorSerializer.Base] = None

@@ -1,42 +1,45 @@
 # Changelog
 
+This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
+
 ## 0.5.0 : TBD
 
-- **Change**: JWT tokens
-- **Change**: Auth refactor
-- **Feature**: Short-live access tokens: `GET /api/v1/token` and `GET /api/v1/token/refresh` introduced
-- **Change**: [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) enabled for all origins
-- **Change**: Extended security model (ABAC introduced catalog access modes)
+- **Changed**: JWT tokens
+- **Changed**: Auth refactor
+- **Added**: Short-live access tokens: `GET /api/v1/token` and `GET /api/v1/token/refresh` introduced
+- **Changed**: [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) enabled for all origins
+- **Changed**: Extended security model (ABAC introduced catalog access modes)
+- **Changed**: Identifiers are now represented as a dictionary (`HStore` in database)
 
 ## 0.4.0 : 2022-02-03
 
-- **Feature**: Images and thumbnails
-- **Feature**: Entry and categories are m:n
-- **Change**: Load countries and languages from [pycountry](https://github.com/flyingcircusio/pycountry)
-- **Feature**: Celery replaced by CRON jobs for periodic tasks
-- **Feature**: Status endpoint `GET /api/v1/status`
-- **Change**: Django 4.0
+- **Added**: Images and thumbnails
+- **Added**: Entry and categories are m:n
+- **Changed**: Load countries and languages from [pycountry](https://github.com/flyingcircusio/pycountry)
+- **Added**: Celery replaced by CRON jobs for periodic tasks
+- **Added**: Status endpoint `GET /api/v1/status`
+- **Changed**: Django 4.0
 
 ## 0.3.0 : 2021-08-30
 
-- **Feature**: `Feed` can have multiple parents
-- **Feature**: `OpdsView` introduced
-- **Feature**: Public/Private `Catalog`
-- **Feature**: OPDS facets
-- **Feature**: Complete OPDS catalog acquisition feed
-- **Change**: URL routes for OPDS
+- **Added**: `Feed` can have multiple parents
+- **Added**: `OpdsView` introduced
+- **Added**: Public/Private `Catalog`
+- **Added**: OPDS facets
+- **Added**: Complete OPDS catalog acquisition feed
+- **Changed**: URL routes for OPDS
 
 ## 0.2.0 - 2021-08-26
 
-- **Feature**: Extended CRUDs in RESTful API (authors, entries)
-- **Feature**: Containerisation
-- **Feature**: Acquisition uploads
+- **Added**: Extended CRUDs in RESTful API (authors, entries)
+- **Added**: Containerisation
+- **Added**: Acquisition uploads
 
 ## 0.1.0 - 2021-06-23
 
 Initial minimum valuable product pre-release.
 
-- **Architecture**: Multiple catalogs database design
-- **Feature**: `Catalog`, `Feed` and `Entry` CRUD
-- **Feature**: Simple OPDS catalog
-- **Feature**: HTTP Authorization
+- **Changed**: Multiple catalogs database design
+- **Added**: `Catalog`, `Feed` and `Entry` CRUD
+- **Added**: Simple OPDS catalog
+- **Added**: HTTP Authorization

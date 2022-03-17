@@ -224,7 +224,10 @@ OPDS = {
     'IMAGE_THUMBNAIL': (768, 480),
     'CRON_JOBS': {
         'popularity': '*/5 * * * *'
-    }
+    },
+    'IDENTIFIERS': [
+        'isbn', 'google'
+    ]
 }
 
 LOGGING = {
