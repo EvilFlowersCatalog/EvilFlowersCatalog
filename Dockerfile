@@ -1,4 +1,4 @@
-FROM alpine:3.15 as builder
+FROM alpine:3.16 as builder
 
 WORKDIR /root
 
@@ -31,7 +31,7 @@ RUN env VIRTUAL_ENV=/root/poetry poetry export -f requirements.txt > requirement
 RUN pip install gunicorn wheel --no-cache-dir
 RUN pip install -r requirements.txt --no-cache-dir
 
-FROM alpine:3.15
+FROM alpine:3.16
 
 ENV VERSION="0.4.0"
 

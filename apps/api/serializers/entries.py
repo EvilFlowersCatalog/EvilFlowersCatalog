@@ -34,7 +34,8 @@ class LanguageSerializer:
     class Base(Serializer):
         id: UUID
         name: str
-        code: str
+        alpha2: str
+        alpha3: str
 
 
 class AcquisitionSerializer:

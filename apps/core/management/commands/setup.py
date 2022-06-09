@@ -41,9 +41,10 @@ class Command(BaseCommand):
                 continue
 
             try:
-                language = Language.objects.get(code=item.alpha_2)
+                language = Language.objects.get(alpha2=item.alpha_2)
             except Language.DoesNotExist:
-                language = Language(code=item.alpha_2)
+                language = Language(alpha2=item.alpha_2)
 
             language.name = item.name
+            language.alpha3 = item.alpha_3
             language.save()

@@ -111,5 +111,5 @@ class ValidationException(ProblemDetailException):
     @property
     def payload(self) -> dict:
         payload = super(ValidationException, self).payload
-        payload['validation_errors'] = self._form.errors
+        payload['validation_errors'] = [item.to_dict() for item in self._form.errors]
         return payload

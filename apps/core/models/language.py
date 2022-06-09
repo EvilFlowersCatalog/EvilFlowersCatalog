@@ -13,7 +13,8 @@ class Language(BaseModel):
         verbose_name_plural = _('Languages')
 
     name = models.CharField(max_length=100)
-    code = models.CharField(max_length=2, unique=True)
+    alpha2 = models.CharField(max_length=2, unique=True)
+    alpha3 = models.CharField(max_length=3, null=True)
 
 
 __all__ = [

@@ -1,6 +1,7 @@
 from django import forms
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.utils.translation import gettext as _
 from django_api_forms import Form, FormField, FileField, FormFieldList, ImageField, DictionaryField
 
@@ -39,7 +40,7 @@ class AcquisitionForm(AcquisitionMetaForm):
 
 
 class EntryForm(Form):
-    language_code = forms.ModelChoiceField(queryset=Language.objects.all(), to_field_name='code')
+    language_code = forms.CharField(max_length=3)
     author_id = forms.ModelChoiceField(queryset=Author.objects.all(), required=False)
     author = FormField(AuthorForm, required=False)
     category_ids = forms.ModelMultipleChoiceField(queryset=Category.objects.all(), required=False)
@@ -59,6 +60,16 @@ class EntryForm(Form):
     image = ImageField(
         max_length=settings.OPDS['IMAGE_UPLOAD_MAX_SIZE'], mime=settings.OPDS['IMAGE_MIME'], required=False
     )
+
+    def clean_language_code(self) -> Language:
+        language = Language.objects.filter(
+            Q(alpha2=self.cleaned_data['language_code']) | Q(alpha3=self.cleaned_data['language_code'])
+        ).first()
+
+        if not language:
+            raise ValidationError("Language not found. Use valid alpha2 or alpha3 code.", 'not-found')
+
+        return language
 
     def clean(self):
         if 'author_id' in self.cleaned_data.keys() and 'author' in self.cleaned_data.keys():

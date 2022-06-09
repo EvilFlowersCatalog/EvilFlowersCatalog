@@ -9,6 +9,7 @@ https://docs.djangoproject.com/en/3.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.1/ref/settings/
 """
+import json
 import os
 from datetime import timedelta
 from pathlib import Path
@@ -145,7 +146,7 @@ SECURED_VIEW_AUTHENTICATION_SCHEMAS = {
 }
 
 SECURED_VIEW_JWT_ALGORITHM = 'RS256'
-SECURED_VIEW_JWK = os.getenv('SECURED_VIEW_JWK')
+SECURED_VIEW_JWK = json.loads(os.getenv('SECURED_VIEW_JWK'))
 SECURED_VIEW_JWT_ACCESS_TOKEN_EXPIRATION = timedelta(
     minutes=int(os.getenv('SECURED_VIEW_JWT_ACCESS_TOKEN_EXPIRATION', 5))
 )
