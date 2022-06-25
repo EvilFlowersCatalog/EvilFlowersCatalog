@@ -10,3 +10,4 @@ from .price import Price
 from .author import Author
 from .acquisition import Acquisition
 from .user_catalog import UserCatalog
+from .auth_source import AuthSource

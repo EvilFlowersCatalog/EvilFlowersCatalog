@@ -4,7 +4,10 @@ WORKDIR /root
 
 # System setup
 RUN apk update
-RUN apk add --no-cache pkgconfig libffi-dev make gcc musl-dev python3 python3-dev openssl-dev cargo postgresql-dev curl py3-pip jpeg-dev zlib-dev
+RUN apk add --no-cache pkgconfig libffi-dev make gcc musl-dev python3 python3-dev openssl-dev cargo postgresql-dev curl py3-pip jpeg-dev zlib-dev openldap-dev
+
+# https://github.com/python-ldap/python-ldap/issues/432
+RUN echo 'INPUT ( libldap.so )' > /usr/lib/libldap_r.so
 
 WORKDIR /usr/src/app
 

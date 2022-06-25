@@ -35,6 +35,7 @@ class SecuredView(View):
         auth_params = {
             auth_header[0].lower(): auth_header[1]
         }
+
         return self._backends[auth_header[0].lower()].authenticate(request, **auth_params)
 
     def dispatch(self, request, *args, **kwargs):

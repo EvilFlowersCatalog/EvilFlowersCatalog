@@ -23,6 +23,7 @@ django-object-checker = "^1.0.0"
 Authlib = "^1"
 tzdata = "^2022.1"
 django-cors-headers = "^3.13.0"
+python-ldap = "^3.4.0"
 
 [tool.poetry.dev-dependencies]
 flake8 = "^4.0.0"

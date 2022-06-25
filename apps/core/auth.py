@@ -12,7 +12,7 @@ from django.utils.text import slugify
 from django.utils.translation import gettext as _
 
 from apps.core.errors import ProblemDetailException
-from apps.core.models import ApiKey, User
+from apps.core.models import ApiKey, User, AuthSource
 
 
 class JWTFactory:
@@ -95,6 +95,9 @@ class BearerBackend(ModelBackend):
 class BasicBackend(ModelBackend):
     def authenticate(self, request, basic=None, **kwargs):
         auth_params = base64.b64decode(basic).decode().split(':')
+
+        # TODO: use auth sources
+
         user = super().authenticate(request, username=auth_params[0], password=auth_params[1])
         if not user:
             raise ProblemDetailException(
