@@ -14,7 +14,7 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         db_table = 'users'
         default_permissions = ('add', 'delete', 'change', 'view')
 
-    email = models.EmailField(unique=True)
+    username = models.CharField(max_length=200, unique=True)
     name = models.CharField(max_length=30)
     surname = models.CharField(max_length=150)
     is_active = models.BooleanField(default=True)
@@ -23,8 +23,7 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     objects = UserManager()
     all_objects = UserManager(alive_only=False)
 
-    USERNAME_FIELD = 'email'
-    EMAIL_FIELD = 'email'
+    USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = ['name', 'surname']
 
     @property

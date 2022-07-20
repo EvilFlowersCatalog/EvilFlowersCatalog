@@ -5,7 +5,7 @@ from apps.core.models import User
 
 class UserFilter(django_filters.FilterSet):
     id = django_filters.UUIDFilter()
-    email = django_filters.CharFilter(lookup_expr='icontains')
+    username = django_filters.CharFilter(lookup_expr='icontains')
     name = django_filters.CharFilter(lookup_expr='unaccent__icontains')
     surname = django_filters.CharFilter(lookup_expr='unaccent__icontains')
     is_active = django_filters.BooleanFilter()

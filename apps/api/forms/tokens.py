@@ -3,7 +3,7 @@ from django_api_forms import Form
 
 
 class AccessTokenForm(Form):
-    username = forms.EmailField()
+    username = forms.CharField(max_length=200)
     password = forms.CharField()
 
 

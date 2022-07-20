@@ -1,11 +1,14 @@
 import base64
 import uuid
 from http import HTTPStatus
+from typing import Optional, TypedDict, Dict
 
+import ldap
 from authlib.jose import JsonWebToken, jwt
 from authlib.jose.errors import JoseError
 from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
+from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.utils.text import slugify
@@ -93,12 +96,85 @@ class BearerBackend(ModelBackend):
 
 
 class BasicBackend(ModelBackend):
+    class LdapConfig(TypedDict):
+        URI: str
+        ROOT_DN: str
+        USER_ATTR_MAP: Dict[str, str]
+        GROUP_MAP: Dict[str, str]
+        FILTER: str
+        SUPERADMIN_GROUP: Optional[str]
+
+    def _ldap(self, username: str, password: str, auth_source: AuthSource) -> Optional[User]:
+        config: BasicBackend.LdapConfig = auth_source.content
+        connection = ldap.initialize(uri=config['URI'])
+        connection.set_option(ldap.OPT_REFERRALS, 0)
+
+        try:
+            connection.simple_bind_s(username, password)
+        except ldap.LDAPError:
+            return None
+
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            user = User(
+                username=username,
+                auth_source=auth_source
+            )
+            user.set_unusable_password()
+
+        result = connection.search(
+            f"{config['ROOT_DN']}", ldap.SCOPE_SUBTREE, config['FILTER'].format(username=username), ['*']
+        )
+
+        user_type, profiles = connection.result(result, 60)
+
+        if profiles:
+            name, attrs = profiles[0]
+
+            # LDAP properties
+            for model_property, ldap_property in config['USER_ATTR_MAP'].items():
+                setattr(user, model_property, attrs[ldap_property][0].decode())
+
+            # LDAP groups
+            user.groups.clear()
+            user.is_superuser = False
+            for ldap_group in attrs.get('memberOf', []):
+                if ldap_group.decode() in config['GROUP_MAP']:
+                    try:
+                        group = Group.objects.get(name=config['GROUP_MAP'][ldap_group.decode()])
+                    except Group.DoesNotExist:
+                        continue
+                    user.groups.add(group)
+                if ldap_group.decode() == config['SUPERADMIN_GROUP']:
+                    user.is_superuser = True
+        else:
+            return None
+
+        connection.unbind()
+
+        user.last_login = timezone.now()
+        user.save()
+
+        return user
+
+    def _database(self, request, username: str, password: str) -> Optional[User]:
+        return super().authenticate(request, username=username, password=password)
+
     def authenticate(self, request, basic=None, **kwargs):
-        auth_params = base64.b64decode(basic).decode().split(':')
+        username, password = base64.b64decode(basic).decode().split(':')
 
-        # TODO: use auth sources
+        user = None
 
-        user = super().authenticate(request, username=auth_params[0], password=auth_params[1])
+        for auth_source in AuthSource.objects.filter(is_active=True):
+            if auth_source.driver == AuthSource.Driver.DATABASE:
+                user = self._database(request, username, password)
+            elif auth_source.driver == AuthSource.Driver.LDAP:
+                user = self._ldap(username, password, auth_source)
+
+            if user:
+                break
+
         if not user:
             raise ProblemDetailException(
                 request,

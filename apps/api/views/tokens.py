@@ -1,14 +1,14 @@
+import base64
 from http import HTTPStatus
 
 from authlib.jose import JoseError
 from django.conf import settings
-from django.contrib.auth.backends import ModelBackend
 from django.utils.translation import gettext as _
 from django.views import View
 from redis.client import Redis
 
 from apps.api.forms.tokens import AccessTokenForm, RefreshTokenForm
-from apps.core.auth import JWTFactory
+from apps.core.auth import JWTFactory, BasicBackend
 from apps.core.errors import ValidationException, UnauthorizedException, ProblemDetailException
 from apps.api.response import SingleResponse
 from apps.core.views import SecuredView
@@ -21,11 +21,12 @@ class AccessTokenManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        backend = ModelBackend()
+        backend = BasicBackend()
         user = backend.authenticate(
             request,
-            username=form.cleaned_data['username'],
-            password=form.cleaned_data['password']
+            basic=base64.b64encode(
+                f"{form.cleaned_data['username']}:{form.cleaned_data['password']}".encode()
+            ).decode(),
         )
 
         if not user:

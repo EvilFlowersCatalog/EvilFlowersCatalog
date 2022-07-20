@@ -23,9 +23,9 @@ class UserManagement(SecuredView):
         if not request.user.has_perm('core.add_user'):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-        if User.objects.filter(email=form.cleaned_data['email']).exists():
+        if User.objects.filter(username=form.cleaned_data['username']).exists():
             raise ProblemDetailException(
-                request, _("User with same email already exists"), status=HTTPStatus.CONFLICT
+                request, _("User with same username already exists"), status=HTTPStatus.CONFLICT
             )
 
         user = User()

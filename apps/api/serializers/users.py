@@ -10,7 +10,7 @@ from apps.core.models import User
 class UserSerializer:
     class Minimal(Serializer):
         id: UUID
-        email: str
+        username: str
         name: str
         surname: str
 

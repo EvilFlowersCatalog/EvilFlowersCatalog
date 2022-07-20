@@ -10,5 +10,5 @@ class UserForm(Form):
 
 
 class CreateUserForm(UserForm):
-    email = forms.EmailField()
+    username = forms.CharField(max_length=200)
     password = forms.CharField(required=True)

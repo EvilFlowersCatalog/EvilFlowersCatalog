@@ -27,7 +27,7 @@ RUN pip install -r requirements.txt --no-cache-dir
 
 FROM alpine:3.16
 
-ENV VERSION="0.4.0"
+ENV VERSION="0.5.0"
 
 WORKDIR /usr/src/app
 
