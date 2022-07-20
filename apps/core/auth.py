@@ -1,4 +1,5 @@
 import base64
+import logging
 import uuid
 from http import HTTPStatus
 from typing import Optional, TypedDict, Dict
@@ -99,6 +100,7 @@ class BasicBackend(ModelBackend):
     class LdapConfig(TypedDict):
         URI: str
         ROOT_DN: str
+        BIND: str
         USER_ATTR_MAP: Dict[str, str]
         GROUP_MAP: Dict[str, str]
         FILTER: str
@@ -110,8 +112,11 @@ class BasicBackend(ModelBackend):
         connection.set_option(ldap.OPT_REFERRALS, 0)
 
         try:
-            connection.simple_bind_s(username, password)
-        except ldap.LDAPError:
+            connection.simple_bind_s(config['BIND'].format(username=username), password)
+        except ldap.LDAPError as e:
+            logging.warning(
+                f"Unable to bind with external service (id={auth_source.pk}, name={auth_source.name}): {e}"
+            )
             return None
 
         try:
@@ -149,6 +154,10 @@ class BasicBackend(ModelBackend):
                 if ldap_group.decode() == config['SUPERADMIN_GROUP']:
                     user.is_superuser = True
         else:
+            logging.warning(
+                f"Could not find user profile for {username} in auth source {auth_source.name}"
+                f" (id={auth_source.pk}, name={auth_source.name})"
+            )
             return None
 
         connection.unbind()
