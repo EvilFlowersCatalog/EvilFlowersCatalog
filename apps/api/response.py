@@ -49,7 +49,7 @@ class GeneralResponse(HttpResponse):
         params = {}
         if data is not None:
             content_types = str(request.headers.get('accept', 'application/json'))
-            content_types = content_types.split(', ')
+            content_types = content_types.replace(' ', '').split(',')
             content_types = list(map(lambda r: r.split(';')[0], content_types))
 
             if any(x in ['*/*', 'application/json'] for x in content_types):

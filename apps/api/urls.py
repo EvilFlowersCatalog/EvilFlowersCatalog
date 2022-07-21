@@ -30,7 +30,8 @@ urlpatterns = [
     path("catalogs/<uuid:catalog_id>/entries/<uuid:entry_id>", entries.EntryDetail.as_view()),
 
     # Acquisitions
-    path("acquisitions/<uuid:acquisition_id>", acquisitions.AcquisitionDetail.as_view()),
+    path("acquisitions", acquisitions.AcquisitionManagement.as_view(), name='acquisition-management'),
+    path("acquisitions/<uuid:acquisition_id>", acquisitions.AcquisitionDetail.as_view(), name='acquisition-detail'),
 
     # Status
     path("status", status.StatusManagement.as_view(), name='status'),

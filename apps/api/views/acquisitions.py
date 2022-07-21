@@ -11,6 +11,10 @@ from apps.core.models import Acquisition
 from apps.core.views import SecuredView
 
 
+class AcquisitionManagement(SecuredView):
+    pass
+
+
 class AcquisitionDetail(SecuredView):
     @staticmethod
     def _get_acquisition(request, acquisition_id: UUID, checker: str = 'check_catalog_manage') -> Acquisition:
