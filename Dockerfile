@@ -43,6 +43,9 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 # Configuration
 COPY conf/supervisor.conf /etc/supervisord.conf
 
+# Health check
+HEALTHCHECK CMD curl --fail http://localhost:8000/api/v1/status || exit 1
+
 # Execution
 RUN chmod +x conf/entrypoint.sh
 CMD ["conf/entrypoint.sh"]
