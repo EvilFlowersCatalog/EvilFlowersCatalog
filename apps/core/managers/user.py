@@ -1,6 +1,7 @@
 from django.contrib.auth.base_user import BaseUserManager
 
 from apps.core.managers.base import BaseManager
+from apps.core.models import AuthSource
 
 
 class UserManager(BaseUserManager, BaseManager):
@@ -15,6 +16,7 @@ class UserManager(BaseUserManager, BaseManager):
     def _create_user(self, username, name, surname, password):
         user = self.model(username=username, name=name, surname=surname)
         user.set_password(password)
+        user.auth_source = AuthSource.objects.filter(driver=AuthSource.Driver.DATABASE).order_by('created_at').first()
         return user
 
     def create_user(self, username, name, surname, password):
