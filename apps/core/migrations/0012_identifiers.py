@@ -16,7 +16,11 @@ class Migration(migrations.Migration):
             name='user',
             options={'default_permissions': ('add', 'delete', 'change', 'view')},
         ),
-        migrations.AlterField(
+        migrations.RemoveField(
+            model_name='entry',
+            name='identifiers',
+        ),
+        migrations.AddField(
             model_name='entry',
             name='identifiers',
             field=django.contrib.postgres.fields.hstore.HStoreField(null=True, validators=[apps.core.validators.AvailableKeysValidator(keys=['isbn', 'google'])]),
