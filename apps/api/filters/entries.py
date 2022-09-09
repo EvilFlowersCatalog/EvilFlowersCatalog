@@ -16,6 +16,7 @@ class EntryFilter(django_filters.FilterSet):
 
     creator_id = django_filters.UUIDFilter()
     catalog_id = django_filters.UUIDFilter()
+    catalog_title = django_filters.CharFilter(field_name='catalog__title')
     author_id = django_filters.UUIDFilter(method='filter_author_id', label=_("Author"))
     author = django_filters.CharFilter(method='filter_author')
     category_id = django_filters.UUIDFilter(label=_("Category"), field_name='categories__id')

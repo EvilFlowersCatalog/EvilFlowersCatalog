@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 
 from django.conf import settings
 from django.utils import timezone
@@ -10,9 +11,11 @@ from apps.core.models import Catalog, Entry, Acquisition, User
 
 class StatusManagement(View):
     def get(self, request):
+        build_file = Path(f"{settings.BASE_DIR}/BUILD.txt")
+        version_file = Path(f"{settings.BASE_DIR}/VERSION.txt")
+
         response = {
             'timestamp': timezone.now(),
-            'version': settings.VERSION,
             'instance': settings.INSTANCE_NAME,
             'stats': {
                 'catalogs': Catalog.objects.count(),
@@ -24,5 +27,13 @@ class StatusManagement(View):
 
         if settings.DEBUG:
             response['python'] = sys.version
+
+        if build_file.exists():
+            with open(build_file) as f:
+                response['build'] = f.readline().replace('\n', '')
+
+        if version_file.exists():
+            with open(version_file) as f:
+                response['version'] = f.readline().replace('\n', '')
 
         return SingleResponse(request, response)

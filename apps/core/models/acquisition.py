@@ -1,4 +1,5 @@
 import base64
+import hashlib
 from typing import Optional
 
 from django.conf import settings
@@ -50,8 +51,19 @@ class Acquisition(BaseModel):
 
     @property
     def base64(self) -> Optional[str]:
-        encoded = base64.b64encode(self.content.read()).decode('ascii')
-        return f"data:{self.mime};base64,{encoded}"
+        if self.content is not None:
+            encoded = base64.b64encode(self.content.read()).decode('ascii')
+            return f"data:{self.mime};base64,{encoded}"
+        return None
+
+    @property
+    def checksum(self) -> Optional[str]:
+        if self.content is not None:
+            checksum = hashlib.sha256()
+            while block := self.content.read(4096):
+                checksum.update(block)
+            return checksum.hexdigest()
+        return None
 
 
 __all__ = [

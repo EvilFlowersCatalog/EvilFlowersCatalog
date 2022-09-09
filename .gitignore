@@ -19,3 +19,5 @@ node_modules/
 /private/
 !/private/.gitkeep
 /data/
+/static/
+!/static/.gitkeep

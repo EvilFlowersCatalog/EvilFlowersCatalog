@@ -7,7 +7,7 @@ authors = ["Jakub Dubec <jakub.dubec@gmail.com>"]
 [tool.poetry.dependencies]
 python = "^3.9"
 django = "^4.0.0"
-django_api_forms = "1.0.0rc2"
+django_api_forms = "1.0.0rc4"
 python-dotenv = "^0.20.0"
 argon2-cffi = "^21.3.0"
 sentry-sdk = "^1.5"

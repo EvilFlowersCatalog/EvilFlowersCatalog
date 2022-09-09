@@ -40,6 +40,7 @@ class AcquisitionForm(AcquisitionMetaForm):
 
 
 class EntryForm(Form):
+    id = forms.UUIDField(required=False)
     language_code = forms.CharField(max_length=3)
     author_id = forms.ModelChoiceField(queryset=Author.objects.all(), required=False)
     author = FormField(AuthorForm, required=False)

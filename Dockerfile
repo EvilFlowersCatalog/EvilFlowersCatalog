@@ -27,9 +27,14 @@ RUN pip install -r requirements.txt --no-cache-dir
 
 FROM alpine:3.16
 
-ENV VERSION="0.5.0"
-
 WORKDIR /usr/src/app
+
+LABEL maintainer="jakub.dubec@gmail.com"
+LABEL vcs-ref="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
+LABEL name="EvilFlowersCatalog/EvilFlowersCatalog"
+
+RUN echo "0.5.0" > VERSION.txt
+RUN date -I > BUILD.txt
 
 # Dependencies
 RUN apk add --no-cache python3 supervisor curl libpq postgresql-client jpeg zlib py3-argon2-cffi tzdata libldap

@@ -49,6 +49,7 @@ class AcquisitionSerializer:
 
     class Detailed(Base):
         content: str = None
+        checksum: str = None
 
         @staticmethod
         def resolve_content(data: Acquisition) -> Optional[str]:

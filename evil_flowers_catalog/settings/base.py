@@ -29,7 +29,6 @@ if os.path.exists(ENV_FILE):
 
 BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:8000')
 INSTANCE_NAME = os.getenv('INSTANCE_NAME', 'Evil Flowers Catalog')
-VERSION = os.getenv('VERSION')
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/3.1/howto/deployment/checklist/
@@ -174,10 +173,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/3.1/howto/static-files/
 
 STATIC_URL = '/static/'
-
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'static')
-]
+STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")

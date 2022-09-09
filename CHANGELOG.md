@@ -10,7 +10,10 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Changed**: [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) enabled for all origins
 - **Changed**: Extended security model (ABAC introduced catalog access modes)
 - **Changed**: Identifiers are now represented as a dictionary (`HStore` in database)
-- **Added*: LDAP support
+- **Added**: LDAP support
+- **Added**: Acquisition checksums
+- **Added**: Extended validation errors
+-
 
 ## 0.4.0 : 2022-02-03
 
