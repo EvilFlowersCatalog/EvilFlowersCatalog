@@ -1,5 +1,4 @@
 import sys
-from pathlib import Path
 
 from django.conf import settings
 from django.utils import timezone
