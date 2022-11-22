@@ -9,10 +9,12 @@ https://docs.djangoproject.com/en/3.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.1/ref/settings/
 """
+import datetime
 import json
 import os
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 import sentry_sdk
 from dotenv import load_dotenv
@@ -22,13 +24,29 @@ BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 ENV_FILE = os.path.join(BASE_DIR, '.env')
 LOG_DIR = os.path.join(BASE_DIR, 'logs')
 PRIVATE_DIR = os.path.join(BASE_DIR, 'private')
+BUILD_FILE = Path(f"{BASE_DIR}/BUILD.txt")
+VERSION_FILE = Path(f"{BASE_DIR}/VERSION.txt")
 
 # .env
 if os.path.exists(ENV_FILE):
     load_dotenv(dotenv_path=ENV_FILE, verbose=True)
 
 BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:8000')
+BASE_DOMAIN = urlparse(BASE_URL).netloc
 INSTANCE_NAME = os.getenv('INSTANCE_NAME', 'Evil Flowers Catalog')
+
+if BUILD_FILE.exists():
+    with open(BUILD_FILE) as f:
+        BUILD = f.readline().replace('\n', '')
+else:
+    BUILD = datetime.datetime.now().isoformat()
+
+if VERSION_FILE.exists():
+    with open(VERSION_FILE) as f:
+        VERSION = f.readline().replace('\n', '')
+else:
+    VERSION = 'dev'
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/3.1/howto/deployment/checklist/

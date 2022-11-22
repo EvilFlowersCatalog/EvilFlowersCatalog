@@ -13,7 +13,6 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Added**: LDAP support
 - **Added**: Acquisition checksums
 - **Added**: Extended validation errors
--
 
 ## 0.4.0 : 2022-02-03
 

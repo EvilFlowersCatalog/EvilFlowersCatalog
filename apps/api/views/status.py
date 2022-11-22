@@ -11,9 +11,6 @@ from apps.core.models import Catalog, Entry, Acquisition, User
 
 class StatusManagement(View):
     def get(self, request):
-        build_file = Path(f"{settings.BASE_DIR}/BUILD.txt")
-        version_file = Path(f"{settings.BASE_DIR}/VERSION.txt")
-
         response = {
             'timestamp': timezone.now(),
             'instance': settings.INSTANCE_NAME,
@@ -23,17 +20,11 @@ class StatusManagement(View):
                 'acquisitions': Acquisition.objects.count(),
                 'users': User.objects.count()
             },
+            'build': settings.BUILD,
+            'version': settings.VERSION
         }
 
         if settings.DEBUG:
             response['python'] = sys.version
-
-        if build_file.exists():
-            with open(build_file) as f:
-                response['build'] = f.readline().replace('\n', '')
-
-        if version_file.exists():
-            with open(version_file) as f:
-                response['version'] = f.readline().replace('\n', '')
 
         return SingleResponse(request, response)

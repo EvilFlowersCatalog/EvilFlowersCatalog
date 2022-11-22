@@ -29,10 +29,6 @@ FROM alpine:3.16
 
 WORKDIR /usr/src/app
 
-LABEL maintainer="jakub.dubec@gmail.com"
-LABEL vcs-ref="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
-LABEL name="EvilFlowersCatalog/EvilFlowersCatalog"
-
 RUN echo "0.5.0" > VERSION.txt
 RUN date -I > BUILD.txt
 

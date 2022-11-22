@@ -21,7 +21,7 @@ class OpdsView(SecuredView):
         except KeyError as e:
             raise ProblemDetailException(request, _("Internal server error"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        if request.method not in self.UNSECURED_METHODS and not self.catalog.is_public:
+        if not self.catalog.is_public:
             self._authenticate(request)
 
         return View.dispatch(self, request, *args, **kwargs)

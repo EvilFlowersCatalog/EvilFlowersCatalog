@@ -14,7 +14,8 @@ and [OPDS 2.0](https://drafts.opds.io/opds-2.0) specification. Ordered list bell
 
 1. [ ] OPDS 1.2
     - [ ] Feeds and catalogs
-        - [ ] Shelves (`/opds/shelves/:user`)
+        - [ ] Shelves (`/opds/shelv`)
+        - [ ] Subscriptions (`/opds/subscriptions`)
     - [ ] Search
     - [ ] Pagination
 2. [ ] OPDS 2
