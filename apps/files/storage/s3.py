@@ -45,7 +45,7 @@ class S3Storage(Storage):
         try:
             self._client.stat_object(settings.STORAGE_S3_BUCKET, name)
             return True
-        except Exception as e:
+        except Exception:
             return False
 
     def listdir(self, path):
