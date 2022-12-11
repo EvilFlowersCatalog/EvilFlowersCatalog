@@ -1,10 +1,9 @@
 from django.contrib.auth.base_user import BaseUserManager
 
-from apps.core.managers.base import BaseManager
 from apps.core.models.auth_source import AuthSource
 
 
-class UserManager(BaseUserManager, BaseManager):
+class UserManager(BaseUserManager):
     use_in_migrations = True
 
     def get_by_natural_key(self, username):

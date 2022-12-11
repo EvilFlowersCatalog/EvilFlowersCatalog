@@ -1,8 +1,10 @@
 import uuid
 from http import HTTPStatus
+from mimetypes import guess_extension
 
 from django.conf import settings
 from django.http import FileResponse
+from django.utils.text import slugify
 from django.utils.translation import gettext as _
 from redis import Redis
 
@@ -34,7 +36,9 @@ class AcquisitionDownload(SecuredView):
 
         redis.pfadd(f"popularity:{acquisition.entry_id}", str(user_id))
 
-        return FileResponse(acquisition.content, as_attachment=True, filename=acquisition.entry.title)
+        sanitized_filename = f"{slugify(acquisition.entry.title.lower())}{guess_extension(acquisition.mime)}"
+
+        return FileResponse(acquisition.content, as_attachment=True, filename=sanitized_filename)
 
 
 class EntryImageDownload(SecuredView):
@@ -46,4 +50,6 @@ class EntryImageDownload(SecuredView):
         except Entry.DoesNotExist:
             raise ProblemDetailException(request, _("Entry image not found"), status=HTTPStatus.NOT_FOUND)
 
-        return FileResponse(entry.image, as_attachment=True, filename=entry.title)
+        sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime)}"
+
+        return FileResponse(entry.image, filename=sanitized_filename)

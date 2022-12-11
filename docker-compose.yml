@@ -31,7 +31,7 @@ services:
     depends_on:
       - db
   redis:
-    image: "redis:6-alpine"
+    image: "redis:7-alpine"
     command: redis-server
     ports:
       - "6379:6379"

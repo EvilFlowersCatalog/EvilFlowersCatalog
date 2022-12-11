@@ -99,6 +99,6 @@ class FeedDetail(SecuredView):
 
     def delete(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)
-        feed.hard_delete()
+        feed.delete()
 
         return SingleResponse(request)

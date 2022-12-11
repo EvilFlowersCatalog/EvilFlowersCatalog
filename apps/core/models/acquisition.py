@@ -8,7 +8,8 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models.entry import Entry
-from apps.core.models.base import BaseModel, private_storage
+from apps.core.models.base import BaseModel
+from apps.files.storage import get_storage
 
 
 class Acquisition(BaseModel):
@@ -40,7 +41,7 @@ class Acquisition(BaseModel):
     relation = models.CharField(max_length=20, choices=AcquisitionType.choices, default=AcquisitionType.ACQUISITION)
     mime = models.CharField(choices=AcquisitionMIME.choices, max_length=100)
     content = models.FileField(
-        upload_to=_upload_to_path, null=True, max_length=255, storage=private_storage
+        upload_to=_upload_to_path, null=True, max_length=255, storage=get_storage
     )
 
     @property

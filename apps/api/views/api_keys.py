@@ -44,6 +44,6 @@ class ApiKeyDetail(SecuredView):
         if not request.user.is_superuser and api_key.user_id != request.user.id:
             raise ProblemDetailException(request, _("ApiKey not found"), status=HTTPStatus.NOT_FOUND)
 
-        api_key.hard_delete()
+        api_key.delete()
 
         return SingleResponse(request, status=HTTPStatus.NO_CONTENT)

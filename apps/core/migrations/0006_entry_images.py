@@ -5,6 +5,8 @@ import apps.core.models.entry
 from django.db import migrations, models
 import django.db.models.deletion
 
+from apps.files.storage import get_storage
+
 
 class Migration(migrations.Migration):
 
@@ -16,7 +18,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='entry',
             name='image',
-            field=models.ImageField(max_length=255, null=True, storage=apps.core.models.base.PrivateFileStorage(), upload_to=apps.core.models.entry.Entry._upload_to_path),
+            field=models.ImageField(max_length=255, null=True, storage=get_storage, upload_to=apps.core.models.entry.Entry._upload_to_path),
         ),
         migrations.AddField(
             model_name='entry',
@@ -26,7 +28,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='entry',
             name='thumbnail',
-            field=models.ImageField(max_length=255, null=True, storage=apps.core.models.base.PrivateFileStorage(), upload_to=apps.core.models.entry.Entry._upload_to_path),
+            field=models.ImageField(max_length=255, null=True, storage=get_storage, upload_to=apps.core.models.entry.Entry._upload_to_path),
         ),
         migrations.AlterField(
             model_name='entry',

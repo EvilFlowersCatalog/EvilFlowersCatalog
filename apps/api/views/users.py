@@ -79,7 +79,7 @@ class UserDetail(SecuredView):
 
     def delete(self, request, user_id: UUID):
         user = self._get_user(request, user_id, lambda: request.user.has_perm('core.delete_user'))
-        user.hard_delete()
+        user.delete()
 
         return SingleResponse(request)
 

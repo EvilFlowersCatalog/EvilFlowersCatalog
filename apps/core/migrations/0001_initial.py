@@ -9,6 +9,8 @@ from django.db import migrations, models
 import django.db.models.deletion
 import uuid
 
+from apps.files.storage import get_storage
+
 
 class Migration(migrations.Migration):
 
@@ -42,7 +44,6 @@ class Migration(migrations.Migration):
             },
             managers=[
                 ('objects', apps.core.managers.user.UserManager()),
-                ('all_objects', apps.core.managers.user.UserManager(alive_only=False)),
             ],
         ),
         migrations.CreateModel(
@@ -54,7 +55,7 @@ class Migration(migrations.Migration):
                 ('deleted_at', models.DateTimeField(blank=True, null=True)),
                 ('relation', models.CharField(choices=[('acquisition', 'acquisition'), ('open-access', 'open-access')], default='acquisition', max_length=20)),
                 ('mime', models.CharField(choices=[('application/pdf', 'PDF'), ('application/epub+zip', 'EPUB'), ('application/x-mobipocket-ebook', 'MOBI')], max_length=100)),
-                ('content', models.FileField(max_length=255, null=True, storage=apps.core.models.base.PrivateFileStorage(), upload_to=apps.core.models.acquisition.Acquisition._upload_to_path)),
+                ('content', models.FileField(max_length=255, null=True, storage=get_storage, upload_to=apps.core.models.acquisition.Acquisition._upload_to_path)),
             ],
             options={
                 'verbose_name': 'Acquisition',

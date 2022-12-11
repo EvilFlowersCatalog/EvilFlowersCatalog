@@ -23,7 +23,6 @@ from sentry_sdk.integrations.django import DjangoIntegration
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 ENV_FILE = os.path.join(BASE_DIR, '.env')
 LOG_DIR = os.path.join(BASE_DIR, 'logs')
-PRIVATE_DIR = os.path.join(BASE_DIR, 'private')
 BUILD_FILE = Path(f"{BASE_DIR}/BUILD.txt")
 VERSION_FILE = Path(f"{BASE_DIR}/VERSION.txt")
 
@@ -260,3 +259,16 @@ LOGGING = {
 }
 
 CORS_ALLOW_ALL_ORIGINS = True
+
+# Storage
+STORAGE_DRIVER = os.getenv('STORAGE_DRIVER', 'apps.files.storage.filesystem.FileSystemStorage')
+
+# Filesystem storage
+STORAGE_FILESYSTEM_DATADIR = os.getenv('STORAGE_FILESYSTEM_DATADIR')
+
+# S3 Storage
+STORAGE_S3_HOST = os.getenv('STORAGE_S3_HOST')
+STORAGE_S3_ACCESS_KEY = os.getenv('STORAGE_S3_ACCESS_KEY')
+STORAGE_S3_SECRET_KEY = os.getenv('STORAGE_S3_SECRET_KEY')
+STORAGE_S3_SECURE = False
+STORAGE_S3_BUCKET = os.getenv('STORAGE_S3_BUCKET')

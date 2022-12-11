@@ -91,6 +91,6 @@ class CatalogDetail(SecuredView):
 
     def delete(self, request, catalog_id: UUID):
         catalog = self._get_catalog(request, catalog_id)
-        catalog.hard_delete()
+        catalog.delete()
 
         return SingleResponse(request)

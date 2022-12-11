@@ -85,6 +85,6 @@ class AuthorDetail(SecuredView):
 
     def delete(self, request, author_id: UUID):
         author = self._get_author(request, author_id)
-        author.hard_delete()
+        author.delete()
 
         return SingleResponse(request)

@@ -1,4 +1,4 @@
-FROM alpine:3.16 as builder
+FROM alpine:3.17 as builder
 
 WORKDIR /root
 
@@ -25,7 +25,7 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 RUN pip install gunicorn wheel --no-cache-dir
 RUN pip install -r requirements.txt --no-cache-dir
 
-FROM alpine:3.16
+FROM alpine:3.17
 
 WORKDIR /usr/src/app
 

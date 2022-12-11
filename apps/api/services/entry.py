@@ -103,6 +103,8 @@ class EntryService:
                 thumbnail = form.cleaned_data['image'].image.copy()
                 thumbnail.thumbnail(settings.OPDS['IMAGE_THUMBNAIL'])
                 thumbnail.save(buffer, format=form.cleaned_data['image'].image.format)
+                buffer.seek(0)
+
                 entry.thumbnail.save(
                     f"thumbnail{mimetypes.guess_extension(entry.image_mime)}",
                     File(buffer)

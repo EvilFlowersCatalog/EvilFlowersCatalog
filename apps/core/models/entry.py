@@ -13,8 +13,9 @@ from apps.core.models.language import Language
 from apps.core.models.category import Category
 from apps.core.models.user import User
 from apps.core.models.catalog import Catalog
-from apps.core.models.base import BaseModel, private_storage
+from apps.core.models.base import BaseModel
 from apps.core.validators import AvailableKeysValidator
+from apps.files.storage import get_storage
 
 
 class Entry(BaseModel):
@@ -25,7 +26,7 @@ class Entry(BaseModel):
         verbose_name = _('Entry')
         verbose_name_plural = _('Entries')
         indexes = [
-            models.Index(fields=['deleted_at', 'catalog_id', '-popularity']),
+            models.Index(fields=['catalog_id', '-popularity']),
         ]
 
     def _upload_to_path(self, filename):
@@ -45,9 +46,9 @@ class Entry(BaseModel):
     categories = models.ManyToManyField(
         Category, related_name='entries', db_table='entry_categories', verbose_name=_('Category')
     )
-    image = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=private_storage)
+    image = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=get_storage)
     image_mime = models.CharField(max_length=100, null=True)
-    thumbnail = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=private_storage)
+    thumbnail = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=get_storage)
     popularity = models.PositiveBigIntegerField(default=0, null=False)
 
     @property

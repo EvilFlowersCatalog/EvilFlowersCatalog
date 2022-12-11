@@ -21,7 +21,6 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     auth_source = models.ForeignKey(AuthSource, on_delete=models.CASCADE)
 
     objects = UserManager()
-    all_objects = UserManager(alive_only=False)
 
     USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = ['name', 'surname']

@@ -128,6 +128,6 @@ class EntryDetail(SecuredView):
 
     def delete(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
         entry = self._get_entry(request, catalog_id, entry_id)
-        entry.hard_delete()
+        entry.delete()
 
         return SingleResponse(request)
