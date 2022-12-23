@@ -17,6 +17,7 @@ servers:
 tags:
   - name: Catalogs
   - name: Entries
+  - name: Data
   - name: Feeds
 paths:
   /v1/catalogs:
@@ -184,19 +185,19 @@ paths:
         - Catalogs
       summary: Create catalog entry
       requestBody:
-        $ref: '#/components/requestBodies/UserAcqBody'
+        $ref: '#/components/requestBodies/UserAcquisitionBody'
       responses:
         '201':
-          $ref: '#/components/responses/UserAcqDetail'
+          $ref: '#/components/responses/UserAcquisitionDetail'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/CatalogValidation'
-      operationId: createUserAcq
+      operationId: createUserAcquisition
       description: Create a new user acquisition pair.
-  '/v1/catalogs/{catalogId}/user-acquisitions/{user-acq}':
+  '/v1/catalogs/{catalogId}/user-acquisitions/{user-acquisitionId}':
     parameters:
       - in: path
         name: catalogId
@@ -206,7 +207,7 @@ paths:
         required: true
         description: UUID of the catalog object
       - in: path
-        name: user-acq
+        name: user-acquisitionId
         schema:
           type: string
           format: uuid
@@ -218,7 +219,7 @@ paths:
         - Catalogs
       responses:
         '200':
-          $ref: '#/components/responses/UserAcqDetail'
+          $ref: '#/components/responses/UserAcquisitionDetail'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -226,16 +227,16 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
       description: Detail user acquisition object retreival.
-      operationId: getUserAcq
+      operationId: getUserAcquisition
     put:
       summary: Update user acquisition pair
       tags:
         - Catalogs
       requestBody:
-        $ref: '#/components/requestBodies/UserAcqBody'
+        $ref: '#/components/requestBodies/UserAcquisitionBody'
       responses:
         '200':
-          $ref: '#/components/responses/UserAcqDetail'
+          $ref: '#/components/responses/UserAcquisitionDetail'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -245,7 +246,7 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
-          $ref: '#/components/responses/UserAcqValidation'
+          $ref: '#/components/responses/UserAcquisitionValidation'
   /v1/entries:
     get:
       tags:
@@ -306,10 +307,10 @@ paths:
           $ref: '#/components/responses/NotFound'
       operationId: getCitation
       description: Retrieves citation object in the CSL-JSON format used to create BiBTeX citation.
-  /data/user-acquistions/{user-acq}:
+  /data/user-acquistions/{user-acquisitionId}:
     parameters:
       - in: path
-        name: user-acq
+        name: user-acquisitionId
         schema:
           type: string
           format: uuid
@@ -329,8 +330,6 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/RetrievedDocument'
-        '206':
-          $ref: '#/components/responses/RetrievedDocument'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -338,7 +337,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
       operationId: getData
-      description: Retrieve document in PDF format, either whole or page by page.
+      description: Retrieve document in PDF format, either whole or by pages.
 components:
   securitySchemes:
     apiKeyAuth:
@@ -381,7 +380,7 @@ components:
           created_at: '2021-02-21T19:05:35.538Z'
           updated_at: '2021-02-21T19:05:35.538Z'
       title: ''
-    UserAcq:
+    UserAcquisition:
       properties:
         id:
           type: string
@@ -432,7 +431,7 @@ components:
         title:
           type: string
           example: General
-    UserAcqForm:
+    UserAcquisitionForm:
       properties:
         acquisition_id:
           type: string
@@ -488,6 +487,21 @@ components:
                   given:
                     type: string
                     example: "Franz"
+    Document:
+      type: object
+      properties:
+        1: 
+          type: string
+          example: page1.pdf
+        2: 
+          type: string
+          example: null
+        3: 
+          type: string
+          example: page3.pdf
+        4: 
+          type: string
+          example: page4.pdf
     Metadata:
       properties:
         page:
@@ -747,7 +761,7 @@ components:
                   - field: title
                     messages:
                       - required
-    UserAcqValidation:
+    UserAcquisitionValidation:
       description: User acquisition pair validation object
       content:
         application/json:
@@ -778,7 +792,7 @@ components:
             properties:
               response:
                 $ref: '#/components/schemas/Catalog'
-    UserAcqDetail:
+    UserAcquisitionDetail:
       description: Response object with user acquisition pair detail
       content:
         application/json:
@@ -786,7 +800,7 @@ components:
             type: object
             properties:
               response:
-                $ref: '#/components/schemas/UserAcq'
+                $ref: '#/components/schemas/UserAcquisition'
     CitationDetail:
       description: Response object with citation detail
       content:
@@ -797,12 +811,14 @@ components:
               response:
                 $ref: '#/components/schemas/Citation'
     RetrievedDocument:
-      description: Document in PDF format
+      description: Response object with document pages with binaries inside
       content:
-        application/pdf:
+        application/json:
           schema:
-            type: string
-            format: binary
+            type: object
+            properties:
+              response:
+                $ref: '#/components/schemas/Document'
   requestBodies:
     CatalogBody:
       description: A JSON object containing catalog information
@@ -811,13 +827,13 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/CatalogForm'
-    UserAcqBody:
+    UserAcquisitionBody:
       description: A JSON object containing user acquisition pair information
       required: true
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/UserAcqForm'
+            $ref: '#/components/schemas/UserAcquisitionForm'
 security:
   - apiKeyAuth: []
   - basicAuth: []
