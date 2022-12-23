@@ -170,6 +170,82 @@ paths:
           $ref: '#/components/responses/NotFound'
       operationId: deleteCatalog
       description: Hard-delete of the OPDS catalog.
+  '/v1/catalogs/{catalogId}/user-acquisitions':
+    parameters:
+      - in: path
+        name: catalogId
+        schema:
+          type: string
+          format: uuid
+        required: true
+        description: UUID of the catalog object
+    post:
+      tags:
+        - Catalogs
+      summary: Create catalog entry
+      requestBody:
+        $ref: '#/components/requestBodies/UserAcqBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/UserAcqDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/CatalogValidation'
+      operationId: createUserAcq
+      description: Create a new user acquisition pair.
+  '/v1/catalogs/{catalogId}/user-acquisitions/{user-acq}':
+    parameters:
+      - in: path
+        name: catalogId
+        schema:
+          type: string
+          format: uuid
+        required: true
+        description: UUID of the catalog object
+      - in: path
+        name: user-acq
+        schema:
+          type: string
+          format: uuid
+        required: true
+        description: UUID of user acquisition pair
+    get:
+      summary: Retrieve information about user acquisition pair
+      tags:
+        - Catalogs
+      responses:
+        '200':
+          $ref: '#/components/responses/UserAcqDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      description: Detail user acquisition object retreival.
+      operationId: getUserAcq
+    put:
+      summary: Update user acquisition pair
+      tags:
+        - Catalogs
+      requestBody:
+        $ref: '#/components/requestBodies/UserAcqBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/UserAcqDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UserAcqValidation'
   /v1/entries:
     get:
       tags:
@@ -193,6 +269,76 @@ paths:
           $ref: '#/components/responses/Unauthorized'
       operationId: getEntry
       description: 'List of all available entries with filter and pagination (by default, entries are listed for all available catalogs).'
+  /v1/catalogs/{catalogId}/entries/{entryId}/citations:
+    parameters:
+      - in: path
+        name: catalogId
+        schema:
+          type: string
+          format: uuid
+        required: true
+        description: UUID of the catalog object
+      - in: path
+        name: entryId
+        schema:
+          type: string
+          format: uuid
+        required: true
+        description: UUID of entry object
+      - in: query
+        name: format
+        schema:
+          type: string
+        required: false
+        description: format of citation
+    get:
+      tags:
+        - Entries
+      summary: Retrieve citation generation object.
+      responses:
+        '200':
+          $ref: '#/components/responses/CitationDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      operationId: getCitation
+      description: Retrieves citation object in the CSL-JSON format used to create BiBTeX citation.
+  /data/user-acquistions/{user-acq}:
+    parameters:
+      - in: path
+        name: user-acq
+        schema:
+          type: string
+          format: uuid
+        required: true
+        description: UUID of user acquisition pair
+      - in: query
+        name: page
+        schema:
+          type: number
+          format: int
+        required: false
+        description: page of the requested document
+    get:
+      tags:
+        - Data
+      summary: Retrieve document in PDF format.
+      responses:
+        '200':
+          $ref: '#/components/responses/RetrievedDocument'
+        '206':
+          $ref: '#/components/responses/RetrievedDocument'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      operationId: getData
+      description: Retrieve document in PDF format, either whole or page by page.
 components:
   securitySchemes:
     apiKeyAuth:
@@ -235,6 +381,49 @@ components:
           created_at: '2021-02-21T19:05:35.538Z'
           updated_at: '2021-02-21T19:05:35.538Z'
       title: ''
+    UserAcq:
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 13e7c89c-2cb0-494a-bfac-72f52300d62f
+        created_at:
+          type: string
+          format: date-time
+          example: '2021-02-21T19:05:35.538Z'
+        acquisition_id:
+          type: string
+          format: uuid
+          example: 0d87f6d9-4f11-406c-a712-58c9bf169682
+        user_id:
+          type: string
+          format: uuid
+          example: 0d87f6d9-4f11-406c-a712-58c9bf169682  
+        type:
+          type: string
+          example: share
+        expire_at:
+          type: string
+          format: date-time
+          example: '2021-02-21T19:05:35.538Z'
+        share_page_range:
+          type: number
+          format: int4multirange
+          example: "{[1,4],[6,10]}"
+        url:
+          type: string
+          example: https://elvira.fiit.stuba.sk/share/66239ec0-5c02-42de-b042-7bf9f99dd713
+      x-examples:
+        General example:
+          id: 13e7c89c-2cb0-494a-bfac-72f52300d62f
+          created_at: '2021-02-21T19:05:35.538Z'
+          acquisition_id: 0d87f6d9-4f11-406c-a712-58c9bf169682
+          user_id: 0d87f6d9-4f11-406c-a712-58c9bf168718
+          type: share
+          expire_at: '2021-02-21T19:05:35.538Z'
+          share_page_range: "{[1,4],[6,10]}"
+          url: https://elvira.fiit.stuba.sk/share/13e7c89c-2cb0-494a-bfac-72f52300d62f
+      title: ''
     CatalogForm:
       properties:
         url_name:
@@ -243,6 +432,62 @@ components:
         title:
           type: string
           example: General
+    UserAcqForm:
+      properties:
+        acquisition_id:
+          type: string
+          format: uuid
+          example: 0d87f6d9-4f11-406c-a712-58c9bf169682
+        user_id:
+          type: string
+          format: uuid
+          example: 0d87f6d9-4f11-406c-a712-58c9bf169682  
+        type:
+          type: string
+          example: share
+        expire_at:
+          type: string
+          format: date-time
+          example: '2021-02-21T19:05:35.538Z'
+        share_page_range:
+          type: number
+          format: int4multirange
+          example: "{[1,4],[6,10]}"
+        url:
+          type: string
+          example: https://elvira.fiit.stuba.sk/share/66239ec0-5c02-42de-b042-7bf9f99dd713
+    Citation:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uri
+            example: http://example.org/id/1234
+          type:
+            type: string
+            example: book
+          title:
+            type: string
+            example: Schloss
+          publisher:
+            type: string
+            example: Wolff
+          publisher-place:
+            type: string
+            example: München
+          language:
+            type: string
+            example: de
+          author:
+            type: array
+            items:
+                properties:
+                  family:
+                    type: string
+                    example: "Kafka"
+                  given:
+                    type: string
+                    example: "Franz"
     Metadata:
       properties:
         page:
@@ -502,6 +747,28 @@ components:
                   - field: title
                     messages:
                       - required
+    UserAcqValidation:
+      description: User acquisition pair validation object
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              errors:
+                type: array
+                items:
+                  properties:
+                    field:
+                      type: string
+                    messages:
+                      type: array
+                example:
+                  - field: type
+                    messages:
+                      - required
+                  - field: expire_at
+                    messages:
+                      - required
     CatalogDetail:
       description: Response object with catalog detail
       content:
@@ -511,6 +778,31 @@ components:
             properties:
               response:
                 $ref: '#/components/schemas/Catalog'
+    UserAcqDetail:
+      description: Response object with user acquisition pair detail
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              response:
+                $ref: '#/components/schemas/UserAcq'
+    CitationDetail:
+      description: Response object with citation detail
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              response:
+                $ref: '#/components/schemas/Citation'
+    RetrievedDocument:
+      description: Document in PDF format
+      content:
+        application/pdf:
+          schema:
+            type: string
+            format: binary
   requestBodies:
     CatalogBody:
       description: A JSON object containing catalog information
@@ -519,6 +811,13 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/CatalogForm'
+    UserAcqBody:
+      description: A JSON object containing user acquisition pair information
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UserAcqForm'
 security:
   - apiKeyAuth: []
   - basicAuth: []
