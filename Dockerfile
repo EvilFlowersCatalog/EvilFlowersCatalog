@@ -40,6 +40,7 @@ COPY --from=builder /usr/src/app /usr/src/app
 # Prepare virtual env
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+ENV FPDF_FONTPATH="/usr/src/app/fonts"
 
 # Configuration
 COPY conf/supervisor.conf /etc/supervisord.conf
