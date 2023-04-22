@@ -102,13 +102,22 @@ paths:
         $ref: '#/components/requestBodies/CatalogBody'
       responses:
         '201':
-          $ref: '#/components/responses/CatalogDetail'
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    $ref: '#/components/schemas/Catalog'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
-          $ref: '#/components/responses/CatalogValidation'
+          $ref: '#/components/responses/Validation'
       operationId: createCatalog
       description: Create a new OPDS catalog.
     parameters: []
@@ -127,7 +136,14 @@ paths:
         - Catalogs
       responses:
         '200':
-          $ref: '#/components/responses/CatalogDetail'
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    $ref: '#/components/schemas/Catalog'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -144,7 +160,16 @@ paths:
         $ref: '#/components/requestBodies/CatalogBody'
       responses:
         '200':
-          $ref: '#/components/responses/CatalogDetail'
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    $ref: '#/components/schemas/Catalog'
+                required:
+                  - response
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -154,7 +179,7 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
-          $ref: '#/components/responses/CatalogValidation'
+          $ref: '#/components/responses/Validation'
       operationId: updateCatalog
       description: Update details of existing OPDS catalog.
     delete:
@@ -172,41 +197,39 @@ paths:
           $ref: '#/components/responses/NotFound'
       operationId: deleteCatalog
       description: Hard-delete of the OPDS catalog.
-  '/api/v1/catalogs/{catalogId}/user-acquisitions':
-    parameters:
-      - in: path
-        name: catalogId
-        schema:
-          type: string
-          format: uuid
-        required: true
-        description: UUID of the catalog object
+  /api/v1/user-acquisitions:
+    parameters: []
     post:
       tags:
         - User acquisitions
-      summary: Create catalog entry
-      requestBody:
-        $ref: '#/components/requestBodies/UserAcquisitionBody'
+      summary: Create user acquisition
       responses:
         '201':
-          $ref: '#/components/responses/UserAcquisitionDetail'
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    $ref: '#/components/schemas/UserAcquisition'
+                required:
+                  - response
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
-          $ref: '#/components/responses/CatalogValidation'
+          $ref: '#/components/responses/Validation'
       operationId: createUserAcquisition
-      description: Create a new user acquisition pair.
-  '/api/v1/catalogs/{catalogId}/user-acquisitions/{userAcquisitionId}':
+      description: Create a new user acquisition.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserAcquisitionForm'
+  '/api/v1/user-acquisitions/{userAcquisitionId}':
     parameters:
-      - in: path
-        name: catalogId
-        schema:
-          type: string
-          format: uuid
-        required: true
-        description: UUID of the catalog object
       - in: path
         name: userAcquisitionId
         schema:
@@ -220,7 +243,16 @@ paths:
         - User acquisitions
       responses:
         '200':
-          $ref: '#/components/responses/UserAcquisitionDetail'
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    $ref: '#/components/schemas/UserAcquisition'
+                required:
+                  - response
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -235,11 +267,16 @@ paths:
       description: Update user acquisition
       tags:
         - User acquisitions
-      requestBody:
-        $ref: '#/components/requestBodies/UserAcquisitionBody'
       responses:
         '200':
-          $ref: '#/components/responses/UserAcquisitionDetail'
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    $ref: '#/components/schemas/UserAcquisition'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -247,7 +284,12 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '422':
-          $ref: '#/components/responses/UserAcquisitionValidation'
+          $ref: '#/components/responses/Validation'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserAcquisitionForm'
   /api/v1/entries:
     get:
       tags:
@@ -272,15 +314,8 @@ paths:
       operationId: getEntry
       description: 'List of all available entries with filter and pagination (by default, entries are listed for all available catalogs).'
     parameters: []
-  '/api/v1/catalogs/{catalogId}/entries/{entryId}/citation':
+  '/api/v1/{entryId}/citation':
     parameters:
-      - in: path
-        name: catalogId
-        schema:
-          type: string
-          format: uuid
-        required: true
-        description: UUID of the catalog object
       - in: path
         name: entryId
         schema:
@@ -300,7 +335,39 @@ paths:
       summary: Retrieve citation generation object.
       responses:
         '200':
-          $ref: '#/components/responses/CitationDetail'
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+              examples:
+                Example 1:
+                  value:
+                    id: adams1980hitchhikers
+                    type: book
+                    title: The Hitchhiker's Guide to the Galaxy
+                    author:
+                      - family: Adams
+                        given: Douglas
+                    publisher: Pan Books
+                    publisher-place: London
+                    edition: '1'
+                    issued:
+                      date-parts:
+                        - - 1980
+                    ISBN: 0-330-25864-8
+                    language: English
+                    abstract: 'The Hitchhiker''s Guide to the Galaxy is a comic science fiction series created by Douglas Adams. It follows the misadventures of the last surviving man, Arthur Dent, after the Earth is demolished to make way for a hyperspace bypass. Arthur is saved by Ford Prefect, a researcher for the titular guidebook, and together they embark on a series of adventures through space and time, meeting various eccentric characters along the way.'
+                    URL: 'https://www.example.com/hitchhikers-guide-to-the-galaxy'
+            text/plain:
+              schema:
+                type: object
+                properties: {}
+              examples:
+                Example 1:
+                  value:
+                    'D. Adams, The Hitchhiker''s Guide to the Galaxy, 1st ed. London, UK': 'Pan Books, 1980.'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -308,45 +375,130 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
       operationId: getCitation
-      description: Retrieves citation object in the CSL-JSON format used to create BiBTeX citation.
-  '/data/user-acquistions/{user-acquisitionId}':
-    parameters:
-      - in: path
-        name: user-acquisitionId
-        schema:
-          type: string
-          format: uuid
-        required: true
-        description: UUID of user acquisition pair
-      - in: query
-        name: page
-        schema:
-          type: number
-          format: int
-        required: false
-        description: page of the requested document
+      description: Returns citation object in the CSL-JSON format used to create BiBTeX citation.
+      parameters:
+        - schema:
+            type: string
+            enum:
+              - csl-json
+              - ieee
+            default: csl-json
+          in: query
+          name: format
+          description: Citation format
+  '/data/v1/user-acquisitions/{userAcquisitionId}':
     get:
+      summary: Download user acquisition
       tags:
         - User acquisitions
-      summary: Retrieve user acquisition document
       responses:
         '200':
           description: OK
-          headers: {}
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+          content:
+            application/pdf:
+              schema:
+                type: object
+                properties: {}
         '404':
           $ref: '#/components/responses/NotFound'
-      operationId: getData
-      description: Retrieve document in binary. Content-type is according to the user acquisition type. There is a posibility to retreive only specified page using `page` query parameter.
+      operationId: get-data-v1-user-acquisitions
       parameters:
         - schema:
             type: integer
           in: query
           name: page
-          description: Page number
+          description: Specified page
+      description: Download user acquisition from the server
+    parameters:
+      - schema:
+          type: string
+          format: uuid
+        name: userAcquisitionId
+        in: path
+        required: true
+        description: User acquisition identificator
+  /api/v1/annotations:
+    post:
+      summary: Create annotation
+      operationId: post-api-v1-annotations
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    $ref: '#/components/schemas/Annotation'
+                required:
+                  - response
+        '422':
+          $ref: '#/components/responses/Validation'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnnotationForm'
+      tags:
+        - User acquisitions
+  '/api/v1/annotations/{annotationId}':
+    parameters:
+      - schema:
+          type: string
+        name: annotationId
+        in: path
+        required: true
+        description: Annotation UUID
+    get:
+      summary: Annotation detail
+      tags:
+        - User acquisitions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    $ref: '#/components/schemas/Annotation'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      operationId: get-api-v1-annotations-annotationId
+    put:
+      summary: Update annotation
+      operationId: put-api-v1-annotations-annotationId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    $ref: '#/components/schemas/Annotation'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnnotationForm'
+      tags:
+        - User acquisitions
+    delete:
+      summary: Delete annotation
+      operationId: delete-api-v1-annotations-annotationId
+      responses:
+        '204':
+          description: No Content
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      tags:
+        - User acquisitions
 components:
   securitySchemes:
     apiKeyAuth:
@@ -402,13 +554,11 @@ components:
           range: '{[1,4],[6,10]}'
           url: 'https://elvira.fiit.stuba.sk/share/13e7c89c-2cb0-494a-bfac-72f52300d62f'
           annotations: ''
+      title: User acquisition
       properties:
         id:
           type: string
           format: uuid
-        created_at:
-          type: string
-          format: date-time
         acquisition_id:
           type: string
           format: uuid
@@ -420,18 +570,32 @@ components:
           enum:
             - shared
             - personal
+        range:
+          type: string
+        annotations:
+          format: xml
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Annotation'
+        config:
+          $ref: '#/components/schemas/EntryConfig'
         expire_at:
           type: string
           format: date-time
-        range:
+        created_at:
           type: string
-        url:
+          format: date-time
+        updated_at:
           type: string
-          format: uri
-        annotations:
-          format: xml
-          type: string
-          nullable: true
+          format: date-time
+      required:
+        - id
+        - acquisition_id
+        - user_id
+        - type
+        - created_at
+        - updated_at
     CatalogForm:
       properties:
         url_name:
@@ -441,62 +605,35 @@ components:
           type: string
           example: General
     UserAcquisitionForm:
+      type: object
+      x-examples:
+        Example 1:
+          entry_id: bla
+          type: user | share
+          expire_at: ISO 8601
+          range: 'multi-integer-range? | list[int]'
+      title: UserAcquisitionForm
+      description: Form used to create a User Acqisition instance.
       properties:
-        acquisition_id:
+        entry_id:
           type: string
           format: uuid
-          example: 0d87f6d9-4f11-406c-a712-58c9bf169682
-        user_id:
-          type: string
-          format: uuid
-          example: 0d87f6d9-4f11-406c-a712-58c9bf169682
         type:
           type: string
-          example: share
+          enum:
+            - personal
+            - shared
         expire_at:
           type: string
           format: date-time
-          example: '2021-02-21T19:05:35.538Z'
-        share_page_range:
+        range:
           type: string
-          format: int4multirange
-          example: '{[1,4],[6,10]}'
-        url:
-          type: string
-          example: 'https://elvira.fiit.stuba.sk/share/66239ec0-5c02-42de-b042-7bf9f99dd713'
-      title: ''
-    Citation:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uri
-          example: 'http://example.org/id/1234'
-        type:
-          type: string
-          example: book
-        title:
-          type: string
-          example: Schloss
-        publisher:
-          type: string
-          example: Wolff
-        publisher-place:
-          type: string
-          example: München
-        language:
-          type: string
-          example: de
-        author:
-          type: array
-          items:
-            properties:
-              family:
-                type: string
-                example: Kafka
-              given:
-                type: string
-                example: Franz
+          description: Multirange for pages
+          pattern: '^[0-9, -]*$'
+          example: '1,4-33,43-45,59-65'
+      required:
+        - entry_id
+        - type
     Metadata:
       properties:
         page:
@@ -519,7 +656,6 @@ components:
           type: string
           description: This property is present only in debug mode
     Entry:
-      description: ''
       type: object
       x-examples:
         example-1:
@@ -690,6 +826,8 @@ components:
               - id
               - name
               - surname
+        config:
+          $ref: '#/components/schemas/EntryConfig'
       required:
         - id
         - creator_id
@@ -709,6 +847,73 @@ components:
         - acquisitions
         - feeds
         - contributors
+    Annotation:
+      title: Annotation
+      x-stoplight:
+        id: 3nvoqvk41bjjv
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_acquisition_id:
+          type: string
+          format: uuid
+        content:
+          type: string
+          format: xml
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_acquisition_id
+        - content
+        - created_at
+        - updated_at
+      x-examples:
+        Example 1:
+          id: 497f6eca-6276-4993-bfeb-53cbbbba6f08
+          user_acquisition_id: 5839a804-7206-46c5-8771-3311902b8d95
+          content: string
+          created_at: '2019-08-24T14:15:22Z'
+          updated_at: '2019-08-24T14:15:22Z'
+    AnnotationForm:
+      type: object
+      x-examples:
+        Example 1:
+          user_acquisition_id: 5839a804-7206-46c5-8771-3311902b8d95
+          content: string
+      properties:
+        user_acquisition_id:
+          type: string
+        content:
+          type: string
+      required:
+        - user_acquisition_id
+        - content
+    EntryConfig:
+      title: EntryConfig
+      x-stoplight:
+        id: d08d08bccac1c
+      type: object
+      properties:
+        text_layer:
+          type: boolean
+        annotations:
+          type: boolean
+        print:
+          type: boolean
+        share:
+          type: boolean
+        render_type:
+          type: string
+          enum:
+            - page
+            - document
   responses:
     Unauthorized:
       description: Unauthorized
@@ -734,77 +939,65 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-    CatalogValidation:
-      description: Catalog validation object
+    Validation:
+      description: Generic validation error
       content:
         application/json:
           schema:
             type: object
+            x-examples:
+              Example 1:
+                title: Validation error!
+                trace:
+                  - 'Traceback (most recent call last):'
+                  - '  File "/Users/jdubec/Projects/EvilFlowers/EvilFlowersCatalog/venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 197, in _get_response'
+                  - '    response = wrapped_callback(request, *callback_args, **callback_kwargs)'
+                  - '               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^'
+                  - '  File "/Users/jdubec/Projects/EvilFlowers/EvilFlowersCatalog/venv/lib/python3.11/site-packages/django/views/generic/base.py", line 104, in view'
+                  - '    return self.dispatch(request, *args, **kwargs)'
+                  - '           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^'
+                  - '  File "/Users/jdubec/Projects/EvilFlowers/EvilFlowersCatalog/apps/core/views.py", line 44, in dispatch'
+                  - '    return super().dispatch(request, *args, **kwargs)'
+                  - '           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^'
+                  - '  File "/Users/jdubec/Projects/EvilFlowers/EvilFlowersCatalog/venv/lib/python3.11/site-packages/django/views/generic/base.py", line 143, in dispatch'
+                  - '    return handler(request, *args, **kwargs)'
+                  - '           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^'
+                  - '  File "/Users/jdubec/Projects/EvilFlowers/EvilFlowersCatalog/apps/api/views/authors.py", line 26, in post'
+                  - '    raise ValidationException(request, form)'
+                  - 'apps.core.errors.ValidationException: Validation error!'
+                  - ''
+                validation_errors:
+                  - code: required
+                    message: This field is required.
+                    path:
+                      - surname
             properties:
-              errors:
+              title:
+                type: string
+              trace:
                 type: array
                 items:
-                  properties:
-                    field:
-                      type: string
-                    messages:
-                      type: array
-                example:
-                  - field: url_name
-                    messages:
-                      - required
-                  - field: title
-                    messages:
-                      - required
-    UserAcquisitionValidation:
-      description: User acquisition pair validation object
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              errors:
+                  type: string
+              validation_errors:
                 type: array
                 items:
+                  type: object
                   properties:
-                    field:
+                    code:
                       type: string
-                    messages:
+                    message:
+                      type: string
+                    path:
                       type: array
-                example:
-                  - field: type
-                    messages:
-                      - required
-                  - field: expire_at
-                    messages:
-                      - required
-    CatalogDetail:
-      description: Response object with catalog detail
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              response:
-                $ref: '#/components/schemas/Catalog'
-    UserAcquisitionDetail:
-      description: Response object with user acquisition pair detail
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              response:
-                $ref: '#/components/schemas/UserAcquisition'
-    CitationDetail:
-      description: Response object with citation detail
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              response:
-                $ref: '#/components/schemas/Citation'
+                      items:
+                        type: string
+                  required:
+                    - code
+                    - message
+                    - path
+            required:
+              - title
+              - validation_errors
   requestBodies:
     CatalogBody:
       description: A JSON object containing catalog information
@@ -813,13 +1006,6 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/CatalogForm'
-    UserAcquisitionBody:
-      description: A JSON object containing user acquisition pair information
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/UserAcquisitionForm'
 security:
   - apiKeyAuth: []
   - basicAuth: []

@@ -1,6 +1,6 @@
 import base64
 import logging
-from typing import Optional
+from typing import Optional, TypedDict, Literal
 
 from django.conf import settings
 from django.contrib.postgres.fields import HStoreField
@@ -29,6 +29,13 @@ class Entry(BaseModel):
             models.Index(fields=['catalog_id', '-popularity']),
         ]
 
+    class EntryConfig(TypedDict):
+        text_layer: bool
+        annotation: bool
+        print: bool
+        share: bool
+        render_type: Literal['page', 'document']
+
     def _upload_to_path(self, filename):
         return f"catalogs/{self.catalog.url_name}/{self.pk}/{filename}"
 
@@ -50,6 +57,8 @@ class Entry(BaseModel):
     image_mime = models.CharField(max_length=100, null=True)
     thumbnail = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=get_storage)
     popularity = models.PositiveBigIntegerField(default=0, null=False)
+    config = models.JSONField(null=True)
+    citation = models.JSONField(null=True)
 
     @property
     def image_url(self) -> Optional[str]:
