@@ -1,14 +1,11 @@
 from object_checker.base_object_checker import AbacChecker
 
-from apps.core.models import User, Catalog, UserCatalog, Entry
+from apps.core.models import User, Catalog, UserCatalog, Entry, UserAcquisition
 
 
 class CatalogChecker(AbacChecker):
     @staticmethod
     def check_catalog_manage(user: User, obj: Catalog) -> bool:
-        if user.is_superuser:
-            return True
-
         if not user.is_authenticated:
             return False
 
@@ -16,9 +13,6 @@ class CatalogChecker(AbacChecker):
 
     @staticmethod
     def check_catalog_write(user: User, obj: Catalog) -> bool:
-        if user.is_superuser:
-            return True
-
         if not user.is_authenticated:
             return False
 
@@ -35,9 +29,6 @@ class CatalogChecker(AbacChecker):
 class EntryChecker(AbacChecker):
     @staticmethod
     def check_entry_manage(user: User, obj: Entry) -> bool:
-        if user.is_superuser:
-            return True
-
         if not user.is_authenticated:
             return False
 
@@ -48,10 +39,16 @@ class EntryChecker(AbacChecker):
 
     @staticmethod
     def check_entry_read(user: User, obj: Entry) -> bool:
-        if user.is_superuser:
-            return True
-
         if not user.is_authenticated:
             return False
 
         return obj.catalog.users.contains(user)
+
+
+class UserAcquisitionChecker(AbacChecker):
+    @staticmethod
+    def check_user_acquisition_read(user: User, obj: UserAcquisition):
+        if obj.type == UserAcquisition.UserAcquisitionType.SHARED:
+            return True
+
+        return obj.user == user

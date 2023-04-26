@@ -1,4 +1,5 @@
 import traceback
+from enum import Enum
 from http import HTTPStatus
 from typing import Tuple, Optional
 
@@ -11,6 +12,10 @@ from django.utils.translation import gettext as _
 
 
 class ProblemDetailException(Exception):
+    class DetailType(Enum):
+        OUT_OF_RANGE = 'out-of-range'
+        NOT_FOUND = 'not-found'
+
     def __init__(
         self,
         request,
@@ -19,7 +24,7 @@ class ProblemDetailException(Exception):
         previous: Optional[BaseException] = None,
         to_sentry: Optional[bool] = False,
         additional_data: Optional[dict] = None,
-        detail_type: Optional[str] = None,
+        detail_type: Optional[DetailType] = None,
         detail: Optional[str] = None,
         extra_headers: Optional[Tuple[Tuple]] = ()
     ):

@@ -135,7 +135,7 @@ class PaginationResponse(GeneralResponse):
                     title=_('Page not found'),
                     status=HTTPStatus.NOT_FOUND,
                     previous=e,
-                    detail_type='out_of_range',
+                    detail_type=ProblemDetailException.DetailType.OUT_OF_RANGE,
                     detail=_('That page contains no results')
                 )
 

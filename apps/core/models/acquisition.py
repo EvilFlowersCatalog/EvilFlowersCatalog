@@ -59,6 +59,7 @@ class Acquisition(BaseModel):
 
     @property
     def checksum(self) -> Optional[str]:
+        # TODO: create as a database column
         if self.content is not None:
             checksum = hashlib.sha256()
             while block := self.content.read(4096):

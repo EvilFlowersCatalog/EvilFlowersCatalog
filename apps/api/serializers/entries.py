@@ -69,6 +69,7 @@ class EntrySerializer:
         image: str = None
         image_mime: str = None
         thumbnail: str = None
+        config: dict = None
         created_at: datetime
         updated_at: datetime
 
