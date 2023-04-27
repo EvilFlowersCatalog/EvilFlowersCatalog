@@ -9,7 +9,7 @@ from apps.api.forms.annotations import CreateAnnotationForm, UpdateAnnotationFor
 from apps.api.response import PaginationResponse, SingleResponse
 from apps.api.serializers.annotation import AnnotationSerializer
 from apps.core.errors import ValidationException, ProblemDetailException
-from apps.core.models import Annotation, Author
+from apps.core.models import Annotation
 from apps.core.views import SecuredView
 
 
