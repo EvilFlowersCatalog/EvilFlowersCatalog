@@ -1,7 +1,7 @@
 from django.urls import path
 
 from apps.api.views import catalogs, feeds, entries, api_keys, users, acquisitions, authors, status, tokens, \
-    user_acquisitions
+    user_acquisitions, annotations
 
 urlpatterns = [
     # API keys
@@ -41,7 +41,12 @@ urlpatterns = [
     ),
     path(
         "user-acquisitions/<uuid:user_acquisition_id>", user_acquisitions.UserAcquisitionDetail.as_view(),
-        name='acquisition-detail'),
+        name='acquisition-detail'
+    ),
+
+    # Annotations
+    path("annotations", annotations.AnnotationManagement.as_view(), name='annotation-management'),
+    path("annotations/<uuid:annotation_id>", annotations.AnnotationDetail.as_view(), name='annotation-detail'),
 
     # Status
     path("status", status.StatusManagement.as_view(), name='status'),
