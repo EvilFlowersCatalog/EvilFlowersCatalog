@@ -64,7 +64,7 @@ class Entry(BaseModel):
     def image_url(self) -> Optional[str]:
         if not self.image:
             return None
-        return f"{settings.BASE_URL}{reverse('cover_download', kwargs={'entry_id': self.pk})}"
+        return f"{settings.BASE_URL}{reverse('cover-download', kwargs={'entry_id': self.pk})}"
 
     @property
     def thumbnail_base64(self) -> Optional[str]:

@@ -46,7 +46,7 @@ class AnnotationDetail(SecuredView):
     def _get_annotation(request, annotation_id: UUID) -> Annotation:
         try:
             annotation = Annotation.objects.get(pk=annotation_id)
-        except Author.DoesNotExist as e:
+        except Annotation.DoesNotExist as e:
             raise ProblemDetailException(
                 request, _("Annotation not found"),
                 status=HTTPStatus.NOT_FOUND,

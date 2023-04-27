@@ -1,0 +1,26 @@
+{% load i18n %}
+
+<p>{% trans 'This document was distributed using' %} <strong>{{ instance_name }}</strong> based on the open source project <a href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"><strong>EvilFlowersCatalog</strong></a>.</p>
+
+<table width="100%">
+	<tr>
+		<td width="50%">{% trans 'User ID' %}</td>
+		<td width="50%">{{ user_id }}</td>
+	</tr>
+	<tr>
+		<td width="50%">{% trans 'Username' %}</td>
+		<td width="50%">{{ username }}</td>
+	</tr>
+	<tr>
+		<td width="50%">{% trans 'Document ID' %}</td>
+		<td width="50%">{{ id }}</td>
+	</tr>
+	<tr>
+		<td width="50%">{% trans 'Generated at' %}</td>
+		<td width="50%">{{ generated_at }}</td>
+	</tr>
+</table>
+
+<p align="justify">{% trans 'License' %}</p>
+
+<p>{% trans 'If you have any questions please contact email use' %} <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
