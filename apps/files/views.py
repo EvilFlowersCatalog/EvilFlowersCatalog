@@ -43,6 +43,7 @@ class AcquisitionDownload(SecuredView):
 
 
 class UserAcquisitionDownload(SecuredView):
+    UNSECURED_METHODS = ['GET']
     def get(self, request, user_acquisition_id: uuid.UUID):
         try:
             user_acquisition = UserAcquisition.objects.select_related(
@@ -56,21 +57,28 @@ class UserAcquisitionDownload(SecuredView):
                 detail_type=ProblemDetailException.DetailType.NOT_FOUND
             )
 
-        if not has_object_permission('check_user_acquisition_read', request.user, user_acquisition):
-            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+        if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:
+            self._authenticate(request)
+
+            if not has_object_permission('check_user_acquisition_read', request.user, user_acquisition):
+                raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         redis = Redis(
             host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=settings.REDIS_DATABASE
         )
 
-        redis.pfadd(f"evilflowers:popularity:{user_acquisition.acquisition.entry_id}", str(request.user.pk))
+        redis.pfadd(
+            f"evilflowers:popularity:{user_acquisition.acquisition.entry_id}",
+            str(uuid.uuid4()) if request.user.is_anonymous else str(request.user.pk)
+        )
+
         sanitized_filename = f"{slugify(user_acquisition.acquisition.entry.title.lower())}" \
                              f"{guess_extension(user_acquisition.acquisition.mime)}"
 
         if user_acquisition.acquisition.mime in settings.MODIFIERS:
             modifier = import_string(settings.MODIFIERS[user_acquisition.acquisition.mime])(
                 context={
-                    'id': str(user_acquisition.id),
+                    'id': uuid.uuid4() if request.user.is_anonymous else str(user_acquisition.id),
                     'user_id': str(user_acquisition.user_id),
                     'username': user_acquisition.user.name,
                     'title': user_acquisition.acquisition.entry.title

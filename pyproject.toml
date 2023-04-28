@@ -28,6 +28,7 @@ pypdf = { version = "^3.7", optional = true }
 fpdf2 = { version = "^2.7", optional = true }
 minio = { version = "^7.1.12", optional = true }
 qrcode = "^7.4"
+citeproc-py = "^0.6.0"
 
 [tool.poetry.dev-dependencies]
 flake8 = "^6.0"
