@@ -44,6 +44,7 @@ class AcquisitionDownload(SecuredView):
 
 class UserAcquisitionDownload(SecuredView):
     UNSECURED_METHODS = ['GET']
+
     def get(self, request, user_acquisition_id: uuid.UUID):
         try:
             user_acquisition = UserAcquisition.objects.select_related(
