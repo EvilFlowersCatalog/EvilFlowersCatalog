@@ -52,7 +52,7 @@ class EntryManagement(SecuredView):
 
 class EntryDetail(SecuredView):
     @staticmethod
-    def _get_entry(request, catalog_id: uuid.UUID, entry_id: uuid.UUID, checker: str = 'check_entry_manage') -> Entry:
+    def get_entry(request, catalog_id: uuid.UUID, entry_id: uuid.UUID, checker: str = 'check_entry_manage') -> Entry:
         try:
             entry = Entry.objects.get(pk=entry_id, catalog_id=catalog_id)
         except Entry.DoesNotExist:
@@ -64,12 +64,12 @@ class EntryDetail(SecuredView):
         return entry
 
     def get(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
-        entry = self._get_entry(request, catalog_id, entry_id, 'check_entry_read')
+        entry = self.get_entry(request, catalog_id, entry_id, 'check_entry_read')
 
         return SingleResponse(request, entry, serializer=EntrySerializer.Detailed)
 
     def post(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
-        entry = self._get_entry(request, catalog_id, entry_id)
+        entry = self.get_entry(request, catalog_id, entry_id)
 
         try:
             metadata = json.loads(request.POST.get('metadata', '{}'))
@@ -110,7 +110,7 @@ class EntryDetail(SecuredView):
         )
 
     def put(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
-        entry = self._get_entry(request, catalog_id, entry_id)
+        entry = self.get_entry(request, catalog_id, entry_id)
 
         form = EntryForm.create_from_request(request)
         form.fields['category_ids'].queryset = form.fields['category_ids'].queryset.filter(catalog_id=catalog_id)
@@ -127,7 +127,7 @@ class EntryDetail(SecuredView):
         return SingleResponse(request, entry, serializer=EntrySerializer.Detailed)
 
     def delete(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
-        entry = self._get_entry(request, catalog_id, entry_id)
+        entry = self.get_entry(request, catalog_id, entry_id)
         entry.delete()
 
         return SingleResponse(request)

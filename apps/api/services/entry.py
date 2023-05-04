@@ -2,8 +2,10 @@ import mimetypes
 import uuid
 from io import BytesIO
 
+import isbnlib
 from django.conf import settings
 from django.core.files import File
+from isbnlib.registry import bibformatters
 
 from apps.api.forms.entries import EntryForm
 from apps.core.models import Catalog, User, Entry, Author, Category, Acquisition, Price
@@ -24,6 +26,9 @@ class EntryService:
                 surname=form.cleaned_data['author']['surname']
             )
             entry.author = author
+
+        if (entry.citation is None) and ('isbn' in entry.identifiers) and entry.read_config('evilflowres_metadata_fetch'):
+            entry.citation = bibformatters["bibtex"](isbnlib.meta(entry.identifiers['isbn']))
 
         entry.save()
 

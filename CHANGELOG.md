@@ -12,6 +12,8 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Added**: User acquisitions
 - **Added**: Annotations
 - **Added**: Added support for multiple storage backends (`FileSystemStorage` and `S3Storage`)
+- **Added**: `EntryConfig` structure introduced
+- **Added**: Citations (and ISBN autofetch - basic implementation)
 - **Changed**: JWT tokens
 - **Changed**: Auth refactor
 - **Changed**: [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) enabled for all origins

@@ -237,13 +237,15 @@ OPDS = {
         'image/png',
     ),
     'IMAGE_THUMBNAIL': (768, 480),
-    'CRON_JOBS': {
-        'popularity': '*/5 * * * *'
-    },
-    'IDENTIFIERS': [
-        'isbn', 'google'
-    ]
 }
+
+EVILFLOWERS_CRON_JOBS = {
+    'popularity': '*/5 * * * *'
+}
+
+EVILFLOWERS_IDENTIFIERS = [
+    'isbn', 'google', 'doi'
+]
 
 LOGGING = {
     'version': 1,

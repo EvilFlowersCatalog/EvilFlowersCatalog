@@ -17,6 +17,6 @@ class Command(BaseCommand):
             host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=settings.REDIS_DATABASE
         )
         for entry in Entry.objects.all():
-            entry.popularity = redis.pfcount(f'popularity:{entry.pk}')
+            entry.popularity = redis.pfcount(f'evilflowers:popularity:{entry.pk}')
             entry.save()
             logger.debug(f"HyperLogLog popularity sync:{entry.pk}={entry.popularity}")

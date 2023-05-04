@@ -1,9 +1,11 @@
+import bibtexparser
+from bibtexparser.bibdatabase import BibDatabase
 from django import forms
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.utils.translation import gettext as _
-from django_api_forms import Form, FormField, FileField, FormFieldList, ImageField, DictionaryField
+from django_api_forms import Form, FormField, FileField, FormFieldList, ImageField, DictionaryField, BooleanField
 
 from apps.core.models import Language, Author, Category, Currency, Feed, Catalog
 from apps.core.models import Acquisition
@@ -39,7 +41,28 @@ class AcquisitionForm(AcquisitionMetaForm):
     content = FileField(mime=Acquisition.AcquisitionMIME.values)
 
 
+class EntryConfigForm(Form):
+    evilflowers_ocr_enabled = BooleanField(required=False)
+    evilflowers_ocr_rewrite = BooleanField(required=False)
+    evilflowers_annotations_create = BooleanField(required=False)
+    evilflowers_viewer_print = BooleanField(required=False)
+    evilflowers_share_enabled = BooleanField(required=False)
+    evilflowres_metadata_fetch = BooleanField(required=False)
+    evilflowers_render_type = forms.ChoiceField(
+        required=False,
+        choices=(
+            ('document', _("Document render type")),
+            ('page', _("Page render type")),
+        )
+    )
+
+
 class EntryForm(Form):
+    class Meta:
+        field_strategy = {
+            'config': 'django_api_forms.population_strategies.BaseStrategy'
+        }
+
     id = forms.UUIDField(required=False)
     language_code = forms.CharField(max_length=3)
     author_id = forms.ModelChoiceField(queryset=Author.objects.all(), required=False)
@@ -55,12 +78,14 @@ class EntryForm(Form):
     acquisitions = FormFieldList(AcquisitionForm, required=False)
     identifiers = DictionaryField(
         required=False,
-        validators=[AvailableKeysValidator(keys=settings.OPDS['IDENTIFIERS'])],
+        validators=[AvailableKeysValidator(keys=settings.EVILFLOWERS_IDENTIFIERS)],
         value_field=forms.CharField(max_length=100)
     )
     image = ImageField(
         max_length=settings.OPDS['IMAGE_UPLOAD_MAX_SIZE'], mime=settings.OPDS['IMAGE_MIME'], required=False
     )
+    config = FormField(EntryConfigForm, required=False)
+    citation = forms.CharField(required=False)
 
     def clean_language_code(self) -> Language:
         language = Language.objects.filter(
@@ -71,6 +96,22 @@ class EntryForm(Form):
             raise ValidationError("Language not found. Use valid alpha2 or alpha3 code.", 'not-found')
 
         return language
+
+    def clean_citation(self) -> str:
+        bibtex = bibtexparser.loads(self.cleaned_data.get('citation'))
+
+        if isinstance(bibtex, BibDatabase):
+            try:
+                bibtex.entries[0]
+            except IndexError:
+                raise ValidationError("No entry found in provided BibTeX", 'no-bibtex-record')
+
+            if len(bibtex.entries) > 1:
+                raise ValidationError("BibTeX contains more than one record", 'multiple-bibtex-records')
+
+            return bibtexparser.dumps(bibtex)
+        else:
+            raise ValidationError("Invalid BibTeX record", 'invalid-bibtex')
 
     def clean(self):
         if 'author_id' in self.cleaned_data.keys() and 'author' in self.cleaned_data.keys():

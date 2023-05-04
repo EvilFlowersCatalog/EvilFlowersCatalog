@@ -18,6 +18,28 @@ from apps.core.validators import AvailableKeysValidator
 from apps.files.storage import get_storage
 
 
+class EntryConfig(TypedDict):
+    evilflowers_ocr_enabled: bool
+    evilflowers_ocr_rewrite: bool
+    evilflowers_annotations_create: bool
+    evilflowers_viewer_print: bool
+    evilflowers_render_type: Literal['page', 'document']
+    evilflowers_share_enabled: bool
+    evilflowres_metadata_fetch: bool
+
+
+def default_entry_config() -> EntryConfig:
+    return EntryConfig(
+        evilflowers_ocr_enabled=False,
+        evilflowers_ocr_rewrite=False,
+        evilflowers_annotations_create=True,
+        evilflowers_viewer_print=True,
+        evilflowers_share_enabled=True,
+        evilflowers_render_type='document',
+        evilflowres_metadata_fetch=False
+    )
+
+
 class Entry(BaseModel):
     class Meta:
         app_label = 'core'
@@ -29,13 +51,6 @@ class Entry(BaseModel):
             models.Index(fields=['catalog_id', '-popularity']),
         ]
 
-    class EntryConfig(TypedDict):
-        text_layer: bool
-        annotation: bool
-        print: bool
-        share: bool
-        render_type: Literal['page', 'document']
-
     def _upload_to_path(self, filename):
         return f"catalogs/{self.catalog.url_name}/{self.pk}/{filename}"
 
@@ -43,7 +58,7 @@ class Entry(BaseModel):
     catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE, related_name='entries')
     author = models.ForeignKey(Author, on_delete=models.CASCADE, null=True, related_name='entries')
     language = models.ForeignKey(Language, on_delete=models.CASCADE, related_name='entries', null=True)
-    identifiers = HStoreField(null=True, validators=[AvailableKeysValidator(keys=settings.OPDS['IDENTIFIERS'])])
+    identifiers = HStoreField(null=True, validators=[AvailableKeysValidator(keys=settings.EVILFLOWERS_IDENTIFIERS)])
     title = models.CharField(max_length=255)
     summary = models.TextField(null=True)
     content = models.TextField(null=True)
@@ -57,8 +72,8 @@ class Entry(BaseModel):
     image_mime = models.CharField(max_length=100, null=True)
     thumbnail = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=get_storage)
     popularity = models.PositiveBigIntegerField(default=0, null=False)
-    config = models.JSONField(null=True)
-    citation = models.JSONField(null=True)
+    config = models.JSONField(null=False, default=default_entry_config)
+    citation = models.TextField(null=True)
 
     @property
     def image_url(self) -> Optional[str]:
@@ -76,6 +91,10 @@ class Entry(BaseModel):
             logging.warning("Unable to find %s", self.thumbnail.path)
             return None
         return f"data:{self.image_mime};base64,{encoded}"
+
+    def read_config(self, config_name: str):
+        current = default_entry_config() | self.config
+        return current.get(config_name)
 
 
 __all__ = [

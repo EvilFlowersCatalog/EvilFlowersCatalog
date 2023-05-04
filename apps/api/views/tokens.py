@@ -39,8 +39,8 @@ class AccessTokenManagement(SecuredView):
             host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=settings.REDIS_DATABASE
         )
 
-        redis.set(f"refresh_token:{jti}", jti)
-        redis.expire(f"refresh_token:{jti}", settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION)
+        redis.set(f"evilflowers:refresh_token:{jti}", jti)
+        redis.expire(f"evilflowers:refresh_token:{jti}", settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION)
 
         return SingleResponse(request, {
             'access_token': access_token,
@@ -64,7 +64,7 @@ class RefreshTokenManagement(View):
             host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=settings.REDIS_DATABASE
         )
 
-        if not redis.exists(f"refresh_token:{claims['jti']}"):
+        if not redis.exists(f"evilflowers:refresh_token:{claims['jti']}"):
             raise UnauthorizedException(request)
 
         access_token = JWTFactory(claims['sub']).access()
