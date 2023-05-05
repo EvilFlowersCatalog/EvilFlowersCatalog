@@ -27,7 +27,7 @@ class EntryService:
             )
             entry.author = author
 
-        if (entry.citation is None) and ('isbn' in entry.identifiers) and entry.read_config('evilflowres_metadata_fetch'):
+        if all([entry.citation is None, 'isbn' in entry.identifiers, entry.read_config('evilflowres_metadata_fetch')]):
             entry.citation = bibformatters["bibtex"](isbnlib.meta(entry.identifiers['isbn']))
 
         entry.save()
