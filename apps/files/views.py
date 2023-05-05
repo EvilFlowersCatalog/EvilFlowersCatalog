@@ -76,8 +76,8 @@ class UserAcquisitionDownload(SecuredView):
         sanitized_filename = f"{slugify(user_acquisition.acquisition.entry.title.lower())}" \
                              f"{guess_extension(user_acquisition.acquisition.mime)}"
 
-        if user_acquisition.acquisition.mime in settings.MODIFIERS:
-            modifier = import_string(settings.MODIFIERS[user_acquisition.acquisition.mime])(
+        if user_acquisition.acquisition.mime in settings.EVILFLOWERS_MODIFIERS:
+            modifier = import_string(settings.EVILFLOWERS_MODIFIERS[user_acquisition.acquisition.mime])(
                 context={
                     'id': uuid.uuid4() if request.user.is_anonymous else str(user_acquisition.id),
                     'user_id': str(user_acquisition.user_id),

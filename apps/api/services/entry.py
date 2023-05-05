@@ -106,7 +106,7 @@ class EntryService:
 
                 buffer = BytesIO()
                 thumbnail = form.cleaned_data['image'].image.copy()
-                thumbnail.thumbnail(settings.OPDS['IMAGE_THUMBNAIL'])
+                thumbnail.thumbnail(settings.EVILFLOWERS_IMAGE_THUMBNAIL)
                 thumbnail.save(buffer, format=form.cleaned_data['image'].image.format)
                 buffer.seek(0)
 

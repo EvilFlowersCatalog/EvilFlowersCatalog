@@ -51,7 +51,9 @@ class CompleteFeedView(OpdsView):
 
 class LatestFeedView(OpdsView):
     def get(self, request, catalog_name: str):
-        entries = Entry.objects.filter(catalog=self.catalog).order_by('created_at')[:settings.OPDS['NEW_LIMIT']]
+        entries = Entry.objects.filter(
+            catalog=self.catalog
+        ).order_by('created_at')[:settings.EVILFLOWERS_FEEDS_NEW_LIMIT]
         entry_filter = EntryFilter(request.GET, queryset=Entry.objects.filter(pk__in=entries), request=request)
 
         try:
@@ -68,7 +70,9 @@ class LatestFeedView(OpdsView):
 
 class PopularFeedView(OpdsView):
     def get(self, request, catalog_name: str):
-        entries = Entry.objects.filter(catalog=self.catalog).order_by('-popularity')[:settings.OPDS['NEW_LIMIT']]
+        entries = Entry.objects.filter(
+            catalog=self.catalog
+        ).order_by('-popularity')[:settings.EVILFLOWERS_FEEDS_NEW_LIMIT]
         entry_filter = EntryFilter(request.GET, queryset=Entry.objects.filter(pk__in=entries), request=request)
 
         try:

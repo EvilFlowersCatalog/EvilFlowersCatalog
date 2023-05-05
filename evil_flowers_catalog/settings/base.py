@@ -224,20 +224,18 @@ REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
 REDIS_DATABASE = int(os.getenv('REDIS_DATABASE', '0'))
 
 # Pagination
-PAGINATION = {
-    'DEFAULT_LIMIT': 10
-}
+EVILFLOWERS_PAGINATION_DEFAULT_LIMIT = int(os.getenv('EVILFLOWERS_PAGINATION_DEFAULT_LIMIT', 10))
 
-OPDS = {
-    'NEW_LIMIT': 20,
-    'IMAGE_UPLOAD_MAX_SIZE': 1024 * 1024 * 5,  # 5MB
-    'IMAGE_MIME': (
-        'image/gif',
-        'image/jpeg',
-        'image/png',
-    ),
-    'IMAGE_THUMBNAIL': (768, 480),
-}
+# Images & thumbnails
+EVILFLOWERS_IMAGE_UPLOAD_MAX_SIZE = int(os.getenv('EVILFLOWERS_IMAGE_UPLOAD_MAX_SIZE', 5)) * 1024 * 1024  # MB
+EVILFLOWERS_IMAGE_MIME = (
+    'image/gif',
+    'image/jpeg',
+    'image/png',
+)
+EVILFLOWERS_IMAGE_THUMBNAIL = (768, 480)
+
+EVILFLOWERS_FEEDS_NEW_LIMIT = os.getenv('EVILFLOWERS_FEEDS_NEW_LIMIT', 20)
 
 EVILFLOWERS_CRON_JOBS = {
     'popularity': '*/5 * * * *'
@@ -247,7 +245,24 @@ EVILFLOWERS_IDENTIFIERS = [
     'isbn', 'google', 'doi'
 ]
 
-EVIL_FLOWERS_USER_ACQUISITION_MODE = os.getenv('EVIL_FLOWERS_USER_ACQUISITION_MODE', 'single')
+EVILFLOWERS_USER_ACQUISITION_MODE = os.getenv('EVIL_FLOWERS_USER_ACQUISITION_MODE', 'single')
+
+# Storage
+EVILFLOWERS_STORAGE_DRIVER = os.getenv('EVILFLOWERS_STORAGE_DRIVER', 'apps.files.storage.filesystem.FileSystemStorage')
+EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR = os.getenv('EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR')
+EVILFLOWERS_STORAGE_S3_HOST = os.getenv('EVILFLOWERS_STORAGE_S3_HOST')
+EVILFLOWERS_STORAGE_S3_ACCESS_KEY = os.getenv('EVILFLOWERS_STORAGE_S3_ACCESS_KEY')
+EVILFLOWERS_STORAGE_S3_SECRET_KEY = os.getenv('EVILFLOWERS_STORAGE_S3_SECRET_KEY')
+EVILFLOWERS_STORAGE_S3_SECURE = bool(os.getenv('EVILFLOWERS_STORAGE_S3_SECURE', False))
+EVILFLOWERS_STORAGE_S3_BUCKET = os.getenv('EVILFLOWERS_STORAGE_S3_BUCKET')
+
+# Modifiers
+EVILFLOWERS_MODIFIERS = {
+    'application/pdf': 'apps.core.modifiers.pdf.PDFModifier'
+}
+
+# Admin
+EVILFLOWERS_CONTACT_EMAIL = os.getenv('CONTACT_EMAIL', 'root@localhost')
 
 LOGGING = {
     'version': 1,
@@ -267,21 +282,3 @@ LOGGING = {
 }
 
 CORS_ALLOW_ALL_ORIGINS = True
-
-# Storage
-STORAGE_DRIVER = os.getenv('STORAGE_DRIVER', 'apps.files.storage.filesystem.FileSystemStorage')
-STORAGE_FILESYSTEM_DATADIR = os.getenv('STORAGE_FILESYSTEM_DATADIR')
-STORAGE_S3_HOST = os.getenv('STORAGE_S3_HOST')
-STORAGE_S3_ACCESS_KEY = os.getenv('STORAGE_S3_ACCESS_KEY')
-STORAGE_S3_SECRET_KEY = os.getenv('STORAGE_S3_SECRET_KEY')
-STORAGE_S3_SECURE = False
-STORAGE_S3_BUCKET = os.getenv('STORAGE_S3_BUCKET')
-
-# Modifiers
-MODIFIERS = {
-    'application/pdf': 'apps.core.modifiers.pdf.PDFModifier'
-}
-
-# Admin
-CONTACT_EMAIL = os.getenv('CONTACT_EMAIL', 'root@localhost')
-

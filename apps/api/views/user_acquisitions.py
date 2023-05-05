@@ -30,7 +30,7 @@ class UserAcquisitionManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        if settings.EVIL_FLOWERS_USER_ACQUISITION_MODE == 'single':
+        if settings.EVILFLOWERS_USER_ACQUISITION_MODE == 'single':
             user_acquisition = UserAcquisition.objects.filter(
                 acquisition_id=form.cleaned_data['acquisition_id'],
                 type=UserAcquisition.UserAcquisitionType.PERSONAL

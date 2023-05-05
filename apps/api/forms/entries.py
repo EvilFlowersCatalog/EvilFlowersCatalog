@@ -82,7 +82,7 @@ class EntryForm(Form):
         value_field=forms.CharField(max_length=100)
     )
     image = ImageField(
-        max_length=settings.OPDS['IMAGE_UPLOAD_MAX_SIZE'], mime=settings.OPDS['IMAGE_MIME'], required=False
+        max_length=settings.EVILFLOWERS_IMAGE_UPLOAD_MAX_SIZE, mime=settings.EVILFLOWERS_IMAGE_MIME, required=False
     )
     config = FormField(EntryConfigForm, required=False)
     citation = forms.CharField(required=False)

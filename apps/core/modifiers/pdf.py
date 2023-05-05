@@ -18,7 +18,7 @@ class PDFModifier:
         'generated_at': timezone.now().isoformat(),
         'url': 'https://elvira.fiit.stuba.sk',
         'instance': settings.INSTANCE_NAME,
-        'contact': settings.CONTACT_EMAIL
+        'contact': settings.EVILFLOWERS_CONTACT_EMAIL
     }
 
     def __init__(self, context: ModifierContext):

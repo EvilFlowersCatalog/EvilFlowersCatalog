@@ -122,7 +122,7 @@ class PaginationResponse(GeneralResponse):
         # Pagination
         paginate = request.GET.get('paginate', 'true') == 'true'
         if paginate:
-            limit = int(request.GET.get('limit', settings.PAGINATION['DEFAULT_LIMIT']))
+            limit = int(request.GET.get('limit', settings.EVILFLOWERS_PAGINATION_DEFAULT_LIMIT))
             page = int(request.GET.get('page', 1))
 
             paginator = Paginator(qs, limit)
