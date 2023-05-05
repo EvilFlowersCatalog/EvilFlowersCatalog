@@ -215,6 +215,14 @@ paths:
                     $ref: '#/components/schemas/UserAcquisition'
                 required:
                   - response
+        '303':
+          description: 'If EvilFLowers is configured in the `single` user acquisition mode using `EVIL_FLOWERS_USER_ACQUISITION_MODE`. Users can have only one **UserAcquisition** instance per entry. If a **UserAcquisition** already exists during `POST /v1/user-acquisitions`, the request will return `HTTP 303 See Other`, pointing to the details of the existing **UserAcquisition** instance (`GET /v1/user-acquisitions/:user_acquisition_id`).'
+          headers:
+            Location:
+              schema:
+                type: string
+                example: 'http://127.0.0.1:8000/api/v1/user-acquisitions/f222d7be-f52a-477c-afaf-101610e9bca2'
+              description: URI for the existing user acquisition detail
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':

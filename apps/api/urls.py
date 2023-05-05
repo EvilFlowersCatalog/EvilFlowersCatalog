@@ -41,7 +41,7 @@ urlpatterns = [
     ),
     path(
         "user-acquisitions/<uuid:user_acquisition_id>", user_acquisitions.UserAcquisitionDetail.as_view(),
-        name='acquisition-detail'
+        name='user-acquisition-detail'
     ),
 
     # Annotations

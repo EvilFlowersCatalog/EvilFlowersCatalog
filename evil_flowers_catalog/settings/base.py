@@ -247,6 +247,8 @@ EVILFLOWERS_IDENTIFIERS = [
     'isbn', 'google', 'doi'
 ]
 
+EVIL_FLOWERS_USER_ACQUISITION_MODE = os.getenv('EVIL_FLOWERS_USER_ACQUISITION_MODE', 'single')
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

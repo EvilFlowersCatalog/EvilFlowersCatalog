@@ -1,6 +1,9 @@
 from http import HTTPStatus
 from uuid import UUID
 
+from django.conf import settings
+from django.http import HttpResponseRedirect
+from django.urls import reverse
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
@@ -27,11 +30,29 @@ class UserAcquisitionManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
+        if settings.EVIL_FLOWERS_USER_ACQUISITION_MODE == 'single':
+            user_acquisition = UserAcquisition.objects.filter(
+                acquisition_id=form.cleaned_data['acquisition_id'],
+                type=UserAcquisition.UserAcquisitionType.PERSONAL
+            ).first()
+
+            if user_acquisition:
+                location = f"{settings.BASE_URL}" \
+                           f"{reverse('user-acquisition-detail', kwargs={'user_acquisition_id': user_acquisition.pk})}"
+                return HttpResponseRedirect(
+                    location, status=HTTPStatus.SEE_OTHER
+                )
+
         if not has_object_permission('check_entry_read', request.user, form.cleaned_data['acquisition_id'].entry):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         user_acquisition = UserAcquisition(user=request.user)
         form.populate(user_acquisition)
+
+        evilflowers_share_enabled = user_acquisition.acquisition.entry.read_config('evilflowers_share_enabled')
+        if user_acquisition.type == UserAcquisition.UserAcquisitionType.SHARED and not evilflowers_share_enabled:
+            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+
         user_acquisition.save()
 
         return SingleResponse(
