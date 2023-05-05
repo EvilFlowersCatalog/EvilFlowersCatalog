@@ -31,7 +31,11 @@ class S3Storage(Storage):
         content.seek(0)
 
         s3_object = self._client.put_object(
-            settings.EVILFLOWERS_STORAGE_S3_BUCKET, name, content, content.getbuffer().nbytes, content_type=content_type
+            settings.EVILFLOWERS_STORAGE_S3_BUCKET,
+            name,
+            content,
+            content.getbuffer().nbytes,
+            content_type=content_type
         )
         return s3_object.object_name
 
