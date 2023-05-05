@@ -829,19 +829,30 @@ components:
         id: d08d08bccac1c
       type: object
       properties:
-        text_layer:
+        evilflowers_ocr_enabled:
           type: boolean
-        annotations:
+          description: If `True` EvilFlowers will try to perform OCR on the input PDF
+        evilflowers_ocr_rewrite:
           type: boolean
-        print:
+          description: If `True` and `EVILFLOWERS_OCR_ENABLED` is enabled the EvilFlowers will create or rewrite text layer in the PDF
+        evilflowers_annotations_create:
           type: boolean
-        share:
+          description: Allow users to create `Annotation` layers on `Entry`
+        evilflowers_viewer_print:
           type: boolean
-        render_type:
+          description: Tells if viewer should show or hide the print button
+        evilflowers_render_type:
           type: string
           enum:
             - page
             - document
+          description: Tells editor the render type method
+        evilflowers_share_enabled:
+          type: boolean
+          description: Enabled share user-acquisition type
+        evilflowres_metadata_fetch:
+          type: boolean
+          description: 'If `true`, EvilFlowers will try to fetch BibTeX information using IDENTIFIERS if present'
   responses:
     Unauthorized:
       description: Unauthorized
