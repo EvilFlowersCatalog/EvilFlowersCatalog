@@ -8,6 +8,7 @@ from django.views import View
 from redis.client import Redis
 
 from apps.api.forms.tokens import AccessTokenForm, RefreshTokenForm
+from apps.api.serializers.users import UserSerializer
 from apps.core.auth import JWTFactory, BasicBackend
 from apps.core.errors import ValidationException, UnauthorizedException, ProblemDetailException
 from apps.api.response import SingleResponse
@@ -44,7 +45,8 @@ class AccessTokenManagement(SecuredView):
 
         return SingleResponse(request, {
             'access_token': access_token,
-            'refresh_token': refresh_token
+            'refresh_token': refresh_token,
+            'user': UserSerializer.Detailed(user).dict()
         }, status=HTTPStatus.OK)
 
 

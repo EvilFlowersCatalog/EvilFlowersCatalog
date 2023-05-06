@@ -35,7 +35,7 @@ The implementation is based on these RFCs:
 ### Docker
 
 A pre-built Docker image is available on the GitHub Container registry as
-[evilflowers](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pkgs/container/evilflowerscatalog).
+[evilflowerscatalog](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pkgs/container/evilflowerscatalog).
 
 The repository contains a working example of a `docker-compose.yml` file configured for a development environment.
 You can use a similar configuration for production usage. The application image will be built from the source.
