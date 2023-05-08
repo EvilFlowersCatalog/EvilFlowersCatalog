@@ -12,7 +12,11 @@ from apps.core.views import SecuredView
 
 
 class AcquisitionManagement(SecuredView):
-    pass
+    def post(self, request):
+        ...
+
+    def get(self, request):
+        ...
 
 
 class AcquisitionDetail(SecuredView):

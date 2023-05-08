@@ -17,11 +17,11 @@ class UserManagement(SecuredView):
     def post(self, request):
         form = CreateUserForm.create_from_request(request)
 
-        if not form.is_valid():
-            raise ValidationException(request, form)
-
         if not request.user.has_perm('core.add_user'):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+
+        if not form.is_valid():
+            raise ValidationException(request, form)
 
         if User.objects.filter(username=form.cleaned_data['username']).exists():
             raise ProblemDetailException(

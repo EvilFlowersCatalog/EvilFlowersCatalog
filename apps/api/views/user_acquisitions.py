@@ -27,13 +27,17 @@ class UserAcquisitionManagement(SecuredView):
     def post(self, request):
         form = UserAcquisitionForm.create_from_request(request)
 
+        if not has_object_permission('check_entry_read', request.user, form.cleaned_data['acquisition_id'].entry):
+            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+
         if not form.is_valid():
             raise ValidationException(request, form)
 
         if settings.EVILFLOWERS_USER_ACQUISITION_MODE == 'single':
             user_acquisition = UserAcquisition.objects.filter(
                 acquisition_id=form.cleaned_data['acquisition_id'],
-                type=UserAcquisition.UserAcquisitionType.PERSONAL
+                type=UserAcquisition.UserAcquisitionType.PERSONAL,
+                user=request.user
             ).first()
 
             if user_acquisition:
@@ -42,9 +46,6 @@ class UserAcquisitionManagement(SecuredView):
                 return HttpResponseRedirect(
                     location, status=HTTPStatus.SEE_OTHER
                 )
-
-        if not has_object_permission('check_entry_read', request.user, form.cleaned_data['acquisition_id'].entry):
-            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         user_acquisition = UserAcquisition(user=request.user)
         form.populate(user_acquisition)
