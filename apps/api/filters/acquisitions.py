@@ -1,6 +1,6 @@
 import django_filters
 
-from apps.core.models import Annotation, Acquisition
+from apps.core.models import Acquisition
 
 
 class AcquisitionFilter(django_filters.FilterSet):
