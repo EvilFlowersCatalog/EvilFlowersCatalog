@@ -5,7 +5,7 @@ from typing import Type, Optional, Any, List
 
 from django.conf import settings
 from django.core.paginator import Paginator, EmptyPage
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseRedirect
 from django.utils.translation import gettext as _
 from porcupine.base import Serializer
 
@@ -162,10 +162,15 @@ class PaginationResponse(GeneralResponse):
         super().__init__(request, data, **kwargs)
 
 
+class SeeOtherResponse(HttpResponseRedirect):
+    status_code = 303
+
+
 __all__ = [
     "SingleResponse",
     "ErrorResponse",
     "PaginationResponse",
     "ValidationResponse",
+    "SeeOtherResponse",
     "Ordering"
 ]

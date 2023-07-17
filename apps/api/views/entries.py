@@ -20,7 +20,7 @@ from apps.core.views import SecuredView
 
 class EntryPaginator(SecuredView):
     def get(self, request):
-        entries = EntryFilter(request.GET, queryset=Entry.objects.all(), request=request).qs
+        entries = EntryFilter(request.GET, queryset=Entry.objects.all(), request=request).qs.distinct()
 
         return PaginationResponse(request, entries, serializer=EntrySerializer.Base)
 

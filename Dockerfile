@@ -1,4 +1,4 @@
-FROM alpine:3.17 as builder
+FROM alpine:3.18 as builder
 
 WORKDIR /root
 
@@ -25,7 +25,7 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 RUN pip install gunicorn wheel --no-cache-dir
 RUN pip install -r requirements.txt --no-cache-dir
 
-FROM alpine:3.17
+FROM alpine:3.18
 
 WORKDIR /usr/src/app
 
@@ -47,7 +47,6 @@ COPY conf/supervisor.conf /etc/supervisord.conf
 
 # Health check
 HEALTHCHECK CMD curl --fail http://localhost:8000/api/v1/status || exit 1
-
 # Execution
 RUN chmod +x conf/entrypoint.sh
 CMD ["conf/entrypoint.sh"]

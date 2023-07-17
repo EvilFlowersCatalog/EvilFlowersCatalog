@@ -26,6 +26,7 @@ class EntryFilter(django_filters.FilterSet):
     title = django_filters.CharFilter(lookup_expr='unaccent__icontains')
     summary = django_filters.CharFilter(lookup_expr='unaccent__icontains')
     query = django_filters.CharFilter(method='filter_name')
+    feed_id = django_filters.UUIDFilter(field_name='feeds__id')
 
     @classmethod
     def template(cls) -> str:
