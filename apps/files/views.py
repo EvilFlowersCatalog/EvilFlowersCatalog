@@ -1,3 +1,4 @@
+import base64
 import uuid
 from http import HTTPStatus
 from mimetypes import guess_extension
@@ -10,6 +11,7 @@ from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 from redis import Redis
 
+from apps.api.response import SingleResponse
 from apps.core.errors import ProblemDetailException
 from apps.core.models import Acquisition, Entry, UserAcquisition
 from apps.core.views import SecuredView
@@ -92,6 +94,11 @@ class UserAcquisitionDownload(SecuredView):
                 raise ProblemDetailException(request, _("Page not found"), status=HTTPStatus.NOT_FOUND)
         else:
             content = user_acquisition.acquisition.content
+
+        if request.GET.get('format', None) == 'base64':
+            return SingleResponse(request, {
+                'data': base64.b64encode(content.read()).decode()
+            })
 
         return FileResponse(content, as_attachment=True, filename=sanitized_filename)
 
