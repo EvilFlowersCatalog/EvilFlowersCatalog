@@ -8,7 +8,7 @@ class FeedFilter(django_filters.FilterSet):
     catalog_id = django_filters.UUIDFilter()
     title = django_filters.CharFilter(lookup_expr='unaccent__icontains')
     kind = django_filters.ChoiceFilter(choices=Feed.FeedKind.choices)
-    parent_id = django_filters.UUIDFilter()
+    parent_id = django_filters.UUIDFilter(method='filter_parent_id')
 
     class Meta:
         model = Feed
