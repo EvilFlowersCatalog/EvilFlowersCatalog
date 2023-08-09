@@ -64,6 +64,7 @@ class EntrySerializer:
         author: AuthorSerializer.Base = None
         categories: List[CategorySerializer.Base] = None
         language: LanguageSerializer.Base = None
+        feeds: List[FeedSerializer.Base] = None
         popularity: int
         title: str
         image: str = None
@@ -91,5 +92,4 @@ class EntrySerializer:
         content: str = None
         identifiers: Dict[str, str] = None
         acquisitions: List[AcquisitionSerializer.Base] = None
-        feeds: List[FeedSerializer.Base] = None
         contributors: List[AuthorSerializer.Base] = None
