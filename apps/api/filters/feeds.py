@@ -8,7 +8,7 @@ class FeedFilter(django_filters.FilterSet):
     catalog_id = django_filters.UUIDFilter()
     title = django_filters.CharFilter(lookup_expr='unaccent__icontains')
     kind = django_filters.ChoiceFilter(choices=Feed.FeedKind.choices)
-    parent_id = django_filters.UUIDFilter(method='filter_parent_id')
+    parent_id = django_filters.CharFilter(method='filter_parent_id')
 
     class Meta:
         model = Feed
@@ -16,7 +16,11 @@ class FeedFilter(django_filters.FilterSet):
 
     @staticmethod
     def filter_parent_id(qs, name, value):
-        return qs.filter(parents__id=value).distinct()
+        # TODO: this should be a convention
+        if value == 'null':
+            return Feed.objects.filter(parents__isnull=True).distinct()
+        else:
+            return qs.filter(parents__id=value).distinct()
 
     @property
     def qs(self):
