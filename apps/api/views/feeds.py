@@ -91,7 +91,7 @@ class FeedDetail(SecuredView):
             feed.entries.clear()
             feed.entries.add(*form.cleaned_data['entries'])
 
-        if feed.kind == Feed.FeedKind.NAVIGATION and 'parents' in form.cleaned_data.keys():
+        if 'parents' in form.cleaned_data.keys():
             feed.parents.clear()
             feed.parents.add(*form.cleaned_data['parents'])
 
