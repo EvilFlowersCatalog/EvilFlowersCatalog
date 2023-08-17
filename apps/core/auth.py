@@ -16,7 +16,7 @@ from django.utils.text import slugify
 from django.utils.translation import gettext as _
 
 from apps.core.errors import ProblemDetailException
-from apps.core.models import ApiKey, User, AuthSource
+from apps.core.models import ApiKey, User, AuthSource, UserCatalog
 
 
 class JWTFactory:
@@ -105,6 +105,7 @@ class BasicBackend(ModelBackend):
         GROUP_MAP: Dict[str, str]
         FILTER: str
         SUPERADMIN_GROUP: Optional[str]
+        CATALOGS: Optional[Dict[str, str]]
 
     def _ldap(self, username: str, password: str, auth_source: AuthSource) -> Optional[User]:
         config: BasicBackend.LdapConfig = auth_source.content
@@ -164,6 +165,14 @@ class BasicBackend(ModelBackend):
 
         user.last_login = timezone.now()
         user.save()
+
+        for catalog_id, mode in config.get('CATALOGS', {}).items():
+            if not UserCatalog.objects.filter(catalog_id=catalog_id, user=user).exists():
+                UserCatalog.objects.create(
+                    catalog_id=catalog_id,
+                    user=user,
+                    mode=mode
+                )
 
         return user
 
