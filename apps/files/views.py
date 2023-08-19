@@ -83,7 +83,6 @@ class UserAcquisitionDownload(SecuredView):
                 context={
                     'id': uuid.uuid4() if request.user.is_anonymous else str(user_acquisition.id),
                     'user_id': str(user_acquisition.user_id),
-                    'username': user_acquisition.user.name,
                     'title': user_acquisition.acquisition.entry.title
                 }
             )
