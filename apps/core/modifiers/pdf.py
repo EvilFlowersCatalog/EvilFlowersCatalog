@@ -16,9 +16,7 @@ from apps.core.modifiers import ModifierContext
 class PDFModifier:
     DEFAULT_CONTEXT: ModifierContext = {
         'generated_at': timezone.now().isoformat(),
-        'url': 'https://elvira.fiit.stuba.sk',
         'instance': settings.INSTANCE_NAME,
-        'contact': settings.EVILFLOWERS_CONTACT_EMAIL
     }
 
     def __init__(self, context: ModifierContext):
@@ -38,7 +36,7 @@ class PDFModifier:
     def create_qr(self) -> PageObject:
         pdf = fpdf.FPDF()
         qr = qrcode.QRCode(
-            version=25,
+            version=4,
             border=0,
             error_correction=qrcode.constants.ERROR_CORRECT_H
         )
