@@ -1,6 +1,6 @@
 import django_filters
 
-from apps.core.models import Feed, UserCatalog
+from apps.core.models import Feed
 
 
 class FeedFilter(django_filters.FilterSet):
