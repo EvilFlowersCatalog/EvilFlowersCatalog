@@ -144,7 +144,6 @@ class BasicBackend(ModelBackend):
 
             # LDAP groups
             user.groups.clear()
-            user.is_superuser = False
             for ldap_group in attrs.get('memberOf', []):
                 if ldap_group.decode() in config['GROUP_MAP']:
                     try:
