@@ -20,7 +20,7 @@ class FeedManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        if not has_object_permission('check_catalog_manage', request.user, form.cleaned_data['catalog_id']):
+        if not has_object_permission('check_catalog_read', request.user, form.cleaned_data['catalog_id']):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         if Feed.objects.filter(
@@ -57,7 +57,7 @@ class FeedDetail(SecuredView):
         except Feed.DoesNotExist as e:
             raise ProblemDetailException(request, _("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        if not has_object_permission('check_catalog_manage', request.user, feed.catalog):
+        if not has_object_permission('check_catalog_read', request.user, feed.catalog):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return feed

@@ -35,7 +35,8 @@ class EntryChecker(AbacChecker):
         if obj.creator_id == user.id:
             return True
 
-        return obj.catalog.user_catalogs.filter(user=user, mode=UserCatalog.Mode.MANAGE).exists()
+        # return obj.catalog.user_catalogs.filter(user=user, mode=UserCatalog.Mode.MANAGE).exists()
+        return obj.catalog.user_catalogs.filter(user=user).exists()
 
     @staticmethod
     def check_entry_read(user: User, obj: Entry) -> bool:
