@@ -30,9 +30,10 @@ class FeedFilter(django_filters.FilterSet):
             return qs.filter(catalog__is_public=True)
 
         if not self.request.user.is_superuser:
+            # TODO: catalog access mode should be an integer so we can do gte a lte
             qs = qs.filter(
                 catalog__user_catalogs__user=self.request.user,
-                catalog__user_catalogs__mode=UserCatalog.Mode.MANAGE
+                # catalog__user_catalogs__mode=UserCatalog.Mode.READ
             )
 
         return qs
