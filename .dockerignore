@@ -7,3 +7,12 @@ evil_flowers_catalog.egg-info/
 .env.example
 .flake8
 .gitignore
+data/
+logs/
+private'
+.git/
+.stoplight/
+media/
+docs/
+gen/
+static/

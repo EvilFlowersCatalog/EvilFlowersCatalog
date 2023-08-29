@@ -16,6 +16,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Added**: Citations (and ISBN autofetch - basic implementation)
 - **Added**: Shelf records
 - **Changed**: JWT tokens
+- **Changed**: Debian based docker images instead of Alpine Linux
 - **Changed**: Auth refactor
 - **Changed**: [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) enabled for all origins
 - **Changed**: Extended security model (ABAC introduced catalog access modes)

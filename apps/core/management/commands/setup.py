@@ -15,7 +15,7 @@ class Command(BaseCommand):
         self._languages()
 
     def _cron(self):
-        cron = CronTab(tabfile='/etc/crontabs/root', user=True)
+        cron = CronTab(user='root')
         cron.remove_all()
 
         for command, schedule in settings.EVILFLOWERS_CRON_JOBS.items():

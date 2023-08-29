@@ -24,8 +24,7 @@ Authlib = "^1.2"
 tzdata = "^2023.3"
 django-cors-headers = "^4.2"
 python-ldap = "^3.4.0"
-pypdf = { version = "^3.7", optional = true }
-fpdf2 = { version = "^2.7", optional = true }
+pymupdf = { version = "^1.23.2", optional = true }
 minio = { version = "^7.1.12", optional = true }
 qrcode = "^7.4"
 bibtexparser = "^1.4.0"
@@ -36,7 +35,7 @@ flake8 = "^6.0"
 
 [tool.poetry.extras]
 s3 = ["minio"]
-pdf = ["pypdf", "fpdf2"]
+pdf = ["pymupdf"]
 
 [build-system]
 requires = ["poetry-core"]

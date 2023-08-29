@@ -2,13 +2,11 @@ import io
 import json
 from typing import Optional
 
+import fitz
 import qrcode
-from pypdf import PdfReader, PdfWriter, PageObject
 from django.conf import settings
 from django.core.files import File
-from django.template.loader import render_to_string
 from django.utils import timezone
-import fpdf
 
 from apps.core.modifiers import ModifierContext
 
@@ -20,61 +18,61 @@ class PDFModifier:
     }
 
     def __init__(self, context: ModifierContext):
-        self._context = context
+        self._context = self.DEFAULT_CONTEXT | context
 
-    def _intro_page(self) -> PageObject:
-        pdf = fpdf.FPDF()
-        pdf.add_page()
-
-        pdf.write_html(
-            render_to_string('files/intro.html', self.DEFAULT_CONTEXT | self._context),
-        )
-
-        result = PdfReader(io.BytesIO(pdf.output()))
-        return result.pages[0]
-
-    def create_qr(self) -> PageObject:
-        pdf = fpdf.FPDF()
+    def create_qr(self) -> bytes:
         qr = qrcode.QRCode(
             version=4,
             border=0,
             error_correction=qrcode.constants.ERROR_CORRECT_H
         )
-        qr.add_data(json.dumps(self.DEFAULT_CONTEXT | self._context))
+        qr.add_data(json.dumps(self._context))
         qr = qr.make_image().get_image().convert('RGBA')
         qr.putalpha(150)
 
-        pdf.add_page()
-        pdf.image(qr, h=20, w=20, x=pdf.l_margin, y=pdf.eph)
+        stream = io.BytesIO()
+        qr.save(stream, format='PNG')
 
-        return PdfReader(io.BytesIO(pdf.output())).pages[0]
+        return stream.getvalue()
 
     def generate(self, file: File, page_num: Optional[int] = None) -> File:
-        reader = PdfReader(file)
-        writer = PdfWriter()
+        document = fitz.open(stream=file.read())
 
-        # Add QR code to intro
-        page = self.create_qr()
-        page.merge_page(reader.pages[0])
-        writer.add_page(page)
+        document.set_metadata(document.metadata | {
+            'author': self._context['authors'],
+            'title': self._context['title'],
+            'subject': f"{self._context['username']} ({self._context['user_id']})",
+            'creator': f'EvilFlowers/{settings.INSTANCE_NAME}',
+        })
 
         # Add license page
-        writer.add_page(self._intro_page())
+        license_text = f"""
+        This document was distributed using {settings.INSTANCE_NAME} based on the open source project
+        EvilFlowersCatalog\n
+        \n
+        User: {self._context['username']} ({self._context['user_id']})\n
+        Document: {self._context['title']} ({self._context['id']})\n
+        Generated at: {self._context['generated_at']}
+        """
+        document.insert_page(
+            1,
+            text=license_text,
+            fontsize=11,
+            width=595,
+            height=842,
+            fontname="Helvetica",  # default font
+            fontfile=None,  # any font file name
+            color=(0, 0, 0))  # text color (RGB)
 
         # Add QR codes to rest of pages
-        for index, original_page in enumerate(reader.pages[1:]):
-            page = self.create_qr()
-            page.merge_page(original_page)
-            writer.add_page(page)
+        qr = self.create_qr()
+        for index in range(2, len(document)):
+            page = document[index]
+            page.insert_image(fitz.Rect(10, page.mediabox.y1 - 90, 90, page.mediabox.y1 - 10), stream=io.BytesIO(qr))
 
-        stream = io.BytesIO()
         if page_num:
-            # FIXME: this requires serious optimisation
-            single_page_writer = PdfWriter()
-            single_page_writer.add_page(writer.pages[int(page_num) - 1])
-            single_page_writer.write(stream)
-        else:
-            writer.write(stream)
-        stream.seek(0)
+            document.select([int(page_num) - 1])
 
-        return File(stream)
+        return File(
+            io.BytesIO(document.tobytes(garbage=3, deflate=True, deflate_images=True, linear=True))
+        )

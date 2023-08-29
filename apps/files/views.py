@@ -83,7 +83,15 @@ class UserAcquisitionDownload(SecuredView):
                 context={
                     'id': uuid.uuid4() if request.user.is_anonymous else str(user_acquisition.id),
                     'user_id': str(user_acquisition.user_id),
-                    'title': user_acquisition.acquisition.entry.title
+                    'title': user_acquisition.acquisition.entry.title,
+                    'username': user_acquisition.user.username,
+                    'authors': ', '.join(
+                        [
+                            user_acquisition.acquisition.entry.author.full_name
+                        ] + [
+                            c.full_name for c in user_acquisition.acquisition.entry.contributors.all()
+                        ]
+                    )
                 }
             )
             try:

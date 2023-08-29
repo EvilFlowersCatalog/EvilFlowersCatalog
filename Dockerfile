@@ -1,10 +1,8 @@
-FROM alpine:3.18 as builder
-
-WORKDIR /root
+FROM python:slim as builder
 
 # System setup
-RUN apk update
-RUN apk add --no-cache pkgconfig libffi-dev make gcc musl-dev python3 python3-dev openssl-dev cargo postgresql-dev curl py3-pip jpeg-dev zlib-dev openldap-dev
+RUN apt update -y
+RUN apt install -y libffi-dev build-essential libsasl2-dev libpq-dev libjpeg-dev libldap-dev
 
 # https://github.com/python-ldap/python-ldap/issues/432
 RUN echo 'INPUT ( libldap.so )' > /usr/lib/libldap_r.so
@@ -14,39 +12,36 @@ WORKDIR /usr/src/app
 # Copy source
 COPY . .
 
-# Prepare virtual env
-ENV VIRTUAL_ENV=/opt/venv
+## Python environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
-RUN python3 -m venv $VIRTUAL_ENV
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 # Dependencies
-RUN pip install gunicorn wheel --no-cache-dir
-RUN pip install -r requirements.txt --no-cache-dir
+RUN pip install --user gunicorn wheel --no-cache-dir
+RUN pip install --user -r requirements.txt --no-cache-dir
 
-FROM alpine:3.18
+FROM python:slim
 
+# Dependencies
+RUN apt update -y
+RUN apt install -y supervisor curl postgresql-client libjpeg-tools argon2 tzdata ldap-utils swig cron
+
+# Create application user
 WORKDIR /usr/src/app
+
+COPY --from=builder /root/.local /root/.local
+COPY --from=builder /usr/src/app /usr/src/app
+ENV PATH=/root/.local/bin:$PATH
 
 RUN echo "0.5.0" > VERSION.txt
 RUN date -I > BUILD.txt
 
-# Dependencies
-RUN apk add --no-cache python3 supervisor curl libpq postgresql-client jpeg zlib py3-argon2-cffi tzdata libldap
-COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /usr/src/app /usr/src/app
-
-# Prepare virtual env
-ENV VIRTUAL_ENV=/opt/venv
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
-ENV FPDF_FONTPATH="/usr/src/app/fonts"
-
 # Configuration
 COPY conf/supervisor.conf /etc/supervisord.conf
+RUN chmod +x conf/entrypoint.sh
 
 # Health check
 HEALTHCHECK CMD curl --fail http://localhost:8000/api/v1/status || exit 1
+
 # Execution
-RUN chmod +x conf/entrypoint.sh
 CMD ["conf/entrypoint.sh"]

@@ -11,3 +11,4 @@ class ModifierContext(TypedDict):
     url: Optional[str]
     instance: Optional[str]
     contact: Optional[str]
+    authors: Optional[str]
