@@ -12,6 +12,7 @@ class UserAcquisitionSerializer:
     class Base(Serializer):
         id: UUID
         type: UserAcquisition.UserAcquisitionType
+        range: str = None
         user: UserSerializer.Minimal
         acquisition: AcquisitionSerializer.Nested
         entry: dict

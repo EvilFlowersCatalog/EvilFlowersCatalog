@@ -1,6 +1,6 @@
 import io
 import json
-from typing import Optional
+from typing import Optional, List
 
 import fitz
 import qrcode
@@ -8,7 +8,7 @@ from django.conf import settings
 from django.core.files import File
 from django.utils import timezone
 
-from apps.core.modifiers import ModifierContext
+from apps.core.modifiers import ModifierContext, InvalidPage
 
 
 class PDFModifier:
@@ -17,8 +17,9 @@ class PDFModifier:
         'instance': settings.INSTANCE_NAME,
     }
 
-    def __init__(self, context: ModifierContext):
+    def __init__(self, context: ModifierContext, pages: Optional[List]):
         self._context = self.DEFAULT_CONTEXT | context
+        self._pages = pages or None
 
     def create_qr(self) -> bytes:
         qr = qrcode.QRCode(
@@ -45,13 +46,17 @@ class PDFModifier:
             'creator': f'EvilFlowers/{settings.INSTANCE_NAME}',
         })
 
+        if self._pages:
+            document.select([i - 1 for i in self._pages])
+
         # Add license page
         license_text = f"""
         This document was distributed using {settings.INSTANCE_NAME} based on the open source project
         EvilFlowersCatalog\n
         \n
         User: {self._context['username']} ({self._context['user_id']})\n
-        Document: {self._context['title']} ({self._context['id']})\n
+        Title: {self._context['title']}\n
+        Document ID: {self._context['id']}\n
         Generated at: {self._context['generated_at']}
         """
         document.insert_page(
@@ -71,7 +76,10 @@ class PDFModifier:
             page.insert_image(fitz.Rect(10, page.mediabox.y1 - 90, 90, page.mediabox.y1 - 10), stream=io.BytesIO(qr))
 
         if page_num:
-            document.select([int(page_num) - 1])
+            try:
+                document.select([int(page_num) - 1])
+            except ValueError:
+                raise InvalidPage()
 
         return File(
             io.BytesIO(document.tobytes(garbage=3, deflate=True, deflate_images=True, linear=True))

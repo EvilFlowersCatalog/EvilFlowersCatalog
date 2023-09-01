@@ -9,11 +9,12 @@ from django.utils.module_loading import import_string
 from django.utils.text import slugify
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
-from redis import Redis
 
 from apps.api.response import SingleResponse
 from apps.core.errors import ProblemDetailException
+from apps.core.fields.multirange import depack
 from apps.core.models import Acquisition, Entry, UserAcquisition
+from apps.core.modifiers import InvalidPage
 from apps.core.views import SecuredView
 
 
@@ -29,16 +30,7 @@ class AcquisitionDownload(SecuredView):
         if acquisition.relation != Acquisition.AcquisitionType.ACQUISITION.OPEN_ACCESS:
             self._authenticate(request)
 
-        redis = Redis(
-            host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=settings.REDIS_DATABASE
-        )
-
-        if request.user.is_anonymous:
-            user_id = uuid.uuid4()
-        else:
-            user_id = request.user.pk
-
-        redis.pfadd(f"evilflowers:popularity:{acquisition.entry_id}", str(user_id))
+        acquisition.entry.popularity = acquisition.entry.popularity + 1
         sanitized_filename = f"{slugify(acquisition.entry.title.lower())}{guess_extension(acquisition.mime)}"
 
         return FileResponse(acquisition.content, as_attachment=True, filename=sanitized_filename)
@@ -66,14 +58,8 @@ class UserAcquisitionDownload(SecuredView):
             if not has_object_permission('check_user_acquisition_read', request.user, user_acquisition):
                 raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-        redis = Redis(
-            host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=settings.REDIS_DATABASE
-        )
-
-        redis.pfadd(
-            f"evilflowers:popularity:{user_acquisition.acquisition.entry_id}",
-            str(uuid.uuid4()) if request.user.is_anonymous else str(request.user.pk)
-        )
+        user_acquisition.acquisition.entry.popularity = user_acquisition.acquisition.entry.popularity + 1
+        user_acquisition.acquisition.entry.save()
 
         sanitized_filename = f"{slugify(user_acquisition.acquisition.entry.title.lower())}" \
                              f"{guess_extension(user_acquisition.acquisition.mime)}"
@@ -92,12 +78,13 @@ class UserAcquisitionDownload(SecuredView):
                             c.full_name for c in user_acquisition.acquisition.entry.contributors.all()
                         ]
                     )
-                }
+                },
+                pages=depack(user_acquisition.range) if user_acquisition.range else None
             )
             try:
 
                 content = modifier.generate(user_acquisition.acquisition.content, request.GET.get('page', None))
-            except IndexError:
+            except InvalidPage:
                 raise ProblemDetailException(request, _("Page not found"), status=HTTPStatus.NOT_FOUND)
         else:
             content = user_acquisition.acquisition.content

@@ -238,7 +238,7 @@ EVILFLOWERS_IMAGE_THUMBNAIL = (768, 480)
 EVILFLOWERS_FEEDS_NEW_LIMIT = os.getenv('EVILFLOWERS_FEEDS_NEW_LIMIT', 20)
 
 EVILFLOWERS_CRON_JOBS = {
-    'popularity': '*/5 * * * *'
+    # 'popularity': '*/5 * * * *'
 }
 
 EVILFLOWERS_IDENTIFIERS = [

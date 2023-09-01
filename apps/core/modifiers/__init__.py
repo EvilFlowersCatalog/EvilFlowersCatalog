@@ -12,3 +12,11 @@ class ModifierContext(TypedDict):
     instance: Optional[str]
     contact: Optional[str]
     authors: Optional[str]
+
+
+class ModifierException(Exception):
+    pass
+
+
+class InvalidPage(ModifierException):
+    pass

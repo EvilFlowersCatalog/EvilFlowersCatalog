@@ -33,7 +33,8 @@ class UserAcquisitionManagement(SecuredView):
         if not has_object_permission('check_entry_read', request.user, form.cleaned_data['acquisition_id'].entry):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-        if settings.EVILFLOWERS_USER_ACQUISITION_MODE == 'single':
+        if (form.cleaned_data['type'] == UserAcquisition.UserAcquisitionType.PERSONAL
+                and settings.EVILFLOWERS_USER_ACQUISITION_MODE == 'single'):
             user_acquisition = UserAcquisition.objects.filter(
                 acquisition_id=form.cleaned_data['acquisition_id'],
                 type=UserAcquisition.UserAcquisitionType.PERSONAL,

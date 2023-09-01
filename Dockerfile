@@ -26,7 +26,6 @@ FROM python:slim
 RUN apt update -y
 RUN apt install -y supervisor curl postgresql-client libjpeg-tools argon2 tzdata ldap-utils swig cron
 
-# Create application user
 WORKDIR /usr/src/app
 
 COPY --from=builder /root/.local /root/.local
