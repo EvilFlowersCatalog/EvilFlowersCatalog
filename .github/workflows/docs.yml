@@ -16,6 +16,10 @@ jobs:
     - name: Build docs
       run: |
         npx @redocly/cli build-docs -o docs/index.html docs/openapi.yaml
+    - name: Upload Pages artifact
+      uses: actions/upload-pages-artifact@v2
+      with:
+        path: docs/
   deploy:
     needs: build
 
@@ -29,10 +33,6 @@ jobs:
 
     runs-on: ubuntu-latest
     steps:
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v2
-        with:
-          path: docs/
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v2 # or the latest "vX.X.X" version tag for this action
