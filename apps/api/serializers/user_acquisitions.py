@@ -15,6 +15,7 @@ class UserAcquisitionSerializer:
         range: str = None
         user: UserSerializer.Minimal
         acquisition: AcquisitionSerializer.Nested
+        url: str
         entry: dict
         expire_at: datetime = None
         created_at: datetime

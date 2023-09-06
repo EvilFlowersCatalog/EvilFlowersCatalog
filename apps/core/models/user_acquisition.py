@@ -1,4 +1,6 @@
+from django.conf import settings
 from django.db import models
+from django.urls import reverse
 
 from apps.core.models.acquisition import Acquisition
 from apps.core.models.user import User
@@ -23,3 +25,8 @@ class UserAcquisition(BaseModel):
     type = models.CharField(max_length=10, choices=UserAcquisitionType.choices, default=UserAcquisitionType.PERSONAL)
     range = models.CharField(max_length=100, null=True)
     expire_at = models.DateTimeField(null=True)
+
+    @property
+    def url(self) -> str:
+        return (f"{settings.BASE_URL}"
+                f"{reverse('user-acquisition-download', kwargs={'user_acquisition_id': self.pk})}")
