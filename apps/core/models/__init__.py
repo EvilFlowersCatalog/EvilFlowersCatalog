@@ -13,3 +13,4 @@ from .user_catalog import UserCatalog
 from .auth_source import AuthSource
 from .annotation import Annotation
 from .user_acquisition import UserAcquisition
+from .shelf_record import ShelfRecord
