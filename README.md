@@ -1,7 +1,7 @@
 # Evil Flowers Catalog
 
 <p align="center">
-    <img width="150" height="150" src="docs/logo.png">
+    <img width="150" height="150" src="docs/images/logo.png">
 </p>
 
 A simple e-book catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2), written in Python with
