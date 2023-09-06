@@ -1,7 +1,7 @@
 from django.urls import path
 
 from apps.api.views import catalogs, feeds, entries, api_keys, users, acquisitions, authors, status, tokens, \
-    user_acquisitions, annotations, shelf_records
+    user_acquisitions, annotations
 
 urlpatterns = [
     # API keys
@@ -35,11 +35,11 @@ urlpatterns = [
     path("acquisitions/<uuid:acquisition_id>", acquisitions.AcquisitionDetail.as_view(), name='acquisition-detail'),
 
     # Shelves
-    path("shelf-records", shelf_records.ShelfRecordManagement.as_view(), name='shelf-record-management'),
-    path(
-        "shelf-records/<uuid:shelf_record_id>", shelf_records.ShelfRecordDetail.as_view(),
-        name='shelf-record-detail'
-    ),
+    # path("shelf-records", shelf_records.ShelfRecordManagement.as_view(), name='shelf-record-management'),
+    # path(
+    #     "shelf-records/<uuid:shelf_record_id>", shelf_records.ShelfRecordDetail.as_view(),
+    #     name='shelf-record-detail'
+    # ),
 
     # User acquisitions
     path(
