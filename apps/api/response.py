@@ -54,7 +54,7 @@ class GeneralResponse(HttpResponse):
 
             if any(x in ['*/*', 'application/json'] for x in content_types):
                 params['content_type'] = 'application/json'
-                params['content'] = json.dumps(data, cls=ApiJSONEncoder, serializer=serializer)
+                params['content'] = json.dumps(data, cls=ApiJSONEncoder, serializer=serializer, request=request)
             else:
                 params['content_type'] = 'application/json'
                 params['status'] = HTTPStatus.NOT_ACCEPTABLE

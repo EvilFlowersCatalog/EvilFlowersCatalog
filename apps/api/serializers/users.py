@@ -25,5 +25,5 @@ class UserSerializer:
         permissions: List
 
         @staticmethod
-        def resolve_permissions(data: User):
+        def resolve_permissions(data: User, **kwargs):
             return data.get_all_permissions()

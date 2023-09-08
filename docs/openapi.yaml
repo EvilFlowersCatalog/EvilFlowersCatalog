@@ -437,6 +437,87 @@ paths:
           $ref: '#/components/responses/NotFound'
       tags:
         - User acquisitions
+  /api/v1/shelf-records:
+    get:
+      summary: List shelf records
+      tags:
+        - Shelf records
+      responses:
+        '200':
+          description: OK
+          headers: {}
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ShelfRecord'
+                  metadata:
+                    $ref: '#/components/schemas/Metadata'
+                required:
+                  - items
+                  - metadata
+      operationId: get-api-v1-shelf-records
+      description: This endpoints returns paginated list of ShelfRecord objects for logged in user
+    post:
+      summary: Create shelf record
+      operationId: post-api-v1-shelf-records
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    $ref: '#/components/schemas/ShelfRecord'
+                required:
+                  - response
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    $ref: '#/components/schemas/ShelfRecord'
+      description: Create ShelfRecord entry for logged in user. If there is already such Entry in the User shelf. The response is detail of existing query (with status code HTTP 200).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              x-examples:
+                Example 1:
+                  entry_id: ef7b8246-8df3-44dd-85c6-0bc4d3121a2f
+              properties:
+                entry_id:
+                  type: string
+                  format: uuid
+      tags:
+        - Shelf records
+  '/api/shelf-records/{shelfRecordId}':
+    parameters:
+      - schema:
+          type: string
+        name: shelfRecordId
+        in: path
+        required: true
+    delete:
+      summary: Remove shelf record
+      operationId: delete-api-shelf-records-shelfRecordId
+      responses:
+        '204':
+          description: No Content
+        '404':
+          $ref: '#/components/responses/NotFound'
+      tags:
+        - Shelf records
 components:
   securitySchemes:
     BearerAuth:
@@ -766,6 +847,9 @@ components:
               - surname
         config:
           $ref: '#/components/schemas/EntryConfig'
+        shelf_record_id:
+          type: string
+          format: uuid
       required:
         - id
         - creator_id
@@ -863,6 +947,77 @@ components:
         evilflowres_metadata_fetch:
           type: boolean
           description: 'If `true`, EvilFlowers will try to fetch BibTeX information using IDENTIFIERS if present'
+    ShelfRecord:
+      title: ShelfRecord
+      x-stoplight:
+        id: 0xfto8lfi1f3l
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        entry:
+          $ref: '#/components/schemas/Entry'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - entry
+        - created_at
+        - updated_at
+      x-examples:
+        Example 1:
+          id: 497f6eca-6276-4993-bfeb-53cbbbba6f08
+          entry:
+            id: string
+            creator_id: string
+            catalog_id: string
+            author:
+              id: string
+              name: string
+              surname: string
+            categories:
+              - id: string
+                term: string
+            language:
+              id: string
+              name: string
+              code: string
+            popularity: 0
+            title: string
+            image: string
+            image_mime: string
+            thumbnail: string
+            created_at: string
+            updated_at: string
+            summary: string
+            content: string
+            identifiers: null
+            acquisitions:
+              - relation: string
+                mime: string
+                url: string
+                id: string
+            feeds:
+              - {}
+            contributors:
+              - id: string
+                name: string
+                surname: string
+            config:
+              evilflowers_ocr_enabled: true
+              evilflowers_ocr_rewrite: true
+              evilflowers_annotations_create: true
+              evilflowers_viewer_print: true
+              evilflowers_render_type: page
+              evilflowers_share_enabled: true
+              evilflowres_metadata_fetch: true
+          created_at: '2019-08-24T14:15:22Z'
+          updated_at: '2019-08-24T14:15:22Z'
   responses:
     Unauthorized:
       description: Unauthorized

@@ -5,7 +5,7 @@ from uuid import UUID
 from porcupine.base import Serializer
 
 from apps.api.serializers.feeds import FeedSerializer
-from apps.core.models import Acquisition, Entry
+from apps.core.models import Acquisition, Entry, ShelfRecord
 
 
 class AuthorSerializer:
@@ -52,7 +52,7 @@ class AcquisitionSerializer:
         checksum: str = None
 
         @staticmethod
-        def resolve_content(data: Acquisition) -> Optional[str]:
+        def resolve_content(data: Acquisition, **kwargs) -> Optional[str]:
             return data.base64
 
 
@@ -61,6 +61,7 @@ class EntrySerializer:
         id: UUID
         creator_id: UUID
         catalog_id: UUID
+        shelf_record_id: Optional[UUID]
         author: AuthorSerializer.Base = None
         categories: List[CategorySerializer.Base] = None
         language: LanguageSerializer.Base = None
@@ -76,13 +77,23 @@ class EntrySerializer:
         updated_at: datetime
 
         @staticmethod
-        def resolve_image(data: Entry) -> Optional[str]:
+        def resolve_shelf_record_id(data: Entry, **kwargs) -> Optional[str]:
+            if 'request' in kwargs:
+                try:
+                    return data.shelf_records.get(user=kwargs['request'].user).id
+                except ShelfRecord.DoesNotExist:
+                    return None
+
+            return None
+
+        @staticmethod
+        def resolve_image(data: Entry, **kwargs) -> Optional[str]:
             if not data.image:
                 return None
             return data.image_url
 
         @staticmethod
-        def resolve_thumbnail(data: Entry) -> Optional[str]:
+        def resolve_thumbnail(data: Entry, **kwargs) -> Optional[str]:
             if not data.image:
                 return None
             return data.thumbnail_base64

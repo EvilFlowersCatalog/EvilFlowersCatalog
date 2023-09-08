@@ -1,6 +1,6 @@
 from object_checker.base_object_checker import AbacChecker
 
-from apps.core.models import User, Catalog, UserCatalog, Entry, UserAcquisition
+from apps.core.models import User, Catalog, UserCatalog, Entry, UserAcquisition, ShelfRecord
 
 
 class CatalogChecker(AbacChecker):
@@ -52,4 +52,10 @@ class UserAcquisitionChecker(AbacChecker):
         if obj.type == UserAcquisition.UserAcquisitionType.SHARED:
             return True
 
+        return obj.user == user
+
+
+class ShelfRecordChecker(AbacChecker):
+    @staticmethod
+    def check_shelf_record_access(user: User, obj: ShelfRecord):
         return obj.user == user

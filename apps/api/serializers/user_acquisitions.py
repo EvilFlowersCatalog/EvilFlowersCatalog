@@ -22,5 +22,5 @@ class UserAcquisitionSerializer:
         updated_at: datetime
 
         @staticmethod
-        def resolve_entry(data: UserAcquisition) -> dict:
+        def resolve_entry(data: UserAcquisition, **kwargs) -> dict:
             return EntrySerializer.Base(data.acquisition.entry).dict()

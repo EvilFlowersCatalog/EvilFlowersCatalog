@@ -20,5 +20,5 @@ class ApiKeySerializer:
         token: str
 
         @staticmethod
-        def resolve_token(data: ApiKey):
+        def resolve_token(data: ApiKey, **kwargs):
             return JWTFactory(str(data.user_id)).api_key(str(data.pk))

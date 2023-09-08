@@ -24,9 +24,9 @@ class FeedSerializer:
         updated_at: datetime
 
         @staticmethod
-        def resolve_parents(data: Feed) -> List[UUID]:
+        def resolve_parents(data: Feed, **kwargs) -> List[UUID]:
             return list(data.parents.all().values_list('id', flat=True))
 
         @staticmethod
-        def resolve_children(data: Feed) -> List[UUID]:
+        def resolve_children(data: Feed, **kwargs) -> List[UUID]:
             return list(data.children.all().values_list('id', flat=True))
