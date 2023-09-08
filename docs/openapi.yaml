@@ -1,9 +1,9 @@
 openapi: 3.0.0
 info:
   title: Evil Flowers Catalog
-  description: |
-    Simple e-book catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2) written in Python with
-    simple management REST API (basic CRUD operations). This document describes management REST API, not OPDS.
+  description: |-
+    A e-book catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2), written in Python with 
+    a straightforward management REST API for CRUD operations.
   version: 0.5.0
   license:
     url: 'https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/blob/master/LICENSE'
@@ -323,6 +323,77 @@ paths:
           $ref: '#/components/responses/Unauthorized'
       operationId: getEntry
       description: 'List of all available entries with filter and pagination (by default, entries are listed for all available catalogs).'
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          in: query
+          name: creator_id
+          description: Creator of the Entry (`exact`)
+        - schema:
+            type: string
+            format: uuid
+          in: query
+          name: catalog_id
+          description: Catalog UUID (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: catalog_title
+          description: Catalog title (`unaccent__icontains`)
+        - schema:
+            type: string
+            format: uuid
+          in: query
+          name: author_id
+          description: Author/Contributor UUID (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: author
+          description: Author/Contributor name/surname (`unaccent__icontains`)
+        - schema:
+            type: string
+            format: uuid
+          in: query
+          name: category_id
+          description: Category UUID (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: category_term
+          description: Category term (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: language_id
+          description: Language UUID (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: language_code
+          description: Language code (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: title
+          description: Entry title (`unaccent__icontains`)
+        - schema:
+            type: string
+          in: query
+          name: summary
+          description: Entry summary (`unaccent__icontains`)
+        - schema:
+            type: string
+          in: query
+          name: query
+          description: 'Search query based on: title OR summary (`unaccent__icontains`)'
+        - schema:
+            type: string
+            format: uuid
+          in: query
+          name: feed_id
+          description: Feed UUID (`exact`)
     parameters: []
   '/data/v1/user-acquisitions/{userAcquisitionId}':
     get:
@@ -380,6 +451,7 @@ paths:
               $ref: '#/components/schemas/AnnotationForm'
       tags:
         - User acquisitions
+      description: Endpoint for creating an database based annotation layer for UserAcquisition. Content of the annotation is suppose to be an SVG.
   '/api/v1/annotations/{annotationId}':
     parameters:
       - schema:
@@ -405,6 +477,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
       operationId: get-api-v1-annotations-annotationId
+      description: Detail of annotation for UserAcquisition. Content of the annotation is SVG.
     put:
       summary: Update annotation
       operationId: put-api-v1-annotations-annotationId
@@ -425,6 +498,7 @@ paths:
               $ref: '#/components/schemas/AnnotationForm'
       tags:
         - User acquisitions
+      description: Update of Annotation for UserAcquisition. Content of the annotation is SVG.
     delete:
       summary: Delete annotation
       operationId: delete-api-v1-annotations-annotationId
@@ -437,6 +511,7 @@ paths:
           $ref: '#/components/responses/NotFound'
       tags:
         - User acquisitions
+      description: Removal of Annotation for UserAcquisition.
   /api/v1/shelf-records:
     get:
       summary: List shelf records
@@ -461,7 +536,82 @@ paths:
                   - items
                   - metadata
       operationId: get-api-v1-shelf-records
-      description: This endpoints returns paginated list of ShelfRecord objects for logged in user
+      description: This endpoints returns paginated list of ShelfRecord objects for logged in user. If the user is superuser all ShelfRecord objects will be returned (users can be filtered using `user_id` query param).
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          in: query
+          name: catalog_id
+          description: Entry Catalog UUID (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: catalog_title
+          description: Entry Catalog title (`unaccent__icontains`)
+        - schema:
+            type: string
+            format: uuid
+          in: query
+          name: author_id
+          description: Entry Author/Contributor UUID (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: author
+          description: Entry Author/Contributor name/surname (`unaccent__icontains`)
+        - schema:
+            type: string
+            format: uuid
+          in: query
+          name: category_id
+          description: Entry Category UUID (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: category_term
+          description: Entry Category term (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: language_id
+          description: Entry Language UUID (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: language_code
+          description: Entry Language code (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: title
+          description: Entry title (`unaccent__icontains`)
+        - schema:
+            type: string
+          in: query
+          name: summary
+          description: Entry summary (`unaccent__icontains`)
+        - schema:
+            type: string
+          in: query
+          name: query
+          description: 'Search query based on: title OR summary (`unaccent__icontains`)'
+        - schema:
+            type: string
+            format: uuid
+          in: query
+          name: feed_id
+          description: Feed UUID (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: entry_id
+          description: Entry UUID (`exact`)
+        - schema:
+            type: string
+          in: query
+          name: user_id
+          description: ShelfRecord owner (`exact`)
     post:
       summary: Create shelf record
       operationId: post-api-v1-shelf-records
@@ -518,14 +668,17 @@ paths:
           $ref: '#/components/responses/NotFound'
       tags:
         - Shelf records
+      description: Entry removal from user shelf using `ShelfRecord.id`.
 components:
   securitySchemes:
     BearerAuth:
       type: http
       scheme: bearer
+      description: ''
     BasicAuth:
       type: http
       scheme: basic
+      description: ''
   schemas:
     Catalog:
       properties:
@@ -1111,7 +1264,5 @@ components:
           schema:
             $ref: '#/components/schemas/CatalogForm'
 security:
-  - apiKeyAuth:
-      - core.add_user
-  - basicAuth:
-      - core.add_user
+  - BearerAuth: []
+  - BasicAuth: []

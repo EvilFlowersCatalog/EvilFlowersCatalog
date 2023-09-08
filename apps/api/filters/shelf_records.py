@@ -11,11 +11,13 @@ class ShelfRecordFilter(django_filters.FilterSet):
         fields = []
 
     catalog_id = django_filters.UUIDFilter()
+    catalog_title = django_filters.CharFilter(field_name='entry__catalog__title', lookup_expr='unaccent__icontains')
     entry_id = django_filters.UUIDFilter()
     user_id = django_filters.UUIDFilter()
     author_id = django_filters.UUIDFilter(method='filter_author_id', label=_("Author"))
     author = django_filters.CharFilter(method='filter_author')
     category_id = django_filters.UUIDFilter(label=_("Category"), field_name='entry__categories__id')
+    category_term = django_filters.CharFilter(field_name='entry__categories__term')
     language_id = django_filters.UUIDFilter()
     language_code = django_filters.CharFilter(field_name='entry__language__code', label=_("Language"))
     title = django_filters.CharFilter(field_name='entry__title', lookup_expr='unaccent__icontains')

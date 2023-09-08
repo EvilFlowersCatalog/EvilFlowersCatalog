@@ -16,11 +16,11 @@ class EntryFilter(django_filters.FilterSet):
 
     creator_id = django_filters.UUIDFilter()
     catalog_id = django_filters.UUIDFilter()
-    catalog_title = django_filters.CharFilter(field_name='catalog__title')
+    catalog_title = django_filters.CharFilter(field_name='catalog__title', lookup_expr='unaccent__icontains')
     author_id = django_filters.UUIDFilter(method='filter_author_id', label=_("Author"))
     author = django_filters.CharFilter(method='filter_author')
     category_id = django_filters.UUIDFilter(label=_("Category"), field_name='categories__id')
-    category_term = django_filters.CharFilter(field_name='categories_term')
+    category_term = django_filters.CharFilter(field_name='categories__term')
     language_id = django_filters.UUIDFilter()
     language_code = django_filters.CharFilter(field_name='language__code', label=_("Language"))
     title = django_filters.CharFilter(lookup_expr='unaccent__icontains')
