@@ -2,7 +2,7 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.5.0 : TBD
+## 0.5.0 : 2023-09-09
 
 - **Added**: Short-live access tokens: `GET /api/v1/token` and `GET /api/v1/token/refresh` introduced
 - **Added**: LDAP support
