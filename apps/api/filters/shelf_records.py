@@ -10,7 +10,7 @@ class ShelfRecordFilter(django_filters.FilterSet):
         model = ShelfRecord
         fields = []
 
-    catalog_id = django_filters.UUIDFilter()
+    catalog_id = django_filters.UUIDFilter(field_name='entry__catalog_id')
     catalog_title = django_filters.CharFilter(field_name='entry__catalog__title', lookup_expr='unaccent__icontains')
     entry_id = django_filters.UUIDFilter()
     user_id = django_filters.UUIDFilter()
