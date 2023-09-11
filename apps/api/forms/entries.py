@@ -1,3 +1,5 @@
+from typing import Optional
+
 import bibtexparser
 from bibtexparser.bibdatabase import BibDatabase
 from django import forms
@@ -97,7 +99,10 @@ class EntryForm(Form):
 
         return language
 
-    def clean_citation(self) -> str:
+    def clean_citation(self) -> Optional[str]:
+        if not self.cleaned_data.get('citation'):
+            return None
+
         bibtex = bibtexparser.loads(self.cleaned_data.get('citation'))
 
         if isinstance(bibtex, BibDatabase):

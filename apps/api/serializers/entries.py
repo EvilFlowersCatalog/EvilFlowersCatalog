@@ -72,7 +72,7 @@ class EntrySerializer:
         image_mime: str = None
         thumbnail: str = None
         config: dict = None
-        citation: str = None
+        citation: Optional[str] = None
         created_at: datetime
         updated_at: datetime
 
