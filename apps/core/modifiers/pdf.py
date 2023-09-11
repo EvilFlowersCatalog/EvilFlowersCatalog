@@ -73,7 +73,7 @@ class PDFModifier:
         qr = self.create_qr()
         for index in range(2, len(document)):
             page = document[index]
-            page.insert_image(fitz.Rect(10, page.mediabox.y1 - 90, 90, page.mediabox.y1 - 10), stream=io.BytesIO(qr))
+            page.insert_image(fitz.Rect(10, page.mediabox.y1 - 50, 50, page.mediabox.y1 - 10), stream=io.BytesIO(qr))
 
         if page_num:
             try:
