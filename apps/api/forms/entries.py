@@ -79,7 +79,7 @@ class EntryForm(Form):
     identifiers = DictionaryField(
         required=False,
         validators=[AvailableKeysValidator(keys=settings.EVILFLOWERS_IDENTIFIERS)],
-        value_field=forms.CharField(max_length=100)
+        value_field=forms.CharField(max_length=100, required=False, empty_value=None)
     )
     image = ImageField(
         max_length=settings.EVILFLOWERS_IMAGE_UPLOAD_MAX_SIZE, mime=settings.EVILFLOWERS_IMAGE_MIME, required=False

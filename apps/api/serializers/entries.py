@@ -101,6 +101,6 @@ class EntrySerializer:
     class Detailed(Base):
         summary: str = None
         content: str = None
-        identifiers: Dict[str, str] = None
+        identifiers: Dict = None
         acquisitions: List[AcquisitionSerializer.Base] = None
         contributors: List[AuthorSerializer.Base] = None
