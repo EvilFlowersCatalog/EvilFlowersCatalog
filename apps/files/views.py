@@ -67,7 +67,7 @@ class UserAcquisitionDownload(SecuredView):
         if user_acquisition.acquisition.mime in settings.EVILFLOWERS_MODIFIERS:
             modifier = import_string(settings.EVILFLOWERS_MODIFIERS[user_acquisition.acquisition.mime])(
                 context={
-                    'id': uuid.uuid4() if request.user.is_anonymous else str(user_acquisition.id),
+                    'id': str(uuid.uuid4()) if request.user.is_anonymous else str(user_acquisition.id),
                     'user_id': str(user_acquisition.user_id),
                     'title': user_acquisition.acquisition.entry.title,
                     'username': user_acquisition.user.username,
