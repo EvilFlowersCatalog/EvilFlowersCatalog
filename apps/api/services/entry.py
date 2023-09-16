@@ -29,7 +29,7 @@ class EntryService:
 
         if all([
             entry.citation is None,
-            entry.identifiers.get('isbn'),
+            (entry.identifiers and entry.identifiers.get('isbn')),
             entry.read_config('evilflowres_metadata_fetch')
         ]):
             entry.citation = bibformatters["bibtex"](isbnlib.meta(entry.identifiers['isbn']))
