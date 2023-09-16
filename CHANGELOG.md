@@ -2,6 +2,12 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## 0.6.0 : TBD
+
+- **Fixed**: Anonymous download of the user acquisition
+- **Fixed**: Nullable citation and identifiers in Entry
+- **Fixed**: ISBN fetch manipulation
+
 ## 0.5.0 : 2023-09-09
 
 - **Added**: Short-live access tokens: `GET /api/v1/token` and `GET /api/v1/token/refresh` introduced

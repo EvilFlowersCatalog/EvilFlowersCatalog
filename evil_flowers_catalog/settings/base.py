@@ -216,6 +216,7 @@ if os.getenv('SENTRY_DSN', False):
         send_default_pii=True,
         request_bodies='always',
         before_send=before_send,
+        release=VERSION
     )
 
 # Redis

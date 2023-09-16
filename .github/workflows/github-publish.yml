@@ -20,7 +20,6 @@ env:
   IMAGE_NAME: ${{ github.repository }}
   DOCKER_BUILDKIT: 1
 
-
 jobs:
   build:
 
@@ -31,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # Login against a Docker registry except on PR
       # https://github.com/docker/login-action
@@ -54,7 +53,7 @@ jobs:
       # Build and push Docker image with Buildx (don't push on PR)
       # https://github.com/docker/build-push-action
       - name: Build and push Docker image
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v4
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
