@@ -18,7 +18,7 @@ class FeedFilter(django_filters.FilterSet):
     def filter_parent_id(qs, name, value):
         # TODO: this should be a convention
         if value == 'null':
-            return Feed.objects.filter(parents__isnull=True).distinct()
+            return qs.filter(parents__isnull=True).distinct()
         else:
             return qs.filter(parents__id=value).distinct()
 
