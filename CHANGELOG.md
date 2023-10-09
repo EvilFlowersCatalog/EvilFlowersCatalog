@@ -4,6 +4,8 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 
 ## 0.6.0 : TBD
 
+- **Changed**: Query entries also by feed name
+- **Changed**: Catalog based uniqueness for feeds
 - **Fixed**: Anonymous download of the user acquisition
 - **Fixed**: Nullable citation and identifiers in Entry
 - **Fixed**: ISBN fetch manipulation

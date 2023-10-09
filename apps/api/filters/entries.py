@@ -115,5 +115,6 @@ class EntryFilter(django_filters.FilterSet):
     @staticmethod
     def filter_query(qs, name, value):
         return qs.filter(
-            Q(title__unaccent__icontains=value) | Q(summary__unaccent__icontains=value)
+            Q(title__unaccent__icontains=value) | Q(summary__unaccent__icontains=value) |
+            Q(feeds__title__icontains=value)
         )

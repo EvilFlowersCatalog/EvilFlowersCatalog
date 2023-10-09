@@ -1,4 +1,4 @@
-FROM python:slim as builder
+FROM python:3.12-slim as builder
 
 # System setup
 RUN apt update -y
@@ -20,7 +20,7 @@ ENV PYTHONUNBUFFERED 1
 RUN pip install --user gunicorn wheel --no-cache-dir
 RUN pip install --user -r requirements.txt --no-cache-dir
 
-FROM python:slim
+FROM python:3.12-slim
 
 # Dependencies
 RUN apt update -y
@@ -32,7 +32,7 @@ COPY --from=builder /root/.local /root/.local
 COPY --from=builder /usr/src/app /usr/src/app
 ENV PATH=/root/.local/bin:$PATH
 
-RUN echo "0.5.0" > VERSION.txt
+RUN echo "0.6.0" > VERSION.txt
 RUN date -I > BUILD.txt
 
 # Configuration

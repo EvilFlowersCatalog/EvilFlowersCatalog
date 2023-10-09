@@ -17,8 +17,8 @@ class Feed(BaseModel):
         verbose_name = _('Feed')
         verbose_name_plural = _('Feeds')
         unique_together = (
-            ('creator_id', 'title'),
-            ('creator_id', 'url_name')
+            ('catalog', 'title'),
+            ('catalog', 'url_name')
         )
 
     class FeedKind(models.TextChoices):
