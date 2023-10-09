@@ -203,7 +203,7 @@ if os.getenv('SENTRY_DSN', False):
     def before_send(event, hint):
         if 'exc_info' in hint:
             exc_type, exc_value, tb = hint['exc_info']
-            if exc_type.__name__ in ['ValidationException']:
+            if exc_type.__name__ in ['ValidationException', 'DisallowedHost']:
                 return None
         if 'extra' in event and not event['extra'].get('to_sentry', True):
             return None
