@@ -179,8 +179,9 @@ class BasicBackend(ModelBackend):
         return super().authenticate(request, username=username, password=password)
 
     def authenticate(self, request, basic=None, **kwargs):
-        username, password = base64.b64decode(basic).decode().split(':')
-
+        bits = base64.b64decode(basic).decode().split(':')
+        username = bits[0]
+        password = ''.join(bits[1:])
         user = None
 
         for auth_source in AuthSource.objects.filter(is_active=True):

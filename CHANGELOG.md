@@ -9,6 +9,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Fixed**: Anonymous download of the user acquisition
 - **Fixed**: Nullable citation and identifiers in Entry
 - **Fixed**: ISBN fetch manipulation
+- **Fixed**: Fixed processing of passwords containing some special characters
 
 ## 0.5.0 : 2023-09-09
 
