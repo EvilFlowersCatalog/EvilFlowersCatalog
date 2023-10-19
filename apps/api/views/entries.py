@@ -8,6 +8,7 @@ from django.utils.decorators import method_decorator
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
+from apps.api.services.entry_introspection_service import EntryIntrospectionService
 from apps.core.errors import ValidationException, ProblemDetailException
 from apps.api.filters.entries import EntryFilter
 from apps.api.forms.entries import EntryForm, AcquisitionMetaForm
@@ -23,6 +24,15 @@ class EntryPaginator(SecuredView):
         entries = EntryFilter(request.GET, queryset=Entry.objects.all(), request=request).qs.distinct()
 
         return PaginationResponse(request, entries, serializer=EntrySerializer.Base)
+
+
+class EntryIntrospection(SecuredView):
+    def get(self, request):
+
+        service = EntryIntrospectionService(request.GET.get('driver'))
+        result = service.resolve(request.GET.get('identifier'))
+
+        return SingleResponse(request, result)
 
 
 class EntryManagement(SecuredView):

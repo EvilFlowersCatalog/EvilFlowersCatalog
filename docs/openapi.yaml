@@ -669,6 +669,78 @@ paths:
       tags:
         - Shelf records
       description: Entry removal from user shelf using `ShelfRecord.id`.
+  /entry-introspection:
+    get:
+      summary: Entry introspection
+      tags:
+        - Entries
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                x-examples:
+                  Example 1:
+                    response:
+                      publisher: Grand Central Publishing
+                      doi: null
+                      authors:
+                        - name: Harper
+                          surname: Lee
+                      year: '1988'
+                      language: en
+                      bibtex: |-
+                        @book{9780446310789,
+                             title = {To Kill A Mockingbird},
+                            author = {Harper Lee},
+                              isbn = {9780446310789},
+                              year = {1988},
+                         publisher = {Grand Central Publishing}
+                        }
+                properties:
+                  response:
+                    type: object
+                    properties:
+                      publisher:
+                        type: string
+                      doi:
+                        type: string
+                        nullable: true
+                      authors:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            surname:
+                              type: string
+                      year:
+                        type: string
+                      language:
+                        type: string
+                      bibtex:
+                        type: string
+      operationId: get-entry-introspection
+      description: Returns introspection about an entry using DOI or ISBN identifier
+      parameters:
+        - schema:
+            type: string
+            enum:
+              - doi
+              - isbn
+          in: query
+          name: driver
+          description: Identifier type
+          required: true
+        - schema:
+            type: string
+          in: query
+          name: identifier
+          description: Identifier
+          required: true
 components:
   securitySchemes:
     BearerAuth:
