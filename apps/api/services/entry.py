@@ -27,12 +27,15 @@ class EntryService:
             )
             entry.author = author
 
+        # TODO: implement these meta downloaders for real
         if all([
             entry.citation is None,
             (entry.identifiers and entry.identifiers.get('isbn')),
             entry.read_config('evilflowres_metadata_fetch')
         ]):
-            entry.citation = bibformatters["bibtex"](isbnlib.meta(entry.identifiers['isbn']))
+            metadata = isbnlib.meta(entry.identifiers['isbn'])
+            if metadata:
+                entry.citation = bibformatters["bibtex"](metadata)
 
         entry.save()
 
