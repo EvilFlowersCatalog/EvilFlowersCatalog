@@ -139,8 +139,10 @@ class EntryDetail(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
+        catalog = Catalog.objects.get(pk=catalog_id)
+
         service = EntryService(
-            Catalog.objects.get(pk=catalog_id), request.user
+            catalog, request.user
         )
 
         try:
