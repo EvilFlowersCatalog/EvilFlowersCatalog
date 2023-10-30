@@ -1,12 +1,9 @@
 import json
 import mimetypes
 import uuid
-from functools import reduce
 from http import HTTPStatus
-from operator import or_
 
 from django.db import transaction
-from django.db.models import Q
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
@@ -56,30 +53,19 @@ class EntryManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        # Conflicts
-        # TODO: this is suppose to be some kind of a setting
-        conditions = [
-            Q(title=form.cleaned_data['title'])
-        ]
-        if form.cleaned_data.get('identifiers', dict()).get('isbn'):
-            conditions.append(
-                Q(identifiers__isbn=form.cleaned_data['identifiers']['isbn'])
-            )
-        if form.cleaned_data.get('identifiers', dict()).get('doi'):
-            conditions.append(
-                Q(identifiers__doi=form.cleaned_data['identifiers']['doi'])
-            )
-        if Entry.objects.filter(catalog=catalog).filter(reduce(or_, conditions)).exists():
+        entry = Entry(creator=request.user, catalog=catalog)
+        service = EntryService(catalog, request.user)
+
+        try:
+            service.populate(entry, form)
+        except EntryService.AlreadyExists as e:
             raise ProblemDetailException(
                 request,
                 'Entry already exists!',
                 HTTPStatus.CONFLICT,
-                detail=_('Entry with same title, isbn or DOI already exists in catalog %s') % (catalog.title, )
+                detail=_('Entry with same title, isbn or DOI already exists in catalog %s') % (catalog.title, ),
+                previous=e
             )
-
-        entry = Entry(creator=request.user, catalog=catalog)
-        service = EntryService(catalog, request.user)
-        service.populate(entry, form)
 
         return SingleResponse(request, entry, serializer=EntrySerializer.Detailed, status=HTTPStatus.CREATED)
 
@@ -156,7 +142,17 @@ class EntryDetail(SecuredView):
         service = EntryService(
             Catalog.objects.get(pk=catalog_id), request.user
         )
-        service.populate(entry, form)
+
+        try:
+            service.populate(entry, form)
+        except EntryService.AlreadyExists as e:
+            raise ProblemDetailException(
+                request,
+                'Entry already exists!',
+                HTTPStatus.CONFLICT,
+                detail=_('Entry with same title, isbn or DOI already exists in catalog %s') % (catalog.title, ),
+                previous=e
+            )
 
         return SingleResponse(request, entry, serializer=EntrySerializer.Detailed)
 

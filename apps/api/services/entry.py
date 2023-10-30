@@ -1,10 +1,13 @@
 import mimetypes
 import uuid
+from functools import reduce
 from io import BytesIO
+from operator import or_
 
 import isbnlib
 from django.conf import settings
 from django.core.files import File
+from django.db.models import Q
 from isbnlib.registry import bibformatters
 
 from apps.api.forms.entries import EntryForm
@@ -12,12 +15,31 @@ from apps.core.models import Catalog, User, Entry, Author, Category, Acquisition
 
 
 class EntryService:
+    class AlreadyExists(Exception):
+        pass
+
     def __init__(self, catalog: Catalog, creator: User):
         self._catalog = catalog
         self._creator = creator
 
     def populate(self, entry: Entry, form: EntryForm) -> Entry:
         form.populate(entry)
+
+        # Conflicts
+        # TODO: this is suppose to be some kind of a setting
+        conditions = [
+            Q(title=entry.title)
+        ]
+        if entry.identifiers.get('isbn'):
+            conditions.append(
+                Q(identifiers__isbn=entry.identifiers.get('isbn'))
+            )
+        if entry.identifiers.get('doi'):
+            conditions.append(
+                Q(identifiers__doi=entry.identifiers.get('doi'))
+            )
+        if Entry.objects.exclude(pk=entry.pk).filter(catalog=self._catalog).filter(reduce(or_, conditions)).exists():
+            raise self.AlreadyExists()
 
         if 'author' in form.cleaned_data.keys():
             author, created = Author.objects.get_or_create(
