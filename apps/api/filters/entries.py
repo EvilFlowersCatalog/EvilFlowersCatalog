@@ -2,8 +2,10 @@ from typing import List
 from urllib.parse import urlencode
 
 import django_filters
+from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.utils.translation import gettext as _
+from partial_date import PartialDate
 
 from apps.core.models import Entry, Language, Category, Author
 from apps.opds.structures import Facet
@@ -27,6 +29,8 @@ class EntryFilter(django_filters.FilterSet):
     summary = django_filters.CharFilter(lookup_expr='unaccent__icontains')
     query = django_filters.CharFilter(method='filter_name')
     feed_id = django_filters.UUIDFilter(field_name='feeds__id')
+    published_at_gte = django_filters.CharFilter(method='filter_published_at_gte')
+    published_at_lte = django_filters.CharFilter(method='filter_published_at_lte')
 
     @classmethod
     def template(cls) -> str:
@@ -118,3 +122,19 @@ class EntryFilter(django_filters.FilterSet):
             Q(title__unaccent__icontains=value) | Q(summary__unaccent__icontains=value)
             | Q(feeds__title__icontains=value)
         )
+
+    @staticmethod
+    def filter_published_at_gte(qs, name, value):
+        try:
+            value = PartialDate(value)
+            return qs.filter(published_at__gte=value)
+        except ValidationError:
+            return qs
+
+    @staticmethod
+    def filter_published_at_lte(qs, name, value):
+        try:
+            value = PartialDate(value)
+            return qs.filter(published_at__lte=value)
+        except ValidationError:
+            return qs
