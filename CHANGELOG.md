@@ -4,6 +4,8 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 
 ## 0.6.0 : TBD
 
+- **Added**: Introduced new Entry types: `publisher` and `published_at` (optional)
+- **Changed**: Entries with same title, ISBN or DOI are not allowed (HTTP Conflict is thrown)
 - **Changed**: Query entries also by feed name
 - **Changed**: Catalog based uniqueness for feeds
 - **Fixed**: Anonymous download of the user acquisition

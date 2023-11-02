@@ -7,6 +7,7 @@ from django.contrib.postgres.fields import HStoreField
 from django.db import models
 from django.urls import reverse
 from django.utils.translation import gettext as _
+from partial_date import PartialDateField
 
 from apps.core.models.author import Author
 from apps.core.models.language import Language
@@ -60,6 +61,8 @@ class Entry(BaseModel):
     language = models.ForeignKey(Language, on_delete=models.CASCADE, related_name='entries', null=True)
     identifiers = HStoreField(null=True, validators=[AvailableKeysValidator(keys=settings.EVILFLOWERS_IDENTIFIERS)])
     title = models.CharField(max_length=255)
+    published_at = PartialDateField(null=True)
+    publisher = models.CharField(max_length=255, null=True)
     summary = models.TextField(null=True)
     content = models.TextField(null=True)
     contributors = models.ManyToManyField(

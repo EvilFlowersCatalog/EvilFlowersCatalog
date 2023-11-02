@@ -9,6 +9,7 @@ from django.db.models import Q
 from django.utils.translation import gettext as _
 from django_api_forms import Form, FormField, FileField, FormFieldList, ImageField, DictionaryField, BooleanField
 
+from apps.core.fields.partial_date import PartialDateFormField
 from apps.core.models import Language, Author, Category, Currency, Feed, Catalog
 from apps.core.models import Acquisition
 from apps.core.validators import AvailableKeysValidator
@@ -75,6 +76,8 @@ class EntryForm(Form):
     feeds = forms.ModelMultipleChoiceField(queryset=Feed.objects.all(), required=False)
     categories = FormFieldList(CategoryForm, required=False)
     title = forms.CharField(max_length=255)
+    publisher = forms.CharField(max_length=255, required=False)
+    published_at = PartialDateFormField(required=False)
     summary = forms.CharField(required=False)
     content = forms.CharField(required=False)
     acquisitions = FormFieldList(AcquisitionForm, required=False)

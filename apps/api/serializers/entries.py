@@ -99,8 +99,14 @@ class EntrySerializer:
             return data.thumbnail_base64
 
     class Detailed(Base):
+        published_at: str = None
+        publisher: str = None
         summary: str = None
         content: str = None
         identifiers: Dict = None
         acquisitions: List[AcquisitionSerializer.Base] = None
         contributors: List[AuthorSerializer.Base] = None
+
+        @staticmethod
+        def resolve_published_at(data: Entry, **kwargs) -> Optional[str]:
+            return str(data.published_at) if data.published_at else None
