@@ -64,6 +64,11 @@ To set up an instance with a demo database, follow these simple steps:
 7. Import currencies, languages, and set up CRON jobs using `python manage.py setup`
 8. Create a superuser using `python manage.py createsuperuser`
 
----
-Made with ❤️ and ☕️ by Jakub Dubec
+## Acknowledgment
 
+This open-source project is maintained by students and PhD candidates of the
+[Faculty of Informatics and Information Technologies](https://www.fiit.stuba.sk/) at the Slovak University of
+Technology. The software is utilized by the university, aligning with its educational and research activities. We
+appreciate the faculty's support of our work and their contribution to the open-source community.
+
+![](docs/images/fiit.png)
