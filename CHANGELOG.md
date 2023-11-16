@@ -2,7 +2,7 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.6.0 : TBD
+## 0.6.0 : 2023-11-16
 
 - **Added**: Introduced new Entry types: `publisher` and `published_at` (optional)
 - **Changed**: Entries with same title, ISBN or DOI are not allowed (HTTP Conflict is thrown)

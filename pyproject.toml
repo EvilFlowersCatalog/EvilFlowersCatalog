@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "evil_flowers_catalog"
-version = "0.5.0"
+version = "0.6.0"
 description = "Simple books catalog compatible with OPDS written in Python"
 authors = ["Jakub Dubec <jakub.dubec@gmail.com>"]
 
