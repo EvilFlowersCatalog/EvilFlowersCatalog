@@ -35,4 +35,4 @@ class AcquisitionDetail(SecuredView):
     def get(self, request, acquisition_id: UUID):
         acquisition = self._get_acquisition(request, acquisition_id, 'check_catalog_read')
 
-        return SingleResponse(request, acquisition, serializer=AcquisitionSerializer.Detailed)
+        return SingleResponse(request, AcquisitionSerializer.Detailed.model_validate(acquisition))

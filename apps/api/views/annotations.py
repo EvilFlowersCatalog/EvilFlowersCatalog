@@ -8,7 +8,7 @@ from apps.api.filters.annotations import AnnotationFilter
 from apps.api.forms.annotations import CreateAnnotationForm, UpdateAnnotationForm
 from apps.api.response import PaginationResponse, SingleResponse
 from apps.api.serializers.annotation import AnnotationSerializer
-from apps.core.errors import ValidationException, ProblemDetailException
+from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.core.models import Annotation
 from apps.core.views import SecuredView
 
@@ -37,7 +37,7 @@ class AnnotationManagement(SecuredView):
         annotation.save()
 
         return SingleResponse(
-            request, annotation, serializer=AnnotationSerializer.Base, status=HTTPStatus.CREATED
+            request, AnnotationSerializer.Base.model_validate(annotation), status=HTTPStatus.CREATED
         )
 
 
@@ -51,7 +51,7 @@ class AnnotationDetail(SecuredView):
                 request, _("Annotation not found"),
                 status=HTTPStatus.NOT_FOUND,
                 previous=e,
-                detail_type=ProblemDetailException.DetailType.NOT_FOUND
+                detail_type=DetailType.NOT_FOUND
             )
 
         if not has_object_permission('check_user_acquisition_read', request.user, annotation.user_acquisition):
@@ -61,7 +61,7 @@ class AnnotationDetail(SecuredView):
 
     def get(self, request, annotation_id: UUID):
         annotation = self._get_annotation(request, annotation_id)
-        return SingleResponse(request, annotation, serializer=AnnotationSerializer.Base)
+        return SingleResponse(request, AnnotationSerializer.Base.model_validate(annotation))
 
     def put(self, request, annotation_id: UUID):
         form = UpdateAnnotationForm.create_from_request(request)

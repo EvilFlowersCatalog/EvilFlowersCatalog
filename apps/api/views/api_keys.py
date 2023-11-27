@@ -26,12 +26,16 @@ class ApiKeyManagement(SecuredView):
         form.populate(api_key)
         api_key.save()
 
-        return SingleResponse(request, api_key, serializer=ApiKeySerializer.Base, status=HTTPStatus.CREATED)
+        return SingleResponse(request, data=ApiKeySerializer.Base.model_validate(api_key), status=HTTPStatus.CREATED)
 
     def get(self, request):
         api_keys = ApiKeyFilter(request.GET, queryset=ApiKey.objects.all(), request=request).qs
 
-        return PaginationResponse(request, api_keys, serializer=ApiKeySerializer.Base)
+        return PaginationResponse(
+            request,
+            api_keys,
+            serializer=ApiKeySerializer.Base
+        )
 
 
 class ApiKeyDetail(SecuredView):

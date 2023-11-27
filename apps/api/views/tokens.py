@@ -8,7 +8,7 @@ from django.views import View
 from redis.client import Redis
 
 from apps.api.forms.tokens import AccessTokenForm, RefreshTokenForm
-from apps.api.serializers.users import UserSerializer
+from apps.api.serializers.tokens import TokenSerializer
 from apps.core.auth import JWTFactory, BasicBackend
 from apps.core.errors import ValidationException, UnauthorizedException, ProblemDetailException
 from apps.api.response import SingleResponse
@@ -43,11 +43,11 @@ class AccessTokenManagement(SecuredView):
         redis.set(f"evilflowers:refresh_token:{jti}", jti)
         redis.expire(f"evilflowers:refresh_token:{jti}", settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION)
 
-        return SingleResponse(request, {
-            'access_token': access_token,
-            'refresh_token': refresh_token,
-            'user': UserSerializer.Detailed(user).dict()
-        }, status=HTTPStatus.OK)
+        return SingleResponse(request, TokenSerializer.Access(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user=user
+        ))
 
 
 class RefreshTokenManagement(View):
@@ -69,8 +69,6 @@ class RefreshTokenManagement(View):
         if not redis.exists(f"evilflowers:refresh_token:{claims['jti']}"):
             raise UnauthorizedException(request)
 
-        access_token = JWTFactory(claims['sub']).access()
-
-        return SingleResponse(request, {
-            'access_token': access_token
-        }, status=HTTPStatus.OK)
+        return SingleResponse(request, TokenSerializer.Refresh(
+            access_token=JWTFactory(claims['sub']).access()
+        ), status=HTTPStatus.OK)

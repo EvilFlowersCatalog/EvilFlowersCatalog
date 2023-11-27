@@ -11,7 +11,7 @@ from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
 from apps.api.response import SingleResponse
-from apps.core.errors import ProblemDetailException
+from apps.core.errors import ProblemDetailException, DetailType
 from apps.core.fields.multirange import depack
 from apps.core.models import Acquisition, Entry, UserAcquisition
 from apps.core.modifiers import InvalidPage
@@ -49,7 +49,7 @@ class UserAcquisitionDownload(SecuredView):
                 request,
                 _("User acquisition not found"),
                 status=HTTPStatus.NOT_FOUND,
-                detail_type=ProblemDetailException.DetailType.NOT_FOUND
+                detail_type=DetailType.NOT_FOUND
             )
 
         if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:

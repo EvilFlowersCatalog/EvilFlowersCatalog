@@ -2,23 +2,22 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from porcupine.base import Serializer
+from pydantic import computed_field
 
+from apps.api.serializers import Serializer
 from apps.core.auth import JWTFactory
-from apps.core.models import ApiKey
 
 
 class ApiKeySerializer:
     class Base(Serializer):
         id: UUID
         user_id: UUID
-        name: Optional[str] = None
+        name: Optional[str]
         is_active: bool
-        last_seen_at: datetime = None
+        last_seen_at: Optional[datetime]
         created_at: datetime
         updated_at: datetime
-        token: str
 
-        @staticmethod
-        def resolve_token(data: ApiKey, **kwargs):
-            return JWTFactory(str(data.user_id)).api_key(str(data.pk))
+        @computed_field
+        def token(self) -> str:
+            return JWTFactory(str(self.user_id)).api_key(str(self.id))

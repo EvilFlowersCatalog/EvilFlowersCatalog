@@ -1,16 +1,33 @@
 import json
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Type, Optional, Any, List
+from typing import Optional, List, Type, TypeVar
 
 from django.conf import settings
 from django.core.paginator import Paginator, EmptyPage
 from django.http import HttpResponse, HttpResponseRedirect
 from django.utils.translation import gettext as _
-from porcupine.base import Serializer
+from pydantic import BaseModel, RootModel
 
-from apps.api.encoders import ApiJSONEncoder
-from apps.core.errors import ValidationException, ProblemDetailException
+from apps.core.errors import ProblemDetailException, DetailType, ValidationError, ProblemDetail
+
+ResponseType = TypeVar('ResponseType')
+
+
+class SingleResponseModel(BaseModel):
+    response: ResponseType
+
+
+class PaginationModel(BaseModel):
+    page: int
+    limit: Optional[int]
+    pages: int
+    total: int
+
+
+class PaginationResponseModel(BaseModel):
+    items: RootModel[ResponseType]
+    metadata: PaginationModel
 
 
 @dataclass
@@ -43,8 +60,7 @@ class Ordering:
 
 class GeneralResponse(HttpResponse):
     def __init__(
-        self, request, data: Optional[Any] = None,
-        serializer: Type[Serializer] = None, **kwargs
+        self, request, data: Optional[ResponseType] = None, **kwargs
     ):
         params = {}
         if data is not None:
@@ -54,7 +70,7 @@ class GeneralResponse(HttpResponse):
 
             if any(x in ['*/*', 'application/json'] for x in content_types):
                 params['content_type'] = 'application/json'
-                params['content'] = json.dumps(data, cls=ApiJSONEncoder, serializer=serializer, request=request)
+                params['content'] = data.model_dump_json(by_alias=True)
             else:
                 params['content_type'] = 'application/json'
                 params['status'] = HTTPStatus.NOT_ACCEPTABLE
@@ -77,41 +93,26 @@ class SingleResponse(GeneralResponse):
         if data is None:
             kwargs['status'] = HTTPStatus.NO_CONTENT
         else:
-            data = {
-                'response': data,
-            }
+            data = SingleResponseModel(response=data)
         super().__init__(request=request, data=data, **kwargs)
 
 
 class ErrorResponse(GeneralResponse):
-    def __init__(self, request, payload: dict, **kwargs):
+    def __init__(self, request, payload: ProblemDetail, **kwargs):
+        kwargs.setdefault('status', HTTPStatus.INTERNAL_SERVER_ERROR)
         super().__init__(request=request, data=payload, **kwargs)
-
-    @staticmethod
-    def create_from_exception(e: ProblemDetailException) -> 'ErrorResponse':
-        return ErrorResponse(e.request, e.payload, status=e.status, headers=e.extra_headers)
 
 
 class ValidationResponse(GeneralResponse):
-    def __init__(self, request, payload: dict, **kwargs):
+    def __init__(self, request, payload: ValidationError, **kwargs):
         kwargs.setdefault("content_type", "application/problem+json")
-        data = {
-            "type": "/validation-error",
-            "title": "Invalid request parameters",
-            "status": HTTPStatus.UNPROCESSABLE_ENTITY,
-            'errors': payload,
-        }
-
-        super().__init__(request, data, status=HTTPStatus.UNPROCESSABLE_ENTITY, **kwargs)
-
-    @staticmethod
-    def create_from_exception(e: ValidationException) -> 'ValidationResponse':
-        return ValidationResponse(e.request, e.payload, status=HTTPStatus.UNPROCESSABLE_ENTITY)
+        kwargs.setdefault("status", HTTPStatus.UNPROCESSABLE_ENTITY)
+        super().__init__(request, payload, **kwargs)
 
 
 class PaginationResponse(GeneralResponse):
     def __init__(
-        self, request, qs, ordering: Ordering = None, **kwargs
+        self, request, qs, serializer: Type[BaseModel], ordering: Ordering = None, **kwargs
     ):
         kwargs.setdefault('content_type', 'application/json')
 
@@ -135,7 +136,7 @@ class PaginationResponse(GeneralResponse):
                     title=_('Page not found'),
                     status=HTTPStatus.NOT_FOUND,
                     previous=e,
-                    detail_type=ProblemDetailException.DetailType.OUT_OF_RANGE,
+                    detail_type=DetailType.OUT_OF_RANGE,
                     detail=_('That page contains no results')
                 )
 
@@ -149,17 +150,21 @@ class PaginationResponse(GeneralResponse):
             num_pages = 1
             total = qs.count()
 
-        data = {
-            'items': items,
-            'metadata': {
-                'page': page,
-                'limit': limit,
-                'pages': num_pages,
-                'total': total
-            }
-        }
-
-        super().__init__(request, data, **kwargs)
+        super().__init__(request, PaginationResponseModel(
+            items=RootModel[List[serializer]].model_validate(
+                list(items),
+                from_attributes=True,
+                context={
+                    'user': request.user
+                }
+            ),
+            metadata=PaginationModel(
+                page=page,
+                limit=limit,
+                pages=num_pages,
+                total=total
+            )
+        ), **kwargs)
 
 
 class SeeOtherResponse(HttpResponseRedirect):

@@ -2,8 +2,7 @@ from datetime import datetime
 from typing import List
 from uuid import UUID
 
-from porcupine.base import Serializer
-
+from apps.api.serializers import Serializer
 from apps.api.serializers.users import UserSerializer
 
 

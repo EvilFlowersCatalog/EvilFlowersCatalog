@@ -12,10 +12,10 @@ class ExceptionMiddleware(object):
 
     @staticmethod
     def process_exception(request, exception):
-        if isinstance(exception, ProblemDetailException):
-            return ErrorResponse.create_from_exception(exception)
         if isinstance(exception, ValidationException):
-            return ValidationResponse.create_from_exception(exception)
+            return ValidationResponse(request, exception.payload, status=exception.status)
+        if isinstance(exception, ProblemDetailException):
+            return ErrorResponse(request, exception.payload, status=exception.status)
 
 
 __all__ = [

@@ -9,7 +9,7 @@ from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
 from apps.api.services.entry_introspection_service import EntryIntrospectionService
-from apps.core.errors import ValidationException, ProblemDetailException
+from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.api.filters.entries import EntryFilter
 from apps.api.forms.entries import EntryForm, AcquisitionMetaForm
 from apps.api.response import SingleResponse, PaginationResponse
@@ -64,10 +64,17 @@ class EntryManagement(SecuredView):
                 'Entry already exists!',
                 HTTPStatus.CONFLICT,
                 detail=_('Entry with same title, isbn or DOI already exists in catalog %s') % (catalog.title, ),
-                previous=e
+                previous=e,
+                detail_type=DetailType.CONFLICT
             )
 
-        return SingleResponse(request, entry, serializer=EntrySerializer.Detailed, status=HTTPStatus.CREATED)
+        return SingleResponse(
+            request,
+            data=EntrySerializer.Detailed.model_validate(entry, context={
+                'user': request.user
+            }),
+            status=HTTPStatus.CREATED
+        )
 
 
 class EntryDetail(SecuredView):
@@ -86,7 +93,12 @@ class EntryDetail(SecuredView):
     def get(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
         entry = self.get_entry(request, catalog_id, entry_id, 'check_entry_read')
 
-        return SingleResponse(request, entry, serializer=EntrySerializer.Detailed)
+        return SingleResponse(
+            request,
+            data=EntrySerializer.Detailed.model_validate(entry, context={
+                'user': request.user
+            })
+        )
 
     def post(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
         entry = self.get_entry(request, catalog_id, entry_id)
@@ -126,7 +138,7 @@ class EntryDetail(SecuredView):
             )
 
         return SingleResponse(
-            request, acquisition, serializer=AcquisitionSerializer.Detailed, status=HTTPStatus.CREATED
+            request, AcquisitionSerializer.Detailed.model_validate(acquisition), status=HTTPStatus.CREATED
         )
 
     def put(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
@@ -156,7 +168,12 @@ class EntryDetail(SecuredView):
                 previous=e
             )
 
-        return SingleResponse(request, entry, serializer=EntrySerializer.Detailed)
+        return SingleResponse(
+            request,
+            data=EntrySerializer.Detailed.model_validate(entry, context={
+                'user': request.user
+            })
+        )
 
     def delete(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
         entry = self.get_entry(request, catalog_id, entry_id)

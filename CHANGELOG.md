@@ -2,6 +2,12 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## 0.7.0 : TBD
+
+- **Added**: Basic OPDS 1.2 support
+- **Changed**: Migrated from porcupine-python to pydantic 2.0 for serializers
+[Getting rid of the porcupine-python dependency](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/23)
+
 ## 0.6.0 : 2023-11-16
 
 - **Added**: Introduced new Entry types: `publisher` and `published_at` (optional)

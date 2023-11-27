@@ -162,9 +162,6 @@ class BasicBackend(ModelBackend):
 
         connection.unbind()
 
-        user.last_login = timezone.now()
-        user.save()
-
         for catalog_id, mode in config.get('CATALOGS', {}).items():
             if not UserCatalog.objects.filter(catalog_id=catalog_id, user=user).exists():
                 UserCatalog.objects.create(
@@ -202,6 +199,10 @@ class BasicBackend(ModelBackend):
                     ('WWW-Authenticate', f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),
                 )
             )
+
+        user.last_login = timezone.now()
+        user.save()
+
         return user
 
 

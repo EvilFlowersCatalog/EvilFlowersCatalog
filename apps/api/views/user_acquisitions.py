@@ -11,7 +11,7 @@ from apps.api.filters.user_acquisitions import UserAcquisitionFilter
 from apps.api.forms.user_acquisitions import UserAcquisitionForm
 from apps.api.response import PaginationResponse, SingleResponse
 from apps.api.serializers.user_acquisitions import UserAcquisitionSerializer
-from apps.core.errors import ValidationException, ProblemDetailException
+from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.core.models import UserAcquisition
 from apps.core.views import SecuredView
 
@@ -72,7 +72,7 @@ class UserAcquisitionDetail(SecuredView):
                 _("User acquisition not found"),
                 status=HTTPStatus.NOT_FOUND,
                 previous=e,
-                detail_type=ProblemDetailException.DetailType.NOT_FOUND
+                detail_type=DetailType.NOT_FOUND
             )
 
         if not has_object_permission('check_user_acquisition_read', request.user, user_acquisition):

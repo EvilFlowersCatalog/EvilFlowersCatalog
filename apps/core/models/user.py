@@ -1,3 +1,5 @@
+from typing import List
+
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
 from django.db import models
@@ -28,6 +30,10 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     @property
     def full_name(self) -> str:
         return f'{self.name} {self.surname}'
+
+    @property
+    def permissions(self) -> List[str]:
+        return self.get_user_permissions()
 
 
 __all__ = [

@@ -89,4 +89,4 @@ class UserMe(SecuredView):
         if request.user.is_anonymous:
             raise UnauthorizedException(request, detail=_('You have to log in!'))
 
-        return SingleResponse(request, request.user, serializer=UserSerializer.Detailed)
+        return SingleResponse(request, UserSerializer.Detailed.model_validate(request.user))
