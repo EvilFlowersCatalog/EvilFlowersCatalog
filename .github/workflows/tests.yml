@@ -16,4 +16,4 @@ jobs:
         python -m pip install black
     - name: Lint with black
       run: |
-         flake8 --check
+        black --check
