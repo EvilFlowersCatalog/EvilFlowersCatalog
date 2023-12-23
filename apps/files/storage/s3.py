@@ -15,14 +15,14 @@ class S3Storage(Storage):
             settings.EVILFLOWERS_STORAGE_S3_HOST,
             access_key=settings.EVILFLOWERS_STORAGE_S3_ACCESS_KEY,
             secret_key=settings.EVILFLOWERS_STORAGE_S3_SECRET_KEY,
-            secure=settings.EVILFLOWERS_STORAGE_S3_SECURE
+            secure=settings.EVILFLOWERS_STORAGE_S3_SECURE,
         )
 
     def _open(self, name, mode="rb"):
         return File(self._client.get_object(settings.EVILFLOWERS_STORAGE_S3_BUCKET, name))
 
     def _save(self, name, content):
-        content_type = getattr(content, 'content_type', None)
+        content_type = getattr(content, "content_type", None)
 
         if not content_type:
             content_type = guess_type(name)[0]
@@ -35,7 +35,7 @@ class S3Storage(Storage):
             name,
             content,
             content.getbuffer().nbytes,
-            content_type=content_type
+            content_type=content_type,
         )
         return s3_object.object_name
 

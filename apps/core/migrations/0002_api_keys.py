@@ -4,28 +4,27 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0001_initial'),
+        ("core", "0001_initial"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='apikey',
-            name='platform',
+            model_name="apikey",
+            name="platform",
         ),
         migrations.RemoveField(
-            model_name='apikey',
-            name='secret',
+            model_name="apikey",
+            name="secret",
         ),
         migrations.AddField(
-            model_name='apikey',
-            name='last_seen_at',
+            model_name="apikey",
+            name="last_seen_at",
             field=models.DateTimeField(null=True),
         ),
         migrations.AlterField(
-            model_name='apikey',
-            name='is_active',
+            model_name="apikey",
+            name="is_active",
             field=models.BooleanField(default=True),
         ),
     ]

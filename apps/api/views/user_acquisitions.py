@@ -30,28 +30,30 @@ class UserAcquisitionManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        if not has_object_permission('check_entry_read', request.user, form.cleaned_data['acquisition_id'].entry):
+        if not has_object_permission("check_entry_read", request.user, form.cleaned_data["acquisition_id"].entry):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-        if (form.cleaned_data['type'] == UserAcquisition.UserAcquisitionType.PERSONAL
-                and settings.EVILFLOWERS_USER_ACQUISITION_MODE == 'single'):
+        if (
+            form.cleaned_data["type"] == UserAcquisition.UserAcquisitionType.PERSONAL
+            and settings.EVILFLOWERS_USER_ACQUISITION_MODE == "single"
+        ):
             user_acquisition = UserAcquisition.objects.filter(
-                acquisition_id=form.cleaned_data['acquisition_id'],
+                acquisition_id=form.cleaned_data["acquisition_id"],
                 type=UserAcquisition.UserAcquisitionType.PERSONAL,
-                user=request.user
+                user=request.user,
             ).first()
 
             if user_acquisition:
-                location = f"{settings.BASE_URL}" \
-                           f"{reverse('user-acquisition-detail', kwargs={'user_acquisition_id': user_acquisition.pk})}"
-                return HttpResponseRedirect(
-                    location, status=HTTPStatus.SEE_OTHER
+                location = (
+                    f"{settings.BASE_URL}"
+                    f"{reverse('user-acquisition-detail', kwargs={'user_acquisition_id': user_acquisition.pk})}"
                 )
+                return HttpResponseRedirect(location, status=HTTPStatus.SEE_OTHER)
 
         user_acquisition = UserAcquisition(user=request.user)
         form.populate(user_acquisition)
 
-        evilflowers_share_enabled = user_acquisition.acquisition.entry.read_config('evilflowers_share_enabled')
+        evilflowers_share_enabled = user_acquisition.acquisition.entry.read_config("evilflowers_share_enabled")
         if user_acquisition.type == UserAcquisition.UserAcquisitionType.SHARED and not evilflowers_share_enabled:
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
@@ -72,10 +74,10 @@ class UserAcquisitionDetail(SecuredView):
                 _("User acquisition not found"),
                 status=HTTPStatus.NOT_FOUND,
                 previous=e,
-                detail_type=DetailType.NOT_FOUND
+                detail_type=DetailType.NOT_FOUND,
             )
 
-        if not has_object_permission('check_user_acquisition_read', request.user, user_acquisition):
+        if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return SingleResponse(request, user_acquisition, serializer=UserAcquisitionSerializer.Base)

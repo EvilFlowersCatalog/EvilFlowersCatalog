@@ -4,18 +4,22 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0002_api_keys'),
+        ("core", "0002_api_keys"),
     ]
 
     operations = [
         migrations.DeleteModel(
-            name='Contributor',
+            name="Contributor",
         ),
         migrations.AddField(
-            model_name='entry',
-            name='contributors',
-            field=models.ManyToManyField(db_table='contributors', related_name='contribution_entries', to='core.Author', verbose_name='Contributor'),
+            model_name="entry",
+            name="contributors",
+            field=models.ManyToManyField(
+                db_table="contributors",
+                related_name="contribution_entries",
+                to="core.Author",
+                verbose_name="Contributor",
+            ),
         ),
     ]

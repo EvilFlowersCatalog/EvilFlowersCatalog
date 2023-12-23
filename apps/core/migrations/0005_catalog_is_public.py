@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0004_feed_parents'),
+        ("core", "0004_feed_parents"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='catalog',
-            name='is_public',
+            model_name="catalog",
+            name="is_public",
             field=models.BooleanField(default=False),
         ),
     ]

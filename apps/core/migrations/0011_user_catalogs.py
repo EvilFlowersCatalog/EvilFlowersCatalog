@@ -5,15 +5,16 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0010_remove_legacy_user_catalog'),
+        ("core", "0010_remove_legacy_user_catalog"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='catalog',
-            name='users',
-            field=models.ManyToManyField(related_name='catalogs', through='core.UserCatalog', to=settings.AUTH_USER_MODEL),
+            model_name="catalog",
+            name="users",
+            field=models.ManyToManyField(
+                related_name="catalogs", through="core.UserCatalog", to=settings.AUTH_USER_MODEL
+            ),
         ),
     ]

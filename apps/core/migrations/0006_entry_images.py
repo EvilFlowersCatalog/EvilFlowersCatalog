@@ -9,30 +9,35 @@ from apps.files.storage import get_storage
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0005_catalog_is_public'),
+        ("core", "0005_catalog_is_public"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='entry',
-            name='image',
-            field=models.ImageField(max_length=255, null=True, storage=get_storage, upload_to=apps.core.models.entry.Entry._upload_to_path),
+            model_name="entry",
+            name="image",
+            field=models.ImageField(
+                max_length=255, null=True, storage=get_storage, upload_to=apps.core.models.entry.Entry._upload_to_path
+            ),
         ),
         migrations.AddField(
-            model_name='entry',
-            name='image_mime',
+            model_name="entry",
+            name="image_mime",
             field=models.CharField(max_length=100, null=True),
         ),
         migrations.AddField(
-            model_name='entry',
-            name='thumbnail',
-            field=models.ImageField(max_length=255, null=True, storage=get_storage, upload_to=apps.core.models.entry.Entry._upload_to_path),
+            model_name="entry",
+            name="thumbnail",
+            field=models.ImageField(
+                max_length=255, null=True, storage=get_storage, upload_to=apps.core.models.entry.Entry._upload_to_path
+            ),
         ),
         migrations.AlterField(
-            model_name='entry',
-            name='language',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, related_name='entries', to='core.language'),
+            model_name="entry",
+            name="language",
+            field=models.ForeignKey(
+                null=True, on_delete=django.db.models.deletion.CASCADE, related_name="entries", to="core.language"
+            ),
         ),
     ]

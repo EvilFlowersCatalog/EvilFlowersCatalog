@@ -8,11 +8,11 @@ from apps.core.models.user_acquisition import UserAcquisition
 
 class Annotation(BaseModel):
     class Meta:
-        app_label = 'core'
-        db_table = 'annotations'
+        app_label = "core"
+        db_table = "annotations"
         default_permissions = ()
-        verbose_name = _('Annotation')
-        verbose_name_plural = _('Annotations')
+        verbose_name = _("Annotation")
+        verbose_name_plural = _("Annotations")
 
     user_acquisition = models.ForeignKey(UserAcquisition, on_delete=models.CASCADE)
     content = models.TextField()

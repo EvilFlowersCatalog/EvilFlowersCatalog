@@ -5,22 +5,22 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.forms import CharField
 
-'''
+"""
 Based on the work of Mark Boszko
 https://djangosnippets.org/snippets/3070/
-'''
+"""
 
 
 class MultiRangeField(models.CharField):
     description = "A multi-range of integers (e.g. page numbers 30, 41, 51-57, 68)"
 
     def __init__(self, *args, **kwargs):
-        kwargs['max_length'] = 1000
-        kwargs['help_text'] = "Comma-separated pages and page ranges."
+        kwargs["max_length"] = 1000
+        kwargs["help_text"] = "Comma-separated pages and page ranges."
         super(MultiRangeField, self).__init__(*args, **kwargs)
 
     def get_internal_type(self):
-        return 'CharField'
+        return "CharField"
 
     def to_python(self, value: str) -> str:
         if not value:
@@ -33,7 +33,7 @@ class MultiRangeField(models.CharField):
 
     def get_prep_value(self, value):
         if not value:
-            return ''
+            return ""
         return repack(depack(value))
 
     def value_to_string(self, obj):
@@ -41,7 +41,7 @@ class MultiRangeField(models.CharField):
         return repack(depack(value))
 
     def formfield(self, **kwargs):
-        defaults = {'form_class': MultiRangeFormField}
+        defaults = {"form_class": MultiRangeFormField}
         defaults.update(kwargs)
         return super(MultiRangeField, self).formfield(**defaults)
 
@@ -55,7 +55,6 @@ class MultiRangeField(models.CharField):
 
 
 class MultiRangeFormField(CharField):
-
     def validate(self, value):
         """
         Check if the value consts of valid page ranges,
@@ -67,7 +66,7 @@ class MultiRangeFormField(CharField):
             return repack(depack(value))
         # Comment this out if you'd rather just have it auto-clean your entry
         else:
-            raise ValidationError('Can only contain numbers, hyphens, commas, and spaces.')
+            raise ValidationError("Can only contain numbers, hyphens, commas, and spaces.")
 
 
 def depack(value: str) -> list:
@@ -76,10 +75,10 @@ def depack(value: str) -> list:
     """
     page_list = []
 
-    for part in value.strip().split(','):
-        if '-' in part:
+    for part in value.strip().split(","):
+        if "-" in part:
             # It's a range
-            a, b = part.split('-')
+            a, b = part.split("-")
             a, b = int(a), int(b)
             page_list.extend(range(a, b + 1))
         else:
@@ -116,4 +115,4 @@ def repack(page_list: list) -> str:
         else:
             ranges_strings.append(str(item))  # 1
 
-    return ', '.join(ranges_strings)
+    return ", ".join(ranges_strings)

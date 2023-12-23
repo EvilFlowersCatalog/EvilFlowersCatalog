@@ -25,10 +25,10 @@ class FeedSerializer:
         created_at: datetime
         updated_at: datetime
 
-        @field_validator('parents', mode='before')
+        @field_validator("parents", mode="before")
         def generate_parents(cls, v, info: ValidationInfo) -> List[UUID]:
-            return v.all().values_list('id', flat=True)
+            return v.all().values_list("id", flat=True)
 
-        @field_validator('children', mode='before')
+        @field_validator("children", mode="before")
         def generate_children(cls, v, info: ValidationInfo) -> List[UUID]:
-            return v.all().values_list('id', flat=True)
+            return v.all().values_list("id", flat=True)

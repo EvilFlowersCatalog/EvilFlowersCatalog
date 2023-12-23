@@ -13,8 +13,8 @@ from apps.core.modifiers import ModifierContext, InvalidPage
 
 class PDFModifier:
     DEFAULT_CONTEXT: ModifierContext = {
-        'generated_at': timezone.now().isoformat(),
-        'instance': settings.INSTANCE_NAME,
+        "generated_at": timezone.now().isoformat(),
+        "instance": settings.INSTANCE_NAME,
     }
 
     def __init__(self, context: ModifierContext, pages: Optional[List]):
@@ -22,29 +22,28 @@ class PDFModifier:
         self._pages = pages or None
 
     def create_qr(self) -> bytes:
-        qr = qrcode.QRCode(
-            version=4,
-            border=0,
-            error_correction=qrcode.constants.ERROR_CORRECT_H
-        )
+        qr = qrcode.QRCode(version=4, border=0, error_correction=qrcode.constants.ERROR_CORRECT_H)
         qr.add_data(json.dumps(self._context))
-        qr = qr.make_image().get_image().convert('RGBA')
+        qr = qr.make_image().get_image().convert("RGBA")
         qr.putalpha(150)
 
         stream = io.BytesIO()
-        qr.save(stream, format='PNG')
+        qr.save(stream, format="PNG")
 
         return stream.getvalue()
 
     def generate(self, file: File, page_num: Optional[int] = None) -> File:
         document = fitz.open(stream=file.read())
 
-        document.set_metadata(document.metadata | {
-            'author': self._context['authors'],
-            'title': self._context['title'],
-            'subject': f"{self._context['username']} ({self._context['user_id']})",
-            'creator': f'EvilFlowers/{settings.INSTANCE_NAME}',
-        })
+        document.set_metadata(
+            document.metadata
+            | {
+                "author": self._context["authors"],
+                "title": self._context["title"],
+                "subject": f"{self._context['username']} ({self._context['user_id']})",
+                "creator": f"EvilFlowers/{settings.INSTANCE_NAME}",
+            }
+        )
 
         if self._pages:
             document.select([i - 1 for i in self._pages])
@@ -67,7 +66,8 @@ class PDFModifier:
             height=842,
             fontname="Helvetica",  # default font
             fontfile=None,  # any font file name
-            color=(0, 0, 0))  # text color (RGB)
+            color=(0, 0, 0),
+        )  # text color (RGB)
 
         # Add QR codes to rest of pages
         qr = self.create_qr()
@@ -81,6 +81,4 @@ class PDFModifier:
             except ValueError:
                 raise InvalidPage()
 
-        return File(
-            io.BytesIO(document.tobytes(garbage=3, deflate=True, deflate_images=True, linear=True))
-        )
+        return File(io.BytesIO(document.tobytes(garbage=3, deflate=True, deflate_images=True, linear=True)))

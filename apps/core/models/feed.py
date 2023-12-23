@@ -11,24 +11,21 @@ from apps.core.models.catalog import Catalog
 
 class Feed(BaseModel):
     class Meta:
-        app_label = 'core'
-        db_table = 'feeds'
+        app_label = "core"
+        db_table = "feeds"
         default_permissions = ()
-        verbose_name = _('Feed')
-        verbose_name_plural = _('Feeds')
-        unique_together = (
-            ('catalog', 'title'),
-            ('catalog', 'url_name')
-        )
+        verbose_name = _("Feed")
+        verbose_name_plural = _("Feeds")
+        unique_together = (("catalog", "title"), ("catalog", "url_name"))
 
     class FeedKind(models.TextChoices):
-        NAVIGATION = 'navigation', _('navigation')
-        ACQUISITION = 'acquisition', _('acquisition')
+        NAVIGATION = "navigation", _("navigation")
+        ACQUISITION = "acquisition", _("acquisition")
 
     class FeedSource(models.TextChoices):
-        RELATION = 'relation', _('relation')
+        RELATION = "relation", _("relation")
 
-    catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE, related_name='feeds')
+    catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE, related_name="feeds")
     creator = models.ForeignKey(User, on_delete=models.CASCADE)
     title = models.CharField(max_length=100)
     url_name = models.SlugField()
@@ -36,14 +33,12 @@ class Feed(BaseModel):
     source = models.CharField(max_length=20, choices=FeedSource.choices)
     content = models.TextField()
     per_page = models.IntegerField(null=True)
-    entries = models.ManyToManyField(Entry, related_name='feeds')
-    parents = models.ManyToManyField('self', related_name='children', db_table='feed_parents', symmetrical=False)
+    entries = models.ManyToManyField(Entry, related_name="feeds")
+    parents = models.ManyToManyField("self", related_name="children", db_table="feed_parents", symmetrical=False)
 
     @property
     def url(self):
         return f"{settings.BASE_URL}{reverse('feed', args=[self.catalog.url_name, self.url_name])}"
 
 
-__all__ = [
-    'Feed'
-]
+__all__ = ["Feed"]

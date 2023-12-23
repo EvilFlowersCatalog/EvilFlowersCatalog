@@ -31,7 +31,7 @@ class CreateAuthorForm(AuthorForm):
 
 
 class PriceForm(Form):
-    currency_code = forms.ModelChoiceField(queryset=Currency.objects.all(), to_field_name='code')
+    currency_code = forms.ModelChoiceField(queryset=Currency.objects.all(), to_field_name="code")
     value = forms.DecimalField(max_digits=12, decimal_places=4)
 
 
@@ -54,17 +54,15 @@ class EntryConfigForm(Form):
     evilflowers_render_type = forms.ChoiceField(
         required=False,
         choices=(
-            ('document', _("Document render type")),
-            ('page', _("Page render type")),
-        )
+            ("document", _("Document render type")),
+            ("page", _("Page render type")),
+        ),
     )
 
 
 class EntryForm(Form):
     class Meta:
-        field_strategy = {
-            'config': 'django_api_forms.population_strategies.BaseStrategy'
-        }
+        field_strategy = {"config": "django_api_forms.population_strategies.BaseStrategy"}
 
     id = forms.UUIDField(required=False)
     language_code = forms.CharField(max_length=3)
@@ -84,7 +82,7 @@ class EntryForm(Form):
     identifiers = DictionaryField(
         required=False,
         validators=[AvailableKeysValidator(keys=settings.EVILFLOWERS_IDENTIFIERS)],
-        value_field=forms.CharField(max_length=100, required=False, empty_value=None)
+        value_field=forms.CharField(max_length=100, required=False, empty_value=None),
     )
     image = ImageField(
         max_length=settings.EVILFLOWERS_IMAGE_UPLOAD_MAX_SIZE, mime=settings.EVILFLOWERS_IMAGE_MIME, required=False
@@ -94,43 +92,43 @@ class EntryForm(Form):
 
     def clean_language_code(self) -> Language:
         language = Language.objects.filter(
-            Q(alpha2=self.cleaned_data['language_code']) | Q(alpha3=self.cleaned_data['language_code'])
+            Q(alpha2=self.cleaned_data["language_code"]) | Q(alpha3=self.cleaned_data["language_code"])
         ).first()
 
         if not language:
-            raise ValidationError("Language not found. Use valid alpha2 or alpha3 code.", 'not-found')
+            raise ValidationError("Language not found. Use valid alpha2 or alpha3 code.", "not-found")
 
         return language
 
     def clean_citation(self) -> Optional[str]:
-        if not self.cleaned_data.get('citation'):
+        if not self.cleaned_data.get("citation"):
             return None
 
-        bibtex = bibtexparser.loads(self.cleaned_data.get('citation'))
+        bibtex = bibtexparser.loads(self.cleaned_data.get("citation"))
 
         if isinstance(bibtex, BibDatabase):
             try:
                 bibtex.entries[0]
             except IndexError:
-                raise ValidationError("No entry found in provided BibTeX", 'no-bibtex-record')
+                raise ValidationError("No entry found in provided BibTeX", "no-bibtex-record")
 
             if len(bibtex.entries) > 1:
-                raise ValidationError("BibTeX contains more than one record", 'multiple-bibtex-records')
+                raise ValidationError("BibTeX contains more than one record", "multiple-bibtex-records")
 
             return bibtexparser.dumps(bibtex)
         else:
-            raise ValidationError("Invalid BibTeX record", 'invalid-bibtex')
+            raise ValidationError("Invalid BibTeX record", "invalid-bibtex")
 
     def clean(self):
-        if 'author_id' in self.cleaned_data.keys() and 'author' in self.cleaned_data.keys():
-            raise ValidationError(_("You have to provide author_id or author object (not both)"), 'invalid')
+        if "author_id" in self.cleaned_data.keys() and "author" in self.cleaned_data.keys():
+            raise ValidationError(_("You have to provide author_id or author object (not both)"), "invalid")
 
-        if 'category_ids' in self.cleaned_data.keys() and 'categories' in self.cleaned_data.keys():
-            raise ValidationError(_("You have to provide category_ids or categories object (not both)"), 'invalid')
+        if "category_ids" in self.cleaned_data.keys() and "categories" in self.cleaned_data.keys():
+            raise ValidationError(_("You have to provide category_ids or categories object (not both)"), "invalid")
 
-        if 'contributor_ids' in self.cleaned_data.keys() and 'contributors' in self.cleaned_data.keys():
+        if "contributor_ids" in self.cleaned_data.keys() and "contributors" in self.cleaned_data.keys():
             raise ValidationError(
-                _("You have to provide contributor_ids or contributors object (not both)"), 'invalid'
+                _("You have to provide contributor_ids or contributors object (not both)"), "invalid"
             )
 
         return self.cleaned_data

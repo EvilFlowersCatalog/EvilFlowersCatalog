@@ -6,15 +6,16 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0019_entry_citation_as_text'),
+        ("core", "0019_entry_citation_as_text"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='entry',
-            name='identifiers',
-            field=django.contrib.postgres.fields.hstore.HStoreField(null=True, validators=[apps.core.validators.AvailableKeysValidator(keys=['isbn', 'google', 'doi'])]),
+            model_name="entry",
+            name="identifiers",
+            field=django.contrib.postgres.fields.hstore.HStoreField(
+                null=True, validators=[apps.core.validators.AvailableKeysValidator(keys=["isbn", "google", "doi"])]
+            ),
         ),
     ]

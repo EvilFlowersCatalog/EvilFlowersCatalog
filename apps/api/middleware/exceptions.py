@@ -3,7 +3,6 @@ from apps.api.response import ErrorResponse, ValidationResponse
 
 
 class ExceptionMiddleware(object):
-
     def __init__(self, get_response):
         self.get_response = get_response
 
@@ -18,6 +17,4 @@ class ExceptionMiddleware(object):
             return ErrorResponse(request, exception.payload, status=exception.status)
 
 
-__all__ = [
-    'ExceptionMiddleware'
-]
+__all__ = ["ExceptionMiddleware"]

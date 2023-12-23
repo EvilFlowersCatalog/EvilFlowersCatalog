@@ -50,7 +50,7 @@ class AcquisitionSerializer:
         id: UUID
 
     class Detailed(Base):
-        content: Optional[str] = Field(serialization_alias='base64')
+        content: Optional[str] = Field(serialization_alias="base64")
         checksum: Optional[str]
 
 
@@ -66,28 +66,28 @@ class EntrySerializer:
         feeds: List[FeedSerializer.Base] = Field(default=[], validate_default=True)
         popularity: int
         title: str
-        image_url: Optional[str] = Field(serialization_alias='image')
+        image_url: Optional[str] = Field(serialization_alias="image")
         image_mime: Optional[str]
-        thumbnail_base64: Optional[str] = Field(serialization_alias='thumbnail')
+        thumbnail_base64: Optional[str] = Field(serialization_alias="thumbnail")
         config: Optional[dict]
         citation: Optional[str]
         created_at: datetime
         updated_at: datetime
 
-        @field_validator('shelf_record_id', mode='before')
+        @field_validator("shelf_record_id", mode="before")
         def generate_shelf_record_id(cls, v, info: ValidationInfo) -> Optional[UUID]:
-            if info.context['user'].is_authenticated:
+            if info.context["user"].is_authenticated:
                 try:
-                    return info.context['user'].shelf_records.get(entry_id=info.data.get('id')).pk
+                    return info.context["user"].shelf_records.get(entry_id=info.data.get("id")).pk
                 except ShelfRecord.DoesNotExist:
                     return None
             return None
 
-        @field_validator('categories', mode='before')
+        @field_validator("categories", mode="before")
         def generate_categories(cls, v, info: ValidationInfo):
             return v.all()
 
-        @field_validator('feeds', mode='before')
+        @field_validator("feeds", mode="before")
         def generate_feeds(cls, v, info: ValidationInfo):
             return v.all()
 
@@ -100,16 +100,16 @@ class EntrySerializer:
         acquisitions: List[AcquisitionSerializer.Base] = Field(default=[], validate_default=True)
         contributors: List[AuthorSerializer.Base] = Field(default=[], validate_default=True)
 
-        @field_validator('published_at', mode='before')
+        @field_validator("published_at", mode="before")
         def generate_published_at(cls, v, info: ValidationInfo):
             # TODO: Use Annotated
             # https://docs.pydantic.dev/latest/concepts/types/#composing-types-via-annotated
             return str(v) if v else None
 
-        @field_validator('acquisitions', mode='before')
+        @field_validator("acquisitions", mode="before")
         def generate_acquisitions(cls, v, info: ValidationInfo):
             return v.all()
 
-        @field_validator('contributors', mode='before')
+        @field_validator("contributors", mode="before")
         def generate_contributors(cls, v, info: ValidationInfo):
             return v.all()

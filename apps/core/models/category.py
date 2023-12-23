@@ -8,11 +8,11 @@ from apps.core.models.base import BaseModel
 
 class Category(BaseModel):
     class Meta:
-        app_label = 'core'
-        db_table = 'categories'
+        app_label = "core"
+        db_table = "categories"
         default_permissions = ()
-        verbose_name = _('Category')
-        verbose_name_plural = _('Categories')
+        verbose_name = _("Category")
+        verbose_name_plural = _("Categories")
 
     creator = models.ForeignKey(User, on_delete=models.CASCADE)
     catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE)
@@ -21,6 +21,4 @@ class Category(BaseModel):
     scheme = models.CharField(max_length=255, null=True)
 
 
-__all__ = [
-    'Category'
-]
+__all__ = ["Category"]

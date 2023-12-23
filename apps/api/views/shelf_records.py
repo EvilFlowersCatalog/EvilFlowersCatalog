@@ -31,8 +31,7 @@ class ShelfRecordManagement(SecuredView):
             raise ValidationException(request, form)
 
         shelf_record, created = ShelfRecord.objects.get_or_create(
-            user=request.user,
-            entry=form.cleaned_data['entry_id']
+            user=request.user, entry=form.cleaned_data["entry_id"]
         )
 
         if not created:
@@ -48,7 +47,7 @@ class ShelfRecordDetail(SecuredView):
         except ShelfRecord.DoesNotExist as e:
             raise ProblemDetailException(request, _("Not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        if not has_object_permission('check_shelf_record_access', request.user, shelf_record):
+        if not has_object_permission("check_shelf_record_access", request.user, shelf_record):
             raise ProblemDetailException(request, _("Not found"), status=HTTPStatus.NOT_FOUND)
 
         shelf_record.delete()

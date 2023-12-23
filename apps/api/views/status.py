@@ -11,19 +11,19 @@ from apps.core.models import Catalog, Entry, Acquisition, User
 class StatusManagement(View):
     def get(self, request):
         response = {
-            'timestamp': timezone.now(),
-            'instance': settings.INSTANCE_NAME,
-            'stats': {
-                'catalogs': Catalog.objects.count(),
-                'entries': Entry.objects.count(),
-                'acquisitions': Acquisition.objects.count(),
-                'users': User.objects.count()
+            "timestamp": timezone.now(),
+            "instance": settings.INSTANCE_NAME,
+            "stats": {
+                "catalogs": Catalog.objects.count(),
+                "entries": Entry.objects.count(),
+                "acquisitions": Acquisition.objects.count(),
+                "users": User.objects.count(),
             },
-            'build': settings.BUILD,
-            'version': settings.VERSION
+            "build": settings.BUILD,
+            "version": settings.VERSION,
         }
 
         if settings.DEBUG:
-            response['python'] = sys.version
+            response["python"] = sys.version
 
         return SingleResponse(request, response)

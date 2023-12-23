@@ -19,22 +19,20 @@ class SecuredView(View):
             self._backends[schema.lower()] = load_backend(backend)
 
     def _authenticate(self, request) -> Union[AnonymousUser, AbstractBaseUser]:
-        auth_header = request.headers.get('Authorization', '')
+        auth_header = request.headers.get("Authorization", "")
 
         if not auth_header:
             return AnonymousUser()
 
-        auth_header = str(auth_header).split(' ')
+        auth_header = str(auth_header).split(" ")
 
         if len(auth_header) != 2:
             raise UnauthorizedException(request, detail=_("Invalid or missing Authorization header"))
 
         if not auth_header[0] in settings.SECURED_VIEW_AUTHENTICATION_SCHEMAS.keys():
-            raise UnauthorizedException(request, detail=_('Unsupported authentication schema'))
+            raise UnauthorizedException(request, detail=_("Unsupported authentication schema"))
 
-        auth_params = {
-            auth_header[0].lower(): auth_header[1]
-        }
+        auth_params = {auth_header[0].lower(): auth_header[1]}
 
         return self._backends[auth_header[0].lower()].authenticate(request, **auth_params)
 

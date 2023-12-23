@@ -6,23 +6,24 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0011_user_catalogs'),
+        ("core", "0011_user_catalogs"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='user',
-            options={'default_permissions': ('add', 'delete', 'change', 'view')},
+            name="user",
+            options={"default_permissions": ("add", "delete", "change", "view")},
         ),
         migrations.RemoveField(
-            model_name='entry',
-            name='identifiers',
+            model_name="entry",
+            name="identifiers",
         ),
         migrations.AddField(
-            model_name='entry',
-            name='identifiers',
-            field=django.contrib.postgres.fields.hstore.HStoreField(null=True, validators=[apps.core.validators.AvailableKeysValidator(keys=['isbn', 'google'])]),
+            model_name="entry",
+            name="identifiers",
+            field=django.contrib.postgres.fields.hstore.HStoreField(
+                null=True, validators=[apps.core.validators.AvailableKeysValidator(keys=["isbn", "google"])]
+            ),
         ),
     ]

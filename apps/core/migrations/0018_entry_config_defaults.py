@@ -5,15 +5,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0017_user_acquisitions'),
+        ("core", "0017_user_acquisitions"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='entry',
-            name='config',
+            model_name="entry",
+            name="config",
             field=models.JSONField(default=apps.core.models.entry.default_entry_config),
         ),
     ]

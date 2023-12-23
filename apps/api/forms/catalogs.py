@@ -16,4 +16,4 @@ class CatalogForm(Form):
     users = FormFieldList(UserCatalogForm, required=False)
 
     def clean_url_name(self) -> str:
-        return self.cleaned_data['url_name'].lower()
+        return self.cleaned_data["url_name"].lower()

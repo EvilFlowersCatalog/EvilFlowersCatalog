@@ -7,11 +7,11 @@ from apps.core.models.base import BaseModel
 
 class ShelfRecord(BaseModel):
     class Meta:
-        app_label = 'core'
-        db_table = 'shelf_records'
+        app_label = "core"
+        db_table = "shelf_records"
         default_permissions = ()
-        verbose_name = _('Shelf record')
-        verbose_name_plural = _('Shelf records')
+        verbose_name = _("Shelf record")
+        verbose_name_plural = _("Shelf records")
 
-    entry = models.ForeignKey(Entry, on_delete=models.CASCADE, related_name='shelf_records')
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shelf_records')
+    entry = models.ForeignKey(Entry, on_delete=models.CASCADE, related_name="shelf_records")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="shelf_records")

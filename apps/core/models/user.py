@@ -12,9 +12,9 @@ from apps.core.models.base import BaseModel
 
 class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     class Meta:
-        app_label = 'core'
-        db_table = 'users'
-        default_permissions = ('add', 'delete', 'change', 'view')
+        app_label = "core"
+        db_table = "users"
+        default_permissions = ("add", "delete", "change", "view")
 
     username = models.CharField(max_length=200, unique=True)
     name = models.CharField(max_length=30)
@@ -24,18 +24,16 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
 
     objects = UserManager()
 
-    USERNAME_FIELD = 'username'
-    REQUIRED_FIELDS = ['name', 'surname']
+    USERNAME_FIELD = "username"
+    REQUIRED_FIELDS = ["name", "surname"]
 
     @property
     def full_name(self) -> str:
-        return f'{self.name} {self.surname}'
+        return f"{self.name} {self.surname}"
 
     @property
     def permissions(self) -> List[str]:
         return self.get_user_permissions()
 
 
-__all__ = [
-    'User'
-]
+__all__ = ["User"]

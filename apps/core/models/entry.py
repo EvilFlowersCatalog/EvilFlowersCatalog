@@ -24,7 +24,7 @@ class EntryConfig(TypedDict):
     evilflowers_ocr_rewrite: bool
     evilflowers_annotations_create: bool
     evilflowers_viewer_print: bool
-    evilflowers_render_type: Literal['page', 'document']
+    evilflowers_render_type: Literal["page", "document"]
     evilflowers_share_enabled: bool
     evilflowres_metadata_fetch: bool
 
@@ -36,29 +36,29 @@ def default_entry_config() -> EntryConfig:
         evilflowers_annotations_create=True,
         evilflowers_viewer_print=True,
         evilflowers_share_enabled=True,
-        evilflowers_render_type='document',
-        evilflowres_metadata_fetch=False
+        evilflowers_render_type="document",
+        evilflowres_metadata_fetch=False,
     )
 
 
 class Entry(BaseModel):
     class Meta:
-        app_label = 'core'
-        db_table = 'entries'
+        app_label = "core"
+        db_table = "entries"
         default_permissions = ()
-        verbose_name = _('Entry')
-        verbose_name_plural = _('Entries')
+        verbose_name = _("Entry")
+        verbose_name_plural = _("Entries")
         indexes = [
-            models.Index(fields=['catalog_id', '-popularity']),
+            models.Index(fields=["catalog_id", "-popularity"]),
         ]
 
     def _upload_to_path(self, filename):
         return f"catalogs/{self.catalog.url_name}/{self.pk}/{filename}"
 
-    creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name='+')
-    catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE, related_name='entries')
-    author = models.ForeignKey(Author, on_delete=models.CASCADE, null=True, related_name='entries')
-    language = models.ForeignKey(Language, on_delete=models.CASCADE, related_name='entries', null=True)
+    creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name="+")
+    catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE, related_name="entries")
+    author = models.ForeignKey(Author, on_delete=models.CASCADE, null=True, related_name="entries")
+    language = models.ForeignKey(Language, on_delete=models.CASCADE, related_name="entries", null=True)
     identifiers = HStoreField(null=True, validators=[AvailableKeysValidator(keys=settings.EVILFLOWERS_IDENTIFIERS)])
     title = models.CharField(max_length=255)
     published_at = PartialDateField(null=True)
@@ -66,10 +66,13 @@ class Entry(BaseModel):
     summary = models.TextField(null=True)
     content = models.TextField(null=True)
     contributors = models.ManyToManyField(
-        Author, related_name='contribution_entries', db_table='contributors', verbose_name=_('Contributor'),
+        Author,
+        related_name="contribution_entries",
+        db_table="contributors",
+        verbose_name=_("Contributor"),
     )
     categories = models.ManyToManyField(
-        Category, related_name='entries', db_table='entry_categories', verbose_name=_('Category')
+        Category, related_name="entries", db_table="entry_categories", verbose_name=_("Category")
     )
     image = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=get_storage)
     image_mime = models.CharField(max_length=100, null=True)
@@ -89,7 +92,7 @@ class Entry(BaseModel):
         if not self.thumbnail:
             return None
         try:
-            encoded = base64.b64encode(self.thumbnail.read()).decode('ascii')
+            encoded = base64.b64encode(self.thumbnail.read()).decode("ascii")
         except FileNotFoundError:
             logging.warning("Unable to find %s", self.thumbnail.path)
             return None
@@ -100,6 +103,4 @@ class Entry(BaseModel):
         return current.get(config_name)
 
 
-__all__ = [
-    'Entry'
-]
+__all__ = ["Entry"]

@@ -10,15 +10,15 @@ from django.utils.translation import gettext as _
 
 class UserAcquisition(BaseModel):
     class Meta:
-        app_label = 'core'
-        db_table = 'user_acquisitions'
+        app_label = "core"
+        db_table = "user_acquisitions"
         default_permissions = ()
-        verbose_name = _('User acquisition')
-        verbose_name_plural = _('User acquisitions')
+        verbose_name = _("User acquisition")
+        verbose_name_plural = _("User acquisitions")
 
     class UserAcquisitionType(models.TextChoices):
-        SHARED = 'shared', _('Shared')
-        PERSONAL = 'personal', _('Personal')
+        SHARED = "shared", _("Shared")
+        PERSONAL = "personal", _("Personal")
 
     acquisition = models.ForeignKey(Acquisition, on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -28,5 +28,6 @@ class UserAcquisition(BaseModel):
 
     @property
     def url(self) -> str:
-        return (f"{settings.BASE_URL}"
-                f"{reverse('user-acquisition-download', kwargs={'user_acquisition_id': self.pk})}")
+        return (
+            f"{settings.BASE_URL}" f"{reverse('user-acquisition-download', kwargs={'user_acquisition_id': self.pk})}"
+        )

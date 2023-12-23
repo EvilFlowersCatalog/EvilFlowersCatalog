@@ -21,9 +21,9 @@ class AcquisitionManagement(SecuredView):
 
 class AcquisitionDetail(SecuredView):
     @staticmethod
-    def _get_acquisition(request, acquisition_id: UUID, checker: str = 'check_catalog_manage') -> Acquisition:
+    def _get_acquisition(request, acquisition_id: UUID, checker: str = "check_catalog_manage") -> Acquisition:
         try:
-            acquisition = Acquisition.objects.select_related('entry__catalog').get(pk=acquisition_id)
+            acquisition = Acquisition.objects.select_related("entry__catalog").get(pk=acquisition_id)
         except Acquisition.DoesNotExist:
             raise ProblemDetailException(request, _("Acquisition not found"), status=HTTPStatus.NOT_FOUND)
 
@@ -33,6 +33,6 @@ class AcquisitionDetail(SecuredView):
         return acquisition
 
     def get(self, request, acquisition_id: UUID):
-        acquisition = self._get_acquisition(request, acquisition_id, 'check_catalog_read')
+        acquisition = self._get_acquisition(request, acquisition_id, "check_catalog_read")
 
         return SingleResponse(request, AcquisitionSerializer.Detailed.model_validate(acquisition))

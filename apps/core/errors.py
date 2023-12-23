@@ -13,10 +13,10 @@ from pydantic import BaseModel
 
 
 class DetailType(Enum):
-    OUT_OF_RANGE = '/out-of-range'
-    NOT_FOUND = '/not-found'
-    VALIDATION_ERROR = '/validation-error'
-    CONFLICT = '/conflict'
+    OUT_OF_RANGE = "/out-of-range"
+    NOT_FOUND = "/not-found"
+    VALIDATION_ERROR = "/validation-error"
+    CONFLICT = "/conflict"
 
 
 class ProblemDetail(BaseModel):
@@ -47,7 +47,7 @@ class ProblemDetailException(Exception):
         additional_data: Optional[dict] = None,
         detail_type: Optional[DetailType] = None,
         detail: Optional[str] = None,
-        extra_headers: Optional[Tuple[Tuple]] = ()
+        extra_headers: Optional[Tuple[Tuple]] = (),
     ):
         super().__init__(title)
 
@@ -104,7 +104,7 @@ class ProblemDetailException(Exception):
             title=self.title,
             type=self.type,
             detail=self.detail,
-            trace=traceback.format_exc().split("\n") if settings.DEBUG else None
+            trace=traceback.format_exc().split("\n") if settings.DEBUG else None,
         )
 
 
@@ -114,10 +114,8 @@ class UnauthorizedException(ProblemDetailException):
             request,
             _("Unauthorized"),
             status=HTTPStatus.UNAUTHORIZED,
-            extra_headers=(
-                ('WWW-Authenticate', f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),
-            ),
-            detail=detail
+            extra_headers=(("WWW-Authenticate", f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),),
+            detail=detail,
         )
 
 
@@ -131,9 +129,10 @@ class ValidationException(ProblemDetailException):
         return ValidationError(
             title=_("Invalid request parameters"),
             type=DetailType.VALIDATION_ERROR,
-            validation_errors=[ValidationErrorItem(
-                code=item.code,
-                message=item.message % item.params,
-                path=getattr(item, 'path', ['$body'])
-            ) for item in self._form.errors],
+            validation_errors=[
+                ValidationErrorItem(
+                    code=item.code, message=item.message % item.params, path=getattr(item, "path", ["$body"])
+                )
+                for item in self._form.errors
+            ],
         )

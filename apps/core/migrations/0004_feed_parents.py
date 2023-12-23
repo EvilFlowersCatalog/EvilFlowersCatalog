@@ -4,23 +4,22 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0003_contributors'),
+        ("core", "0003_contributors"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='feed',
-            options={'default_permissions': (), 'verbose_name': 'Feed', 'verbose_name_plural': 'Feeds'},
+            name="feed",
+            options={"default_permissions": (), "verbose_name": "Feed", "verbose_name_plural": "Feeds"},
         ),
         migrations.RemoveField(
-            model_name='feed',
-            name='parent',
+            model_name="feed",
+            name="parent",
         ),
         migrations.AddField(
-            model_name='feed',
-            name='parents',
-            field=models.ManyToManyField(db_table='feed_parents', related_name='children', to='core.Feed'),
+            model_name="feed",
+            name="parents",
+            field=models.ManyToManyField(db_table="feed_parents", related_name="children", to="core.Feed"),
         ),
     ]
