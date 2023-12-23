@@ -1,6 +1,8 @@
 name: Docs
 
-on: [push]
+on:
+  push:
+    branches: [ master ]
 
 jobs:
   build:
@@ -17,7 +19,7 @@ jobs:
       run: |
         npx @redocly/cli build-docs -o docs/index.html docs/openapi.yaml
     - name: Upload Pages artifact
-      uses: actions/upload-pages-artifact@v3
+      uses: actions/upload-pages-artifact@v4
       with:
         path: docs/
   deploy:
@@ -35,4 +37,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v2 # or the latest "vX.X.X" version tag for this action
+        uses: actions/deploy-pages@v4 # or the latest "vX.X.X" version tag for this action
