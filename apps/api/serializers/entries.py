@@ -50,7 +50,7 @@ class AcquisitionSerializer:
         id: UUID
 
     class Detailed(Base):
-        content: Optional[str] = Field(serialization_alias="base64")
+        base64: Optional[str] = Field(serialization_alias="content")
         checksum: Optional[str]
 
 

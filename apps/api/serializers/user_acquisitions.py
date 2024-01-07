@@ -16,12 +16,7 @@ class UserAcquisitionSerializer:
         user: UserSerializer.Minimal
         acquisition: AcquisitionSerializer.Nested
         url: str
-        entry: dict
+        entry: EntrySerializer.Base
         expire_at: Optional[datetime]
         created_at: datetime
         updated_at: datetime
-
-        @staticmethod
-        def resolve_entry(data: UserAcquisition, **kwargs) -> dict:
-            # TODO: DPC
-            return EntrySerializer.Base(data.acquisition.entry).dict()

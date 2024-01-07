@@ -131,7 +131,7 @@ class ValidationException(ProblemDetailException):
             type=DetailType.VALIDATION_ERROR,
             validation_errors=[
                 ValidationErrorItem(
-                    code=item.code, message=item.message % item.params, path=getattr(item, "path", ["$body"])
+                    code=item.code, message=item.message % (item.params or ()), path=getattr(item, "path", ["$body"])
                 )
                 for item in self._form.errors
             ],

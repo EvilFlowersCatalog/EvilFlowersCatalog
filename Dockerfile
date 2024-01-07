@@ -32,7 +32,7 @@ COPY --from=builder /root/.local /root/.local
 COPY --from=builder /usr/src/app /usr/src/app
 ENV PATH=/root/.local/bin:$PATH
 
-RUN echo "0.6.0" > VERSION.txt
+RUN echo "0.7.0" > VERSION.txt
 RUN date -I > BUILD.txt
 
 # Configuration

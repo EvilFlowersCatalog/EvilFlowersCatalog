@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db import models
 from django.urls import reverse
 
+from apps.core.models import Entry
 from apps.core.models.acquisition import Acquisition
 from apps.core.models.user import User
 from apps.core.models.base import BaseModel
@@ -31,3 +32,8 @@ class UserAcquisition(BaseModel):
         return (
             f"{settings.BASE_URL}" f"{reverse('user-acquisition-download', kwargs={'user_acquisition_id': self.pk})}"
         )
+
+    @property
+    def entry(self) -> Entry:
+        # Because of the serializers
+        return self.acquisition.entry

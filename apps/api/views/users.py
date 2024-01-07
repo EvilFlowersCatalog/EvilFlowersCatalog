@@ -9,7 +9,7 @@ from apps.api.filters.users import UserFilter
 from apps.api.forms.users import UserForm, CreateUserForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.users import UserSerializer
-from apps.core.models import User
+from apps.core.models import User, AuthSource
 from apps.core.views import SecuredView
 
 
@@ -28,12 +28,14 @@ class UserManagement(SecuredView):
                 request, _("User with same username already exists"), status=HTTPStatus.CONFLICT
             )
 
-        user = User()
+        user = User(
+            auth_source=AuthSource.objects.filter(driver=AuthSource.Driver.DATABASE).first()
+        )
         form.populate(user)
         user.set_password(form.cleaned_data["password"])
         user.save()
 
-        return SingleResponse(request, user, serializer=UserSerializer.Base, status=HTTPStatus.CREATED)
+        return SingleResponse(request, UserSerializer.Base.model_validate(user), status=HTTPStatus.CREATED)
 
     def get(self, request):
         users = UserFilter(request.GET, queryset=User.objects.all(), request=request).qs
@@ -60,7 +62,7 @@ class UserDetail(SecuredView):
     def get(self, request, user_id: UUID):
         user = self._get_user(request, user_id, lambda: request.user.has_perm("core.view_user"))
 
-        return SingleResponse(request, user, serializer=UserSerializer.Base)
+        return SingleResponse(request, UserSerializer.Base.model_validate(user))
 
     def put(self, request, user_id: UUID):
         form = UserForm.create_from_request(request)
@@ -75,7 +77,7 @@ class UserDetail(SecuredView):
             user.set_password(form.cleaned_data["password"])
         user.save()
 
-        return SingleResponse(request, user, serializer=UserSerializer.Base)
+        return SingleResponse(request, UserSerializer.Base.model_validate(user))
 
     def delete(self, request, user_id: UUID):
         user = self._get_user(request, user_id, lambda: request.user.has_perm("core.delete_user"))

@@ -60,7 +60,9 @@ class UserAcquisitionManagement(SecuredView):
         user_acquisition.save()
 
         return SingleResponse(
-            request, user_acquisition, serializer=UserAcquisitionSerializer.Base, status=HTTPStatus.CREATED
+            request,
+            UserAcquisitionSerializer.Base.model_validate(user_acquisition, context={"user": request.user}),
+            status=HTTPStatus.CREATED
         )
 
 
@@ -80,4 +82,7 @@ class UserAcquisitionDetail(SecuredView):
         if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-        return SingleResponse(request, user_acquisition, serializer=UserAcquisitionSerializer.Base)
+        return SingleResponse(
+            request,
+            UserAcquisitionSerializer.Base.model_validate(user_acquisition, context={"user": request.user}),
+        )
