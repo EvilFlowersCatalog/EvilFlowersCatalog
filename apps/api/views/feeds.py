@@ -23,6 +23,7 @@ class FeedManagement(SecuredView):
         if not has_object_permission("check_catalog_read", request.user, form.cleaned_data["catalog_id"]):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
+        # FIXME: Probably not working
         if Feed.objects.filter(
             catalog=form.cleaned_data["catalog_id"], url_name=form.cleaned_data["url_name"]
         ).exists():
@@ -40,7 +41,7 @@ class FeedManagement(SecuredView):
         if "parents" in form.cleaned_data.keys():
             feed.parents.add(*form.cleaned_data["parents"])
 
-        return SingleResponse(request, feed, serializer=FeedSerializer.Base, status=HTTPStatus.CREATED)
+        return SingleResponse(request, FeedSerializer.Base.model_validate(feed), status=HTTPStatus.CREATED)
 
     def get(self, request):
         feeds = FeedFilter(request.GET, queryset=Feed.objects.all(), request=request).qs
@@ -64,7 +65,7 @@ class FeedDetail(SecuredView):
     def get(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)
 
-        return SingleResponse(request, feed, serializer=FeedSerializer.Base)
+        return SingleResponse(request, FeedSerializer.Base.model_validate(feed))
 
     def put(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)
@@ -95,7 +96,7 @@ class FeedDetail(SecuredView):
             feed.parents.clear()
             feed.parents.add(*form.cleaned_data["parents"])
 
-        return SingleResponse(request, feed, serializer=FeedSerializer.Base)
+        return SingleResponse(request, FeedSerializer.Base.model_validate(feed))
 
     def delete(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)

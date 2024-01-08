@@ -411,6 +411,51 @@ django = "*"
 six = "*"
 
 [[package]]
+name = "dnspython"
+version = "2.4.2"
+description = "DNS toolkit"
+optional = false
+python-versions = ">=3.8,<4.0"
+files = [
+    { file = "dnspython-2.4.2-py3-none-any.whl", hash = "sha256:57c6fbaaeaaf39c891292012060beb141791735dbb4004798328fc2c467402d8" },
+    { file = "dnspython-2.4.2.tar.gz", hash = "sha256:8dcfae8c7460a2f84b4072e26f1c9f4101ca20c071649cb7c34e8b6a93d58984" },
+]
+
+[package.extras]
+dnssec = ["cryptography (>=2.6,<42.0)"]
+doh = ["h2 (>=4.1.0)", "httpcore (>=0.17.3)", "httpx (>=0.24.1)"]
+doq = ["aioquic (>=0.9.20)"]
+idna = ["idna (>=2.1,<4.0)"]
+trio = ["trio (>=0.14,<0.23)"]
+wmi = ["wmi (>=1.5.1,<2.0.0)"]
+
+[[package]]
+name = "email-validator"
+version = "2.1.0.post1"
+description = "A robust email address syntax and deliverability validation library."
+optional = false
+python-versions = ">=3.8"
+files = [
+    { file = "email_validator-2.1.0.post1-py3-none-any.whl", hash = "sha256:c973053efbeddfef924dc0bd93f6e77a1ea7ee0fce935aea7103c7a3d6d2d637" },
+    { file = "email_validator-2.1.0.post1.tar.gz", hash = "sha256:a4b0bd1cf55f073b924258d19321b1f3aa74b4b5a71a42c305575dba920e1a44" },
+]
+
+[package.dependencies]
+dnspython = ">=2.0.0"
+idna = ">=2.0.0"
+
+[[package]]
+name = "idna"
+version = "3.6"
+description = "Internationalized Domain Names in Applications (IDNA)"
+optional = false
+python-versions = ">=3.5"
+files = [
+    { file = "idna-3.6-py3-none-any.whl", hash = "sha256:c05567e9c24a6b9faaa835c4821bad0590fbb9d5779e7caa6e1cc4978e7eb24f" },
+    { file = "idna-3.6.tar.gz", hash = "sha256:9ecdbbd083b06798ae1e86adcbfe8ab1479cf864e4ee30fe4e46a003d12491ca" },
+]
+
+[[package]]
 name = "isbnlib"
 version = "3.10.14"
 description = "Extract, clean, transform, hyphenate and metadata for ISBNs (International Standard Book Number)."
@@ -833,6 +878,24 @@ files = [
 typing-extensions = ">=4.6.0,<4.7.0 || >4.7.0"
 
 [[package]]
+name = "pydantic-xml"
+version = "2.7.0"
+description = "pydantic xml extension"
+optional = false
+python-versions = ">=3.8"
+files = [
+    { file = "pydantic_xml-2.7.0-py3-none-any.whl", hash = "sha256:e336bca6e01984f5995ea197394bedff415a7d8449d0910a9647a1216990069c" },
+    { file = "pydantic_xml-2.7.0.tar.gz", hash = "sha256:6bb16cee3166482365b7def95416285d56b325041d995fbfa58979a06ff1d51c" },
+]
+
+[package.dependencies]
+pydantic = ">=2.0.0"
+
+[package.extras]
+docs = ["Sphinx (>=5.3.0,<6.0.0)", "furo (>=2022.12.7,<2023.0.0)", "sphinx-copybutton (>=0.5.1,<0.6.0)", "sphinx_design (>=0.3.0,<0.4.0)", "toml (>=0.10.2,<0.11.0)"]
+lxml = ["lxml (>=4.9.0)"]
+
+[[package]]
 name = "pymupdf"
 version = "1.23.8"
 description = "A high performance Python library for data extraction, analysis, conversion & manipulation of PDF (and other) documents."
@@ -1146,4 +1209,4 @@ s3 = ["minio"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "da73608a6153353c065762c1b6e7aad93633143a4ecaf0eb01209550a97e1121"
+content-hash = "f7cf0c6f3ff308deea465fe0064799faf0c5e4c5c3f0b33458ed52f1458da63b"

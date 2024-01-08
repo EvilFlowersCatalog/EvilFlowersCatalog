@@ -30,6 +30,8 @@ bibtexparser = "^1.4.0"
 isbnlib = "^3.10.14"
 django-partial-date = "^1.3.2"
 pydantic = "^2.5.2"
+pydantic-xml = "^2.7.0"
+email-validator = "^2.1.0.post1"
 
 [tool.poetry.extras]
 s3 = ["minio"]
