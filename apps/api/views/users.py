@@ -28,9 +28,7 @@ class UserManagement(SecuredView):
                 request, _("User with same username already exists"), status=HTTPStatus.CONFLICT
             )
 
-        user = User(
-            auth_source=AuthSource.objects.filter(driver=AuthSource.Driver.DATABASE).first()
-        )
+        user = User(auth_source=AuthSource.objects.filter(driver=AuthSource.Driver.DATABASE).first())
         form.populate(user)
         user.set_password(form.cleaned_data["password"])
         user.save()

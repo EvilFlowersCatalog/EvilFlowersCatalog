@@ -62,7 +62,7 @@ class UserAcquisitionManagement(SecuredView):
         return SingleResponse(
             request,
             UserAcquisitionSerializer.Base.model_validate(user_acquisition, context={"user": request.user}),
-            status=HTTPStatus.CREATED
+            status=HTTPStatus.CREATED,
         )
 
 
