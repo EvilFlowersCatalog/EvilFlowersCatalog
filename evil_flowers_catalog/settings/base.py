@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/3.1/ref/settings/
 import datetime
 import json
 import os
+import tomllib
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -25,7 +26,6 @@ ENV_FILE = os.path.join(BASE_DIR, ".env")
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 FONT_DIR = os.path.join(BASE_DIR, "fonts")
 BUILD_FILE = Path(f"{BASE_DIR}/BUILD.txt")
-VERSION_FILE = Path(f"{BASE_DIR}/VERSION.txt")
 
 # .env
 if os.path.exists(ENV_FILE):
@@ -41,11 +41,9 @@ if BUILD_FILE.exists():
 else:
     BUILD = datetime.datetime.now().isoformat()
 
-if VERSION_FILE.exists():
-    with open(VERSION_FILE) as f:
-        VERSION = f.readline().replace("\n", "")
-else:
-    VERSION = "dev"
+with open(BASE_DIR / 'pyproject.toml', 'rb') as f:
+    pyproject = tomllib.load(f)
+    VERSION = pyproject['tool']['poetry']['version']
 
 
 # Quick-start development settings - unsuitable for production
