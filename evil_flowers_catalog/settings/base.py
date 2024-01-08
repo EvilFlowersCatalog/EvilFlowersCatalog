@@ -41,9 +41,9 @@ if BUILD_FILE.exists():
 else:
     BUILD = datetime.datetime.now().isoformat()
 
-with open(BASE_DIR / 'pyproject.toml', 'rb') as f:
+with open(BASE_DIR / "pyproject.toml", "rb") as f:
     pyproject = tomllib.load(f)
-    VERSION = pyproject['tool']['poetry']['version']
+    VERSION = pyproject["tool"]["poetry"]["version"]
 
 
 # Quick-start development settings - unsuitable for production
