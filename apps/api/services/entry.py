@@ -27,121 +27,100 @@ class EntryService:
 
         # Conflicts
         # TODO: this is suppose to be some kind of a setting
-        conditions = [
-            Q(title=entry.title)
-        ]
-        if entry.identifiers.get('isbn'):
-            conditions.append(
-                Q(identifiers__isbn=entry.identifiers.get('isbn'))
-            )
-        if entry.identifiers.get('doi'):
-            conditions.append(
-                Q(identifiers__doi=entry.identifiers.get('doi'))
-            )
+        conditions = [Q(title=entry.title)]
+        if entry.identifiers.get("isbn"):
+            conditions.append(Q(identifiers__isbn=entry.identifiers.get("isbn")))
+        if entry.identifiers.get("doi"):
+            conditions.append(Q(identifiers__doi=entry.identifiers.get("doi")))
         if Entry.objects.exclude(pk=entry.pk).filter(catalog=self._catalog).filter(reduce(or_, conditions)).exists():
             raise self.AlreadyExists()
 
-        if 'author' in form.cleaned_data.keys():
+        if "author" in form.cleaned_data.keys():
             author, created = Author.objects.get_or_create(
                 catalog=self._catalog,
-                name=form.cleaned_data['author']['name'],
-                surname=form.cleaned_data['author']['surname']
+                name=form.cleaned_data["author"]["name"],
+                surname=form.cleaned_data["author"]["surname"],
             )
             entry.author = author
 
         # TODO: implement these meta downloaders for real
-        if all([
-            entry.citation is None,
-            (entry.identifiers and entry.identifiers.get('isbn')),
-            entry.read_config('evilflowres_metadata_fetch')
-        ]):
-            metadata = isbnlib.meta(entry.identifiers['isbn'])
+        if all(
+            [
+                entry.citation is None,
+                (entry.identifiers and entry.identifiers.get("isbn")),
+                entry.read_config("evilflowres_metadata_fetch"),
+            ]
+        ):
+            metadata = isbnlib.meta(entry.identifiers["isbn"])
             if metadata:
                 entry.citation = bibformatters["bibtex"](metadata)
 
         entry.save()
 
-        if 'categories' in form.cleaned_data.keys():
+        if "categories" in form.cleaned_data.keys():
             entry.categories.clear()
-            for record in form.cleaned_data.get('categories', []):
+            for record in form.cleaned_data.get("categories", []):
                 category, created = Category.objects.get_or_create(
-                    creator=self._creator,
-                    catalog=self._catalog,
-                    term=record['term']
+                    creator=self._creator, catalog=self._catalog, term=record["term"]
                 )
                 if created:
-                    category.label = record.get('label')
-                    category.scheme = record.get('scheme')
+                    category.label = record.get("label")
+                    category.scheme = record.get("scheme")
                     category.save()
                 entry.categories.add(category)
 
-        if 'category_ids' in form.cleaned_data.keys():
+        if "category_ids" in form.cleaned_data.keys():
             entry.contributors.clear()
-            for contributor in form.cleaned_data.get('category_ids', []):
+            for contributor in form.cleaned_data.get("category_ids", []):
                 entry.categories.add(contributor)
 
-        for record in form.cleaned_data.get('acquisitions', []):
+        for record in form.cleaned_data.get("acquisitions", []):
             acquisition = Acquisition(
-                entry=entry,
-                relation=record.get('relation'),
-                mime=record['content'].content_type
+                entry=entry, relation=record.get("relation"), mime=record["content"].content_type
             )
 
-            if 'content' in record.keys():
+            if "content" in record.keys():
                 acquisition.content.save(
-                    f"{uuid.uuid4()}{mimetypes.guess_extension(acquisition.mime)}",
-                    record['content']
+                    f"{uuid.uuid4()}{mimetypes.guess_extension(acquisition.mime)}", record["content"]
                 )
 
-            for price in record.get('prices', []):
-                Price.objects.create(
-                    acquisition=acquisition,
-                    currency=price['currency_code'],
-                    value=price['value']
-                )
+            for price in record.get("prices", []):
+                Price.objects.create(acquisition=acquisition, currency=price["currency_code"], value=price["value"])
 
-        if 'contributors' in form.cleaned_data:
+        if "contributors" in form.cleaned_data:
             entry.contributors.clear()
-            for record in form.cleaned_data.get('contributors', []):
+            for record in form.cleaned_data.get("contributors", []):
                 contributor, is_created = Author.objects.get_or_create(
-                    catalog=self._catalog,
-                    name=record['name'],
-                    surname=record['surname']
+                    catalog=self._catalog, name=record["name"], surname=record["surname"]
                 )
                 entry.contributors.add(contributor)
 
-        if 'contributor_ids' in form.cleaned_data.keys():
+        if "contributor_ids" in form.cleaned_data.keys():
             entry.contributors.clear()
-            for contributor in form.cleaned_data.get('contributor_ids', []):
+            for contributor in form.cleaned_data.get("contributor_ids", []):
                 entry.contributors.add(contributor)
 
-        if 'feeds' in form.cleaned_data:
+        if "feeds" in form.cleaned_data:
             entry.feeds.clear()
-            for feed in form.cleaned_data.get('feeds', []):
+            for feed in form.cleaned_data.get("feeds", []):
                 entry.feeds.add(feed)
 
-        if 'image' in form.cleaned_data:
-            if form.cleaned_data['image'] is None:
+        if "image" in form.cleaned_data:
+            if form.cleaned_data["image"] is None:
                 entry.image = None
                 entry.image_mime = None
                 entry.thumbnail = None
             else:
-                entry.image_mime = form.cleaned_data['image'].content_type
+                entry.image_mime = form.cleaned_data["image"].content_type
 
-                entry.image.save(
-                    f"cover{mimetypes.guess_extension(entry.image_mime)}",
-                    form.cleaned_data['image']
-                )
+                entry.image.save(f"cover{mimetypes.guess_extension(entry.image_mime)}", form.cleaned_data["image"])
 
                 buffer = BytesIO()
-                thumbnail = form.cleaned_data['image'].image.copy()
+                thumbnail = form.cleaned_data["image"].image.copy()
                 thumbnail.thumbnail(settings.EVILFLOWERS_IMAGE_THUMBNAIL)
-                thumbnail.save(buffer, format=form.cleaned_data['image'].image.format)
+                thumbnail.save(buffer, format=form.cleaned_data["image"].image.format)
                 buffer.seek(0)
 
-                entry.thumbnail.save(
-                    f"thumbnail{mimetypes.guess_extension(entry.image_mime)}",
-                    File(buffer)
-                )
+                entry.thumbnail.save(f"thumbnail{mimetypes.guess_extension(entry.image_mime)}", File(buffer))
 
         return entry

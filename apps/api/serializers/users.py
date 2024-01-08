@@ -1,10 +1,8 @@
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
-from porcupine.base import Serializer
-
-from apps.core.models import User
+from apps.api.serializers import Serializer
 
 
 class UserSerializer:
@@ -17,13 +15,9 @@ class UserSerializer:
     class Base(Minimal):
         is_superuser: bool
         is_active: bool
-        last_login: datetime = None
+        last_login: Optional[datetime]
         created_at: datetime
         updated_at: datetime
 
     class Detailed(Base):
-        permissions: List
-
-        @staticmethod
-        def resolve_permissions(data: User, **kwargs):
-            return data.get_all_permissions()
+        permissions: List[str]

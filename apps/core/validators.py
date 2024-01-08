@@ -8,7 +8,7 @@ class AvailableKeysValidator:
     """A customized validator designed for HStore to restrict keys."""
 
     messages = {
-        'unsupported_keys': _('Some keys are not supported: %(keys)s'),
+        "unsupported_keys": _("Some keys are not supported: %(keys)s"),
     }
     strict = False
 
@@ -22,14 +22,10 @@ class AvailableKeysValidator:
         unsupported_keys = keys - self.keys
         if unsupported_keys:
             raise ValidationError(
-                self.messages['unsupported_keys'],
-                code='unsupported_keys',
-                params={'keys': ', '.join(unsupported_keys)},
+                self.messages["unsupported_keys"],
+                code="unsupported_keys",
+                params={"keys": ", ".join(unsupported_keys)},
             )
 
     def __eq__(self, other):
-        return (
-            isinstance(other, self.__class__)
-            and self.keys == other.keys
-            and self.messages == other.messages
-        )
+        return isinstance(other, self.__class__) and self.keys == other.keys and self.messages == other.messages

@@ -25,38 +25,42 @@ class JWTFactory:
 
     def _generate(self, additional_payload: dict) -> str:
         base_payload = {
-            'iss': settings.BASE_URL,
-            'sub': self._user_id,
-            'iat': timezone.now(),
+            "iss": settings.BASE_URL,
+            "sub": self._user_id,
+            "iat": timezone.now(),
         }
 
         return jwt.encode(
-            header={
-                'alg': settings.SECURED_VIEW_JWT_ALGORITHM
-            },
+            header={"alg": settings.SECURED_VIEW_JWT_ALGORITHM},
             payload={**base_payload, **additional_payload},
-            key=settings.SECURED_VIEW_JWK
+            key=settings.SECURED_VIEW_JWK,
         ).decode()
 
     def refresh(self) -> tuple:
         jti = str(uuid.uuid4())
-        return jti, self._generate({
-            'type': 'refresh',
-            'jti': jti,
-            'exp': timezone.now() + settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION,
-        })
+        return jti, self._generate(
+            {
+                "type": "refresh",
+                "jti": jti,
+                "exp": timezone.now() + settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION,
+            }
+        )
 
     def access(self) -> str:
-        return self._generate({
-            'type': 'access',
-            'exp': timezone.now() + settings.SECURED_VIEW_JWT_ACCESS_TOKEN_EXPIRATION,
-        })
+        return self._generate(
+            {
+                "type": "access",
+                "exp": timezone.now() + settings.SECURED_VIEW_JWT_ACCESS_TOKEN_EXPIRATION,
+            }
+        )
 
     def api_key(self, jti: str) -> str:
-        return self._generate({
-            'type': 'api_key',
-            'jti': jti,
-        })
+        return self._generate(
+            {
+                "type": "api_key",
+                "jti": jti,
+            }
+        )
 
     @classmethod
     def decode(cls, token: str):
@@ -70,28 +74,28 @@ class BearerBackend(ModelBackend):
         try:
             claims = JWTFactory.decode(bearer)
         except JoseError as e:
-            raise ProblemDetailException(request, _('Invalid token.'), status=HTTPStatus.UNAUTHORIZED, previous=e)
+            raise ProblemDetailException(request, _("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e)
 
-        if claims['type'] == 'api_key':
+        if claims["type"] == "api_key":
             try:
-                api_key = ApiKey.objects.get(pk=claims['jti'], is_active=True)
+                api_key = ApiKey.objects.get(pk=claims["jti"], is_active=True)
             except (ApiKey.DoesNotExist, ValidationError):
-                raise ProblemDetailException(request, _('Invalid api key.'), status=HTTPStatus.UNAUTHORIZED)
+                raise ProblemDetailException(request, _("Invalid api key."), status=HTTPStatus.UNAUTHORIZED)
 
             api_key.last_seen_at = timezone.now()
             api_key.save()
-            setattr(request, 'api_key', api_key)
+            setattr(request, "api_key", api_key)
             user = api_key.user
-        elif claims['type'] == 'access':
+        elif claims["type"] == "access":
             try:
-                user = User.objects.get(pk=claims['sub'])
+                user = User.objects.get(pk=claims["sub"])
             except User.DoesNotExist:
-                raise ProblemDetailException(request, _('Inactive user.'), status=HTTPStatus.FORBIDDEN)
+                raise ProblemDetailException(request, _("Inactive user."), status=HTTPStatus.FORBIDDEN)
         else:
-            raise ProblemDetailException(request, _('Invalid token'), status=HTTPStatus.UNAUTHORIZED)
+            raise ProblemDetailException(request, _("Invalid token"), status=HTTPStatus.UNAUTHORIZED)
 
         if not self.user_can_authenticate(user):
-            raise ProblemDetailException(request, _('Inactive user.'), status=HTTPStatus.FORBIDDEN)
+            raise ProblemDetailException(request, _("Inactive user."), status=HTTPStatus.FORBIDDEN)
 
         return user
 
@@ -109,11 +113,11 @@ class BasicBackend(ModelBackend):
 
     def _ldap(self, username: str, password: str, auth_source: AuthSource) -> Optional[User]:
         config: BasicBackend.LdapConfig = auth_source.content
-        connection = ldap.initialize(uri=config['URI'])
+        connection = ldap.initialize(uri=config["URI"])
         connection.set_option(ldap.OPT_REFERRALS, 0)
 
         try:
-            connection.simple_bind_s(config['BIND'].format(username=username), password)
+            connection.simple_bind_s(config["BIND"].format(username=username), password)
         except ldap.LDAPError as e:
             logging.warning(
                 f"Unable to bind with external service (id={auth_source.pk}, name={auth_source.name}): {e}"
@@ -123,14 +127,11 @@ class BasicBackend(ModelBackend):
         try:
             user = User.objects.get(username=username)
         except User.DoesNotExist:
-            user = User(
-                username=username,
-                auth_source=auth_source
-            )
+            user = User(username=username, auth_source=auth_source)
             user.set_unusable_password()
 
         result = connection.search(
-            f"{config['ROOT_DN']}", ldap.SCOPE_SUBTREE, config['FILTER'].format(username=username), ['*']
+            f"{config['ROOT_DN']}", ldap.SCOPE_SUBTREE, config["FILTER"].format(username=username), ["*"]
         )
 
         user_type, profiles = connection.result(result, 60)
@@ -139,19 +140,19 @@ class BasicBackend(ModelBackend):
             name, attrs = profiles[0]
 
             # LDAP properties
-            for model_property, ldap_property in config['USER_ATTR_MAP'].items():
+            for model_property, ldap_property in config["USER_ATTR_MAP"].items():
                 setattr(user, model_property, attrs[ldap_property][0].decode())
 
             # LDAP groups
             user.groups.clear()
-            for ldap_group in attrs.get('memberOf', []):
-                if ldap_group.decode() in config['GROUP_MAP']:
+            for ldap_group in attrs.get("memberOf", []):
+                if ldap_group.decode() in config["GROUP_MAP"]:
                     try:
-                        group = Group.objects.get(name=config['GROUP_MAP'][ldap_group.decode()])
+                        group = Group.objects.get(name=config["GROUP_MAP"][ldap_group.decode()])
                     except Group.DoesNotExist:
                         continue
                     user.groups.add(group)
-                if ldap_group.decode() == config['SUPERADMIN_GROUP']:
+                if ldap_group.decode() == config["SUPERADMIN_GROUP"]:
                     user.is_superuser = True
         else:
             logging.warning(
@@ -162,16 +163,9 @@ class BasicBackend(ModelBackend):
 
         connection.unbind()
 
-        user.last_login = timezone.now()
-        user.save()
-
-        for catalog_id, mode in config.get('CATALOGS', {}).items():
+        for catalog_id, mode in config.get("CATALOGS", {}).items():
             if not UserCatalog.objects.filter(catalog_id=catalog_id, user=user).exists():
-                UserCatalog.objects.create(
-                    catalog_id=catalog_id,
-                    user=user,
-                    mode=mode
-                )
+                UserCatalog.objects.create(catalog_id=catalog_id, user=user, mode=mode)
 
         return user
 
@@ -179,9 +173,9 @@ class BasicBackend(ModelBackend):
         return super().authenticate(request, username=username, password=password)
 
     def authenticate(self, request, basic=None, **kwargs):
-        bits = base64.b64decode(basic).decode().split(':')
+        bits = base64.b64decode(basic).decode().split(":")
         username = bits[0]
-        password = ':'.join(bits[1:])
+        password = ":".join(bits[1:])
         user = None
 
         for auth_source in AuthSource.objects.filter(is_active=True):
@@ -196,17 +190,15 @@ class BasicBackend(ModelBackend):
         if not user:
             raise ProblemDetailException(
                 request,
-                _('Invalid credentials'),
+                _("Invalid credentials"),
                 status=HTTPStatus.UNAUTHORIZED,
-                extra_headers=(
-                    ('WWW-Authenticate', f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),
-                )
+                extra_headers=(("WWW-Authenticate", f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),),
             )
+
+        user.last_login = timezone.now()
+        user.save()
+
         return user
 
 
-__all__ = [
-    'BasicBackend',
-    'BearerBackend',
-    'JWTFactory'
-]
+__all__ = ["BasicBackend", "BearerBackend", "JWTFactory"]

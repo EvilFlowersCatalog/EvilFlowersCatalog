@@ -11,7 +11,7 @@ from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
 from apps.api.response import SingleResponse
-from apps.core.errors import ProblemDetailException
+from apps.core.errors import ProblemDetailException, DetailType
 from apps.core.fields.multirange import depack
 from apps.core.models import Acquisition, Entry, UserAcquisition
 from apps.core.modifiers import InvalidPage
@@ -19,7 +19,7 @@ from apps.core.views import SecuredView
 
 
 class AcquisitionDownload(SecuredView):
-    UNSECURED_METHODS = ['GET']
+    UNSECURED_METHODS = ["GET"]
 
     def get(self, request, acquisition_id: uuid.UUID):
         try:
@@ -37,68 +37,61 @@ class AcquisitionDownload(SecuredView):
 
 
 class UserAcquisitionDownload(SecuredView):
-    UNSECURED_METHODS = ['GET']
+    UNSECURED_METHODS = ["GET"]
 
     def get(self, request, user_acquisition_id: uuid.UUID):
         try:
-            user_acquisition = UserAcquisition.objects.select_related(
-                'acquisition', 'acquisition__entry'
-            ).get(pk=user_acquisition_id)
+            user_acquisition = UserAcquisition.objects.select_related("acquisition", "acquisition__entry").get(
+                pk=user_acquisition_id
+            )
         except UserAcquisition.DoesNotExist:
             raise ProblemDetailException(
-                request,
-                _("User acquisition not found"),
-                status=HTTPStatus.NOT_FOUND,
-                detail_type=ProblemDetailException.DetailType.NOT_FOUND
+                request, _("User acquisition not found"), status=HTTPStatus.NOT_FOUND, detail_type=DetailType.NOT_FOUND
             )
 
         if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:
             self._authenticate(request)
 
-            if not has_object_permission('check_user_acquisition_read', request.user, user_acquisition):
+            if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
                 raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         user_acquisition.acquisition.entry.popularity = user_acquisition.acquisition.entry.popularity + 1
         user_acquisition.acquisition.entry.save()
 
-        sanitized_filename = f"{slugify(user_acquisition.acquisition.entry.title.lower())}" \
-                             f"{guess_extension(user_acquisition.acquisition.mime)}"
+        sanitized_filename = (
+            f"{slugify(user_acquisition.acquisition.entry.title.lower())}"
+            f"{guess_extension(user_acquisition.acquisition.mime)}"
+        )
 
         if user_acquisition.acquisition.mime in settings.EVILFLOWERS_MODIFIERS:
             modifier = import_string(settings.EVILFLOWERS_MODIFIERS[user_acquisition.acquisition.mime])(
                 context={
-                    'id': str(uuid.uuid4()) if request.user.is_anonymous else str(user_acquisition.id),
-                    'user_id': str(user_acquisition.user_id),
-                    'title': user_acquisition.acquisition.entry.title,
-                    'username': user_acquisition.user.username,
-                    'authors': ', '.join(
-                        [
-                            user_acquisition.acquisition.entry.author.full_name
-                        ] + [
-                            c.full_name for c in user_acquisition.acquisition.entry.contributors.all()
-                        ]
-                    )
+                    "id": str(uuid.uuid4()) if request.user.is_anonymous else str(user_acquisition.id),
+                    "user_id": str(user_acquisition.user_id),
+                    "title": user_acquisition.acquisition.entry.title,
+                    "username": user_acquisition.user.username,
+                    "authors": ", ".join(
+                        [user_acquisition.acquisition.entry.author.full_name]
+                        + [c.full_name for c in user_acquisition.acquisition.entry.contributors.all()]
+                    ),
                 },
-                pages=depack(user_acquisition.range) if user_acquisition.range else None
+                pages=depack(user_acquisition.range) if user_acquisition.range else None,
             )
             try:
-
-                content = modifier.generate(user_acquisition.acquisition.content, request.GET.get('page', None))
+                content = modifier.generate(user_acquisition.acquisition.content, request.GET.get("page", None))
             except InvalidPage:
                 raise ProblemDetailException(request, _("Page not found"), status=HTTPStatus.NOT_FOUND)
         else:
             content = user_acquisition.acquisition.content
 
-        if request.GET.get('format', None) == 'base64':
-            return SingleResponse(request, {
-                'data': base64.b64encode(content.read()).decode()
-            })
+        if request.GET.get("format", None) == "base64":
+            return SingleResponse(request, {"data": base64.b64encode(content.read()).decode()})
 
         return FileResponse(content, as_attachment=True, filename=sanitized_filename)
 
 
 class EntryImageDownload(SecuredView):
-    UNSECURED_METHODS = ['GET']
+    UNSECURED_METHODS = ["GET"]
 
     def get(self, request, entry_id: uuid.UUID):
         try:

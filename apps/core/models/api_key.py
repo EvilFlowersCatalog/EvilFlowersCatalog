@@ -7,11 +7,11 @@ from apps.core.models.base import BaseModel
 
 class ApiKey(BaseModel):
     class Meta:
-        app_label = 'core'
-        db_table = 'api_keys'
-        default_permissions = ('add', )
-        verbose_name = _('API key')
-        verbose_name_plural = _('API keys')
+        app_label = "core"
+        db_table = "api_keys"
+        default_permissions = ("add",)
+        verbose_name = _("API key")
+        verbose_name_plural = _("API keys")
 
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=200, null=True)
@@ -19,6 +19,4 @@ class ApiKey(BaseModel):
     is_active = models.BooleanField(default=True)
 
 
-__all__ = [
-    'ApiKey'
-]
+__all__ = ["ApiKey"]

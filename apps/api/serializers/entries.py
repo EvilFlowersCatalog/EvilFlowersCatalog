@@ -2,10 +2,12 @@ from datetime import datetime
 from typing import List, Optional, Dict
 from uuid import UUID
 
-from porcupine.base import Serializer
+from pydantic import Field, field_validator
+from pydantic_core.core_schema import ValidationInfo
 
+from apps.api.serializers import Serializer
 from apps.api.serializers.feeds import FeedSerializer
-from apps.core.models import Acquisition, Entry, ShelfRecord
+from apps.core.models import Acquisition, ShelfRecord
 
 
 class AuthorSerializer:
@@ -26,8 +28,8 @@ class CategorySerializer:
         term: str
 
     class Detailed(Base):
-        label: str = None
-        scheme: str = None
+        label: Optional[str]
+        scheme: Optional[str]
 
 
 class LanguageSerializer:
@@ -42,18 +44,14 @@ class AcquisitionSerializer:
     class Nested(Serializer):
         relation: Acquisition.AcquisitionType
         mime: Acquisition.AcquisitionMIME
-        url: str = None
+        url: Optional[str]
 
     class Base(Nested):
         id: UUID
 
     class Detailed(Base):
-        content: str = None
-        checksum: str = None
-
-        @staticmethod
-        def resolve_content(data: Acquisition, **kwargs) -> Optional[str]:
-            return data.base64
+        base64: Optional[str] = Field(serialization_alias="content")
+        checksum: Optional[str]
 
 
 class EntrySerializer:
@@ -61,52 +59,57 @@ class EntrySerializer:
         id: UUID
         creator_id: UUID
         catalog_id: UUID
-        shelf_record_id: Optional[UUID]
-        author: AuthorSerializer.Base = None
-        categories: List[CategorySerializer.Base] = None
-        language: LanguageSerializer.Base = None
-        feeds: List[FeedSerializer.Base] = None
+        shelf_record_id: Optional[UUID] = Field(default=None, validate_default=True)
+        author: Optional[AuthorSerializer.Base]
+        categories: List[CategorySerializer.Base] = Field(default=[], validate_default=True)
+        language: Optional[LanguageSerializer.Base]
+        feeds: List[FeedSerializer.Base] = Field(default=[], validate_default=True)
         popularity: int
         title: str
-        image: str = None
-        image_mime: str = None
-        thumbnail: str = None
-        config: dict = None
-        citation: Optional[str] = None
+        image_url: Optional[str] = Field(serialization_alias="image")
+        image_mime: Optional[str]
+        thumbnail_base64: Optional[str] = Field(serialization_alias="thumbnail")
+        config: Optional[dict]
+        citation: Optional[str]
         created_at: datetime
         updated_at: datetime
 
-        @staticmethod
-        def resolve_shelf_record_id(data: Entry, **kwargs) -> Optional[str]:
-            if 'request' in kwargs:
+        @field_validator("shelf_record_id", mode="before")
+        def generate_shelf_record_id(cls, v, info: ValidationInfo) -> Optional[UUID]:
+            if info.context["user"].is_authenticated:
                 try:
-                    return data.shelf_records.get(user=kwargs['request'].user).id
+                    return info.context["user"].shelf_records.get(entry_id=info.data.get("id")).pk
                 except ShelfRecord.DoesNotExist:
                     return None
-
             return None
 
-        @staticmethod
-        def resolve_image(data: Entry, **kwargs) -> Optional[str]:
-            if not data.image:
-                return None
-            return data.image_url
+        @field_validator("categories", mode="before")
+        def generate_categories(cls, v, info: ValidationInfo):
+            return v.all()
 
-        @staticmethod
-        def resolve_thumbnail(data: Entry, **kwargs) -> Optional[str]:
-            if not data.image:
-                return None
-            return data.thumbnail_base64
+        @field_validator("feeds", mode="before")
+        def generate_feeds(cls, v, info: ValidationInfo):
+            return v.all()
 
     class Detailed(Base):
-        published_at: str = None
-        publisher: str = None
-        summary: str = None
-        content: str = None
-        identifiers: Dict = None
-        acquisitions: List[AcquisitionSerializer.Base] = None
-        contributors: List[AuthorSerializer.Base] = None
+        published_at: Optional[str]
+        publisher: Optional[str]
+        summary: Optional[str]
+        content: Optional[str]
+        identifiers: Optional[Dict]
+        acquisitions: List[AcquisitionSerializer.Base] = Field(default=[], validate_default=True)
+        contributors: List[AuthorSerializer.Base] = Field(default=[], validate_default=True)
 
-        @staticmethod
-        def resolve_published_at(data: Entry, **kwargs) -> Optional[str]:
-            return str(data.published_at) if data.published_at else None
+        @field_validator("published_at", mode="before")
+        def generate_published_at(cls, v, info: ValidationInfo):
+            # TODO: Use Annotated
+            # https://docs.pydantic.dev/latest/concepts/types/#composing-types-via-annotated
+            return str(v) if v else None
+
+        @field_validator("acquisitions", mode="before")
+        def generate_acquisitions(cls, v, info: ValidationInfo):
+            return v.all()
+
+        @field_validator("contributors", mode="before")
+        def generate_contributors(cls, v, info: ValidationInfo):
+            return v.all()

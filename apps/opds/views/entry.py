@@ -16,7 +16,9 @@ class EntryView(OpdsView):
         except Entry.DoesNotExist as e:
             raise ProblemDetailException(request, _("Entry not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        return render(request, "opds/_partials/entry.xml", {
-            'entry': entry,
-            'is_complete': True
-        }, content_type='application/atom+xml;type=entry;profile=opds-catalog')
+        return render(
+            request,
+            "opds/_partials/entry.xml",
+            {"entry": entry, "is_complete": True},
+            content_type="application/atom+xml;type=entry;profile=opds-catalog",
+        )

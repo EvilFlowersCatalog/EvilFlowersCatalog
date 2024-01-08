@@ -7,11 +7,11 @@ from apps.core.models.base import BaseModel
 
 class Author(BaseModel):
     class Meta:
-        app_label = 'core'
-        db_table = 'authors'
+        app_label = "core"
+        db_table = "authors"
         default_permissions = ()
-        verbose_name = _('Author')
-        verbose_name_plural = _('Authors')
+        verbose_name = _("Author")
+        verbose_name_plural = _("Authors")
 
     catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
@@ -19,9 +19,7 @@ class Author(BaseModel):
 
     @property
     def full_name(self) -> str:
-        return f'{self.name} {self.surname}'
+        return f"{self.name} {self.surname}"
 
 
-__all__ = [
-    'Author'
-]
+__all__ = ["Author"]

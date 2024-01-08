@@ -19,12 +19,12 @@ class SearchView(View):
             raise ProblemDetailException(request, _("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
         tags = {
-            'short_name': catalog.title,
-            'description': 'OPDS catalog',
-            'filter': EntryFilter,
-            'url': f"{settings.BASE_URL}"
-                   f"{reverse('root', kwargs={'catalog_name': catalog.url_name})}"
-                   f"?{EntryFilter.template()}"
+            "short_name": catalog.title,
+            "description": "OPDS catalog",
+            "filter": EntryFilter,
+            "url": f"{settings.BASE_URL}"
+            f"{reverse('root', kwargs={'catalog_name': catalog.url_name})}"
+            f"?{EntryFilter.template()}",
         }
 
         if feed_name:
@@ -33,10 +33,12 @@ class SearchView(View):
             except Feed.DoesNotExist as e:
                 raise ProblemDetailException(request, _("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-            tags['short_name'] = f"{feed.title} - {catalog.title}"
-            tags['description'] = f"{feed.title} feed"
-            tags['url'] = f"{settings.BASE_URL}" \
-                          f"{reverse('feed', kwargs={'catalog_name': catalog.url_name, 'feed_name': feed.url_name})}" \
-                          f"?{EntryFilter.template()}"
+            tags["short_name"] = f"{feed.title} - {catalog.title}"
+            tags["description"] = f"{feed.title} feed"
+            tags["url"] = (
+                f"{settings.BASE_URL}"
+                f"{reverse('feed', kwargs={'catalog_name': catalog.url_name, 'feed_name': feed.url_name})}"
+                f"?{EntryFilter.template()}"
+            )
 
-        return render(request, 'opds/search.xml', tags, content_type='application/opensearchdescription+xml')
+        return render(request, "opds/search.xml", tags, content_type="application/opensearchdescription+xml")

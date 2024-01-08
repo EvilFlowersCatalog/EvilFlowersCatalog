@@ -4,66 +4,65 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0015_username'),
+        ("core", "0015_username"),
     ]
 
     operations = [
         migrations.RemoveIndex(
-            model_name='entry',
-            name='entries_deleted_65f03c_idx',
+            model_name="entry",
+            name="entries_deleted_65f03c_idx",
         ),
         migrations.RemoveField(
-            model_name='acquisition',
-            name='deleted_at',
+            model_name="acquisition",
+            name="deleted_at",
         ),
         migrations.RemoveField(
-            model_name='apikey',
-            name='deleted_at',
+            model_name="apikey",
+            name="deleted_at",
         ),
         migrations.RemoveField(
-            model_name='author',
-            name='deleted_at',
+            model_name="author",
+            name="deleted_at",
         ),
         migrations.RemoveField(
-            model_name='authsource',
-            name='deleted_at',
+            model_name="authsource",
+            name="deleted_at",
         ),
         migrations.RemoveField(
-            model_name='catalog',
-            name='deleted_at',
+            model_name="catalog",
+            name="deleted_at",
         ),
         migrations.RemoveField(
-            model_name='category',
-            name='deleted_at',
+            model_name="category",
+            name="deleted_at",
         ),
         migrations.RemoveField(
-            model_name='currency',
-            name='deleted_at',
+            model_name="currency",
+            name="deleted_at",
         ),
         migrations.RemoveField(
-            model_name='entry',
-            name='deleted_at',
+            model_name="entry",
+            name="deleted_at",
         ),
         migrations.RemoveField(
-            model_name='feed',
-            name='deleted_at',
+            model_name="feed",
+            name="deleted_at",
         ),
         migrations.RemoveField(
-            model_name='language',
-            name='deleted_at',
+            model_name="language",
+            name="deleted_at",
         ),
         migrations.RemoveField(
-            model_name='price',
-            name='deleted_at',
+            model_name="price",
+            name="deleted_at",
         ),
         migrations.RemoveField(
-            model_name='user',
-            name='deleted_at',
+            model_name="user",
+            name="deleted_at",
         ),
         migrations.AddIndex(
-            model_name='entry',
-            index=models.Index(fields=['catalog_id', '-popularity'], name='entries_catalog_42380f_idx'),
+            model_name="entry",
+            index=models.Index(fields=["catalog_id", "-popularity"], name="entries_catalog_42380f_idx"),
         ),
     ]

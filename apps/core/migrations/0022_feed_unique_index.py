@@ -4,14 +4,13 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0021_shelfrecord'),
+        ("core", "0021_shelfrecord"),
     ]
 
     operations = [
         migrations.AlterUniqueTogether(
-            name='feed',
-            unique_together={('catalog', 'url_name'), ('catalog', 'title')},
+            name="feed",
+            unique_together={("catalog", "url_name"), ("catalog", "title")},
         ),
     ]

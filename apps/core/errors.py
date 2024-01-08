@@ -1,7 +1,7 @@
 import traceback
 from enum import Enum
 from http import HTTPStatus
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 
 import sentry_sdk
 from django.conf import settings
@@ -9,13 +9,34 @@ from django.utils.text import slugify
 from django_api_forms.forms import Form
 
 from django.utils.translation import gettext as _
+from pydantic import BaseModel
+
+
+class DetailType(Enum):
+    OUT_OF_RANGE = "/out-of-range"
+    NOT_FOUND = "/not-found"
+    VALIDATION_ERROR = "/validation-error"
+    CONFLICT = "/conflict"
+
+
+class ProblemDetail(BaseModel):
+    title: str
+    type: Optional[DetailType] = None
+    detail: Optional[str] = None
+    trace: Optional[List[str]] = None
+
+
+class ValidationErrorItem(BaseModel):
+    code: Optional[str] = None
+    message: str
+    path: Optional[List[str]] = None
+
+
+class ValidationError(ProblemDetail):
+    validation_errors: List[ValidationErrorItem]
 
 
 class ProblemDetailException(Exception):
-    class DetailType(Enum):
-        OUT_OF_RANGE = 'out-of-range'
-        NOT_FOUND = 'not-found'
-
     def __init__(
         self,
         request,
@@ -26,7 +47,7 @@ class ProblemDetailException(Exception):
         additional_data: Optional[dict] = None,
         detail_type: Optional[DetailType] = None,
         detail: Optional[str] = None,
-        extra_headers: Optional[Tuple[Tuple]] = ()
+        extra_headers: Optional[Tuple[Tuple]] = (),
     ):
         super().__init__(title)
 
@@ -66,7 +87,7 @@ class ProblemDetailException(Exception):
         return self._detail
 
     @property
-    def type(self) -> str:
+    def type(self) -> DetailType:
         return self._type
 
     @property
@@ -78,21 +99,13 @@ class ProblemDetailException(Exception):
         return self._extra_headers
 
     @property
-    def payload(self) -> dict:
-        result = {
-            'title': self.title
-        }
-
-        if self.type:
-            result['type'] = self.type
-
-        if self.detail:
-            result['detail'] = self.detail
-
-        if settings.DEBUG:
-            result['trace'] = traceback.format_exc().split("\n")
-
-        return result
+    def payload(self) -> ProblemDetail:
+        return ProblemDetail(
+            title=self.title,
+            type=self.type,
+            detail=self.detail,
+            trace=traceback.format_exc().split("\n") if settings.DEBUG else None,
+        )
 
 
 class UnauthorizedException(ProblemDetailException):
@@ -101,10 +114,8 @@ class UnauthorizedException(ProblemDetailException):
             request,
             _("Unauthorized"),
             status=HTTPStatus.UNAUTHORIZED,
-            extra_headers=(
-                ('WWW-Authenticate', f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),
-            ),
-            detail=detail
+            extra_headers=(("WWW-Authenticate", f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),),
+            detail=detail,
         )
 
 
@@ -114,7 +125,14 @@ class ValidationException(ProblemDetailException):
         self._form = form
 
     @property
-    def payload(self) -> dict:
-        payload = super(ValidationException, self).payload
-        payload['validation_errors'] = [item.to_dict() for item in self._form.errors]
-        return payload
+    def payload(self) -> ValidationError:
+        return ValidationError(
+            title=_("Invalid request parameters"),
+            type=DetailType.VALIDATION_ERROR,
+            validation_errors=[
+                ValidationErrorItem(
+                    code=item.code, message=item.message % (item.params or ()), path=getattr(item, "path", ["$body"])
+                )
+                for item in self._form.errors
+            ],
+        )

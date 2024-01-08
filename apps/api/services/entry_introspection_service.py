@@ -19,20 +19,17 @@ class IsbnDriver(IntrospectionDriver):
         data = meta(canonical(identifier))
 
         result = {
-            'publisher': data['Publisher'],
-            'doi': None,
-            'authors': [],
-            'year': data['Year'],
-            'language': data['Language'],
-            'bibtex': bibformatters["bibtex"](data)
+            "publisher": data["Publisher"],
+            "doi": None,
+            "authors": [],
+            "year": data["Year"],
+            "language": data["Language"],
+            "bibtex": bibformatters["bibtex"](data),
         }
 
-        for author in data.get('Authors', []):
-            bits = author.split(' ')
-            result['authors'].append({
-                'name': bits[0],
-                'surname': ' '.join(bits[1:])
-            })
+        for author in data.get("Authors", []):
+            bits = author.split(" ")
+            result["authors"].append({"name": bits[0], "surname": " ".join(bits[1:])})
 
         return result
 
@@ -40,47 +37,39 @@ class IsbnDriver(IntrospectionDriver):
 class DoiDriver(IntrospectionDriver):
     def resolve(self, identifier: str) -> Optional[dict]:
         req = Request(
-            url=f"https://doi.org/{identifier}",
-            headers={
-                'Accept': 'application/vnd.citationstyles.csl+json'
-            }
+            url=f"https://doi.org/{identifier}", headers={"Accept": "application/vnd.citationstyles.csl+json"}
         )
 
         try:
             res = urlopen(req, timeout=5)
-            data = json.loads(res.read().decode('utf-8'))
-        except (urllib.error.HTTPError | json.JSONDecodeError):
+            data = json.loads(res.read().decode("utf-8"))
+        except urllib.error.HTTPError | json.JSONDecodeError:
             return None
 
         result = {
-            'publisher': data.get('publisher'),
-            'doi': data.get('DOI'),
-            'authors': [{'name': i['given'], 'surname': i['family']} for i in data.get('author')],
-            'title': data.get('title'),
+            "publisher": data.get("publisher"),
+            "doi": data.get("DOI"),
+            "authors": [{"name": i["given"], "surname": i["family"]} for i in data.get("author")],
+            "title": data.get("title"),
         }
 
-        req = Request(
-            url=f"https://doi.org/{identifier}",
-            headers={
-                'Accept': 'application/x-bibtex'
-            }
-        )
+        req = Request(url=f"https://doi.org/{identifier}", headers={"Accept": "application/x-bibtex"})
 
         try:
             res = urlopen(req, timeout=5)
         except urllib.error.HTTPError:
             return None
 
-        result['bibtex'] = res.read().decode('utf-8')
+        result["bibtex"] = res.read().decode("utf-8")
 
         return result
 
 
 class EntryIntrospectionService:
-    def __init__(self, driver: Literal['isbn', 'dio']):
-        if driver == 'isbn':
+    def __init__(self, driver: Literal["isbn", "dio"]):
+        if driver == "isbn":
             self._driver = IsbnDriver()
-        elif driver == 'doi':
+        elif driver == "doi":
             self._driver = DoiDriver()
         else:
             raise Exception(f"Invalid IntospectionServiceDriver {driver}")

@@ -15,7 +15,7 @@ class OpdsView(SecuredView):
 
     def dispatch(self, request, *args, **kwargs):
         try:
-            self.catalog = Catalog.objects.get(url_name=kwargs['catalog_name'])
+            self.catalog = Catalog.objects.get(url_name=kwargs["catalog_name"])
         except Catalog.DoesNotExist:
             raise ProblemDetailException(request, _("Catalog not found"), status=HTTPStatus.NOT_FOUND)
         except KeyError as e:

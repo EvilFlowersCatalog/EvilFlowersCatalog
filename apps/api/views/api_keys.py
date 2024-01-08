@@ -19,14 +19,14 @@ class ApiKeyManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        if 'user_id' in form.cleaned_data.keys() and not request.user.is_superuser:
+        if "user_id" in form.cleaned_data.keys() and not request.user.is_superuser:
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         api_key = ApiKey(user=request.user)
         form.populate(api_key)
         api_key.save()
 
-        return SingleResponse(request, api_key, serializer=ApiKeySerializer.Base, status=HTTPStatus.CREATED)
+        return SingleResponse(request, data=ApiKeySerializer.Base.model_validate(api_key), status=HTTPStatus.CREATED)
 
     def get(self, request):
         api_keys = ApiKeyFilter(request.GET, queryset=ApiKey.objects.all(), request=request).qs

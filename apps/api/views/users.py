@@ -9,7 +9,7 @@ from apps.api.filters.users import UserFilter
 from apps.api.forms.users import UserForm, CreateUserForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.users import UserSerializer
-from apps.core.models import User
+from apps.core.models import User, AuthSource
 from apps.core.views import SecuredView
 
 
@@ -17,23 +17,23 @@ class UserManagement(SecuredView):
     def post(self, request):
         form = CreateUserForm.create_from_request(request)
 
-        if not request.user.has_perm('core.add_user'):
+        if not request.user.has_perm("core.add_user"):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        if User.objects.filter(username=form.cleaned_data['username']).exists():
+        if User.objects.filter(username=form.cleaned_data["username"]).exists():
             raise ProblemDetailException(
                 request, _("User with same username already exists"), status=HTTPStatus.CONFLICT
             )
 
-        user = User()
+        user = User(auth_source=AuthSource.objects.filter(driver=AuthSource.Driver.DATABASE).first())
         form.populate(user)
-        user.set_password(form.cleaned_data['password'])
+        user.set_password(form.cleaned_data["password"])
         user.save()
 
-        return SingleResponse(request, user, serializer=UserSerializer.Base, status=HTTPStatus.CREATED)
+        return SingleResponse(request, UserSerializer.Base.model_validate(user), status=HTTPStatus.CREATED)
 
     def get(self, request):
         users = UserFilter(request.GET, queryset=User.objects.all(), request=request).qs
@@ -58,27 +58,27 @@ class UserDetail(SecuredView):
         return user
 
     def get(self, request, user_id: UUID):
-        user = self._get_user(request, user_id, lambda: request.user.has_perm('core.view_user'))
+        user = self._get_user(request, user_id, lambda: request.user.has_perm("core.view_user"))
 
-        return SingleResponse(request, user, serializer=UserSerializer.Base)
+        return SingleResponse(request, UserSerializer.Base.model_validate(user))
 
     def put(self, request, user_id: UUID):
         form = UserForm.create_from_request(request)
 
-        user = self._get_user(request, user_id, lambda: request.user.has_perm('core.change_user'))
+        user = self._get_user(request, user_id, lambda: request.user.has_perm("core.change_user"))
 
         if not form.is_valid():
             raise ValidationException(request, form)
 
         form.populate(user)
-        if 'password' in form.cleaned_data.keys():
-            user.set_password(form.cleaned_data['password'])
+        if "password" in form.cleaned_data.keys():
+            user.set_password(form.cleaned_data["password"])
         user.save()
 
-        return SingleResponse(request, user, serializer=UserSerializer.Base)
+        return SingleResponse(request, UserSerializer.Base.model_validate(user))
 
     def delete(self, request, user_id: UUID):
-        user = self._get_user(request, user_id, lambda: request.user.has_perm('core.delete_user'))
+        user = self._get_user(request, user_id, lambda: request.user.has_perm("core.delete_user"))
         user.delete()
 
         return SingleResponse(request)
@@ -87,6 +87,6 @@ class UserDetail(SecuredView):
 class UserMe(SecuredView):
     def get(self, request):
         if request.user.is_anonymous:
-            raise UnauthorizedException(request, detail=_('You have to log in!'))
+            raise UnauthorizedException(request, detail=_("You have to log in!"))
 
-        return SingleResponse(request, request.user, serializer=UserSerializer.Detailed)
+        return SingleResponse(request, UserSerializer.Detailed.model_validate(request.user))

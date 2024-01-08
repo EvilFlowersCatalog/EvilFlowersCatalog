@@ -25,13 +25,13 @@ class AuthorManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        if not has_object_permission('check_catalog_write', request.user, form.cleaned_data['catalog_id']):
+        if not has_object_permission("check_catalog_write", request.user, form.cleaned_data["catalog_id"]):
             raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         if Author.objects.filter(
-            catalog=form.cleaned_data['catalog_id'],
-            name=form.cleaned_data['name'],
-            surname=form.cleaned_data['surname']
+            catalog=form.cleaned_data["catalog_id"],
+            name=form.cleaned_data["name"],
+            surname=form.cleaned_data["surname"],
         ).exists():
             raise ProblemDetailException(
                 request, _("Author already exists in the catalog"), status=HTTPStatus.CONFLICT
@@ -41,14 +41,14 @@ class AuthorManagement(SecuredView):
         form.populate(author)
         author.save()
 
-        return SingleResponse(request, author, serializer=AuthorSerializer.Detailed, status=HTTPStatus.CREATED)
+        return SingleResponse(request, AuthorSerializer.Detailed.model_validate(author), status=HTTPStatus.CREATED)
 
 
 class AuthorDetail(SecuredView):
     @staticmethod
-    def _get_author(request, author_id: UUID, checker: str = 'check_catalog_manage') -> Author:
+    def _get_author(request, author_id: UUID, checker: str = "check_catalog_manage") -> Author:
         try:
-            author = Author.objects.select_related('catalog').get(pk=author_id)
+            author = Author.objects.select_related("catalog").get(pk=author_id)
         except Author.DoesNotExist as e:
             raise ProblemDetailException(request, _("Author not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
@@ -58,9 +58,9 @@ class AuthorDetail(SecuredView):
         return author
 
     def get(self, request, author_id: UUID):
-        author = self._get_author(request, author_id, 'check_catalog_read')
+        author = self._get_author(request, author_id, "check_catalog_read")
 
-        return SingleResponse(request, author, serializer=AuthorSerializer.Detailed)
+        return SingleResponse(request, AuthorSerializer.Detailed.model_validate(author))
 
     def put(self, request, author_id: UUID):
         form = CreateAuthorForm.create_from_request(request)
@@ -69,11 +69,15 @@ class AuthorDetail(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        if Author.objects.exclude(pk=author_id).filter(
-            catalog=form.cleaned_data['catalog_id'],
-            name=form.cleaned_data['name'],
-            surname=form.cleaned_data['surname'],
-        ).exists():
+        if (
+            Author.objects.exclude(pk=author_id)
+            .filter(
+                catalog=form.cleaned_data["catalog_id"],
+                name=form.cleaned_data["name"],
+                surname=form.cleaned_data["surname"],
+            )
+            .exists()
+        ):
             raise ProblemDetailException(
                 request, _("Author already exists in the catalog"), status=HTTPStatus.CONFLICT
             )
@@ -81,7 +85,7 @@ class AuthorDetail(SecuredView):
         form.populate(author)
         author.save()
 
-        return SingleResponse(request, author, serializer=AuthorSerializer.Detailed)
+        return SingleResponse(request, AuthorSerializer.Detailed.model_validate(author))
 
     def delete(self, request, author_id: UUID):
         author = self._get_author(request, author_id)

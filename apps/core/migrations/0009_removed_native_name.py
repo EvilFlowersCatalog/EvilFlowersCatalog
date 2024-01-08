@@ -4,14 +4,13 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0008_entry_categories'),
+        ("core", "0008_entry_categories"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='language',
-            name='native_name',
+            model_name="language",
+            name="native_name",
         ),
     ]

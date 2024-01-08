@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0018_entry_config_defaults'),
+        ("core", "0018_entry_config_defaults"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='entry',
-            name='citation',
+            model_name="entry",
+            name="citation",
             field=models.TextField(null=True),
         ),
     ]

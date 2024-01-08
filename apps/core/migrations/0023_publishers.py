@@ -5,20 +5,19 @@ import partial_date.fields
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0022_feed_unique_index'),
+        ("core", "0022_feed_unique_index"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='entry',
-            name='published_at',
+            model_name="entry",
+            name="published_at",
             field=partial_date.fields.PartialDateField(null=True),
         ),
         migrations.AddField(
-            model_name='entry',
-            name='publisher',
+            model_name="entry",
+            name="publisher",
             field=models.CharField(max_length=255, null=True),
         ),
     ]

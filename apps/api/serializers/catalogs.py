@@ -2,8 +2,10 @@ from datetime import datetime
 from typing import List
 from uuid import UUID
 
-from porcupine.base import Serializer
+from pydantic import field_validator, Field
+from pydantic_core.core_schema import ValidationInfo
 
+from apps.api.serializers import Serializer
 from apps.api.serializers.users import UserSerializer
 
 
@@ -23,4 +25,8 @@ class CatalogSerializer:
         updated_at: datetime
 
     class Detailed(Base):
-        user_catalogs: List[UserCatalog]
+        user_catalogs: List[UserCatalog] = Field(default=[], validate_default=True)
+
+        @field_validator("user_catalogs", mode="before")
+        def generate_feeds(cls, v, info: ValidationInfo):
+            return v.all()

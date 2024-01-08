@@ -4,19 +4,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0006_entry_images'),
+        ("core", "0006_entry_images"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='entry',
-            name='popularity',
+            model_name="entry",
+            name="popularity",
             field=models.PositiveBigIntegerField(default=0),
         ),
         migrations.AddIndex(
-            model_name='entry',
-            index=models.Index(fields=['deleted_at', 'catalog_id', '-popularity'], name='entries_deleted_65f03c_idx'),
+            model_name="entry",
+            index=models.Index(fields=["deleted_at", "catalog_id", "-popularity"], name="entries_deleted_65f03c_idx"),
         ),
     ]

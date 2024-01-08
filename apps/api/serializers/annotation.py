@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from porcupine.base import Serializer
+from apps.api.serializers import Serializer
 
 
 class AnnotationSerializer:
