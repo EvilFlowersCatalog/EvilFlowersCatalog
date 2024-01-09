@@ -77,7 +77,7 @@ class FeedView(OpdsView):
                         Link(
                             rel="http://opds-spec.org/image",
                             href=reverse("files:cover-download", kwargs={"entry_id": entry.id}),
-                            type=entry.image_mime
+                            type=entry.image_mime,
                         )
                     )
 
@@ -87,7 +87,7 @@ class FeedView(OpdsView):
                         Link(
                             rel=str(Acquisition.AcquisitionType(acquisition.relation)),
                             href=reverse("files:acquisition-download", kwargs={"acquisition_id": acquisition.pk}),
-                            type=acquisition.mime
+                            type=acquisition.mime,
                         )
                     )
 

@@ -44,7 +44,7 @@ class Link(BaseXmlModel, tag="link", nsmap=NSMAP):
         "http://opds-spec.org/sort/new",
         "http://opds-spec.org/image",
         "http://opds-spec.org/acquisition/open-access",
-        "http://opds-spec.org/acquisition"
+        "http://opds-spec.org/acquisition",
     ] = attr()
     href: str = attr()
     type: str = attr()
