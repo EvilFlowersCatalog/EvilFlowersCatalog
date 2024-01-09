@@ -114,7 +114,13 @@ class UnauthorizedException(ProblemDetailException):
             request,
             _("Unauthorized"),
             status=HTTPStatus.UNAUTHORIZED,
-            extra_headers=(("WWW-Authenticate", f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),),
+            extra_headers=(
+                (
+                    "WWW-Authenticate",
+                    f"Basic realm={slugify(settings.INSTANCE_NAME)},"
+                    f' Bearer realm="{slugify(settings.INSTANCE_NAME)}"',
+                ),
+            ),
             detail=detail,
         )
 

@@ -19,6 +19,7 @@ The main goal is to implement the complete [OPDS 1.2](https://specs.opds.io/opds
 - [ ] [Previously Acquired Content](https://specs.opds.io/opds-1.2#61-relations-for-previously-acquired-content)
     - [ ] Shelves (`/opds/shelv`)
     - [ ] Subscriptions (`/opds/subscriptions`)
+- [ ] [Facets](https://specs.opds.io/opds-1.2#4-facets)
 - [ ] [Search](https://specs.opds.io/opds-1.2#3-search)
 - [ ] [Pagination](https://datatracker.ietf.org/doc/html/rfc5005)
 - [ ] [Complete acquisition feeds](https://specs.opds.io/opds-1.2#25-complete-acquisition-feeds)

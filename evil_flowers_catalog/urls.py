@@ -20,12 +20,11 @@ from django.views.static import serve
 
 from apps.api import urls as api_urlpatterns
 from apps.files import urls as files_urlpatterns
-from apps.opds import urls as opds_urlpatterns
 
 urlpatterns = []
 urlpatterns += [
     path(r"api/v1/", include(api_urlpatterns)),
-    path(r"opds/1.2/", include(opds_urlpatterns)),
+    path(r"opds/1.2/", include(('apps.opds.urls', 'opds'), namespace='opds')),
     path(r"data/v1/", include(files_urlpatterns)),
 ]
 

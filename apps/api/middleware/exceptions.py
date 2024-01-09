@@ -14,7 +14,8 @@ class ExceptionMiddleware(object):
         if isinstance(exception, ValidationException):
             return ValidationResponse(request, exception.payload, status=exception.status)
         if isinstance(exception, ProblemDetailException):
-            return ErrorResponse(request, exception.payload, status=exception.status)
+            # FIXME: check this out, extra_headers propagation kinda sucks
+            return ErrorResponse(request, exception.payload, status=exception.status, headers=exception.extra_headers)
 
 
 __all__ = ["ExceptionMiddleware"]
