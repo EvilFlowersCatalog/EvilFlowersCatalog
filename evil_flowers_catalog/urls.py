@@ -24,7 +24,7 @@ from apps.files import urls as files_urlpatterns
 urlpatterns = []
 urlpatterns += [
     path(r"api/v1/", include(api_urlpatterns)),
-    path(r"opds/1.2/", include(('apps.opds.urls', 'opds'), namespace='opds')),
+    path(r"opds/1.2/", include(("apps.opds.urls", "opds"), namespace="opds")),
     path(r"data/v1/", include(files_urlpatterns)),
 ]
 
