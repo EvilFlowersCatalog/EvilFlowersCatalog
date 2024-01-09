@@ -3,11 +3,13 @@ from http import HTTPStatus
 from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.translation import gettext as _
 
 from apps.api.filters.entries import EntryFilter
 from apps.core.errors import ProblemDetailException
-from apps.core.models import Feed, Entry
+from apps.core.models import Feed, Entry, Acquisition
+from apps.opds.models import Link, Author, AcquisitionEntry, NavigationEntry, Content, OpdsFeed, Summary
 from apps.opds.views.base import OpdsView
 
 
@@ -18,17 +20,106 @@ class FeedView(OpdsView):
         except Feed.DoesNotExist:
             raise ProblemDetailException(request, _("Feed not found"), status=HTTPStatus.NOT_FOUND)
 
-        entry_filter = EntryFilter(request.GET, queryset=Entry.objects.filter(feeds=feed), request=request)
+        result = OpdsFeed(
+            id=request.build_absolute_uri(
+                reverse("opds:feed", kwargs={"catalog_name": catalog_name, "feed_name": feed_name})
+            ),
+            title=feed.title,
+            links=[
+                Link(
+                    rel="self",
+                    href=reverse("opds:feed", kwargs={"catalog_name": catalog_name, "feed_name": feed_name}),
+                    type="application/atom+xml;profile=opds-catalog;kind=navigation",
+                ),
+                Link(
+                    rel="start",
+                    href=reverse("opds:root", kwargs={"catalog_name": catalog_name}),
+                    type="application/atom+xml;profile=opds-catalog;kind=navigation",
+                ),
+            ],
+            author=Author(name=feed.creator.full_name),
+            updated=feed.updated_at,
+            entries=[],
+        )
 
-        try:
-            updated_at = entry_filter.qs.latest("updated_at").updated_at
-        except Entry.DoesNotExist:
-            updated_at = self.catalog.updated_at
+        if feed.kind == Feed.FeedKind.ACQUISITION:
+            for related_feed in feed.parents.all():
+                result.links.append(
+                    Link(
+                        rel="related",
+                        href=reverse(
+                            "opds:feed", kwargs={"catalog_name": catalog_name, "feed_name": related_feed.url_name}
+                        ),
+                        type="application/atom+xml;profile=opds-catalog;kind=navigation",
+                    )
+                )
 
-        return render(
-            request,
-            "opds/feeds/feed.xml",
-            {"feed": feed, "updated_at": updated_at, "catalog": self.catalog, "entry_filter": entry_filter},
+            try:
+                result.updated = Entry.objects.filter(feeds=feed).latest("updated_at").updated_at
+            except Entry.DoesNotExist:
+                pass
+
+            for entry in Entry.objects.filter(feeds=feed):
+                item = AcquisitionEntry(
+                    title=entry.title,
+                    id=f"urn:uuid:{entry.id}",
+                    updated=entry.updated_at,
+                    authors=[Author(name=entry.author.full_name)],
+                    links=[],
+                    summary=Summary(type="text", value=entry.summary),
+                )
+
+                for contributor in entry.contributors.all():
+                    item.authors.append(Author(name=contributor.full_name))
+
+                if entry.image:
+                    item.links.append(
+                        Link(
+                            rel="http://opds-spec.org/image",
+                            href=reverse("files:cover-download", kwargs={"entry_id": entry.id}),
+                            type=entry.image_mime
+                        )
+                    )
+
+                for acquisition in entry.acquisitions.all():
+                    # FIXME: OPDS endpoint for acquisition download which keeps in mind the user-acquisition rules
+                    item.links.append(
+                        Link(
+                            rel=str(Acquisition.AcquisitionType(acquisition.relation)),
+                            href=reverse("files:acquisition-download", kwargs={"acquisition_id": acquisition.pk}),
+                            type=acquisition.mime
+                        )
+                    )
+
+                result.entries.append(item)
+        elif feed.kind == Feed.FeedKind.NAVIGATION:
+            for child in feed.children.all():
+                result.entries.append(
+                    NavigationEntry(
+                        id=request.build_absolute_uri(
+                            reverse(
+                                "opds:feed",
+                                kwargs={"catalog_name": self.catalog.url_name, "feed_name": child.url_name},
+                            )
+                        ),
+                        title=child.title,
+                        links=[
+                            Link(
+                                rel="subsection",
+                                href=reverse(
+                                    "opds:feed",
+                                    kwargs={"catalog_name": self.catalog.url_name, "feed_name": child.url_name},
+                                ),
+                                type="application/atom+xml;profile=opds;kind=navigation",
+                            )
+                        ],
+                        content=Content(type="text", value=child.content),
+                        updated=child.updated_at,
+                    )
+                )
+
+        return HttpResponse(
+            result.to_xml(pretty_print=settings.DEBUG, encoding="UTF-8", standalone=True, skip_empty=True),
             content_type=f"application/atom+xml;profile=opds-catalog;kind={feed.kind}",
         )
 
