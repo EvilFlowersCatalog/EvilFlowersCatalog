@@ -26,7 +26,7 @@ jobs:
     steps:
       - name: Install poetry
         run: |
-          apt install pipx
+          sudo apt install -y pipx
           pipx ensurepath
           pipx install poetry
           pipx inject poetry poetry-plugin-export
