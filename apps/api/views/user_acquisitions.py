@@ -46,7 +46,7 @@ class UserAcquisitionManagement(SecuredView):
             if user_acquisition:
                 location = (
                     f"{settings.BASE_URL}"
-                    f"{reverse('user-acquisition-detail', kwargs={'user_acquisition_id': user_acquisition.pk})}"
+                    f"{reverse('files:user-acquisition-detail', kwargs={'user_acquisition_id': user_acquisition.pk})}"
                 )
                 return HttpResponseRedirect(location, status=HTTPStatus.SEE_OTHER)
 

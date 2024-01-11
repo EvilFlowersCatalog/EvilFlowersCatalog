@@ -38,7 +38,7 @@ class Feed(BaseModel):
 
     @property
     def url(self):
-        return f"{settings.BASE_URL}{reverse('feed', args=[self.catalog.url_name, self.url_name])}"
+        return f"{settings.BASE_URL}{reverse('opds:feed', args=[self.catalog.url_name, self.url_name])}"
 
 
 __all__ = ["Feed"]

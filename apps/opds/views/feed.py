@@ -9,7 +9,7 @@ from django.utils.translation import gettext as _
 from apps.api.filters.entries import EntryFilter
 from apps.core.errors import ProblemDetailException
 from apps.core.models import Feed, Entry, Acquisition
-from apps.opds.models import Link, Author, AcquisitionEntry, NavigationEntry, Content, OpdsFeed, Summary
+from apps.opds.models import Link, Author, AcquisitionEntry, NavigationEntry, Content, OpdsFeed, Summary, Category
 from apps.opds.views.base import OpdsView
 
 
@@ -66,11 +66,15 @@ class FeedView(OpdsView):
                     updated=entry.updated_at,
                     authors=[Author(name=entry.author.full_name)],
                     links=[],
+                    categories=[],
                     summary=Summary(type="text", value=entry.summary),
                 )
 
                 for contributor in entry.contributors.all():
                     item.authors.append(Author(name=contributor.full_name))
+
+                for category in entry.categories.all():
+                    item.categories.append(Category())
 
                 if entry.image:
                     item.links.append(

@@ -30,7 +30,8 @@ class UserAcquisition(BaseModel):
     @property
     def url(self) -> str:
         return (
-            f"{settings.BASE_URL}" f"{reverse('user-acquisition-download', kwargs={'user_acquisition_id': self.pk})}"
+            f"{settings.BASE_URL}"
+            f"{reverse('files:user-acquisition-download', kwargs={'user_acquisition_id': self.pk})}"
         )
 
     @property

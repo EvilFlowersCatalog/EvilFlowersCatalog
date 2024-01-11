@@ -66,6 +66,7 @@ class NavigationEntry(OpdsEntry, tag="entry"):
 class AcquisitionEntry(OpdsEntry, tag="entry"):
     authors: List[Author] = element(tag="author")
     summary: Summary = element()
+    categories: Optional[List[Category]] = element(tag="category", default=None)
     content: Optional[Content] = element(default=None)
 
 

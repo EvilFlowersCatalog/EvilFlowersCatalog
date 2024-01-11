@@ -46,7 +46,7 @@ class Acquisition(BaseModel):
     def url(self) -> Optional[str]:
         if not self.content:
             return None
-        return f"{settings.BASE_URL}{reverse('acquisition-download', kwargs={'acquisition_id': self.pk})}"
+        return f"{settings.BASE_URL}{reverse('files:acquisition-download', kwargs={'acquisition_id': self.pk})}"
 
     @property
     def base64(self) -> Optional[str]:
