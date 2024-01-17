@@ -13,5 +13,9 @@ class ShelfRecord(BaseModel):
         verbose_name = _("Shelf record")
         verbose_name_plural = _("Shelf records")
 
-    entry = models.ForeignKey(Entry, on_delete=models.CASCADE, related_name="shelf_records")
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="shelf_records")
+    entry = models.ForeignKey(
+        Entry, on_delete=models.CASCADE, related_name="shelf_records"
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="shelf_records"
+    )

@@ -23,7 +23,11 @@ class UserAcquisition(BaseModel):
 
     acquisition = models.ForeignKey(Acquisition, on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    type = models.CharField(max_length=10, choices=UserAcquisitionType.choices, default=UserAcquisitionType.PERSONAL)
+    type = models.CharField(
+        max_length=10,
+        choices=UserAcquisitionType.choices,
+        default=UserAcquisitionType.PERSONAL,
+    )
     range = models.CharField(max_length=100, null=True)
     expire_at = models.DateTimeField(null=True)
 

@@ -23,7 +23,10 @@ class Migration(migrations.Migration):
             model_name="entry",
             name="identifiers",
             field=django.contrib.postgres.fields.hstore.HStoreField(
-                null=True, validators=[apps.core.validators.AvailableKeysValidator(keys=["isbn", "google"])]
+                null=True,
+                validators=[
+                    apps.core.validators.AvailableKeysValidator(keys=["isbn", "google"])
+                ],
             ),
         ),
     ]

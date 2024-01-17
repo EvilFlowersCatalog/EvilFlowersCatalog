@@ -9,7 +9,12 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.utils.translation import gettext as _
 from pydantic import BaseModel, RootModel
 
-from apps.core.errors import ProblemDetailException, DetailType, ValidationError, ProblemDetail
+from apps.core.errors import (
+    ProblemDetailException,
+    DetailType,
+    ValidationError,
+    ProblemDetail,
+)
 
 ResponseType = TypeVar("ResponseType")
 
@@ -42,7 +47,11 @@ class Ordering:
         for column in request.GET.get("order_by", "created_at").split(","):
             column_name = column[1:] if column.startswith("-") else column
             if column_name in aliases.keys():
-                columns.append(f"-{aliases[column_name]}" if column.startswith("-") else aliases[column_name])
+                columns.append(
+                    f"-{aliases[column_name]}"
+                    if column.startswith("-")
+                    else aliases[column_name]
+                )
             else:
                 columns.append(column)
 
@@ -109,7 +118,14 @@ class ValidationResponse(GeneralResponse):
 
 
 class PaginationResponse(GeneralResponse):
-    def __init__(self, request, qs, serializer: Type[BaseModel], ordering: Ordering = None, **kwargs):
+    def __init__(
+        self,
+        request,
+        qs,
+        serializer: Type[BaseModel],
+        ordering: Ordering = None,
+        **kwargs,
+    ):
         kwargs.setdefault("content_type", "application/json")
 
         # Ordering
@@ -119,7 +135,9 @@ class PaginationResponse(GeneralResponse):
         # Pagination
         paginate = request.GET.get("paginate", "true") == "true"
         if paginate:
-            limit = int(request.GET.get("limit", settings.EVILFLOWERS_PAGINATION_DEFAULT_LIMIT))
+            limit = int(
+                request.GET.get("limit", settings.EVILFLOWERS_PAGINATION_DEFAULT_LIMIT)
+            )
             page = int(request.GET.get("page", 1))
 
             paginator = Paginator(qs, limit)
@@ -152,7 +170,9 @@ class PaginationResponse(GeneralResponse):
                 items=RootModel[List[serializer]].model_validate(
                     list(items), from_attributes=True, context={"user": request.user}
                 ),
-                metadata=PaginationModel(page=page, limit=limit, pages=num_pages, total=total),
+                metadata=PaginationModel(
+                    page=page, limit=limit, pages=num_pages, total=total
+                ),
             ),
             **kwargs,
         )

@@ -66,7 +66,9 @@ class MultiRangeFormField(CharField):
             return repack(depack(value))
         # Comment this out if you'd rather just have it auto-clean your entry
         else:
-            raise ValidationError("Can only contain numbers, hyphens, commas, and spaces.")
+            raise ValidationError(
+                "Can only contain numbers, hyphens, commas, and spaces."
+            )
 
 
 def depack(value: str) -> list:
@@ -104,7 +106,9 @@ def repack(page_list: list) -> str:
     for key, group in groupby(enumerate(sorted_values), function):
         group = list(map(itemgetter(1), group))
         if len(group) > 1:
-            ranges.append(range(group[0], group[-1]))  # under Python 3.x, switch to "range"
+            ranges.append(
+                range(group[0], group[-1])
+            )  # under Python 3.x, switch to "range"
         else:
             ranges.append(group[0])
 

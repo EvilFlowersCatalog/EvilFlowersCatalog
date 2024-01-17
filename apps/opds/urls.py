@@ -2,7 +2,13 @@ from django.urls import path
 
 from apps.opds.views.catalog import RootView
 from apps.opds.views.entry import EntryView
-from apps.opds.views.feed import PopularFeedView, LatestFeedView, ShelfFeedView, CompleteFeedView, FeedView
+from apps.opds.views.feed import (
+    PopularFeedView,
+    LatestFeedView,
+    ShelfFeedView,
+    CompleteFeedView,
+    FeedView,
+)
 from apps.opds.views.search import SearchView
 
 urlpatterns = [
@@ -15,7 +21,15 @@ urlpatterns = [
     path("<str:catalog_name>/feed/<str:feed_name>", FeedView.as_view(), name="feed"),
     # Search
     path("<str:catalog_name>/search", SearchView.as_view(), name="catalog_search"),
-    path("<str:catalog_name>/search/<str:feed_name>", SearchView.as_view(), name="feed_search"),
+    path(
+        "<str:catalog_name>/search/<str:feed_name>",
+        SearchView.as_view(),
+        name="feed_search",
+    ),
     # Entries
-    path("<str:catalog_name>/entries/<uuid:entry_id>", EntryView.as_view(), name="complete_entry"),
+    path(
+        "<str:catalog_name>/entries/<uuid:entry_id>",
+        EntryView.as_view(),
+        name="complete_entry",
+    ),
 ]

@@ -63,6 +63,8 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="entry",
-            index=models.Index(fields=["catalog_id", "-popularity"], name="entries_catalog_42380f_idx"),
+            index=models.Index(
+                fields=["catalog_id", "-popularity"], name="entries_catalog_42380f_idx"
+            ),
         ),
     ]

@@ -22,7 +22,9 @@ class UserAcquisitionManagement(SecuredView):
             request.GET, queryset=UserAcquisition.objects.all(), request=request
         ).qs
 
-        return PaginationResponse(request, user_acquisitions, serializer=UserAcquisitionSerializer.Base)
+        return PaginationResponse(
+            request, user_acquisitions, serializer=UserAcquisitionSerializer.Base
+        )
 
     def post(self, request):
         form = UserAcquisitionForm.create_from_request(request)
@@ -30,8 +32,12 @@ class UserAcquisitionManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(request, form)
 
-        if not has_object_permission("check_entry_read", request.user, form.cleaned_data["acquisition_id"].entry):
-            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+        if not has_object_permission(
+            "check_entry_read", request.user, form.cleaned_data["acquisition_id"].entry
+        ):
+            raise ProblemDetailException(
+                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+            )
 
         if (
             form.cleaned_data["type"] == UserAcquisition.UserAcquisitionType.PERSONAL
@@ -53,15 +59,24 @@ class UserAcquisitionManagement(SecuredView):
         user_acquisition = UserAcquisition(user=request.user)
         form.populate(user_acquisition)
 
-        evilflowers_share_enabled = user_acquisition.acquisition.entry.read_config("evilflowers_share_enabled")
-        if user_acquisition.type == UserAcquisition.UserAcquisitionType.SHARED and not evilflowers_share_enabled:
-            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+        evilflowers_share_enabled = user_acquisition.acquisition.entry.read_config(
+            "evilflowers_share_enabled"
+        )
+        if (
+            user_acquisition.type == UserAcquisition.UserAcquisitionType.SHARED
+            and not evilflowers_share_enabled
+        ):
+            raise ProblemDetailException(
+                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+            )
 
         user_acquisition.save()
 
         return SingleResponse(
             request,
-            UserAcquisitionSerializer.Base.model_validate(user_acquisition, context={"user": request.user}),
+            UserAcquisitionSerializer.Base.model_validate(
+                user_acquisition, context={"user": request.user}
+            ),
             status=HTTPStatus.CREATED,
         )
 
@@ -79,10 +94,16 @@ class UserAcquisitionDetail(SecuredView):
                 detail_type=DetailType.NOT_FOUND,
             )
 
-        if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
-            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+        if not has_object_permission(
+            "check_user_acquisition_read", request.user, user_acquisition
+        ):
+            raise ProblemDetailException(
+                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+            )
 
         return SingleResponse(
             request,
-            UserAcquisitionSerializer.Base.model_validate(user_acquisition, context={"user": request.user}),
+            UserAcquisitionSerializer.Base.model_validate(
+                user_acquisition, context={"user": request.user}
+            ),
         )

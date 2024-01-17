@@ -21,7 +21,9 @@ from apps.core.views import SecuredView
 
 class EntryPaginator(SecuredView):
     def get(self, request):
-        entries = EntryFilter(request.GET, queryset=Entry.objects.all(), request=request).qs.distinct()
+        entries = EntryFilter(
+            request.GET, queryset=Entry.objects.all(), request=request
+        ).qs.distinct()
 
         return PaginationResponse(request, entries, serializer=EntrySerializer.Base)
 
@@ -40,14 +42,22 @@ class EntryManagement(SecuredView):
         try:
             catalog = Catalog.objects.get(pk=catalog_id)
         except Catalog.DoesNotExist as e:
-            raise ProblemDetailException(request, _("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e)
+            raise ProblemDetailException(
+                request, _("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e
+            )
 
         if not has_object_permission("check_catalog_write", request.user, catalog):
-            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+            raise ProblemDetailException(
+                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+            )
 
         form = EntryForm.create_from_request(request)
-        form.fields["category_ids"].queryset = form.fields["category_ids"].queryset.filter(catalog=catalog)
-        form.fields["author_id"].queryset = form.fields["author_id"].queryset.filter(catalog=catalog)
+        form.fields["category_ids"].queryset = form.fields[
+            "category_ids"
+        ].queryset.filter(catalog=catalog)
+        form.fields["author_id"].queryset = form.fields["author_id"].queryset.filter(
+            catalog=catalog
+        )
 
         if not form.is_valid():
             raise ValidationException(request, form)
@@ -62,28 +72,42 @@ class EntryManagement(SecuredView):
                 request,
                 "Entry already exists!",
                 HTTPStatus.CONFLICT,
-                detail=_("Entry with same title, isbn or DOI already exists in catalog %s") % (catalog.title,),
+                detail=_(
+                    "Entry with same title, isbn or DOI already exists in catalog %s"
+                )
+                % (catalog.title,),
                 previous=e,
                 detail_type=DetailType.CONFLICT,
             )
 
         return SingleResponse(
             request,
-            data=EntrySerializer.Detailed.model_validate(entry, context={"user": request.user}),
+            data=EntrySerializer.Detailed.model_validate(
+                entry, context={"user": request.user}
+            ),
             status=HTTPStatus.CREATED,
         )
 
 
 class EntryDetail(SecuredView):
     @staticmethod
-    def get_entry(request, catalog_id: uuid.UUID, entry_id: uuid.UUID, checker: str = "check_entry_manage") -> Entry:
+    def get_entry(
+        request,
+        catalog_id: uuid.UUID,
+        entry_id: uuid.UUID,
+        checker: str = "check_entry_manage",
+    ) -> Entry:
         try:
             entry = Entry.objects.get(pk=entry_id, catalog_id=catalog_id)
         except Entry.DoesNotExist:
-            raise ProblemDetailException(request, _("Entry not found"), status=HTTPStatus.NOT_FOUND)
+            raise ProblemDetailException(
+                request, _("Entry not found"), status=HTTPStatus.NOT_FOUND
+            )
 
         if not has_object_permission(checker, request.user, entry):
-            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+            raise ProblemDetailException(
+                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+            )
 
         return entry
 
@@ -91,7 +115,10 @@ class EntryDetail(SecuredView):
         entry = self.get_entry(request, catalog_id, entry_id, "check_entry_read")
 
         return SingleResponse(
-            request, data=EntrySerializer.Detailed.model_validate(entry, context={"user": request.user})
+            request,
+            data=EntrySerializer.Detailed.model_validate(
+                entry, context={"user": request.user}
+            ),
         )
 
     def post(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
@@ -114,28 +141,41 @@ class EntryDetail(SecuredView):
 
         acquisition = Acquisition(
             entry=entry,
-            relation=form.cleaned_data.get("relation", Acquisition.AcquisitionType.ACQUISITION),
+            relation=form.cleaned_data.get(
+                "relation", Acquisition.AcquisitionType.ACQUISITION
+            ),
             mime=request.FILES["content"].content_type,
         )
 
         if "content" in request.FILES.keys():
             acquisition.content.save(
-                f"{uuid.uuid4()}{mimetypes.guess_extension(acquisition.mime)}", request.FILES["content"]
+                f"{uuid.uuid4()}{mimetypes.guess_extension(acquisition.mime)}",
+                request.FILES["content"],
             )
 
         for price in form.cleaned_data.get("prices", []):
-            Price.objects.create(acquisition=acquisition, currency=price["currency_code"], value=price["value"])
+            Price.objects.create(
+                acquisition=acquisition,
+                currency=price["currency_code"],
+                value=price["value"],
+            )
 
         return SingleResponse(
-            request, AcquisitionSerializer.Detailed.model_validate(acquisition), status=HTTPStatus.CREATED
+            request,
+            AcquisitionSerializer.Detailed.model_validate(acquisition),
+            status=HTTPStatus.CREATED,
         )
 
     def put(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
         entry = self.get_entry(request, catalog_id, entry_id)
 
         form = EntryForm.create_from_request(request)
-        form.fields["category_ids"].queryset = form.fields["category_ids"].queryset.filter(catalog_id=catalog_id)
-        form.fields["author_id"].queryset = form.fields["author_id"].queryset.filter(catalog_id=catalog_id)
+        form.fields["category_ids"].queryset = form.fields[
+            "category_ids"
+        ].queryset.filter(catalog_id=catalog_id)
+        form.fields["author_id"].queryset = form.fields["author_id"].queryset.filter(
+            catalog_id=catalog_id
+        )
 
         if not form.is_valid():
             raise ValidationException(request, form)
@@ -151,12 +191,18 @@ class EntryDetail(SecuredView):
                 request,
                 "Entry already exists!",
                 HTTPStatus.CONFLICT,
-                detail=_("Entry with same title, isbn or DOI already exists in catalog %s") % (catalog.title,),
+                detail=_(
+                    "Entry with same title, isbn or DOI already exists in catalog %s"
+                )
+                % (catalog.title,),
                 previous=e,
             )
 
         return SingleResponse(
-            request, data=EntrySerializer.Detailed.model_validate(entry, context={"user": request.user})
+            request,
+            data=EntrySerializer.Detailed.model_validate(
+                entry, context={"user": request.user}
+            ),
         )
 
     def delete(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):

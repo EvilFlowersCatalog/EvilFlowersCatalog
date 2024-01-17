@@ -18,7 +18,10 @@ class Migration(migrations.Migration):
             model_name="entry",
             name="image",
             field=models.ImageField(
-                max_length=255, null=True, storage=get_storage, upload_to=apps.core.models.entry.Entry._upload_to_path
+                max_length=255,
+                null=True,
+                storage=get_storage,
+                upload_to=apps.core.models.entry.Entry._upload_to_path,
             ),
         ),
         migrations.AddField(
@@ -30,14 +33,20 @@ class Migration(migrations.Migration):
             model_name="entry",
             name="thumbnail",
             field=models.ImageField(
-                max_length=255, null=True, storage=get_storage, upload_to=apps.core.models.entry.Entry._upload_to_path
+                max_length=255,
+                null=True,
+                storage=get_storage,
+                upload_to=apps.core.models.entry.Entry._upload_to_path,
             ),
         ),
         migrations.AlterField(
             model_name="entry",
             name="language",
             field=models.ForeignKey(
-                null=True, on_delete=django.db.models.deletion.CASCADE, related_name="entries", to="core.language"
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="entries",
+                to="core.language",
             ),
         ),
     ]

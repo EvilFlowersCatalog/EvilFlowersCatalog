@@ -19,47 +19,67 @@ class CatalogManagement(SecuredView):
         form = CatalogForm.create_from_request(request)
 
         if not request.user.has_perm("core.add_catalog"):
-            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+            raise ProblemDetailException(
+                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+            )
 
         if not form.is_valid():
             raise ValidationException(request, form)
 
         if Catalog.objects.filter(url_name=form.cleaned_data["url_name"]).exists():
             raise ProblemDetailException(
-                request, title=_("Catalog url_name already taken"), status=HTTPStatus.CONFLICT
+                request,
+                title=_("Catalog url_name already taken"),
+                status=HTTPStatus.CONFLICT,
             )
 
         service = CatalogService()
         catalog = service.populate(catalog=Catalog(creator=request.user), form=form)
 
         if not catalog.users.contains(request.user):
-            UserCatalog.objects.create(catalog=catalog, user=request.user, mode=UserCatalog.Mode.MANAGE)
+            UserCatalog.objects.create(
+                catalog=catalog, user=request.user, mode=UserCatalog.Mode.MANAGE
+            )
 
-        return SingleResponse(request, CatalogSerializer.Detailed.model_validate(catalog), status=HTTPStatus.CREATED)
+        return SingleResponse(
+            request,
+            CatalogSerializer.Detailed.model_validate(catalog),
+            status=HTTPStatus.CREATED,
+        )
 
     def get(self, request):
-        catalogs = CatalogFilter(request.GET, queryset=Catalog.objects.all(), request=request).qs
+        catalogs = CatalogFilter(
+            request.GET, queryset=Catalog.objects.all(), request=request
+        ).qs
 
         return PaginationResponse(request, catalogs, serializer=CatalogSerializer.Base)
 
 
 class CatalogDetail(SecuredView):
     @staticmethod
-    def _get_catalog(request, catalog_id: UUID, checker: str = "check_catalog_manage") -> Catalog:
+    def _get_catalog(
+        request, catalog_id: UUID, checker: str = "check_catalog_manage"
+    ) -> Catalog:
         try:
             catalog = Catalog.objects.get(pk=catalog_id)
         except Catalog.DoesNotExist as e:
-            raise ProblemDetailException(request, _("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e)
+            raise ProblemDetailException(
+                request, _("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e
+            )
 
         if not has_object_permission(checker, request.user, catalog):
-            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+            raise ProblemDetailException(
+                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+            )
 
         return catalog
 
     def get(self, request, catalog_id: UUID):
         catalog = self._get_catalog(request, catalog_id, "check_catalog_read")
 
-        return SingleResponse(request, CatalogSerializer.Detailed.model_validate(catalog))
+        return SingleResponse(
+            request, CatalogSerializer.Detailed.model_validate(catalog)
+        )
 
     def put(self, request, catalog_id: UUID):
         form = CatalogForm.create_from_request(request)
@@ -69,15 +89,23 @@ class CatalogDetail(SecuredView):
 
         catalog = self._get_catalog(request, catalog_id)
 
-        if Catalog.objects.exclude(pk=catalog.pk).filter(url_name=form.cleaned_data["url_name"]).exists():
+        if (
+            Catalog.objects.exclude(pk=catalog.pk)
+            .filter(url_name=form.cleaned_data["url_name"])
+            .exists()
+        ):
             raise ProblemDetailException(
-                request, title=_("Catalog url_name already taken"), status=HTTPStatus.CONFLICT
+                request,
+                title=_("Catalog url_name already taken"),
+                status=HTTPStatus.CONFLICT,
             )
 
         service = CatalogService()
         catalog = service.populate(catalog=catalog, form=form)
 
-        return SingleResponse(request, CatalogSerializer.Detailed.model_validate(catalog))
+        return SingleResponse(
+            request, CatalogSerializer.Detailed.model_validate(catalog)
+        )
 
     def delete(self, request, catalog_id: UUID):
         catalog = self._get_catalog(request, catalog_id)

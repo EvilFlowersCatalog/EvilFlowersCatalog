@@ -27,14 +27,20 @@ class SecuredView(View):
         auth_header = str(auth_header).split(" ")
 
         if len(auth_header) != 2:
-            raise UnauthorizedException(request, detail=_("Invalid or missing Authorization header"))
+            raise UnauthorizedException(
+                request, detail=_("Invalid or missing Authorization header")
+            )
 
         if not auth_header[0] in settings.SECURED_VIEW_AUTHENTICATION_SCHEMAS.keys():
-            raise UnauthorizedException(request, detail=_("Unsupported authentication schema"))
+            raise UnauthorizedException(
+                request, detail=_("Unsupported authentication schema")
+            )
 
         auth_params = {auth_header[0].lower(): auth_header[1]}
 
-        return self._backends[auth_header[0].lower()].authenticate(request, **auth_params)
+        return self._backends[auth_header[0].lower()].authenticate(
+            request, **auth_params
+        )
 
     def dispatch(self, request, *args, **kwargs):
         request.user = self._authenticate(request)

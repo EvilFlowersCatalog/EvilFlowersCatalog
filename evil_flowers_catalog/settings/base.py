@@ -24,7 +24,6 @@ from sentry_sdk.integrations.django import DjangoIntegration
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 ENV_FILE = os.path.join(BASE_DIR, ".env")
 LOG_DIR = os.path.join(BASE_DIR, "logs")
-FONT_DIR = os.path.join(BASE_DIR, "fonts")
 BUILD_FILE = Path(f"{BASE_DIR}/BUILD.txt")
 
 # .env
@@ -70,6 +69,8 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.api",
     "apps.files",
+    "apps.opds",
+    "apps.opds2",
 ]
 
 MIDDLEWARE = [
@@ -211,7 +212,6 @@ if os.getenv("SENTRY_DSN", False):
         integrations=[DjangoIntegration()],
         attach_stacktrace=True,
         send_default_pii=True,
-        request_bodies="always",
         before_send=before_send,
         release=VERSION,
     )
@@ -222,10 +222,14 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DATABASE = int(os.getenv("REDIS_DATABASE", "0"))
 
 # Pagination
-EVILFLOWERS_PAGINATION_DEFAULT_LIMIT = int(os.getenv("EVILFLOWERS_PAGINATION_DEFAULT_LIMIT", 10))
+EVILFLOWERS_PAGINATION_DEFAULT_LIMIT = int(
+    os.getenv("EVILFLOWERS_PAGINATION_DEFAULT_LIMIT", 10)
+)
 
 # Images & thumbnails
-EVILFLOWERS_IMAGE_UPLOAD_MAX_SIZE = int(os.getenv("EVILFLOWERS_IMAGE_UPLOAD_MAX_SIZE", 5)) * 1024 * 1024  # MB
+EVILFLOWERS_IMAGE_UPLOAD_MAX_SIZE = (
+    int(os.getenv("EVILFLOWERS_IMAGE_UPLOAD_MAX_SIZE", 5)) * 1024 * 1024
+)  # MB
 EVILFLOWERS_IMAGE_MIME = (
     "image/gif",
     "image/jpeg",
@@ -241,11 +245,17 @@ EVILFLOWERS_CRON_JOBS = {
 
 EVILFLOWERS_IDENTIFIERS = ["isbn", "google", "doi"]
 
-EVILFLOWERS_USER_ACQUISITION_MODE = os.getenv("EVIL_FLOWERS_USER_ACQUISITION_MODE", "single")
+EVILFLOWERS_USER_ACQUISITION_MODE = os.getenv(
+    "EVIL_FLOWERS_USER_ACQUISITION_MODE", "single"
+)
 
 # Storage
-EVILFLOWERS_STORAGE_DRIVER = os.getenv("EVILFLOWERS_STORAGE_DRIVER", "apps.files.storage.filesystem.FileSystemStorage")
-EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR = os.getenv("EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR")
+EVILFLOWERS_STORAGE_DRIVER = os.getenv(
+    "EVILFLOWERS_STORAGE_DRIVER", "apps.files.storage.filesystem.FileSystemStorage"
+)
+EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR = os.getenv(
+    "EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR"
+)
 EVILFLOWERS_STORAGE_S3_HOST = os.getenv("EVILFLOWERS_STORAGE_S3_HOST")
 EVILFLOWERS_STORAGE_S3_ACCESS_KEY = os.getenv("EVILFLOWERS_STORAGE_S3_ACCESS_KEY")
 EVILFLOWERS_STORAGE_S3_SECRET_KEY = os.getenv("EVILFLOWERS_STORAGE_S3_SECRET_KEY")

@@ -127,7 +127,9 @@ class UnauthorizedException(ProblemDetailException):
 
 class ValidationException(ProblemDetailException):
     def __init__(self, request, form: Form):
-        super().__init__(request, _("Validation error!"), status=HTTPStatus.UNPROCESSABLE_ENTITY)
+        super().__init__(
+            request, _("Validation error!"), status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
         self._form = form
 
     @property
@@ -137,7 +139,9 @@ class ValidationException(ProblemDetailException):
             type=DetailType.VALIDATION_ERROR,
             validation_errors=[
                 ValidationErrorItem(
-                    code=item.code, message=item.message % (item.params or ()), path=getattr(item, "path", ["$body"])
+                    code=item.code,
+                    message=item.message % (item.params or ()),
+                    path=getattr(item, "path", ["$body"]),
                 )
                 for item in self._form.errors
             ],

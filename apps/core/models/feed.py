@@ -34,7 +34,9 @@ class Feed(BaseModel):
     content = models.TextField()
     per_page = models.IntegerField(null=True)
     entries = models.ManyToManyField(Entry, related_name="feeds")
-    parents = models.ManyToManyField("self", related_name="children", db_table="feed_parents", symmetrical=False)
+    parents = models.ManyToManyField(
+        "self", related_name="children", db_table="feed_parents", symmetrical=False
+    )
 
     @property
     def url(self):

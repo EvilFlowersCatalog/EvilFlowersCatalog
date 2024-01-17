@@ -16,6 +16,9 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="entry",
-            index=models.Index(fields=["deleted_at", "catalog_id", "-popularity"], name="entries_deleted_65f03c_idx"),
+            index=models.Index(
+                fields=["deleted_at", "catalog_id", "-popularity"],
+                name="entries_deleted_65f03c_idx",
+            ),
         ),
     ]

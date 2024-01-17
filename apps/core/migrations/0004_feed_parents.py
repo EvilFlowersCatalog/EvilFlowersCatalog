@@ -11,7 +11,11 @@ class Migration(migrations.Migration):
     operations = [
         migrations.AlterModelOptions(
             name="feed",
-            options={"default_permissions": (), "verbose_name": "Feed", "verbose_name_plural": "Feeds"},
+            options={
+                "default_permissions": (),
+                "verbose_name": "Feed",
+                "verbose_name_plural": "Feeds",
+            },
         ),
         migrations.RemoveField(
             model_name="feed",
@@ -20,6 +24,8 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="feed",
             name="parents",
-            field=models.ManyToManyField(db_table="feed_parents", related_name="children", to="core.Feed"),
+            field=models.ManyToManyField(
+                db_table="feed_parents", related_name="children", to="core.Feed"
+            ),
         ),
     ]

@@ -25,19 +25,38 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="UserAcquisition",
             fields=[
-                ("id", models.UUIDField(default=uuid.uuid4, primary_key=True, serialize=False)),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, primary_key=True, serialize=False
+                    ),
+                ),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
                 (
                     "type",
                     models.CharField(
-                        choices=[("shared", "Shared"), ("personal", "Personal")], default="personal", max_length=10
+                        choices=[("shared", "Shared"), ("personal", "Personal")],
+                        default="personal",
+                        max_length=10,
                     ),
                 ),
                 ("range", models.CharField(max_length=100, null=True)),
                 ("expire_at", models.DateTimeField(null=True)),
-                ("acquisition", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to="core.acquisition")),
-                ("user", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
+                (
+                    "acquisition",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to="core.acquisition",
+                    ),
+                ),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
                 "verbose_name": "User acquisition",
@@ -49,13 +68,21 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Annotation",
             fields=[
-                ("id", models.UUIDField(default=uuid.uuid4, primary_key=True, serialize=False)),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, primary_key=True, serialize=False
+                    ),
+                ),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
                 ("content", models.TextField()),
                 (
                     "user_acquisition",
-                    models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to="core.useracquisition"),
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to="core.useracquisition",
+                    ),
                 ),
             ],
             options={

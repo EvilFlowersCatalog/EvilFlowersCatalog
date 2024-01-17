@@ -15,9 +15,13 @@ from apps.core.views import SecuredView
 
 class AnnotationManagement(SecuredView):
     def get(self, request):
-        user_acquisitions = AnnotationFilter(request.GET, queryset=Annotation.objects.all(), request=request).qs
+        user_acquisitions = AnnotationFilter(
+            request.GET, queryset=Annotation.objects.all(), request=request
+        ).qs
 
-        return PaginationResponse(request, user_acquisitions, serializer=AnnotationSerializer.Base)
+        return PaginationResponse(
+            request, user_acquisitions, serializer=AnnotationSerializer.Base
+        )
 
     def post(self, request):
         form = CreateAnnotationForm.create_from_request(request)
@@ -26,15 +30,23 @@ class AnnotationManagement(SecuredView):
             raise ValidationException(request, form)
 
         if not has_object_permission(
-            "check_user_acquisition_read", request.user, form.cleaned_data["user_acquisition_id"]
+            "check_user_acquisition_read",
+            request.user,
+            form.cleaned_data["user_acquisition_id"],
         ):
-            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+            raise ProblemDetailException(
+                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+            )
 
         annotation = Annotation()
         form.populate(annotation)
         annotation.save()
 
-        return SingleResponse(request, AnnotationSerializer.Base.model_validate(annotation), status=HTTPStatus.CREATED)
+        return SingleResponse(
+            request,
+            AnnotationSerializer.Base.model_validate(annotation),
+            status=HTTPStatus.CREATED,
+        )
 
 
 class AnnotationDetail(SecuredView):
@@ -51,14 +63,20 @@ class AnnotationDetail(SecuredView):
                 detail_type=DetailType.NOT_FOUND,
             )
 
-        if not has_object_permission("check_user_acquisition_read", request.user, annotation.user_acquisition):
-            raise ProblemDetailException(request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+        if not has_object_permission(
+            "check_user_acquisition_read", request.user, annotation.user_acquisition
+        ):
+            raise ProblemDetailException(
+                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+            )
 
         return annotation
 
     def get(self, request, annotation_id: UUID):
         annotation = self._get_annotation(request, annotation_id)
-        return SingleResponse(request, AnnotationSerializer.Base.model_validate(annotation))
+        return SingleResponse(
+            request, AnnotationSerializer.Base.model_validate(annotation)
+        )
 
     def put(self, request, annotation_id: UUID):
         form = UpdateAnnotationForm.create_from_request(request)
@@ -70,7 +88,9 @@ class AnnotationDetail(SecuredView):
         form.populate(annotation)
         annotation.save()
 
-        return SingleResponse(request, AnnotationSerializer.Base.model_validate(annotation))
+        return SingleResponse(
+            request, AnnotationSerializer.Base.model_validate(annotation)
+        )
 
     def delete(self, request, annotation_id: UUID):
         annotation = self._get_annotation(request, annotation_id)

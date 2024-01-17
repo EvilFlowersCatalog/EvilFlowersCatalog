@@ -37,7 +37,8 @@ class IsbnDriver(IntrospectionDriver):
 class DoiDriver(IntrospectionDriver):
     def resolve(self, identifier: str) -> Optional[dict]:
         req = Request(
-            url=f"https://doi.org/{identifier}", headers={"Accept": "application/vnd.citationstyles.csl+json"}
+            url=f"https://doi.org/{identifier}",
+            headers={"Accept": "application/vnd.citationstyles.csl+json"},
         )
 
         try:
@@ -49,11 +50,16 @@ class DoiDriver(IntrospectionDriver):
         result = {
             "publisher": data.get("publisher"),
             "doi": data.get("DOI"),
-            "authors": [{"name": i["given"], "surname": i["family"]} for i in data.get("author")],
+            "authors": [
+                {"name": i["given"], "surname": i["family"]} for i in data.get("author")
+            ],
             "title": data.get("title"),
         }
 
-        req = Request(url=f"https://doi.org/{identifier}", headers={"Accept": "application/x-bibtex"})
+        req = Request(
+            url=f"https://doi.org/{identifier}",
+            headers={"Accept": "application/x-bibtex"},
+        )
 
         try:
             res = urlopen(req, timeout=5)

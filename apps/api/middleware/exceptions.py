@@ -12,10 +12,17 @@ class ExceptionMiddleware(object):
     @staticmethod
     def process_exception(request, exception):
         if isinstance(exception, ValidationException):
-            return ValidationResponse(request, exception.payload, status=exception.status)
+            return ValidationResponse(
+                request, exception.payload, status=exception.status
+            )
         if isinstance(exception, ProblemDetailException):
             # FIXME: check this out, extra_headers propagation kinda sucks
-            return ErrorResponse(request, exception.payload, status=exception.status, headers=exception.extra_headers)
+            return ErrorResponse(
+                request,
+                exception.payload,
+                status=exception.status,
+                headers=exception.extra_headers,
+            )
 
 
 __all__ = ["ExceptionMiddleware"]

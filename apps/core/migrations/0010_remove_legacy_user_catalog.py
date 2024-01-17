@@ -13,7 +13,11 @@ class Migration(migrations.Migration):
     operations = [
         migrations.AlterModelOptions(
             name="apikey",
-            options={"default_permissions": ("add",), "verbose_name": "API key", "verbose_name_plural": "API keys"},
+            options={
+                "default_permissions": ("add",),
+                "verbose_name": "API key",
+                "verbose_name_plural": "API keys",
+            },
         ),
         migrations.RemoveField(
             model_name="catalog",
@@ -22,17 +26,32 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="UserCatalog",
             fields=[
-                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                (
+                    "id",
+                    models.AutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
                 (
                     "mode",
                     models.CharField(
-                        choices=[("read", "Read"), ("write", "Write"), ("manage", "Manage")], max_length=10
+                        choices=[
+                            ("read", "Read"),
+                            ("write", "Write"),
+                            ("manage", "Manage"),
+                        ],
+                        max_length=10,
                     ),
                 ),
                 (
                     "catalog",
                     models.ForeignKey(
-                        on_delete=django.db.models.deletion.CASCADE, to="core.catalog", related_name="user_catalogs"
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to="core.catalog",
+                        related_name="user_catalogs",
                     ),
                 ),
                 (

@@ -39,9 +39,10 @@ pdf = ["pymupdf"]
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.12.1"
+datamodel-code-generator = "^0.25.2"
 
 [tool.black]
-line-length = 119
+max-line-length = 119
 include = '\.pyi?$'
 exclude = '''
 /(

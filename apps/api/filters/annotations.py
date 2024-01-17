@@ -5,7 +5,9 @@ from apps.core.models import Annotation
 
 class AnnotationFilter(django_filters.FilterSet):
     user_acquisition_id = django_filters.UUIDFilter(lookup_expr="iexact")
-    user_id = django_filters.UUIDFilter(lookup_expr="iexact", field_name="user_acquisition__user_id")
+    user_id = django_filters.UUIDFilter(
+        lookup_expr="iexact", field_name="user_acquisition__user_id"
+    )
 
     class Meta:
         model = Annotation

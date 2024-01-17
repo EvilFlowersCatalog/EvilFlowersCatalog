@@ -1,6 +1,13 @@
 from object_checker.base_object_checker import AbacChecker
 
-from apps.core.models import User, Catalog, UserCatalog, Entry, UserAcquisition, ShelfRecord
+from apps.core.models import (
+    User,
+    Catalog,
+    UserCatalog,
+    Entry,
+    UserAcquisition,
+    ShelfRecord,
+)
 
 
 class CatalogChecker(AbacChecker):
@@ -9,14 +16,18 @@ class CatalogChecker(AbacChecker):
         if not user.is_authenticated:
             return False
 
-        return obj.user_catalogs.filter(user=user, mode=UserCatalog.Mode.MANAGE).exists()
+        return obj.user_catalogs.filter(
+            user=user, mode=UserCatalog.Mode.MANAGE
+        ).exists()
 
     @staticmethod
     def check_catalog_write(user: User, obj: Catalog) -> bool:
         if not user.is_authenticated:
             return False
 
-        return obj.user_catalogs.filter(user=user, mode__in=[UserCatalog.Mode.MANAGE, UserCatalog.Mode.WRITE]).exists()
+        return obj.user_catalogs.filter(
+            user=user, mode__in=[UserCatalog.Mode.MANAGE, UserCatalog.Mode.WRITE]
+        ).exists()
 
     @staticmethod
     def check_catalog_read(user: User, obj: Catalog) -> bool:

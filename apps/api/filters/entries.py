@@ -18,13 +18,19 @@ class EntryFilter(django_filters.FilterSet):
 
     creator_id = django_filters.UUIDFilter()
     catalog_id = django_filters.UUIDFilter()
-    catalog_title = django_filters.CharFilter(field_name="catalog__title", lookup_expr="unaccent__icontains")
+    catalog_title = django_filters.CharFilter(
+        field_name="catalog__title", lookup_expr="unaccent__icontains"
+    )
     author_id = django_filters.UUIDFilter(method="filter_author_id", label=_("Author"))
     author = django_filters.CharFilter(method="filter_author")
-    category_id = django_filters.UUIDFilter(label=_("Category"), field_name="categories__id")
+    category_id = django_filters.UUIDFilter(
+        label=_("Category"), field_name="categories__id"
+    )
     category_term = django_filters.CharFilter(field_name="categories__term")
     language_id = django_filters.UUIDFilter()
-    language_code = django_filters.CharFilter(field_name="language__code", label=_("Language"))
+    language_code = django_filters.CharFilter(
+        field_name="language__code", label=_("Language")
+    )
     title = django_filters.CharFilter(lookup_expr="unaccent__icontains")
     summary = django_filters.CharFilter(lookup_expr="unaccent__icontains")
     query = django_filters.CharFilter(method="filter_name")
@@ -86,7 +92,9 @@ class EntryFilter(django_filters.FilterSet):
                     title=author.full_name,
                     href=f"{self.request.path}?{urlencode(url_params)}",
                     group=_("Author"),
-                    count=self.qs.filter(Q(author=author) | Q(contributors=author)).distinct().count(),
+                    count=self.qs.filter(Q(author=author) | Q(contributors=author))
+                    .distinct()
+                    .count(),
                     is_active=self.request.GET.get("author_id") == author.id,
                 )
             )
@@ -101,7 +109,9 @@ class EntryFilter(django_filters.FilterSet):
             return qs.filter(catalog__is_public=True)
 
         if not self.request.user.is_superuser:
-            qs = qs.filter(Q(catalog__users=self.request.user) | Q(catalog__is_public=True))
+            qs = qs.filter(
+                Q(catalog__users=self.request.user) | Q(catalog__is_public=True)
+            )
 
         return qs
 

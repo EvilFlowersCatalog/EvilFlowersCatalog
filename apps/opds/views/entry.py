@@ -14,7 +14,9 @@ class EntryView(OpdsView):
         try:
             entry = Entry.objects.get(pk=entry_id, catalog__url_name=catalog_name)
         except Entry.DoesNotExist as e:
-            raise ProblemDetailException(request, _("Entry not found"), status=HTTPStatus.NOT_FOUND, previous=e)
+            raise ProblemDetailException(
+                request, _("Entry not found"), status=HTTPStatus.NOT_FOUND, previous=e
+            )
 
         return render(
             request,

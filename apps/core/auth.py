@@ -42,7 +42,8 @@ class JWTFactory:
             {
                 "type": "refresh",
                 "jti": jti,
-                "exp": timezone.now() + settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION,
+                "exp": timezone.now()
+                + settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION,
             }
         )
 
@@ -50,7 +51,8 @@ class JWTFactory:
         return self._generate(
             {
                 "type": "access",
-                "exp": timezone.now() + settings.SECURED_VIEW_JWT_ACCESS_TOKEN_EXPIRATION,
+                "exp": timezone.now()
+                + settings.SECURED_VIEW_JWT_ACCESS_TOKEN_EXPIRATION,
             }
         )
 
@@ -64,7 +66,9 @@ class JWTFactory:
 
     @classmethod
     def decode(cls, token: str):
-        claims = JsonWebToken(settings.SECURED_VIEW_JWT_ALGORITHM).decode(token, settings.SECURED_VIEW_JWK)
+        claims = JsonWebToken(settings.SECURED_VIEW_JWT_ALGORITHM).decode(
+            token, settings.SECURED_VIEW_JWK
+        )
         claims.validate()
         return claims
 
@@ -74,13 +78,17 @@ class BearerBackend(ModelBackend):
         try:
             claims = JWTFactory.decode(bearer)
         except JoseError as e:
-            raise ProblemDetailException(request, _("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e)
+            raise ProblemDetailException(
+                request, _("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e
+            )
 
         if claims["type"] == "api_key":
             try:
                 api_key = ApiKey.objects.get(pk=claims["jti"], is_active=True)
             except (ApiKey.DoesNotExist, ValidationError):
-                raise ProblemDetailException(request, _("Invalid api key."), status=HTTPStatus.UNAUTHORIZED)
+                raise ProblemDetailException(
+                    request, _("Invalid api key."), status=HTTPStatus.UNAUTHORIZED
+                )
 
             api_key.last_seen_at = timezone.now()
             api_key.save()
@@ -90,12 +98,18 @@ class BearerBackend(ModelBackend):
             try:
                 user = User.objects.get(pk=claims["sub"])
             except User.DoesNotExist:
-                raise ProblemDetailException(request, _("Inactive user."), status=HTTPStatus.FORBIDDEN)
+                raise ProblemDetailException(
+                    request, _("Inactive user."), status=HTTPStatus.FORBIDDEN
+                )
         else:
-            raise ProblemDetailException(request, _("Invalid token"), status=HTTPStatus.UNAUTHORIZED)
+            raise ProblemDetailException(
+                request, _("Invalid token"), status=HTTPStatus.UNAUTHORIZED
+            )
 
         if not self.user_can_authenticate(user):
-            raise ProblemDetailException(request, _("Inactive user."), status=HTTPStatus.FORBIDDEN)
+            raise ProblemDetailException(
+                request, _("Inactive user."), status=HTTPStatus.FORBIDDEN
+            )
 
         return user
 
@@ -111,7 +125,9 @@ class BasicBackend(ModelBackend):
         SUPERADMIN_GROUP: Optional[str]
         CATALOGS: Optional[Dict[str, str]]
 
-    def _ldap(self, username: str, password: str, auth_source: AuthSource) -> Optional[User]:
+    def _ldap(
+        self, username: str, password: str, auth_source: AuthSource
+    ) -> Optional[User]:
         config: BasicBackend.LdapConfig = auth_source.content
         connection = ldap.initialize(uri=config["URI"])
         connection.set_option(ldap.OPT_REFERRALS, 0)
@@ -131,7 +147,10 @@ class BasicBackend(ModelBackend):
             user.set_unusable_password()
 
         result = connection.search(
-            f"{config['ROOT_DN']}", ldap.SCOPE_SUBTREE, config["FILTER"].format(username=username), ["*"]
+            f"{config['ROOT_DN']}",
+            ldap.SCOPE_SUBTREE,
+            config["FILTER"].format(username=username),
+            ["*"],
         )
 
         user_type, profiles = connection.result(result, 60)
@@ -148,7 +167,9 @@ class BasicBackend(ModelBackend):
             for ldap_group in attrs.get("memberOf", []):
                 if ldap_group.decode() in config["GROUP_MAP"]:
                     try:
-                        group = Group.objects.get(name=config["GROUP_MAP"][ldap_group.decode()])
+                        group = Group.objects.get(
+                            name=config["GROUP_MAP"][ldap_group.decode()]
+                        )
                     except Group.DoesNotExist:
                         continue
                     user.groups.add(group)
@@ -164,7 +185,9 @@ class BasicBackend(ModelBackend):
         connection.unbind()
 
         for catalog_id, mode in config.get("CATALOGS", {}).items():
-            if not UserCatalog.objects.filter(catalog_id=catalog_id, user=user).exists():
+            if not UserCatalog.objects.filter(
+                catalog_id=catalog_id, user=user
+            ).exists():
                 UserCatalog.objects.create(catalog_id=catalog_id, user=user, mode=mode)
 
         return user
@@ -192,7 +215,12 @@ class BasicBackend(ModelBackend):
                 request,
                 _("Invalid credentials"),
                 status=HTTPStatus.UNAUTHORIZED,
-                extra_headers=(("WWW-Authenticate", f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"'),),
+                extra_headers=(
+                    (
+                        "WWW-Authenticate",
+                        f'Bearer realm="{slugify(settings.INSTANCE_NAME)}"',
+                    ),
+                ),
             )
 
         user.last_login = timezone.now()

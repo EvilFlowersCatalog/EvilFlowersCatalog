@@ -5,6 +5,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 ## 0.7.0 : TBD
 
 - **Added**: Basic OPDS 1.2 support
+- **Added**: Categories CRUD endpoints in management API
 - **Changed**: Migrated from porcupine-python to pydantic 2.0 for serializers
 [Getting rid of the porcupine-python dependency](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/23)
 - **Changed**: Read version from `pyproject.toml` instead of the `VERSION.txt`

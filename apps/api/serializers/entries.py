@@ -28,6 +28,7 @@ class CategorySerializer:
         term: str
 
     class Detailed(Base):
+        catalog_id: UUID
         label: Optional[str]
         scheme: Optional[str]
 
@@ -61,7 +62,9 @@ class EntrySerializer:
         catalog_id: UUID
         shelf_record_id: Optional[UUID] = Field(default=None, validate_default=True)
         author: Optional[AuthorSerializer.Base]
-        categories: List[CategorySerializer.Base] = Field(default=[], validate_default=True)
+        categories: List[CategorySerializer.Base] = Field(
+            default=[], validate_default=True
+        )
         language: Optional[LanguageSerializer.Base]
         feeds: List[FeedSerializer.Base] = Field(default=[], validate_default=True)
         popularity: int
@@ -78,7 +81,11 @@ class EntrySerializer:
         def generate_shelf_record_id(cls, v, info: ValidationInfo) -> Optional[UUID]:
             if info.context["user"].is_authenticated:
                 try:
-                    return info.context["user"].shelf_records.get(entry_id=info.data.get("id")).pk
+                    return (
+                        info.context["user"]
+                        .shelf_records.get(entry_id=info.data.get("id"))
+                        .pk
+                    )
                 except ShelfRecord.DoesNotExist:
                     return None
             return None
@@ -97,8 +104,12 @@ class EntrySerializer:
         summary: Optional[str]
         content: Optional[str]
         identifiers: Optional[Dict]
-        acquisitions: List[AcquisitionSerializer.Base] = Field(default=[], validate_default=True)
-        contributors: List[AuthorSerializer.Base] = Field(default=[], validate_default=True)
+        acquisitions: List[AcquisitionSerializer.Base] = Field(
+            default=[], validate_default=True
+        )
+        contributors: List[AuthorSerializer.Base] = Field(
+            default=[], validate_default=True
+        )
 
         @field_validator("published_at", mode="before")
         def generate_published_at(cls, v, info: ValidationInfo):

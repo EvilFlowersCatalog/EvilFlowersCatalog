@@ -17,7 +17,10 @@ class Migration(migrations.Migration):
             model_name="entry",
             name="categories",
             field=models.ManyToManyField(
-                db_table="entry_categories", related_name="entries", to="core.Category", verbose_name="Category"
+                db_table="entry_categories",
+                related_name="entries",
+                to="core.Category",
+                verbose_name="Category",
             ),
         ),
     ]

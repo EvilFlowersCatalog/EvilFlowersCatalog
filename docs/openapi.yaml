@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: Evil Flowers Catalog
   description: |-
-    A e-book catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2), written in Python with 
+    A e-book catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2), written in Python with
     a straightforward management REST API for CRUD operations.
   version: 0.6.0
   license:
@@ -21,6 +21,7 @@ tags:
   - name: Entries
   - name: Feeds
   - name: User acquisitions
+  - name: Categories
 paths:
   /api/v1/catalogs:
     get:
@@ -651,7 +652,7 @@ paths:
                   format: uuid
       tags:
         - Shelf records
-  '/api/shelf-records/{shelfRecordId}':
+  '/api/v1/shelf-records/{shelfRecordId}':
     parameters:
       - schema:
           type: string
@@ -669,7 +670,7 @@ paths:
       tags:
         - Shelf records
       description: Entry removal from user shelf using `ShelfRecord.id`.
-  /entry-introspection:
+  /api/v1/entry-introspection:
     get:
       summary: Entry introspection
       tags:
@@ -741,6 +742,285 @@ paths:
           name: identifier
           description: Identifier
           required: true
+    parameters: [ ]
+  /api/v1/categories:
+    get:
+      summary: List categories
+      tags:
+        - Categories
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                x-examples:
+                  Example 1:
+                    items:
+                      - id: 2566946b-4607-4ad5-ae0e-31d5a5fe36ef
+                        term: FIC020000
+                        catalog_id: cfc0bc87-ce51-4f3d-bd82-38bb53f08aa9
+                        label: FICTION / Men's Adventure
+                        scheme: 'https://bisg.org/page/bisacedition'
+                      - id: 21f72209-a22e-4998-8bfb-240be94d8812
+                        term: FIC020001
+                        catalog_id: cfc0bc87-ce51-4f3d-bd82-38bb53f08aa9
+                        label: FICTION / Kids's Adventure
+                        scheme: 'https://bisg.org/page/bisacedition'
+                      - id: 30d2d1d1-1e6e-4eeb-b07d-a302e0f24221
+                        term: calibre-computers
+                        catalog_id: 7d96a010-23a6-4a59-a4f2-45ae3542c6c6
+                        label: Computers
+                        scheme: null
+                      - id: bd9c2ece-5aec-42c2-ae91-7a6c47fb39b7
+                        term: calibre-programming
+                        catalog_id: 7d96a010-23a6-4a59-a4f2-45ae3542c6c6
+                        label: Programming
+                        scheme: null
+                      - id: e239d505-2468-474e-bbc0-84ea178734a5
+                        term: calibre-general
+                        catalog_id: 7d96a010-23a6-4a59-a4f2-45ae3542c6c6
+                        label: General
+                        scheme: null
+                      - id: 849064eb-2cb0-42f4-a06a-a05cb28e98d0
+                        term: calibre-object oriented
+                        catalog_id: 7d96a010-23a6-4a59-a4f2-45ae3542c6c6
+                        label: Object Oriented
+                        scheme: null
+                      - id: 2e975075-4c6a-4ec6-b05f-e30448324c62
+                        term: calibre-languages
+                        catalog_id: 7d96a010-23a6-4a59-a4f2-45ae3542c6c6
+                        label: Languages
+                        scheme: null
+                      - id: 95c2e0b8-166c-48b6-8d82-1182efa25cac
+                        term: calibre-python
+                        catalog_id: 7d96a010-23a6-4a59-a4f2-45ae3542c6c6
+                        label: Python
+                        scheme: null
+                      - id: 445cf729-33cd-4c28-af51-6a93733ce948
+                        term: TECHNOLOGY & ENGINEERING / History
+                        catalog_id: 06cdb83f-95b8-494f-ba96-b2cd0972feaa
+                        label: TEC056000
+                        scheme: null
+                    metadata:
+                      page: 1
+                      limit: 10
+                      pages: 1
+                      total: 9
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        term:
+                          type: string
+                        catalog_id:
+                          type: string
+                          format: uuid
+                        label:
+                          type: string
+                        scheme:
+                          type: string
+                          nullable: true
+                      required:
+                        - id
+                        - term
+                        - catalog_id
+                  metadata:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      pages:
+                        type: integer
+                      total:
+                        type: integer
+                    required:
+                      - page
+                      - limit
+                      - pages
+                      - total
+      operationId: get-v1-categories
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          in: query
+          name: catalog_id
+          description: Filter by catalog ID (exact)
+        - schema:
+            type: string
+          in: query
+          name: term
+          description: FIlter by term (iexact)
+        - schema:
+            type: string
+          in: query
+          name: label
+          description: Filter by label (icontains)
+        - schema:
+            type: string
+          in: query
+          description: FIlter by scheme (icontains)
+          name: scheme
+        - schema:
+            type: string
+          in: query
+          name: query
+          description: Query on term and label (icontaiins)
+    post:
+      summary: Create category
+      operationId: post-v1-categories
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                x-examples:
+                  Example 1:
+                    response:
+                      id: 2566946b-4607-4ad5-ae0e-31d5a5fe36ef
+                      term: FIC020000
+                      catalog_id: cfc0bc87-ce51-4f3d-bd82-38bb53f08aa9
+                      label: FICTION / Men's Adventure
+                      scheme: 'https://bisg.org/page/bisacedition'
+                properties:
+                  response:
+                    type: object
+                    required:
+                      - id
+                      - term
+                      - catalog_id
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      term:
+                        type: string
+                      catalog_id:
+                        type: string
+                        format: uuid
+                      label:
+                        type: string
+                      scheme:
+                        type: string
+                required:
+                  - response
+              examples:
+                Example 1:
+                  value:
+                    response:
+                      id: 497f6eca-6276-4993-bfeb-53cbbbba6f08
+                      term: string
+                      catalog_id: de71ec92-2e85-49a4-a1c0-bcbd8d385f9e
+                      label: string
+                      scheme: string
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+      tags:
+        - Categories
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              x-examples:
+                Example 1:
+                  catalog_id: de71ec92-2e85-49a4-a1c0-bcbd8d385f9e
+                  term: string
+                  label: string
+                  scheme: string
+              properties:
+                catalog_id:
+                  type: string
+                  format: uuid
+                term:
+                  type: string
+                label:
+                  type: string
+                scheme:
+                  type: string
+              required:
+                - catalog_id
+                - term
+    parameters: [ ]
+  '/api/v1/categories/{categoryId}':
+    parameters:
+      - schema:
+          type: string
+        name: categoryId
+        in: path
+        required: true
+    get:
+      summary: Category detail
+      tags:
+        - Categories
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                x-examples:
+                  Example 1:
+                    response:
+                      id: 2566946b-4607-4ad5-ae0e-31d5a5fe36ef
+                      term: FIC020000
+                      catalog_id: cfc0bc87-ce51-4f3d-bd82-38bb53f08aa9
+                      label: FICTION / Men's Adventure
+                      scheme: 'https://bisg.org/page/bisacedition'
+                properties:
+                  response:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      term:
+                        type: string
+                      catalog_id:
+                        type: string
+                        format: uuid
+                      label:
+                        type: string
+                      scheme:
+                        type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+      operationId: get-api-v1-categories-categoryId
+      description: ''
+    put:
+      summary: Update category
+      operationId: put-api-v1-categories-categoryId
+      responses:
+        '200':
+          description: OK
+      tags:
+        - Categories
+    delete:
+      summary: Delete category
+      operationId: delete-api-v1-categories-categoryId
+      responses:
+        '204':
+          description: No Content
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      tags:
+        - Categories
 components:
   securitySchemes:
     BearerAuth:
@@ -1243,6 +1523,29 @@ components:
               evilflowres_metadata_fetch: true
           created_at: '2019-08-24T14:15:22Z'
           updated_at: '2019-08-24T14:15:22Z'
+    Category:
+      type: object
+      x-examples:
+        Example 1:
+          catalog_id: cfc0bc87-ce51-4f3d-bd82-38bb53f08aa9
+          term: TECHNOLOGY & ENGINEERING / History
+          label: TEC056000
+          scheme: 'https://www.bisg.org/complete-bisac-subject-headings-list'
+      properties:
+        catalog_id:
+          type: string
+          format: uuid
+        term:
+          type: string
+        label:
+          type: string
+        scheme:
+          type: string
+      required:
+        - catalog_id
+        - term
+      title: Category
+      description: ''
   responses:
     Unauthorized:
       description: Unauthorized

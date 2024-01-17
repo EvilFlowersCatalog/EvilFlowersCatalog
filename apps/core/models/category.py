@@ -13,6 +13,7 @@ class Category(BaseModel):
         default_permissions = ()
         verbose_name = _("Category")
         verbose_name_plural = _("Categories")
+        unique_together = (("catalog", "term"),)
 
     creator = models.ForeignKey(User, on_delete=models.CASCADE)
     catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE)

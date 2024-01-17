@@ -14,7 +14,9 @@ class Migration(migrations.Migration):
             model_name="catalog",
             name="users",
             field=models.ManyToManyField(
-                related_name="catalogs", through="core.UserCatalog", to=settings.AUTH_USER_MODEL
+                related_name="catalogs",
+                through="core.UserCatalog",
+                to=settings.AUTH_USER_MODEL,
             ),
         ),
     ]

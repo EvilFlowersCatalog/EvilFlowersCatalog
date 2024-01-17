@@ -18,15 +18,16 @@ from django.conf.urls.static import static
 from django.urls import path, include
 from django.views.static import serve
 
-from apps.api import urls as api_urlpatterns
-
 urlpatterns = []
 urlpatterns += [
-    path(r"api/v1/", include(api_urlpatterns)),
-    path(r"opds/1.2/", include(("apps.opds.urls", "opds"), namespace="opds")),
+    path(r"api/v1/", include(("apps.api.urls", "api"), namespace="api")),
+    path(r"opds/v1.2/", include(("apps.opds.urls", "opds"), namespace="opds")),
+    path(r"opds/v2/", include(("apps.opds2.urls", "opds2"), namespace="opds2")),
     path(r"data/v1/", include(("apps.files.urls", "files"), namespace="files")),
 ]
 
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, view=serve)
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT, view=serve)
+    urlpatterns += static(
+        settings.MEDIA_URL, document_root=settings.MEDIA_ROOT, view=serve
+    )

@@ -13,6 +13,7 @@ from apps.api.views import (
     user_acquisitions,
     annotations,
     shelf_records,
+    categories,
 )
 
 urlpatterns = [
@@ -32,22 +33,52 @@ urlpatterns = [
     # Authors
     path("authors", authors.AuthorManagement.as_view()),
     path("authors/<uuid:author_id>", authors.AuthorDetail.as_view()),
+    # Categories
+    path(
+        "categories",
+        categories.CategoryManagement.as_view(),
+        name="category-management",
+    ),
+    path(
+        "categories/<uuid:category_id>",
+        categories.CategoryDetail.as_view(),
+        name="category-detail",
+    ),
     # Entries
     path("entries", entries.EntryPaginator.as_view()),
     path("entry-introspection", entries.EntryIntrospection.as_view()),
     path("catalogs/<uuid:catalog_id>/entries", entries.EntryManagement.as_view()),
-    path("catalogs/<uuid:catalog_id>/entries/<uuid:entry_id>", entries.EntryDetail.as_view()),
-    # Acquisitions
-    path("acquisitions", acquisitions.AcquisitionManagement.as_view(), name="acquisition-management"),
-    path("acquisitions/<uuid:acquisition_id>", acquisitions.AcquisitionDetail.as_view(), name="acquisition-detail"),
-    # Shelves
-    path("shelf-records", shelf_records.ShelfRecordManagement.as_view(), name="shelf-record-management"),
     path(
-        "shelf-records/<uuid:shelf_record_id>", shelf_records.ShelfRecordDetail.as_view(), name="shelf-record-detail"
+        "catalogs/<uuid:catalog_id>/entries/<uuid:entry_id>",
+        entries.EntryDetail.as_view(),
+    ),
+    # Acquisitions
+    path(
+        "acquisitions",
+        acquisitions.AcquisitionManagement.as_view(),
+        name="acquisition-management",
+    ),
+    path(
+        "acquisitions/<uuid:acquisition_id>",
+        acquisitions.AcquisitionDetail.as_view(),
+        name="acquisition-detail",
+    ),
+    # Shelves
+    path(
+        "shelf-records",
+        shelf_records.ShelfRecordManagement.as_view(),
+        name="shelf-record-management",
+    ),
+    path(
+        "shelf-records/<uuid:shelf_record_id>",
+        shelf_records.ShelfRecordDetail.as_view(),
+        name="shelf-record-detail",
     ),
     # User acquisitions
     path(
-        "user-acquisitions", user_acquisitions.UserAcquisitionManagement.as_view(), name="user-acquisition-management"
+        "user-acquisitions",
+        user_acquisitions.UserAcquisitionManagement.as_view(),
+        name="user-acquisition-management",
     ),
     path(
         "user-acquisitions/<uuid:user_acquisition_id>",
@@ -55,8 +86,16 @@ urlpatterns = [
         name="user-acquisition-detail",
     ),
     # Annotations
-    path("annotations", annotations.AnnotationManagement.as_view(), name="annotation-management"),
-    path("annotations/<uuid:annotation_id>", annotations.AnnotationDetail.as_view(), name="annotation-detail"),
+    path(
+        "annotations",
+        annotations.AnnotationManagement.as_view(),
+        name="annotation-management",
+    ),
+    path(
+        "annotations/<uuid:annotation_id>",
+        annotations.AnnotationDetail.as_view(),
+        name="annotation-detail",
+    ),
     # Status
     path("status", status.StatusManagement.as_view(), name="status"),
     # Tokens

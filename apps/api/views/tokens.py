@@ -10,7 +10,11 @@ from redis.client import Redis
 from apps.api.forms.tokens import AccessTokenForm, RefreshTokenForm
 from apps.api.serializers.tokens import TokenSerializer
 from apps.core.auth import JWTFactory, BasicBackend
-from apps.core.errors import ValidationException, UnauthorizedException, ProblemDetailException
+from apps.core.errors import (
+    ValidationException,
+    UnauthorizedException,
+    ProblemDetailException,
+)
 from apps.api.response import SingleResponse
 from apps.core.views import SecuredView
 
@@ -36,13 +40,23 @@ class AccessTokenManagement(SecuredView):
         access_token = JWTFactory(user.pk).access()
         jti, refresh_token = JWTFactory(user.pk).refresh()
 
-        redis = Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=settings.REDIS_DATABASE)
+        redis = Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            db=settings.REDIS_DATABASE,
+        )
 
         redis.set(f"evilflowers:refresh_token:{jti}", jti)
-        redis.expire(f"evilflowers:refresh_token:{jti}", settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION)
+        redis.expire(
+            f"evilflowers:refresh_token:{jti}",
+            settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION,
+        )
 
         return SingleResponse(
-            request, TokenSerializer.Access(access_token=access_token, refresh_token=refresh_token, user=user)
+            request,
+            TokenSerializer.Access(
+                access_token=access_token, refresh_token=refresh_token, user=user
+            ),
         )
 
 
@@ -56,13 +70,21 @@ class RefreshTokenManagement(View):
         try:
             claims = JWTFactory.decode(form.cleaned_data["refresh"])
         except JoseError as e:
-            raise ProblemDetailException(request, _("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e)
+            raise ProblemDetailException(
+                request, _("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e
+            )
 
-        redis = Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=settings.REDIS_DATABASE)
+        redis = Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            db=settings.REDIS_DATABASE,
+        )
 
         if not redis.exists(f"evilflowers:refresh_token:{claims['jti']}"):
             raise UnauthorizedException(request)
 
         return SingleResponse(
-            request, TokenSerializer.Refresh(access_token=JWTFactory(claims["sub"]).access()), status=HTTPStatus.OK
+            request,
+            TokenSerializer.Refresh(access_token=JWTFactory(claims["sub"]).access()),
+            status=HTTPStatus.OK,
         )

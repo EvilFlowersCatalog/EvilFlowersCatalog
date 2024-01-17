@@ -32,7 +32,12 @@ class EntryService:
             conditions.append(Q(identifiers__isbn=entry.identifiers.get("isbn")))
         if entry.identifiers.get("doi"):
             conditions.append(Q(identifiers__doi=entry.identifiers.get("doi")))
-        if Entry.objects.exclude(pk=entry.pk).filter(catalog=self._catalog).filter(reduce(or_, conditions)).exists():
+        if (
+            Entry.objects.exclude(pk=entry.pk)
+            .filter(catalog=self._catalog)
+            .filter(reduce(or_, conditions))
+            .exists()
+        ):
             raise self.AlreadyExists()
 
         if "author" in form.cleaned_data.keys():
@@ -76,22 +81,31 @@ class EntryService:
 
         for record in form.cleaned_data.get("acquisitions", []):
             acquisition = Acquisition(
-                entry=entry, relation=record.get("relation"), mime=record["content"].content_type
+                entry=entry,
+                relation=record.get("relation"),
+                mime=record["content"].content_type,
             )
 
             if "content" in record.keys():
                 acquisition.content.save(
-                    f"{uuid.uuid4()}{mimetypes.guess_extension(acquisition.mime)}", record["content"]
+                    f"{uuid.uuid4()}{mimetypes.guess_extension(acquisition.mime)}",
+                    record["content"],
                 )
 
             for price in record.get("prices", []):
-                Price.objects.create(acquisition=acquisition, currency=price["currency_code"], value=price["value"])
+                Price.objects.create(
+                    acquisition=acquisition,
+                    currency=price["currency_code"],
+                    value=price["value"],
+                )
 
         if "contributors" in form.cleaned_data:
             entry.contributors.clear()
             for record in form.cleaned_data.get("contributors", []):
                 contributor, is_created = Author.objects.get_or_create(
-                    catalog=self._catalog, name=record["name"], surname=record["surname"]
+                    catalog=self._catalog,
+                    name=record["name"],
+                    surname=record["surname"],
                 )
                 entry.contributors.add(contributor)
 
@@ -113,7 +127,10 @@ class EntryService:
             else:
                 entry.image_mime = form.cleaned_data["image"].content_type
 
-                entry.image.save(f"cover{mimetypes.guess_extension(entry.image_mime)}", form.cleaned_data["image"])
+                entry.image.save(
+                    f"cover{mimetypes.guess_extension(entry.image_mime)}",
+                    form.cleaned_data["image"],
+                )
 
                 buffer = BytesIO()
                 thumbnail = form.cleaned_data["image"].image.copy()
@@ -121,6 +138,9 @@ class EntryService:
                 thumbnail.save(buffer, format=form.cleaned_data["image"].image.format)
                 buffer.seek(0)
 
-                entry.thumbnail.save(f"thumbnail{mimetypes.guess_extension(entry.image_mime)}", File(buffer))
+                entry.thumbnail.save(
+                    f"thumbnail{mimetypes.guess_extension(entry.image_mime)}",
+                    File(buffer),
+                )
 
         return entry
