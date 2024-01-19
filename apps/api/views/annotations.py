@@ -15,12 +15,12 @@ from apps.core.views import SecuredView
 
 class AnnotationManagement(SecuredView):
     def get(self, request):
-        user_acquisitions = AnnotationFilter(
+        annotations = AnnotationFilter(
             request.GET, queryset=Annotation.objects.all(), request=request
         ).qs
 
         return PaginationResponse(
-            request, user_acquisitions, serializer=AnnotationSerializer.Base
+            request, annotations, serializer=AnnotationSerializer.Base
         )
 
     def post(self, request):

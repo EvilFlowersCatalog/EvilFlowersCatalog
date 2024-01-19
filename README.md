@@ -9,9 +9,14 @@ a straightforward management REST API for CRUD operations.
 
 [![Run in Insomnia}](https://insomnia.rest/images/run.svg)](https://insomnia.rest/run/?label=Evil%20Flowers%20Catalog%20API&uri=https%3A%2F%2Fgithub.com%2FSibyx%2FEvilFlowersCatalog%2Fblob%2Fmaster%2Fdocs%2FInsomnia_EvilFlowers.json)
 
-## Features
+## Work in progress
 
-**Work in progress**
+Although this project is already in use in a production environment, work is still in progress, and the API
+remains unstable. If you wish to deploy the project, please feel free to open a discussion or
+[send us an email](mailto:jakub.dubec@stuba.sk). We are actively working on new features and documenting existing
+ones, but it takes time.
+
+## Features
 
 The main goal is to implement the complete [OPDS 1.2](https://specs.opds.io/opds-1.2) and later
 [OPDS 2.0](https://drafts.opds.io/opds-2.0) specifications. The ordered list below represents the current progress:
@@ -64,6 +69,14 @@ To set up an instance with a demo database, follow these simple steps:
 6. Execute migrations `python manage.py migrate`
 7. Import currencies, languages, and set up CRON jobs using `python manage.py setup`
 8. Create a superuser using `python manage.py createsuperuser`
+
+## Documentation
+
+A portion of the API is described using OpenAPI, with the documentation available here:
+[REST API](https://evilflowers.org/EvilFlowersCatalog/). The complete REST API description is included in the
+[Insomnia](https://insomnia.rest) collection, accessible
+[here](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/blob/master/docs/InsomniaCollection.json). Additional
+features are detailed on the [GitHub Wiki](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/wiki).
 
 ## Acknowledgment
 

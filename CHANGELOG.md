@@ -6,9 +6,11 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 
 - **Added**: Basic OPDS 1.2 support
 - **Added**: Categories CRUD endpoints in management API
+- **Added**: Multi-arch GitHub builds
 - **Changed**: Migrated from porcupine-python to pydantic 2.0 for serializers
 [Getting rid of the porcupine-python dependency](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/23)
 - **Changed**: Read version from `pyproject.toml` instead of the `VERSION.txt`
+- **Changed**: Complete `Annotation` refactor - support for pages introduced
 
 ## 0.6.0 : 2023-11-16
 

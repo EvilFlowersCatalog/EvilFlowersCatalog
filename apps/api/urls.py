@@ -14,6 +14,7 @@ from apps.api.views import (
     annotations,
     shelf_records,
     categories,
+    annotation_items,
 )
 
 urlpatterns = [
@@ -95,6 +96,16 @@ urlpatterns = [
         "annotations/<uuid:annotation_id>",
         annotations.AnnotationDetail.as_view(),
         name="annotation-detail",
+    ),
+    path(
+        "annotation_items",
+        annotation_items.AnnotationItemManagement.as_view(),
+        name="annotation-item-management",
+    ),
+    path(
+        "annotation_items/<uuid:annotation_item_id>",
+        annotation_items.AnnotationItemDetail.as_view(),
+        name="annotation-item-detail",
     ),
     # Status
     path("status", status.StatusManagement.as_view(), name="status"),
