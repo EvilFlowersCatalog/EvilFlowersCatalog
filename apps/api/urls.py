@@ -98,12 +98,12 @@ urlpatterns = [
         name="annotation-detail",
     ),
     path(
-        "annotation_items",
+        "annotation-items",
         annotation_items.AnnotationItemManagement.as_view(),
         name="annotation-item-management",
     ),
     path(
-        "annotation_items/<uuid:annotation_item_id>",
+        "annotation-items/<uuid:annotation_item_id>",
         annotation_items.AnnotationItemDetail.as_view(),
         name="annotation-item-detail",
     ),
