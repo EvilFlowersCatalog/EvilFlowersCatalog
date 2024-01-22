@@ -1,0 +1,18 @@
+name: Deployment
+
+on:
+  workflow_run:
+    workflows: [ "Docker build" ]
+    types: [ completed ]
+    branches: [ master ]
+
+jobs:
+  deploy_vogsphere:
+    runs-on: curlimages/curl:latest
+    environment: evilflowers.vogsphere.sk
+    steps:
+      - name: Call deploy webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+        run: |
+          curl -X POST "$WEBHOOK_URL"
