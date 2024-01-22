@@ -8,9 +8,12 @@ on:
 
 jobs:
   deploy_vogsphere:
-    runs-on: curlimages/curl:latest
+    runs-on: ubuntu-latest
     environment: evilflowers.vogsphere.sk
     steps:
+      - name: Install curl
+        run: |
+          sudo apt install -y curl
       - name: Call deploy webhook
         env:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
