@@ -7,7 +7,7 @@ on:
     branches: [ master ]
 
 jobs:
-  deploy_vogsphere:
+  vogsphere:
     runs-on: ubuntu-latest
     environment: evilflowers.vogsphere.sk
     steps:
@@ -19,3 +19,16 @@ jobs:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: |
           curl -X POST "$WEBHOOK_URL"
+  notify:
+    name: Notify about deployment
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: Microsoft Teams Notification
+        uses: skitionek/notify-microsoft-teams@master
+        if: success()
+        with:
+          webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          needs: ${{ toJson(needs) }}
+          job: ${{ toJson(job) }}
+          steps: ${{ toJson(steps) }}
