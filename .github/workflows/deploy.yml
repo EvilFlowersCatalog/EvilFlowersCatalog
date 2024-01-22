@@ -22,6 +22,7 @@ jobs:
   notify:
     name: Notify about deployment
     runs-on: ubuntu-latest
+    environment: evilflowers.vogsphere.sk
     steps:
       - uses: actions/checkout@master
       - name: Microsoft Teams Notification
