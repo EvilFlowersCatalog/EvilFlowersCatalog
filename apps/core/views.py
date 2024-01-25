@@ -28,13 +28,11 @@ class SecuredView(View):
 
         if len(auth_header) != 2:
             raise UnauthorizedException(
-                request, detail=_("Invalid or missing Authorization header")
+                detail=_("Invalid or missing Authorization header")
             )
 
         if not auth_header[0] in settings.SECURED_VIEW_AUTHENTICATION_SCHEMAS.keys():
-            raise UnauthorizedException(
-                request, detail=_("Unsupported authentication schema")
-            )
+            raise UnauthorizedException(detail=_("Unsupported authentication schema"))
 
         auth_params = {auth_header[0].lower(): auth_header[1]}
 

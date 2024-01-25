@@ -18,13 +18,13 @@ class FeedManagement(SecuredView):
         form = FeedForm.create_from_request(request)
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         if not has_object_permission(
             "check_catalog_read", request.user, form.cleaned_data["catalog_id"]
         ):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         # FIXME: Probably not working
@@ -33,7 +33,6 @@ class FeedManagement(SecuredView):
             url_name=form.cleaned_data["url_name"],
         ).exists():
             raise ProblemDetailException(
-                request,
                 _("Feed with same url_name already exists in same catalog"),
                 status=HTTPStatus.CONFLICT,
             )
@@ -65,12 +64,12 @@ class FeedDetail(SecuredView):
             feed = Feed.objects.select_related("catalog").get(pk=feed_id)
         except Feed.DoesNotExist as e:
             raise ProblemDetailException(
-                request, _("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e
+                _("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e
             )
 
         if not has_object_permission("check_catalog_read", request.user, feed.catalog):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         return feed
@@ -87,7 +86,7 @@ class FeedDetail(SecuredView):
         form["parents"].queryset = form["parents"].queryset.exclude(pk=feed.pk)
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         if (
             Feed.objects.filter(
@@ -98,7 +97,6 @@ class FeedDetail(SecuredView):
             .exists()
         ):
             raise ProblemDetailException(
-                request,
                 _("Feed with same url_name already exists in same catalog"),
                 status=HTTPStatus.CONFLICT,
             )

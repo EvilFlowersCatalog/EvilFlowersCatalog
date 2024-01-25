@@ -20,15 +20,14 @@ class CatalogManagement(SecuredView):
 
         if not request.user.has_perm("core.add_catalog"):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         if Catalog.objects.filter(url_name=form.cleaned_data["url_name"]).exists():
             raise ProblemDetailException(
-                request,
                 title=_("Catalog url_name already taken"),
                 status=HTTPStatus.CONFLICT,
             )
@@ -64,12 +63,12 @@ class CatalogDetail(SecuredView):
             catalog = Catalog.objects.get(pk=catalog_id)
         except Catalog.DoesNotExist as e:
             raise ProblemDetailException(
-                request, _("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e
+                _("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e
             )
 
         if not has_object_permission(checker, request.user, catalog):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         return catalog
@@ -85,7 +84,7 @@ class CatalogDetail(SecuredView):
         form = CatalogForm.create_from_request(request)
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         catalog = self._get_catalog(request, catalog_id)
 
@@ -95,7 +94,6 @@ class CatalogDetail(SecuredView):
             .exists()
         ):
             raise ProblemDetailException(
-                request,
                 title=_("Catalog url_name already taken"),
                 status=HTTPStatus.CONFLICT,
             )

@@ -19,11 +19,10 @@ class OpdsView(SecuredView):
             self.catalog = Catalog.objects.get(url_name=kwargs["catalog_name"])
         except Catalog.DoesNotExist:
             raise ProblemDetailException(
-                request, _("Catalog not found"), status=HTTPStatus.NOT_FOUND
+                _("Catalog not found"), status=HTTPStatus.NOT_FOUND
             )
         except KeyError as e:
             raise ProblemDetailException(
-                request,
                 _("Internal server error"),
                 status=HTTPStatus.NOT_FOUND,
                 previous=e,
@@ -32,11 +31,11 @@ class OpdsView(SecuredView):
         request.user = self._authenticate(request)
 
         if not self.catalog.is_public and not request.user.is_authenticated:
-            raise UnauthorizedException(request)
+            raise UnauthorizedException()
 
         if not has_object_permission("check_catalog_read", request.user, self.catalog):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         return View.dispatch(self, request, *args, **kwargs)

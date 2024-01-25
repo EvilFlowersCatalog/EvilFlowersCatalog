@@ -39,7 +39,6 @@ class ValidationError(ProblemDetail):
 class ProblemDetailException(Exception):
     def __init__(
         self,
-        request,
         title: str,
         status: int = HTTPStatus.INTERNAL_SERVER_ERROR,
         previous: Optional[BaseException] = None,
@@ -51,7 +50,6 @@ class ProblemDetailException(Exception):
     ):
         super().__init__(title)
 
-        self._request = request
         self._status_code = status
         self._title = title
         self._type = detail_type
@@ -69,10 +67,6 @@ class ProblemDetailException(Exception):
                 for key, value in self.__dict__.items():
                     scope.set_extra(key, value)
                 sentry_sdk.capture_exception(self)
-
-    @property
-    def request(self):
-        return self._request
 
     @property
     def status(self) -> int:
@@ -109,9 +103,8 @@ class ProblemDetailException(Exception):
 
 
 class UnauthorizedException(ProblemDetailException):
-    def __init__(self, request, detail: Optional[str] = None):
+    def __init__(self, detail: Optional[str] = None):
         super().__init__(
-            request,
             _("Unauthorized"),
             status=HTTPStatus.UNAUTHORIZED,
             extra_headers=(
@@ -126,10 +119,8 @@ class UnauthorizedException(ProblemDetailException):
 
 
 class ValidationException(ProblemDetailException):
-    def __init__(self, request, form: Form):
-        super().__init__(
-            request, _("Validation error!"), status=HTTPStatus.UNPROCESSABLE_ENTITY
-        )
+    def __init__(self, form: Form):
+        super().__init__(_("Validation error!"), status=HTTPStatus.UNPROCESSABLE_ENTITY)
         self._form = form
 
     @property

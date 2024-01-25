@@ -31,7 +31,7 @@ class AnnotationItemManagement(SecuredView):
         form = AnnotationItemForm.create_from_request(request)
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         if not has_object_permission(
             "check_user_acquisition_read",
@@ -39,7 +39,7 @@ class AnnotationItemManagement(SecuredView):
             form.cleaned_data["annotation"].user_acquisition,
         ):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         annotation_item = AnnotationItem()
@@ -60,7 +60,6 @@ class AnnotationItemDetail(SecuredView):
             annotation_item = AnnotationItem.objects.get(pk=annotation_item_id)
         except AnnotationItem.DoesNotExist as e:
             raise ProblemDetailException(
-                request,
                 _("Annotation item not found"),
                 status=HTTPStatus.NOT_FOUND,
                 previous=e,
@@ -73,7 +72,7 @@ class AnnotationItemDetail(SecuredView):
             annotation_item.annotation.user_acquisition,
         ):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         return annotation_item
@@ -89,7 +88,7 @@ class AnnotationItemDetail(SecuredView):
         annotation_item = self._get_annotation_item(request, annotation_item_id)
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         form.populate(annotation_item)
         annotation_item.save()

@@ -79,7 +79,7 @@ class BearerBackend(ModelBackend):
             claims = JWTFactory.decode(bearer)
         except JoseError as e:
             raise ProblemDetailException(
-                request, _("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e
+                _("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e
             )
 
         if claims["type"] == "api_key":
@@ -87,7 +87,7 @@ class BearerBackend(ModelBackend):
                 api_key = ApiKey.objects.get(pk=claims["jti"], is_active=True)
             except (ApiKey.DoesNotExist, ValidationError):
                 raise ProblemDetailException(
-                    request, _("Invalid api key."), status=HTTPStatus.UNAUTHORIZED
+                    _("Invalid api key."), status=HTTPStatus.UNAUTHORIZED
                 )
 
             api_key.last_seen_at = timezone.now()
@@ -99,16 +99,16 @@ class BearerBackend(ModelBackend):
                 user = User.objects.get(pk=claims["sub"])
             except User.DoesNotExist:
                 raise ProblemDetailException(
-                    request, _("Inactive user."), status=HTTPStatus.FORBIDDEN
+                    _("Inactive user."), status=HTTPStatus.FORBIDDEN
                 )
         else:
             raise ProblemDetailException(
-                request, _("Invalid token"), status=HTTPStatus.UNAUTHORIZED
+                _("Invalid token"), status=HTTPStatus.UNAUTHORIZED
             )
 
         if not self.user_can_authenticate(user):
             raise ProblemDetailException(
-                request, _("Inactive user."), status=HTTPStatus.FORBIDDEN
+                _("Inactive user."), status=HTTPStatus.FORBIDDEN
             )
 
         return user
@@ -212,7 +212,6 @@ class BasicBackend(ModelBackend):
 
         if not user:
             raise ProblemDetailException(
-                request,
                 _("Invalid credentials"),
                 status=HTTPStatus.UNAUTHORIZED,
                 extra_headers=(

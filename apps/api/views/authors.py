@@ -25,13 +25,13 @@ class AuthorManagement(SecuredView):
         form = CreateAuthorForm.create_from_request(request)
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         if not has_object_permission(
             "check_catalog_write", request.user, form.cleaned_data["catalog_id"]
         ):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         if Author.objects.filter(
@@ -40,7 +40,6 @@ class AuthorManagement(SecuredView):
             surname=form.cleaned_data["surname"],
         ).exists():
             raise ProblemDetailException(
-                request,
                 _("Author already exists in the catalog"),
                 status=HTTPStatus.CONFLICT,
             )
@@ -65,12 +64,12 @@ class AuthorDetail(SecuredView):
             author = Author.objects.select_related("catalog").get(pk=author_id)
         except Author.DoesNotExist as e:
             raise ProblemDetailException(
-                request, _("Author not found"), status=HTTPStatus.NOT_FOUND, previous=e
+                _("Author not found"), status=HTTPStatus.NOT_FOUND, previous=e
             )
 
         if not has_object_permission(checker, request.user, author.catalog):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         return author
@@ -85,7 +84,7 @@ class AuthorDetail(SecuredView):
         author = self._get_author(request, author_id)
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         if (
             Author.objects.exclude(pk=author_id)
@@ -97,7 +96,6 @@ class AuthorDetail(SecuredView):
             .exists()
         ):
             raise ProblemDetailException(
-                request,
                 _("Author already exists in the catalog"),
                 status=HTTPStatus.CONFLICT,
             )

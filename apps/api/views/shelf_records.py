@@ -32,13 +32,13 @@ class ShelfRecordManagement(SecuredView):
     def post(self, request):
         if request.user.is_anonymous:
             raise UnauthorizedException(
-                request, detail=_("You need to be logged in to access shelf")
+                detail=_("You need to be logged in to access shelf")
             )
 
         form = ShelfRecordForm.create_from_request(request)
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         shelf_record, created = ShelfRecord.objects.get_or_create(
             user=request.user, entry=form.cleaned_data["entry_id"]
@@ -68,14 +68,14 @@ class ShelfRecordDetail(SecuredView):
             shelf_record = ShelfRecord.objects.get(pk=shelf_record_id)
         except ShelfRecord.DoesNotExist as e:
             raise ProblemDetailException(
-                request, _("Not found"), status=HTTPStatus.NOT_FOUND, previous=e
+                title=_("Not found"), status=HTTPStatus.NOT_FOUND, previous=e
             )
 
         if not has_object_permission(
             "check_shelf_record_access", request.user, shelf_record
         ):
             raise ProblemDetailException(
-                request, _("Not found"), status=HTTPStatus.NOT_FOUND
+                title=_("Not found"), status=HTTPStatus.NOT_FOUND
             )
 
         shelf_record.delete()

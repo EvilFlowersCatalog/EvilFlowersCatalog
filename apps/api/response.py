@@ -146,7 +146,6 @@ class PaginationResponse(GeneralResponse):
                 paginator.validate_number(page)
             except EmptyPage as e:
                 raise ProblemDetailException(
-                    request,
                     title=_("Page not found"),
                     status=HTTPStatus.NOT_FOUND,
                     previous=e,

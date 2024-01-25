@@ -26,7 +26,7 @@ class AcquisitionDownload(SecuredView):
             acquisition = Acquisition.objects.get(pk=acquisition_id)
         except Acquisition.DoesNotExist:
             raise ProblemDetailException(
-                request, _("Acquisition not found"), status=HTTPStatus.NOT_FOUND
+                _("Acquisition not found"), status=HTTPStatus.NOT_FOUND
             )
 
         if acquisition.relation != Acquisition.AcquisitionType.ACQUISITION.OPEN_ACCESS:
@@ -50,7 +50,6 @@ class UserAcquisitionDownload(SecuredView):
             ).get(pk=user_acquisition_id)
         except UserAcquisition.DoesNotExist:
             raise ProblemDetailException(
-                request,
                 _("User acquisition not found"),
                 status=HTTPStatus.NOT_FOUND,
                 detail_type=DetailType.NOT_FOUND,
@@ -63,7 +62,7 @@ class UserAcquisitionDownload(SecuredView):
                 "check_user_acquisition_read", request.user, user_acquisition
             ):
                 raise ProblemDetailException(
-                    request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                    _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
                 )
 
         user_acquisition.acquisition.entry.popularity = (
@@ -105,7 +104,7 @@ class UserAcquisitionDownload(SecuredView):
                 )
             except InvalidPage:
                 raise ProblemDetailException(
-                    request, _("Page not found"), status=HTTPStatus.NOT_FOUND
+                    _("Page not found"), status=HTTPStatus.NOT_FOUND
                 )
         else:
             content = user_acquisition.acquisition.content
@@ -126,7 +125,7 @@ class EntryImageDownload(SecuredView):
             entry = Entry.objects.get(pk=entry_id, image__isnull=False)
         except Entry.DoesNotExist:
             raise ProblemDetailException(
-                request, _("Entry image not found"), status=HTTPStatus.NOT_FOUND
+                _("Entry image not found"), status=HTTPStatus.NOT_FOUND
             )
 
         sanitized_filename = (

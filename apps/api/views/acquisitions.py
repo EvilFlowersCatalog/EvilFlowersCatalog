@@ -30,12 +30,12 @@ class AcquisitionDetail(SecuredView):
             )
         except Acquisition.DoesNotExist:
             raise ProblemDetailException(
-                request, _("Acquisition not found"), status=HTTPStatus.NOT_FOUND
+                _("Acquisition not found"), status=HTTPStatus.NOT_FOUND
             )
 
         if not has_object_permission(checker, request.user, acquisition.entry.catalog):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         return acquisition

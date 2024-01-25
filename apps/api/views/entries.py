@@ -43,12 +43,12 @@ class EntryManagement(SecuredView):
             catalog = Catalog.objects.get(pk=catalog_id)
         except Catalog.DoesNotExist as e:
             raise ProblemDetailException(
-                request, _("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e
+                _("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e
             )
 
         if not has_object_permission("check_catalog_write", request.user, catalog):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         form = EntryForm.create_from_request(request)
@@ -60,7 +60,7 @@ class EntryManagement(SecuredView):
         )
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         entry = Entry(creator=request.user, catalog=catalog)
         service = EntryService(catalog, request.user)
@@ -69,7 +69,6 @@ class EntryManagement(SecuredView):
             service.populate(entry, form)
         except EntryService.AlreadyExists as e:
             raise ProblemDetailException(
-                request,
                 "Entry already exists!",
                 HTTPStatus.CONFLICT,
                 detail=_(
@@ -101,12 +100,12 @@ class EntryDetail(SecuredView):
             entry = Entry.objects.get(pk=entry_id, catalog_id=catalog_id)
         except Entry.DoesNotExist:
             raise ProblemDetailException(
-                request, _("Entry not found"), status=HTTPStatus.NOT_FOUND
+                _("Entry not found"), status=HTTPStatus.NOT_FOUND
             )
 
         if not has_object_permission(checker, request.user, entry):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         return entry
@@ -128,7 +127,6 @@ class EntryDetail(SecuredView):
             metadata = json.loads(request.POST.get("metadata", "{}"))
         except json.JSONDecodeError as e:
             raise ProblemDetailException(
-                request,
                 title=_("Unable to parse metadata for request file"),
                 status=HTTPStatus.BAD_REQUEST,
                 previous=e,
@@ -137,7 +135,7 @@ class EntryDetail(SecuredView):
         form = AcquisitionMetaForm(metadata, request)
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         acquisition = Acquisition(
             entry=entry,
@@ -178,7 +176,7 @@ class EntryDetail(SecuredView):
         )
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         catalog = Catalog.objects.get(pk=catalog_id)
 
@@ -188,14 +186,13 @@ class EntryDetail(SecuredView):
             service.populate(entry, form)
         except EntryService.AlreadyExists as e:
             raise ProblemDetailException(
-                request,
                 "Entry already exists!",
                 HTTPStatus.CONFLICT,
+                previous=e,
                 detail=_(
                     "Entry with same title, isbn or DOI already exists in catalog %s"
                 )
                 % (catalog.title,),
-                previous=e,
             )
 
         return SingleResponse(

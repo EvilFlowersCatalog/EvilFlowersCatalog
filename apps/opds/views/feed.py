@@ -28,7 +28,7 @@ class FeedView(OpdsView):
             feed = Feed.objects.get(catalog=self.catalog, url_name=feed_name)
         except Feed.DoesNotExist:
             raise ProblemDetailException(
-                request, _("Feed not found"), status=HTTPStatus.NOT_FOUND
+                _("Feed not found"), status=HTTPStatus.NOT_FOUND
             )
 
         result = OpdsFeed(

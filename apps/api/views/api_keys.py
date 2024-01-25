@@ -17,11 +17,11 @@ class ApiKeyManagement(SecuredView):
         form = ApiKeyForm.create_from_request(request)
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         if "user_id" in form.cleaned_data.keys() and not request.user.is_superuser:
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         api_key = ApiKey(user=request.user)
@@ -48,12 +48,12 @@ class ApiKeyDetail(SecuredView):
             api_key = ApiKey.objects.get(pk=api_key_id)
         except ApiKey.DoesNotExist as e:
             raise ProblemDetailException(
-                request, _("ApiKey not found"), status=HTTPStatus.NOT_FOUND, previous=e
+                _("ApiKey not found"), status=HTTPStatus.NOT_FOUND, previous=e
             )
 
         if not request.user.is_superuser and api_key.user_id != request.user.id:
             raise ProblemDetailException(
-                request, _("ApiKey not found"), status=HTTPStatus.NOT_FOUND
+                _("ApiKey not found"), status=HTTPStatus.NOT_FOUND
             )
 
         api_key.delete()

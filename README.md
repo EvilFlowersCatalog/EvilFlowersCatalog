@@ -4,7 +4,7 @@
     <img width="150" height="150" src="docs/images/logo.png">
 </p>
 
-A e-book catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2), written in Python with
+A publication catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2), written in Python with
 a straightforward management REST API for CRUD operations.
 
 [![Run in Insomnia}](https://insomnia.rest/images/run.svg)](https://insomnia.rest/run/?label=Evil%20Flowers%20Catalog%20API&uri=https%3A%2F%2Fgithub.com%2FSibyx%2FEvilFlowersCatalog%2Fblob%2Fmaster%2Fdocs%2FInsomnia_EvilFlowers.json)
@@ -58,7 +58,7 @@ The server will start on port 8000.
 ### From source
 
 We use [poetry](https://python-poetry.org/) for dependency management and [PostgreSQL](https://www.postgresql.org/) 15
-(10+ should be compatible) as a data storage (acquisition files are stored on the filesystem, not in the database).
+(12+ should be compatible) as a data storage (acquisition files are stored on the filesystem, not in the database).
 To set up an instance with a demo database, follow these simple steps:
 
 1. Create a Python virtual environment (`python -m venv venv`)

@@ -17,7 +17,7 @@ class SearchView(View):
             catalog = Catalog.objects.get(url_name=catalog_name)
         except Catalog.DoesNotExist as e:
             raise ProblemDetailException(
-                request, _("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e
+                _("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e
             )
 
         tags = {
@@ -34,10 +34,7 @@ class SearchView(View):
                 feed = Feed.objects.get(catalog=catalog, url_name=feed_name)
             except Feed.DoesNotExist as e:
                 raise ProblemDetailException(
-                    request,
-                    _("Feed not found"),
-                    status=HTTPStatus.NOT_FOUND,
-                    previous=e,
+                    _("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e
                 )
 
             tags["short_name"] = f"{feed.title} - {catalog.title}"

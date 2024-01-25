@@ -23,17 +23,15 @@ class UserManagement(SecuredView):
 
         if not request.user.has_perm("core.add_user"):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         if User.objects.filter(username=form.cleaned_data["username"]).exists():
             raise ProblemDetailException(
-                request,
-                _("User with same username already exists"),
-                status=HTTPStatus.CONFLICT,
+                _("User with same username already exists"), status=HTTPStatus.CONFLICT
             )
 
         user = User(
@@ -62,7 +60,7 @@ class UserDetail(SecuredView):
             user = User.objects.get(pk=user_id)
         except User.DoesNotExist as e:
             raise ProblemDetailException(
-                request, _("User not found"), status=HTTPStatus.NOT_FOUND, previous=e
+                _("User not found"), status=HTTPStatus.NOT_FOUND, previous=e
             )
 
         if not perm_test:
@@ -70,7 +68,7 @@ class UserDetail(SecuredView):
 
         if not (user.id == request.user.id or perm_test()):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         return user
@@ -90,7 +88,7 @@ class UserDetail(SecuredView):
         )
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         form.populate(user)
         if "password" in form.cleaned_data.keys():
@@ -111,7 +109,7 @@ class UserDetail(SecuredView):
 class UserMe(SecuredView):
     def get(self, request):
         if request.user.is_anonymous:
-            raise UnauthorizedException(request, detail=_("You have to log in!"))
+            raise UnauthorizedException(detail=_("You have to log in!"))
 
         return SingleResponse(
             request, UserSerializer.Detailed.model_validate(request.user)

@@ -30,13 +30,13 @@ class UserAcquisitionManagement(SecuredView):
         form = UserAcquisitionForm.create_from_request(request)
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         if not has_object_permission(
             "check_entry_read", request.user, form.cleaned_data["acquisition_id"].entry
         ):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         if (
@@ -67,7 +67,7 @@ class UserAcquisitionManagement(SecuredView):
             and not evilflowers_share_enabled
         ):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         user_acquisition.save()
@@ -87,7 +87,6 @@ class UserAcquisitionDetail(SecuredView):
             user_acquisition = UserAcquisition.objects.get(pk=user_acquisition_id)
         except UserAcquisition.DoesNotExist as e:
             raise ProblemDetailException(
-                request,
                 _("User acquisition not found"),
                 status=HTTPStatus.NOT_FOUND,
                 previous=e,
@@ -98,7 +97,7 @@ class UserAcquisitionDetail(SecuredView):
             "check_user_acquisition_read", request.user, user_acquisition
         ):
             raise ProblemDetailException(
-                request, _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
             )
 
         return SingleResponse(

@@ -24,7 +24,7 @@ class AccessTokenManagement(SecuredView):
         form = AccessTokenForm.create_from_request(request)
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         backend = BasicBackend()
         user = backend.authenticate(
@@ -35,7 +35,7 @@ class AccessTokenManagement(SecuredView):
         )
 
         if not user:
-            raise UnauthorizedException(request)
+            raise UnauthorizedException()
 
         access_token = JWTFactory(user.pk).access()
         jti, refresh_token = JWTFactory(user.pk).refresh()
@@ -65,13 +65,13 @@ class RefreshTokenManagement(View):
         form = RefreshTokenForm.create_from_request(request)
 
         if not form.is_valid():
-            raise ValidationException(request, form)
+            raise ValidationException(form)
 
         try:
             claims = JWTFactory.decode(form.cleaned_data["refresh"])
         except JoseError as e:
             raise ProblemDetailException(
-                request, _("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e
+                _("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e
             )
 
         redis = Redis(
@@ -81,7 +81,7 @@ class RefreshTokenManagement(View):
         )
 
         if not redis.exists(f"evilflowers:refresh_token:{claims['jti']}"):
-            raise UnauthorizedException(request)
+            raise UnauthorizedException()
 
         return SingleResponse(
             request,
