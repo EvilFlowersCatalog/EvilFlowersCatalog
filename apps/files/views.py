@@ -5,12 +5,13 @@ from mimetypes import guess_extension
 
 from django.conf import settings
 from django.http import FileResponse
+from django.urls import reverse
 from django.utils.module_loading import import_string
 from django.utils.text import slugify
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
-from apps.api.response import SingleResponse
+from apps.api.response import SingleResponse, SeeOtherResponse
 from apps.core.errors import ProblemDetailException, DetailType
 from apps.core.fields.multirange import depack
 from apps.core.models import Acquisition, Entry, UserAcquisition
@@ -31,6 +32,37 @@ class AcquisitionDownload(SecuredView):
 
         if acquisition.relation != Acquisition.AcquisitionType.ACQUISITION.OPEN_ACCESS:
             self._authenticate(request)
+
+        if not has_object_permission(
+            "check_entry_read", request.user, acquisition.entry
+        ):
+            raise ProblemDetailException(
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
+            )
+
+        if (
+            request.user.is_authenticated
+            and settings.EVILFLOWERS_ENFORCE_USER_ACQUISITIONS
+        ):
+            if settings.EVILFLOWERS_USER_ACQUISITION_MODE == 'single':
+                user_acquisition, created = UserAcquisition.objects.get_or_create(
+                    acquisition=acquisition,
+                    user=request.user,
+                    type=UserAcquisition.UserAcquisitionType.PERSONAL,
+                )
+            else:
+                user_acquisition = UserAcquisition.objects.create(
+                    acquisition=acquisition,
+                    user=request.user,
+                    type=UserAcquisition.UserAcquisitionType.PERSONAL,
+                )
+
+            return SeeOtherResponse(
+                redirect_to=reverse(
+                    "files:user-acquisition-download",
+                    kwargs={"user_acquisition_id": user_acquisition.pk},
+                )
+            )
 
         acquisition.entry.popularity = acquisition.entry.popularity + 1
         sanitized_filename = f"{slugify(acquisition.entry.title.lower())}{guess_extension(acquisition.mime)}"

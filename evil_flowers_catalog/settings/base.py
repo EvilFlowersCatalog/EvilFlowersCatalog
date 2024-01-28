@@ -96,7 +96,6 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-                "apps.opds.context_processors.basic_settings",
             ],
         },
     },
@@ -244,6 +243,8 @@ EVILFLOWERS_CRON_JOBS = {
 }
 
 EVILFLOWERS_IDENTIFIERS = ["isbn", "google", "doi"]
+
+EVILFLOWERS_ENFORCE_USER_ACQUISITIONS = bool(int(os.getenv("EVILFLOWERS_ENFORCE_USER_ACQUISITIONS", "0")))
 
 EVILFLOWERS_USER_ACQUISITION_MODE = os.getenv(
     "EVIL_FLOWERS_USER_ACQUISITION_MODE", "single"

@@ -9,7 +9,7 @@ from object_checker.base_object_checker import has_object_permission
 
 from apps.api.filters.user_acquisitions import UserAcquisitionFilter
 from apps.api.forms.user_acquisitions import UserAcquisitionForm
-from apps.api.response import PaginationResponse, SingleResponse
+from apps.api.response import PaginationResponse, SingleResponse, SeeOtherResponse
 from apps.api.serializers.user_acquisitions import UserAcquisitionSerializer
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.core.models import UserAcquisition
@@ -44,17 +44,17 @@ class UserAcquisitionManagement(SecuredView):
             and settings.EVILFLOWERS_USER_ACQUISITION_MODE == "single"
         ):
             user_acquisition = UserAcquisition.objects.filter(
-                acquisition_id=form.cleaned_data["acquisition_id"],
+                acquisition=form.cleaned_data["acquisition_id"],
                 type=UserAcquisition.UserAcquisitionType.PERSONAL,
                 user=request.user,
             ).first()
 
             if user_acquisition:
-                location = (
-                    f"{settings.BASE_URL}"
-                    f"{reverse('files:user-acquisition-detail', kwargs={'user_acquisition_id': user_acquisition.pk})}"
+                return SeeOtherResponse(
+                    redirect_to=request.build_absolute_uri(
+                        f"{reverse('api:user-acquisition-detail', kwargs={'user_acquisition_id': user_acquisition.pk})}"
+                    )
                 )
-                return HttpResponseRedirect(location, status=HTTPStatus.SEE_OTHER)
 
         user_acquisition = UserAcquisition(user=request.user)
         form.populate(user_acquisition)

@@ -97,7 +97,13 @@ class FeedView(OpdsView):
                     item.authors.append(Author(name=contributor.full_name))
 
                 for category in entry.categories.all():
-                    item.categories.append(Category())
+                    item.categories.append(
+                        Category(
+                            term=category.term,
+                            scheme=category.scheme,
+                            label=category.label,
+                        )
+                    )
 
                 if entry.image:
                     item.links.append(
@@ -111,7 +117,6 @@ class FeedView(OpdsView):
                     )
 
                 for acquisition in entry.acquisitions.all():
-                    # FIXME: OPDS endpoint for acquisition download which keeps in mind the user-acquisition rules
                     item.links.append(
                         Link(
                             rel=str(Acquisition.AcquisitionType(acquisition.relation)),
