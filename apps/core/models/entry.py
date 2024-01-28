@@ -56,15 +56,9 @@ class Entry(BaseModel):
         return f"catalogs/{self.catalog.url_name}/{self.pk}/{filename}"
 
     creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name="+")
-    catalog = models.ForeignKey(
-        Catalog, on_delete=models.CASCADE, related_name="entries"
-    )
-    author = models.ForeignKey(
-        Author, on_delete=models.CASCADE, null=True, related_name="entries"
-    )
-    language = models.ForeignKey(
-        Language, on_delete=models.CASCADE, related_name="entries", null=True
-    )
+    catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE, related_name="entries")
+    author = models.ForeignKey(Author, on_delete=models.CASCADE, null=True, related_name="entries")
+    language = models.ForeignKey(Language, on_delete=models.CASCADE, related_name="entries", null=True)
     identifiers = HStoreField(
         null=True,
         validators=[AvailableKeysValidator(keys=settings.EVILFLOWERS_IDENTIFIERS)],
@@ -86,13 +80,9 @@ class Entry(BaseModel):
         db_table="entry_categories",
         verbose_name=_("Category"),
     )
-    image = models.ImageField(
-        upload_to=_upload_to_path, null=True, max_length=255, storage=get_storage
-    )
+    image = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=get_storage)
     image_mime = models.CharField(max_length=100, null=True)
-    thumbnail = models.ImageField(
-        upload_to=_upload_to_path, null=True, max_length=255, storage=get_storage
-    )
+    thumbnail = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=get_storage)
     popularity = models.PositiveBigIntegerField(default=0, null=False)
     config = models.JSONField(null=False, default=default_entry_config)
     citation = models.TextField(null=True)

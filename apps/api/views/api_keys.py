@@ -20,9 +20,7 @@ class ApiKeyManagement(SecuredView):
             raise ValidationException(form)
 
         if "user_id" in form.cleaned_data.keys() and not request.user.is_superuser:
-            raise ProblemDetailException(
-                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
-            )
+            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         api_key = ApiKey(user=request.user)
         form.populate(api_key)
@@ -35,9 +33,7 @@ class ApiKeyManagement(SecuredView):
         )
 
     def get(self, request):
-        api_keys = ApiKeyFilter(
-            request.GET, queryset=ApiKey.objects.all(), request=request
-        ).qs
+        api_keys = ApiKeyFilter(request.GET, queryset=ApiKey.objects.all(), request=request).qs
 
         return PaginationResponse(request, api_keys, serializer=ApiKeySerializer.Base)
 
@@ -47,14 +43,10 @@ class ApiKeyDetail(SecuredView):
         try:
             api_key = ApiKey.objects.get(pk=api_key_id)
         except ApiKey.DoesNotExist as e:
-            raise ProblemDetailException(
-                _("ApiKey not found"), status=HTTPStatus.NOT_FOUND, previous=e
-            )
+            raise ProblemDetailException(_("ApiKey not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
         if not request.user.is_superuser and api_key.user_id != request.user.id:
-            raise ProblemDetailException(
-                _("ApiKey not found"), status=HTTPStatus.NOT_FOUND
-            )
+            raise ProblemDetailException(_("ApiKey not found"), status=HTTPStatus.NOT_FOUND)
 
         api_key.delete()
 

@@ -21,17 +21,12 @@ class CategoryManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(form)
 
-        if not has_object_permission(
-            "check_catalog_manage", request.user, form.cleaned_data["catalog_id"]
-        ):
-            raise ProblemDetailException(
-                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
-            )
+        if not has_object_permission("check_catalog_manage", request.user, form.cleaned_data["catalog_id"]):
+            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         if Category.objects.filter(term=form.cleaned_data["term"]).exists():
             raise ProblemDetailException(
-                title=_("Category with term %s is already taken in catalog")
-                % (form.cleaned_data["term"],),
+                title=_("Category with term %s is already taken in catalog") % (form.cleaned_data["term"],),
                 status=HTTPStatus.CONFLICT,
             )
 
@@ -46,20 +41,14 @@ class CategoryManagement(SecuredView):
         )
 
     def get(self, request):
-        catalogs = CategoryFilter(
-            request.GET, queryset=Category.objects.all(), request=request
-        ).qs
+        catalogs = CategoryFilter(request.GET, queryset=Category.objects.all(), request=request).qs
 
-        return PaginationResponse(
-            request, catalogs, serializer=CategorySerializer.Detailed
-        )
+        return PaginationResponse(request, catalogs, serializer=CategorySerializer.Detailed)
 
 
 class CategoryDetail(SecuredView):
     @staticmethod
-    def _get_category(
-        request, category_id: UUID, checker: str = "check_catalog_manage"
-    ) -> Category:
+    def _get_category(request, category_id: UUID, checker: str = "check_catalog_manage") -> Category:
         try:
             category = Category.objects.get(pk=category_id)
         except Category.DoesNotExist as e:
@@ -70,18 +59,14 @@ class CategoryDetail(SecuredView):
             )
 
         if not has_object_permission(checker, request.user, category.catalog):
-            raise ProblemDetailException(
-                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
-            )
+            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return category
 
     def get(self, request, category_id: UUID):
         category = self._get_category(request, category_id, "check_catalog_read")
 
-        return SingleResponse(
-            request, CategorySerializer.Detailed.model_validate(category)
-        )
+        return SingleResponse(request, CategorySerializer.Detailed.model_validate(category))
 
     def put(self, request, category_id: UUID):
         form = CategoryForm.create_from_request(request)
@@ -92,30 +77,19 @@ class CategoryDetail(SecuredView):
 
         category = self._get_category(request, category_id)
 
-        if not has_object_permission(
-            "check_catalog_manage", request.user, form.cleaned_data["catalog_id"]
-        ):
-            raise ProblemDetailException(
-                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
-            )
+        if not has_object_permission("check_catalog_manage", request.user, form.cleaned_data["catalog_id"]):
+            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-        if (
-            Category.objects.exclude(pk=category.pk)
-            .filter(term=form.cleaned_data["term"])
-            .exists()
-        ):
+        if Category.objects.exclude(pk=category.pk).filter(term=form.cleaned_data["term"]).exists():
             raise ProblemDetailException(
-                title=_("Category with term %s is already taken in catalog")
-                % (form.cleaned_data["term"],),
+                title=_("Category with term %s is already taken in catalog") % (form.cleaned_data["term"],),
                 status=HTTPStatus.CONFLICT,
             )
 
         form.populate(category)
         category.save()
 
-        return SingleResponse(
-            request, CategorySerializer.Detailed.model_validate(category)
-        )
+        return SingleResponse(request, CategorySerializer.Detailed.model_validate(category))
 
     def delete(self, request, category_id: UUID):
         category = self._get_category(request, category_id)

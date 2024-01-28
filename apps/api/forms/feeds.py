@@ -13,17 +13,12 @@ class FeedForm(Form):
     kind = forms.ChoiceField(choices=Feed.FeedKind.choices)
     content = forms.CharField()
     per_page = forms.IntegerField(min_value=1, required=False)
-    entries = forms.ModelMultipleChoiceField(
-        queryset=Entry.objects.all(), required=False
-    )
+    entries = forms.ModelMultipleChoiceField(queryset=Entry.objects.all(), required=False)
     parents = forms.ModelMultipleChoiceField(
         queryset=Feed.objects.filter(kind=Feed.FeedKind.NAVIGATION), required=False
     )
 
     def clean(self):
-        if (
-            self.cleaned_data.get("entries")
-            and self.cleaned_data["kind"] == Feed.FeedKind.NAVIGATION
-        ):
+        if self.cleaned_data.get("entries") and self.cleaned_data["kind"] == Feed.FeedKind.NAVIGATION:
             raise ValidationError(_("Navigation feed cannot have entries"))
         return self.cleaned_data

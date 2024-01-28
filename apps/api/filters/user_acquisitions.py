@@ -7,21 +7,11 @@ class UserAcquisitionFilter(django_filters.FilterSet):
     user_id = django_filters.UUIDFilter()
     acquisition_id = django_filters.UUIDFilter()
     type = django_filters.CharFilter(lookup_expr="iexact")
-    title = django_filters.CharFilter(
-        lookup_expr="unaccent__icontains", field_name="acquisition__entry__title"
-    )
-    expire_at_gte = django_filters.DateTimeFilter(
-        field_name="expire_at", lookup_expr="gte"
-    )
-    expire_at_lte = django_filters.DateTimeFilter(
-        field_name="expire_at", lookup_expr="lte"
-    )
-    created_at_gte = django_filters.DateTimeFilter(
-        field_name="created_at", lookup_expr="gte"
-    )
-    created_at_lte = django_filters.DateTimeFilter(
-        field_name="created_at", lookup_expr="lte"
-    )
+    title = django_filters.CharFilter(lookup_expr="unaccent__icontains", field_name="acquisition__entry__title")
+    expire_at_gte = django_filters.DateTimeFilter(field_name="expire_at", lookup_expr="gte")
+    expire_at_lte = django_filters.DateTimeFilter(field_name="expire_at", lookup_expr="lte")
+    created_at_gte = django_filters.DateTimeFilter(field_name="created_at", lookup_expr="gte")
+    created_at_lte = django_filters.DateTimeFilter(field_name="created_at", lookup_expr="lte")
 
     class Meta:
         model = UserAcquisition

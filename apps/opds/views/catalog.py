@@ -11,9 +11,7 @@ class RootView(OpdsView):
         feeds = self.catalog.feeds.filter(parents__content__isnull=True)
 
         result = OpdsFeed(
-            id=request.build_absolute_uri(
-                reverse("opds:root", kwargs={"catalog_name": catalog_name})
-            ),
+            id=request.build_absolute_uri(reverse("opds:root", kwargs={"catalog_name": catalog_name})),
             title=self.catalog.title,
             links=[
                 Link(

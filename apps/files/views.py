@@ -26,25 +26,16 @@ class AcquisitionDownload(SecuredView):
         try:
             acquisition = Acquisition.objects.get(pk=acquisition_id)
         except Acquisition.DoesNotExist:
-            raise ProblemDetailException(
-                _("Acquisition not found"), status=HTTPStatus.NOT_FOUND
-            )
+            raise ProblemDetailException(_("Acquisition not found"), status=HTTPStatus.NOT_FOUND)
 
         if acquisition.relation != Acquisition.AcquisitionType.ACQUISITION.OPEN_ACCESS:
             self._authenticate(request)
 
-        if not has_object_permission(
-            "check_entry_read", request.user, acquisition.entry
-        ):
-            raise ProblemDetailException(
-                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
-            )
+        if not has_object_permission("check_entry_read", request.user, acquisition.entry):
+            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-        if (
-            request.user.is_authenticated
-            and settings.EVILFLOWERS_ENFORCE_USER_ACQUISITIONS
-        ):
-            if settings.EVILFLOWERS_USER_ACQUISITION_MODE == 'single':
+        if request.user.is_authenticated and settings.EVILFLOWERS_ENFORCE_USER_ACQUISITIONS:
+            if settings.EVILFLOWERS_USER_ACQUISITION_MODE == "single":
                 user_acquisition, created = UserAcquisition.objects.get_or_create(
                     acquisition=acquisition,
                     user=request.user,
@@ -67,9 +58,7 @@ class AcquisitionDownload(SecuredView):
         acquisition.entry.popularity = acquisition.entry.popularity + 1
         sanitized_filename = f"{slugify(acquisition.entry.title.lower())}{guess_extension(acquisition.mime)}"
 
-        return FileResponse(
-            acquisition.content, as_attachment=True, filename=sanitized_filename
-        )
+        return FileResponse(acquisition.content, as_attachment=True, filename=sanitized_filename)
 
 
 class UserAcquisitionDownload(SecuredView):
@@ -77,9 +66,9 @@ class UserAcquisitionDownload(SecuredView):
 
     def get(self, request, user_acquisition_id: uuid.UUID):
         try:
-            user_acquisition = UserAcquisition.objects.select_related(
-                "acquisition", "acquisition__entry"
-            ).get(pk=user_acquisition_id)
+            user_acquisition = UserAcquisition.objects.select_related("acquisition", "acquisition__entry").get(
+                pk=user_acquisition_id
+            )
         except UserAcquisition.DoesNotExist:
             raise ProblemDetailException(
                 _("User acquisition not found"),
@@ -90,16 +79,10 @@ class UserAcquisitionDownload(SecuredView):
         if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:
             self._authenticate(request)
 
-            if not has_object_permission(
-                "check_user_acquisition_read", request.user, user_acquisition
-            ):
-                raise ProblemDetailException(
-                    _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
-                )
+            if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
+                raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-        user_acquisition.acquisition.entry.popularity = (
-            user_acquisition.acquisition.entry.popularity + 1
-        )
+        user_acquisition.acquisition.entry.popularity = user_acquisition.acquisition.entry.popularity + 1
         user_acquisition.acquisition.entry.save()
 
         sanitized_filename = (
@@ -108,43 +91,28 @@ class UserAcquisitionDownload(SecuredView):
         )
 
         if user_acquisition.acquisition.mime in settings.EVILFLOWERS_MODIFIERS:
-            modifier = import_string(
-                settings.EVILFLOWERS_MODIFIERS[user_acquisition.acquisition.mime]
-            )(
+            modifier = import_string(settings.EVILFLOWERS_MODIFIERS[user_acquisition.acquisition.mime])(
                 context={
-                    "id": str(uuid.uuid4())
-                    if request.user.is_anonymous
-                    else str(user_acquisition.id),
+                    "id": str(uuid.uuid4()) if request.user.is_anonymous else str(user_acquisition.id),
                     "user_id": str(user_acquisition.user_id),
                     "title": user_acquisition.acquisition.entry.title,
                     "username": user_acquisition.user.username,
                     "authors": ", ".join(
                         [user_acquisition.acquisition.entry.author.full_name]
-                        + [
-                            c.full_name
-                            for c in user_acquisition.acquisition.entry.contributors.all()
-                        ]
+                        + [c.full_name for c in user_acquisition.acquisition.entry.contributors.all()]
                     ),
                 },
-                pages=depack(user_acquisition.range)
-                if user_acquisition.range
-                else None,
+                pages=depack(user_acquisition.range) if user_acquisition.range else None,
             )
             try:
-                content = modifier.generate(
-                    user_acquisition.acquisition.content, request.GET.get("page", None)
-                )
+                content = modifier.generate(user_acquisition.acquisition.content, request.GET.get("page", None))
             except InvalidPage:
-                raise ProblemDetailException(
-                    _("Page not found"), status=HTTPStatus.NOT_FOUND
-                )
+                raise ProblemDetailException(_("Page not found"), status=HTTPStatus.NOT_FOUND)
         else:
             content = user_acquisition.acquisition.content
 
         if request.GET.get("format", None) == "base64":
-            return SingleResponse(
-                request, {"data": base64.b64encode(content.read()).decode()}
-            )
+            return SingleResponse(request, {"data": base64.b64encode(content.read()).decode()})
 
         return FileResponse(content, as_attachment=True, filename=sanitized_filename)
 
@@ -156,12 +124,8 @@ class EntryImageDownload(SecuredView):
         try:
             entry = Entry.objects.get(pk=entry_id, image__isnull=False)
         except Entry.DoesNotExist:
-            raise ProblemDetailException(
-                _("Entry image not found"), status=HTTPStatus.NOT_FOUND
-            )
+            raise ProblemDetailException(_("Entry image not found"), status=HTTPStatus.NOT_FOUND)
 
-        sanitized_filename = (
-            f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime)}"
-        )
+        sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime)}"
 
         return FileResponse(entry.image, filename=sanitized_filename)

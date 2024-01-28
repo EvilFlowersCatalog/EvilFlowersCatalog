@@ -22,9 +22,7 @@ class PDFModifier:
         self._pages = pages or None
 
     def create_qr(self) -> bytes:
-        qr = qrcode.QRCode(
-            version=4, border=0, error_correction=qrcode.constants.ERROR_CORRECT_H
-        )
+        qr = qrcode.QRCode(version=4, border=0, error_correction=qrcode.constants.ERROR_CORRECT_H)
         qr.add_data(json.dumps(self._context))
         qr = qr.make_image().get_image().convert("RGBA")
         qr.putalpha(150)
@@ -86,10 +84,4 @@ class PDFModifier:
             except ValueError:
                 raise InvalidPage()
 
-        return File(
-            io.BytesIO(
-                document.tobytes(
-                    garbage=3, deflate=True, deflate_images=True, linear=True
-                )
-            )
-        )
+        return File(io.BytesIO(document.tobytes(garbage=3, deflate=True, deflate_images=True, linear=True)))

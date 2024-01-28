@@ -20,12 +20,8 @@ class FeedManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(form)
 
-        if not has_object_permission(
-            "check_catalog_read", request.user, form.cleaned_data["catalog_id"]
-        ):
-            raise ProblemDetailException(
-                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
-            )
+        if not has_object_permission("check_catalog_read", request.user, form.cleaned_data["catalog_id"]):
+            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         # FIXME: Probably not working
         if Feed.objects.filter(
@@ -47,9 +43,7 @@ class FeedManagement(SecuredView):
         if "parents" in form.cleaned_data.keys():
             feed.parents.add(*form.cleaned_data["parents"])
 
-        return SingleResponse(
-            request, FeedSerializer.Base.model_validate(feed), status=HTTPStatus.CREATED
-        )
+        return SingleResponse(request, FeedSerializer.Base.model_validate(feed), status=HTTPStatus.CREATED)
 
     def get(self, request):
         feeds = FeedFilter(request.GET, queryset=Feed.objects.all(), request=request).qs
@@ -63,14 +57,10 @@ class FeedDetail(SecuredView):
         try:
             feed = Feed.objects.select_related("catalog").get(pk=feed_id)
         except Feed.DoesNotExist as e:
-            raise ProblemDetailException(
-                _("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e
-            )
+            raise ProblemDetailException(_("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
         if not has_object_permission("check_catalog_read", request.user, feed.catalog):
-            raise ProblemDetailException(
-                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN
-            )
+            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return feed
 
@@ -104,10 +94,7 @@ class FeedDetail(SecuredView):
         form.populate(feed)
         feed.save()
 
-        if (
-            feed.kind == Feed.FeedKind.ACQUISITION
-            and "entries" in form.cleaned_data.keys()
-        ):
+        if feed.kind == Feed.FeedKind.ACQUISITION and "entries" in form.cleaned_data.keys():
             feed.entries.clear()
             feed.entries.add(*form.cleaned_data["entries"])
 

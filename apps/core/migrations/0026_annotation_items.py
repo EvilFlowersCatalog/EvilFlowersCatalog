@@ -12,9 +12,7 @@ def forwards_func(apps, schema_editor):
     db_alias = schema_editor.connection.alias
 
     for annotation in Annotation.objects.using(db_alias).all():
-        AnnotationItem.objects.using(db_alias).create(
-            annotation=annotation, page=1, content=annotation.content
-        )
+        AnnotationItem.objects.using(db_alias).create(annotation=annotation, page=1, content=annotation.content)
 
 
 class Migration(migrations.Migration):
@@ -33,15 +31,11 @@ class Migration(migrations.Migration):
             fields=[
                 (
                     "id",
-                    models.UUIDField(
-                        default=uuid.uuid4, primary_key=True, serialize=False
-                    ),
+                    models.UUIDField(default=uuid.uuid4, primary_key=True, serialize=False),
                 ),
                 (
                     "created_at",
-                    models.DateTimeField(
-                        db_default=django.db.models.functions.datetime.Now()
-                    ),
+                    models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
                 ),
                 (
                     "updated_at",

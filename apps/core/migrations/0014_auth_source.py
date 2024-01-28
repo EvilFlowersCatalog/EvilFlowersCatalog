@@ -9,9 +9,7 @@ def create_database_source(apps, schema_editor):
     AuthSource = apps.get_model("core", "AuthSource")
     User = apps.get_model("core", "User")
 
-    auth_source = AuthSource.objects.create(
-        name="Database", driver="database", is_active=True
-    )
+    auth_source = AuthSource.objects.create(name="Database", driver="database", is_active=True)
 
     for user in User.objects.all():
         user.auth_source = auth_source
@@ -29,9 +27,7 @@ class Migration(migrations.Migration):
             fields=[
                 (
                     "id",
-                    models.UUIDField(
-                        default=uuid.uuid4, primary_key=True, serialize=False
-                    ),
+                    models.UUIDField(default=uuid.uuid4, primary_key=True, serialize=False),
                 ),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
@@ -67,8 +63,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name="user",
             name="auth_source",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.CASCADE, to="core.authsource"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to="core.authsource"),
         ),
     ]

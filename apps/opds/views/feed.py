@@ -27,9 +27,7 @@ class FeedView(OpdsView):
         try:
             feed = Feed.objects.get(catalog=self.catalog, url_name=feed_name)
         except Feed.DoesNotExist:
-            raise ProblemDetailException(
-                _("Feed not found"), status=HTTPStatus.NOT_FOUND
-            )
+            raise ProblemDetailException(_("Feed not found"), status=HTTPStatus.NOT_FOUND)
 
         result = OpdsFeed(
             id=request.build_absolute_uri(
@@ -76,9 +74,7 @@ class FeedView(OpdsView):
                 )
 
             try:
-                result.updated = (
-                    Entry.objects.filter(feeds=feed).latest("updated_at").updated_at
-                )
+                result.updated = Entry.objects.filter(feeds=feed).latest("updated_at").updated_at
             except Entry.DoesNotExist:
                 pass
 
@@ -109,9 +105,7 @@ class FeedView(OpdsView):
                     item.links.append(
                         Link(
                             rel="http://opds-spec.org/image",
-                            href=reverse(
-                                "files:cover-download", kwargs={"entry_id": entry.id}
-                            ),
+                            href=reverse("files:cover-download", kwargs={"entry_id": entry.id}),
                             type=entry.image_mime,
                         )
                     )
@@ -174,9 +168,7 @@ class FeedView(OpdsView):
 
 class CompleteFeedView(OpdsView):
     def get(self, request, catalog_name: str):
-        entry_filter = EntryFilter(
-            request.GET, queryset=Entry.objects.all(), request=request
-        )
+        entry_filter = EntryFilter(request.GET, queryset=Entry.objects.all(), request=request)
 
         try:
             updated_at = entry_filter.qs.latest("updated_at").updated_at
@@ -200,14 +192,10 @@ class LatestFeedView(OpdsView):
         entries = Entry.objects.filter(catalog=self.catalog).order_by("created_at")[
             : settings.EVILFLOWERS_FEEDS_NEW_LIMIT
         ]
-        entry_filter = EntryFilter(
-            request.GET, queryset=Entry.objects.filter(pk__in=entries), request=request
-        )
+        entry_filter = EntryFilter(request.GET, queryset=Entry.objects.filter(pk__in=entries), request=request)
 
         try:
-            updated_at = (
-                Entry.objects.filter(id__in=entries).latest("updated_at").updated_at
-            )
+            updated_at = Entry.objects.filter(id__in=entries).latest("updated_at").updated_at
         except Entry.DoesNotExist:
             updated_at = self.catalog.updated_at
 
@@ -228,14 +216,10 @@ class PopularFeedView(OpdsView):
         entries = Entry.objects.filter(catalog=self.catalog).order_by("-popularity")[
             : settings.EVILFLOWERS_FEEDS_NEW_LIMIT
         ]
-        entry_filter = EntryFilter(
-            request.GET, queryset=Entry.objects.filter(pk__in=entries), request=request
-        )
+        entry_filter = EntryFilter(request.GET, queryset=Entry.objects.filter(pk__in=entries), request=request)
 
         try:
-            updated_at = (
-                Entry.objects.filter(id__in=entries).latest("updated_at").updated_at
-            )
+            updated_at = Entry.objects.filter(id__in=entries).latest("updated_at").updated_at
         except Entry.DoesNotExist:
             updated_at = self.catalog.updated_at
 

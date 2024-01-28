@@ -24,8 +24,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="feed",
             name="parents",
-            field=models.ManyToManyField(
-                db_table="feed_parents", related_name="children", to="core.Feed"
-            ),
+            field=models.ManyToManyField(db_table="feed_parents", related_name="children", to="core.Feed"),
         ),
     ]

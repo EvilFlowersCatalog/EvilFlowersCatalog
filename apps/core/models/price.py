@@ -14,9 +14,7 @@ class Price(BaseModel):
         verbose_name = _("Price")
         verbose_name_plural = _("Prices")
 
-    acquisition = models.ForeignKey(
-        Acquisition, on_delete=models.CASCADE, related_name="prices"
-    )
+    acquisition = models.ForeignKey(Acquisition, on_delete=models.CASCADE, related_name="prices")
     currency = models.ForeignKey(Currency, on_delete=models.CASCADE, related_name="+")
     value = models.DecimalField(max_digits=12, decimal_places=4)
 

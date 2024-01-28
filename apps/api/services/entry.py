@@ -32,12 +32,7 @@ class EntryService:
             conditions.append(Q(identifiers__isbn=entry.identifiers.get("isbn")))
         if entry.identifiers.get("doi"):
             conditions.append(Q(identifiers__doi=entry.identifiers.get("doi")))
-        if (
-            Entry.objects.exclude(pk=entry.pk)
-            .filter(catalog=self._catalog)
-            .filter(reduce(or_, conditions))
-            .exists()
-        ):
+        if Entry.objects.exclude(pk=entry.pk).filter(catalog=self._catalog).filter(reduce(or_, conditions)).exists():
             raise self.AlreadyExists()
 
         if "author" in form.cleaned_data.keys():

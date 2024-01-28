@@ -19,11 +19,7 @@ class CategoryFilter(django_filters.FilterSet):
     @staticmethod
     def filter_query(qs, name, value):
         return (
-            qs.annotate(
-                search_query=Concat(
-                    "term", Value(";"), "label", output_field=CharField()
-                )
-            )
+            qs.annotate(search_query=Concat("term", Value(";"), "label", output_field=CharField()))
             .filter(search_query__unaccent__icontains=value)
             .distinct()
         )
@@ -36,8 +32,6 @@ class CategoryFilter(django_filters.FilterSet):
             return qs.filter(catalog__is_public=True)
 
         if not self.request.user.is_superuser:
-            qs = qs.filter(
-                Q(catalog__users=self.request.user) | Q(catalog__is_public=True)
-            )
+            qs = qs.filter(Q(catalog__users=self.request.user) | Q(catalog__is_public=True))
 
         return qs

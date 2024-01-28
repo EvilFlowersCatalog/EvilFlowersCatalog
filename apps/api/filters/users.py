@@ -9,12 +9,8 @@ class UserFilter(django_filters.FilterSet):
     name = django_filters.CharFilter(lookup_expr="unaccent__icontains")
     surname = django_filters.CharFilter(lookup_expr="unaccent__icontains")
     is_active = django_filters.BooleanFilter()
-    last_login_gte = django_filters.DateTimeFilter(
-        field_name="last_login", lookup_expr="gte"
-    )
-    last_login_lte = django_filters.DateTimeFilter(
-        field_name="last_login", lookup_expr="lte"
-    )
+    last_login_gte = django_filters.DateTimeFilter(field_name="last_login", lookup_expr="gte")
+    last_login_lte = django_filters.DateTimeFilter(field_name="last_login", lookup_expr="lte")
 
     class Meta:
         model = User

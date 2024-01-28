@@ -25,15 +25,11 @@ class ShelfRecordManagement(SecuredView):
             request=request,
         ).qs
 
-        return PaginationResponse(
-            request, shelf_records, serializer=ShelfRecordSerializer.Base
-        )
+        return PaginationResponse(request, shelf_records, serializer=ShelfRecordSerializer.Base)
 
     def post(self, request):
         if request.user.is_anonymous:
-            raise UnauthorizedException(
-                detail=_("You need to be logged in to access shelf")
-            )
+            raise UnauthorizedException(detail=_("You need to be logged in to access shelf"))
 
         form = ShelfRecordForm.create_from_request(request)
 
@@ -47,17 +43,13 @@ class ShelfRecordManagement(SecuredView):
         if not created:
             return SingleResponse(
                 request,
-                ShelfRecordSerializer.Base.model_validate(
-                    shelf_record, context={"user": request.user}
-                ),
+                ShelfRecordSerializer.Base.model_validate(shelf_record, context={"user": request.user}),
                 status=HTTPStatus.OK,
             )
 
         return SingleResponse(
             request,
-            ShelfRecordSerializer.Base.model_validate(
-                shelf_record, context={"user": request.user}
-            ),
+            ShelfRecordSerializer.Base.model_validate(shelf_record, context={"user": request.user}),
             status=HTTPStatus.CREATED,
         )
 
@@ -67,16 +59,10 @@ class ShelfRecordDetail(SecuredView):
         try:
             shelf_record = ShelfRecord.objects.get(pk=shelf_record_id)
         except ShelfRecord.DoesNotExist as e:
-            raise ProblemDetailException(
-                title=_("Not found"), status=HTTPStatus.NOT_FOUND, previous=e
-            )
+            raise ProblemDetailException(title=_("Not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        if not has_object_permission(
-            "check_shelf_record_access", request.user, shelf_record
-        ):
-            raise ProblemDetailException(
-                title=_("Not found"), status=HTTPStatus.NOT_FOUND
-            )
+        if not has_object_permission("check_shelf_record_access", request.user, shelf_record):
+            raise ProblemDetailException(title=_("Not found"), status=HTTPStatus.NOT_FOUND)
 
         shelf_record.delete()
 

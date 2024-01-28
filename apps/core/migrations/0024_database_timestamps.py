@@ -13,211 +13,151 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name="acquisition",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="acquisition",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="annotation",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="annotation",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="apikey",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="apikey",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="author",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="author",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="authsource",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="authsource",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="catalog",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="catalog",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="category",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="category",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="currency",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="currency",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="entry",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="entry",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="feed",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="feed",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="language",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="language",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="price",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="price",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="shelfrecord",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="shelfrecord",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="user",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="user",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="useracquisition",
             name="created_at",
-            field=models.DateTimeField(
-                db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(db_default=django.db.models.functions.datetime.Now()),
         ),
         migrations.AlterField(
             model_name="useracquisition",
             name="updated_at",
-            field=models.DateTimeField(
-                auto_now=True, db_default=django.db.models.functions.datetime.Now()
-            ),
+            field=models.DateTimeField(auto_now=True, db_default=django.db.models.functions.datetime.Now()),
         ),
     ]

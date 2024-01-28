@@ -15,10 +15,6 @@ class UserCatalog(models.Model):
         WRITE = "write", _("Write")
         MANAGE = "manage", _("Manage")
 
-    user = models.ForeignKey(
-        "User", on_delete=models.CASCADE, related_name="user_catalogs"
-    )
-    catalog = models.ForeignKey(
-        "Catalog", on_delete=models.CASCADE, related_name="user_catalogs"
-    )
+    user = models.ForeignKey("User", on_delete=models.CASCADE, related_name="user_catalogs")
+    catalog = models.ForeignKey("Catalog", on_delete=models.CASCADE, related_name="user_catalogs")
     mode = models.CharField(max_length=10, choices=Mode.choices)

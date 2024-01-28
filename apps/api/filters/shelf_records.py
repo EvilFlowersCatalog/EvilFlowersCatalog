@@ -11,27 +11,17 @@ class ShelfRecordFilter(django_filters.FilterSet):
         fields = []
 
     catalog_id = django_filters.UUIDFilter(field_name="entry__catalog_id")
-    catalog_title = django_filters.CharFilter(
-        field_name="entry__catalog__title", lookup_expr="unaccent__icontains"
-    )
+    catalog_title = django_filters.CharFilter(field_name="entry__catalog__title", lookup_expr="unaccent__icontains")
     entry_id = django_filters.UUIDFilter()
     user_id = django_filters.UUIDFilter()
     author_id = django_filters.UUIDFilter(method="filter_author_id", label=_("Author"))
     author = django_filters.CharFilter(method="filter_author")
-    category_id = django_filters.UUIDFilter(
-        label=_("Category"), field_name="entry__categories__id"
-    )
+    category_id = django_filters.UUIDFilter(label=_("Category"), field_name="entry__categories__id")
     category_term = django_filters.CharFilter(field_name="entry__categories__term")
     language_id = django_filters.UUIDFilter()
-    language_code = django_filters.CharFilter(
-        field_name="entry__language__code", label=_("Language")
-    )
-    title = django_filters.CharFilter(
-        field_name="entry__title", lookup_expr="unaccent__icontains"
-    )
-    summary = django_filters.CharFilter(
-        field_name="entry__summary", lookup_expr="unaccent__icontains"
-    )
+    language_code = django_filters.CharFilter(field_name="entry__language__code", label=_("Language"))
+    title = django_filters.CharFilter(field_name="entry__title", lookup_expr="unaccent__icontains")
+    summary = django_filters.CharFilter(field_name="entry__summary", lookup_expr="unaccent__icontains")
     query = django_filters.CharFilter(method="filter_name")
     feed_id = django_filters.UUIDFilter(field_name="entry__feeds__id")
 
@@ -43,9 +33,7 @@ class ShelfRecordFilter(django_filters.FilterSet):
             return qs.none()
 
         if not self.request.user.is_superuser:
-            qs = qs.filter(
-                Q(entry__catalog__users=self.request.user) & Q(user=self.request.user)
-            )
+            qs = qs.filter(Q(entry__catalog__users=self.request.user) & Q(user=self.request.user))
 
         return qs
 
@@ -64,7 +52,4 @@ class ShelfRecordFilter(django_filters.FilterSet):
 
     @staticmethod
     def filter_query(qs, name, value):
-        return qs.filter(
-            Q(entry__title__unaccent__icontains=value)
-            | Q(entry__summary__unaccent__icontains=value)
-        )
+        return qs.filter(Q(entry__title__unaccent__icontains=value) | Q(entry__summary__unaccent__icontains=value))

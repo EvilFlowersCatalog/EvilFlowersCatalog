@@ -50,9 +50,7 @@ class DoiDriver(IntrospectionDriver):
         result = {
             "publisher": data.get("publisher"),
             "doi": data.get("DOI"),
-            "authors": [
-                {"name": i["given"], "surname": i["family"]} for i in data.get("author")
-            ],
+            "authors": [{"name": i["given"], "surname": i["family"]} for i in data.get("author")],
             "title": data.get("title"),
         }
 

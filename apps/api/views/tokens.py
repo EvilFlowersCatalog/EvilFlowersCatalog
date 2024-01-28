@@ -54,9 +54,7 @@ class AccessTokenManagement(SecuredView):
 
         return SingleResponse(
             request,
-            TokenSerializer.Access(
-                access_token=access_token, refresh_token=refresh_token, user=user
-            ),
+            TokenSerializer.Access(access_token=access_token, refresh_token=refresh_token, user=user),
         )
 
 
@@ -70,9 +68,7 @@ class RefreshTokenManagement(View):
         try:
             claims = JWTFactory.decode(form.cleaned_data["refresh"])
         except JoseError as e:
-            raise ProblemDetailException(
-                _("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e
-            )
+            raise ProblemDetailException(_("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e)
 
         redis = Redis(
             host=settings.REDIS_HOST,

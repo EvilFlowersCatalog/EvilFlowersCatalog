@@ -16,9 +16,7 @@ class Catalog(BaseModel):
     creator = models.ForeignKey("User", on_delete=models.CASCADE)
     url_name = models.SlugField(unique=True)
     title = models.CharField(max_length=100)
-    users = models.ManyToManyField(
-        "User", related_name="catalogs", through="UserCatalog"
-    )
+    users = models.ManyToManyField("User", related_name="catalogs", through="UserCatalog")
     is_public = models.BooleanField(default=False)
 
 

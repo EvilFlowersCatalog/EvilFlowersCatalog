@@ -42,7 +42,8 @@ black = "^23.12.1"
 datamodel-code-generator = "^0.25.2"
 
 [tool.black]
-max-line-length = 119
+line-length = 119
+target-version = ['py312']
 include = '\.pyi?$'
 exclude = '''
 /(

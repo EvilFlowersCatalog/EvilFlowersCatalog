@@ -19,9 +19,7 @@ class S3Storage(Storage):
         )
 
     def _open(self, name, mode="rb"):
-        return File(
-            self._client.get_object(settings.EVILFLOWERS_STORAGE_S3_BUCKET, name)
-        )
+        return File(self._client.get_object(settings.EVILFLOWERS_STORAGE_S3_BUCKET, name))
 
     def _save(self, name, content):
         content_type = getattr(content, "content_type", None)
@@ -58,9 +56,7 @@ class S3Storage(Storage):
         raise NotImplementedError("This backend doesn't support directories.")
 
     def size(self, name):
-        s3_object = self._client.stat_object(
-            settings.EVILFLOWERS_STORAGE_S3_BUCKET, name
-        )
+        s3_object = self._client.stat_object(settings.EVILFLOWERS_STORAGE_S3_BUCKET, name)
         return s3_object.size
 
     def url(self, name):
@@ -70,13 +66,9 @@ class S3Storage(Storage):
         raise NotImplementedError("This backend doesn't support accessed time.")
 
     def get_created_time(self, name):
-        s3_object = self._client.stat_object(
-            settings.EVILFLOWERS_STORAGE_S3_BUCKET, name
-        )
+        s3_object = self._client.stat_object(settings.EVILFLOWERS_STORAGE_S3_BUCKET, name)
         return s3_object.last_modified
 
     def get_modified_time(self, name):
-        s3_object = self._client.stat_object(
-            settings.EVILFLOWERS_STORAGE_S3_BUCKET, name
-        )
+        s3_object = self._client.stat_object(settings.EVILFLOWERS_STORAGE_S3_BUCKET, name)
         return s3_object.last_modified
