@@ -5,7 +5,10 @@ from typing import Optional, TypedDict, Literal
 from django.conf import settings
 from django.contrib.postgres.fields import HStoreField
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from partial_date import PartialDateField
 
@@ -86,6 +89,7 @@ class Entry(BaseModel):
     popularity = models.PositiveBigIntegerField(default=0, null=False)
     config = models.JSONField(null=False, default=default_entry_config)
     citation = models.TextField(null=True)
+    touched_at = models.DateTimeField(null=True, auto_now=True)
 
     @property
     def image_url(self) -> Optional[str]:
@@ -107,6 +111,13 @@ class Entry(BaseModel):
     def read_config(self, config_name: str):
         current = default_entry_config() | self.config
         return current.get(config_name)
+
+
+@receiver(post_save, sender=Entry)
+def touch_parents(sender, instance: Entry, **kwargs):
+    instance.catalog.touched_at = timezone.now()
+    instance.catalog.save()
+    instance.feeds.update(touched_at=timezone.now())
 
 
 __all__ = ["Entry"]

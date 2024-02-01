@@ -4,7 +4,10 @@ from typing import Optional
 
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models.entry import Entry
@@ -68,6 +71,12 @@ class Acquisition(BaseModel):
                 checksum.update(block)
             return checksum.hexdigest()
         return None
+
+
+@receiver(post_save, sender=Acquisition)
+def touch_entry(sender, instance: Acquisition, **kwargs):
+    instance.entry.touched_at = timezone.now()
+    instance.entry.save()
 
 
 __all__ = ["Acquisition"]

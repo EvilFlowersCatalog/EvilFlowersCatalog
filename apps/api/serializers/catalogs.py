@@ -21,6 +21,7 @@ class CatalogSerializer:
         url_name: str
         title: str
         is_public: bool
+        touched_at: datetime
         created_at: datetime
         updated_at: datetime
 

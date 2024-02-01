@@ -72,6 +72,7 @@ class EntrySerializer:
         thumbnail_base64: Optional[str] = Field(serialization_alias="thumbnail")
         config: Optional[dict]
         citation: Optional[str]
+        touched_at: datetime
         created_at: datetime
         updated_at: datetime
 

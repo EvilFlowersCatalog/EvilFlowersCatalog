@@ -18,6 +18,7 @@ class Catalog(BaseModel):
     title = models.CharField(max_length=100)
     users = models.ManyToManyField("User", related_name="catalogs", through="UserCatalog")
     is_public = models.BooleanField(default=False)
+    touched_at = models.DateTimeField(null=True, auto_now=True)
 
 
 __all__ = [

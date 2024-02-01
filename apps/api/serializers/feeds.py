@@ -22,6 +22,7 @@ class FeedSerializer:
         url: str
         content: str
         per_page: Optional[int]
+        touched_at: datetime
         created_at: datetime
         updated_at: datetime
 

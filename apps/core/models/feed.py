@@ -1,6 +1,9 @@
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models.entry import Entry
@@ -35,10 +38,17 @@ class Feed(BaseModel):
     per_page = models.IntegerField(null=True)
     entries = models.ManyToManyField(Entry, related_name="feeds")
     parents = models.ManyToManyField("self", related_name="children", db_table="feed_parents", symmetrical=False)
+    touched_at = models.DateTimeField(null=True, auto_now=True)
 
     @property
     def url(self):
         return f"{settings.BASE_URL}{reverse('opds:feed', args=[self.catalog.url_name, self.url_name])}"
+
+
+@receiver(post_save, sender=Feed)
+def touch_catalog(sender, instance: Feed, **kwargs):
+    instance.catalog.touched_at = timezone.now()
+    instance.catalog.save()
 
 
 __all__ = ["Feed"]
