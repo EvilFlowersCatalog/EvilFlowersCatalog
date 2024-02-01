@@ -1,4 +1,5 @@
 import datetime
+from enum import Enum
 from typing import Literal, Optional, List, Union
 
 from pydantic import EmailStr
@@ -33,19 +34,21 @@ class Category(BaseXmlModel, tag="category", nsmap=NSMAP):
     label: Optional[str] = element(default=None)
 
 
+class LinkType(str, Enum):
+    SELF = "self"
+    START = "start"
+    UP = "up"
+    RELATED = "related"
+    SUBSECTION = "subsection"
+    POPULAR = "http://opds-spec.org/sort/popular"
+    NEW = "http://opds-spec.org/sort/new"
+    IMAGE = "http://opds-spec.org/image"
+    OPEN_ACCESS = "http://opds-spec.org/acquisition/open-access"
+    ACQUISITION = "http://opds-spec.org/acquisition"
+
+
 class Link(BaseXmlModel, tag="link", nsmap=NSMAP):
-    rel: Literal[
-        "self",
-        "start",
-        "up",
-        "related",
-        "subsection",
-        "http://opds-spec.org/sort/popular",
-        "http://opds-spec.org/sort/new",
-        "http://opds-spec.org/image",
-        "http://opds-spec.org/acquisition/open-access",
-        "http://opds-spec.org/acquisition",
-    ] = attr()
+    rel: LinkType = attr()
     href: str = attr()
     type: str = attr()
     title: Optional[str] = attr(default=None)
@@ -55,7 +58,7 @@ class OpdsEntry(BaseXmlModel, nsmap=NSMAP):
     title: str = element()
     id: str = element()
     updated: datetime.datetime = element()
-    links: List[Link] = element(tag="link")
+    links: List[Link] = element(tag="link", default=list())
 
 
 class NavigationEntry(OpdsEntry, tag="entry"):
@@ -64,16 +67,16 @@ class NavigationEntry(OpdsEntry, tag="entry"):
 
 
 class AcquisitionEntry(OpdsEntry, tag="entry"):
-    authors: List[Author] = element(tag="author")
+    authors: List[Author] = element(tag="author", default=list())
     summary: Summary = element()
-    categories: Optional[List[Category]] = element(tag="category", default=None)
+    categories: Optional[List[Category]] = element(tag="category", default=list())
     content: Optional[Content] = element(default=None)
 
 
 class OpdsFeed(BaseXmlModel, tag="feed", nsmap=NSMAP):
     id: str = element()  # TODO: URI element
-    links: List[Link] = element(tag="link")
+    links: List[Link] = element(tag="link", default=list())
     title: str = element()
     updated: datetime.datetime = element()
     author: Author = element()
-    entries: List[Union[NavigationEntry, AcquisitionEntry]] = element(tag="entry")
+    entries: List[Union[NavigationEntry, AcquisitionEntry]] = element(tag="entry", default=list())

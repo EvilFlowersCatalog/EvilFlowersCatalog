@@ -102,8 +102,30 @@ class ProblemDetailException(Exception):
         )
 
 
+class AuthorizationException(ProblemDetailException):
+    def __init__(self, request, detail: Optional[str] = None, previous: Optional[BaseException] = None):
+        if request.user.is_authenticated:
+            super().__init__(
+                _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN, detail=detail, previous=previous
+            )
+        else:
+            super().__init__(
+                _("Unauthorized"),
+                status=HTTPStatus.UNAUTHORIZED,
+                extra_headers=(
+                    (
+                        "WWW-Authenticate",
+                        f"Basic realm={slugify(settings.INSTANCE_NAME)},"
+                        f' Bearer realm="{slugify(settings.INSTANCE_NAME)}"',
+                    ),
+                ),
+                detail=detail,
+                previous=previous,
+            )
+
+
 class UnauthorizedException(ProblemDetailException):
-    def __init__(self, detail: Optional[str] = None):
+    def __init__(self, detail: Optional[str] = None, previous: Optional[BaseException] = None):
         super().__init__(
             _("Unauthorized"),
             status=HTTPStatus.UNAUTHORIZED,
@@ -115,6 +137,7 @@ class UnauthorizedException(ProblemDetailException):
                 ),
             ),
             detail=detail,
+            previous=previous,
         )
 
 

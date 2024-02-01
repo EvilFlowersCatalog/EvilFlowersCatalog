@@ -12,7 +12,7 @@ from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
 from apps.api.response import SingleResponse, SeeOtherResponse
-from apps.core.errors import ProblemDetailException, DetailType
+from apps.core.errors import ProblemDetailException, DetailType, AuthorizationException
 from apps.core.fields.multirange import depack
 from apps.core.models import Acquisition, Entry, UserAcquisition
 from apps.core.modifiers import InvalidPage
@@ -20,8 +20,6 @@ from apps.core.views import SecuredView
 
 
 class AcquisitionDownload(SecuredView):
-    UNSECURED_METHODS = ["GET"]
-
     def get(self, request, acquisition_id: uuid.UUID):
         try:
             acquisition = Acquisition.objects.get(pk=acquisition_id)
@@ -29,18 +27,25 @@ class AcquisitionDownload(SecuredView):
             raise ProblemDetailException(_("Acquisition not found"), status=HTTPStatus.NOT_FOUND)
 
         if acquisition.relation != Acquisition.AcquisitionType.ACQUISITION.OPEN_ACCESS:
-            self._authenticate(request)
+            request.user = self._authenticate(request)
 
         if not has_object_permission("check_entry_read", request.user, acquisition.entry):
-            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+            raise AuthorizationException(request)
 
         if request.user.is_authenticated and settings.EVILFLOWERS_ENFORCE_USER_ACQUISITIONS:
             if settings.EVILFLOWERS_USER_ACQUISITION_MODE == "single":
-                user_acquisition, created = UserAcquisition.objects.get_or_create(
+                user_acquisition = UserAcquisition.objects.filter(
                     acquisition=acquisition,
                     user=request.user,
                     type=UserAcquisition.UserAcquisitionType.PERSONAL,
-                )
+                ).first()
+
+                if not user_acquisition:
+                    user_acquisition = UserAcquisition.objects.create(
+                        acquisition=acquisition,
+                        user=request.user,
+                        type=UserAcquisition.UserAcquisitionType.PERSONAL,
+                    )
             else:
                 user_acquisition = UserAcquisition.objects.create(
                     acquisition=acquisition,
@@ -48,22 +53,27 @@ class AcquisitionDownload(SecuredView):
                     type=UserAcquisition.UserAcquisitionType.PERSONAL,
                 )
 
+            params = request.GET.copy()
+
             return SeeOtherResponse(
                 redirect_to=reverse(
                     "files:user-acquisition-download",
                     kwargs={"user_acquisition_id": user_acquisition.pk},
                 )
+                + "?"
+                + params.urlencode()
             )
 
         acquisition.entry.popularity = acquisition.entry.popularity + 1
         sanitized_filename = f"{slugify(acquisition.entry.title.lower())}{guess_extension(acquisition.mime)}"
 
+        if request.GET.get("format", None) == "base64":
+            return SingleResponse(request, {"data": base64.b64encode(acquisition.content.read()).decode()})
+
         return FileResponse(acquisition.content, as_attachment=True, filename=sanitized_filename)
 
 
 class UserAcquisitionDownload(SecuredView):
-    UNSECURED_METHODS = ["GET"]
-
     def get(self, request, user_acquisition_id: uuid.UUID):
         try:
             user_acquisition = UserAcquisition.objects.select_related("acquisition", "acquisition__entry").get(
@@ -77,10 +87,8 @@ class UserAcquisitionDownload(SecuredView):
             )
 
         if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:
-            self._authenticate(request)
-
             if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
-                raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+                raise AuthorizationException(request)
 
         user_acquisition.acquisition.entry.popularity = user_acquisition.acquisition.entry.popularity + 1
         user_acquisition.acquisition.entry.save()
@@ -118,8 +126,6 @@ class UserAcquisitionDownload(SecuredView):
 
 
 class EntryImageDownload(SecuredView):
-    UNSECURED_METHODS = ["GET"]
-
     def get(self, request, entry_id: uuid.UUID):
         try:
             entry = Entry.objects.get(pk=entry_id, image__isnull=False)

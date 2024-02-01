@@ -13,7 +13,6 @@ from apps.core.auth import JWTFactory, BasicBackend
 from apps.core.errors import (
     ValidationException,
     UnauthorizedException,
-    ProblemDetailException,
 )
 from apps.api.response import SingleResponse
 from apps.core.views import SecuredView
@@ -68,7 +67,7 @@ class RefreshTokenManagement(View):
         try:
             claims = JWTFactory.decode(form.cleaned_data["refresh"])
         except JoseError as e:
-            raise ProblemDetailException(_("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e)
+            raise UnauthorizedException(_("Invalid token."), previous=e)
 
         redis = Redis(
             host=settings.REDIS_HOST,

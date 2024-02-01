@@ -2,7 +2,7 @@ from django.conf import settings
 from django.http import HttpResponse
 from django.urls import reverse
 
-from apps.opds.models import OpdsFeed, Link, Author, NavigationEntry, Content
+from apps.opds.models import OpdsFeed, Link, Author, NavigationEntry, Content, LinkType
 from apps.opds.views.base import OpdsView
 
 
@@ -15,12 +15,12 @@ class RootView(OpdsView):
             title=self.catalog.title,
             links=[
                 Link(
-                    rel="self",
+                    rel=LinkType.SELF,
                     href=reverse("opds:root", kwargs={"catalog_name": catalog_name}),
                     type="application/atom+xml;profile=opds-catalog;kind=navigation",
                 ),
                 Link(
-                    rel="start",
+                    rel=LinkType.START,
                     href=reverse("opds:root", kwargs={"catalog_name": catalog_name}),
                     type="application/atom+xml;profile=opds-catalog;kind=navigation",
                 ),
@@ -48,7 +48,7 @@ class RootView(OpdsView):
                     title=feed.title,
                     links=[
                         Link(
-                            rel="subsection",
+                            rel=LinkType.SUBSECTION,
                             href=reverse(
                                 "opds:feed",
                                 kwargs={
