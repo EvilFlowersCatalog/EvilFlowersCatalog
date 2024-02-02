@@ -25,7 +25,7 @@ class RootView(OpdsView):
                     type="application/atom+xml;profile=opds-catalog;kind=navigation",
                 ),
             ],
-            updated=self.catalog.updated_at,
+            updated=self.catalog.touched_at,
             author=Author(
                 name=self.catalog.creator.full_name,
                 uri=f"urn:uuid:{self.catalog.creator.id}",

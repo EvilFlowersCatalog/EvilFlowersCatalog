@@ -36,7 +36,7 @@ class FeedView(OpdsView):
                 ),
                 title=feed.title,
                 author=feed.creator,
-                updated_at=feed.updated_at,
+                updated_at=feed.touched_at,
             )
 
             result.add_link(
@@ -84,7 +84,7 @@ class FeedView(OpdsView):
                 ),
                 title=feed.title,
                 author=feed.creator,
-                updated_at=feed.updated_at,
+                updated_at=feed.touched_at,
             )
 
             result.add_link(
@@ -130,11 +130,6 @@ class FeedView(OpdsView):
 
 class CompleteFeedView(OpdsView):
     def get(self, request, catalog_name: str):
-        try:
-            updated_at = Entry.objects.filter(catalog=self.catalog).latest("updated_at").updated_at
-        except Entry.DoesNotExist:
-            updated_at = self.catalog.updated_at
-
         result = OpdsFeed(
             id=request.build_absolute_uri(
                 reverse(
@@ -154,7 +149,7 @@ class CompleteFeedView(OpdsView):
                 )
             ],
             author=Author(name=self.catalog.creator.full_name),
-            updated=updated_at,
+            updated=self.catalog.touched_at,
             entries=[],
         )
 
