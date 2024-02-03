@@ -11,8 +11,6 @@ from apps.core.errors import ProblemDetailException
 from apps.core.models import Feed, Entry
 from apps.opds.models import (
     Link,
-    Author,
-    OpdsFeed,
     LinkType,
 )
 from apps.opds.services.feeds import AcquisitionFeed, NavigationFeed
@@ -37,6 +35,7 @@ class FeedView(OpdsView):
                 title=feed.title,
                 author=feed.creator,
                 updated_at=feed.touched_at,
+                qs=feed.entries.all(),
             )
 
             result.add_link(
@@ -66,14 +65,6 @@ class FeedView(OpdsView):
                     link_type="application/atom+xml;profile=opds-catalog;kind=navigation",
                 )
 
-            try:
-                result.updated = Entry.objects.filter(feeds=feed).latest("updated_at").updated_at
-            except Entry.DoesNotExist:
-                pass
-
-            for entry in feed.entries.all():
-                result.add_entry(entry)
-
         elif feed.kind == Feed.FeedKind.NAVIGATION:
             result = NavigationFeed(
                 request.build_absolute_uri(
@@ -85,6 +76,7 @@ class FeedView(OpdsView):
                 title=feed.title,
                 author=feed.creator,
                 updated_at=feed.touched_at,
+                qs=feed.children.all(),
             )
 
             result.add_link(
@@ -100,20 +92,6 @@ class FeedView(OpdsView):
                 href=reverse("opds:root", kwargs={"catalog_name": catalog_name}),
                 link_type="application/atom+xml;profile=opds-catalog;kind=navigation",
             )
-
-            for child in feed.children.all():
-                result.add_entry(
-                    child,
-                    request.build_absolute_uri(
-                        reverse(
-                            "opds:feed",
-                            kwargs={
-                                "catalog_name": self.catalog.url_name,
-                                "feed_name": child.url_name,
-                            },
-                        )
-                    ),
-                )
         else:
             raise ProblemDetailException(_("Invalid feed type"), status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
@@ -130,14 +108,12 @@ class FeedView(OpdsView):
 
 class CompleteFeedView(OpdsView):
     def get(self, request, catalog_name: str):
-        result = OpdsFeed(
-            id=request.build_absolute_uri(
-                reverse(
-                    "opds:complete",
-                    kwargs={"catalog_name": catalog_name},
-                )
-            ),
+        result = AcquisitionFeed(
+            f"urn:uuid:{self.catalog.pk}",
             title=_("Complete %s feed") % (self.catalog.title,),
+            author=self.catalog.creator,
+            updated_at=self.catalog.touched_at,
+            qs=self.catalog.entries,
             links=[
                 Link(
                     rel=LinkType.SELF,
@@ -148,18 +124,11 @@ class CompleteFeedView(OpdsView):
                     type="application/atom+xml;profile=opds-catalog;kind=navigation",
                 )
             ],
-            author=Author(name=self.catalog.creator.full_name),
-            updated=self.catalog.touched_at,
-            entries=[],
+            complete=True,
         )
 
         return HttpResponse(
-            result.to_xml(
-                pretty_print=settings.DEBUG,
-                encoding="UTF-8",
-                standalone=True,
-                skip_empty=True,
-            ),
+            result.to_xml(),
             content_type="application/atom+xml;profile=opds-catalog;kind=acquisition",
         )
 
