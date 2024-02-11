@@ -2,6 +2,10 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## 0.7.1 : 2024-02-11
+
+- **Added**: `SECURE_SSL_REDIRECT` set to true in `production` environment settings (default false)
+
 ## 0.7.0 : 2024-02-11
 
 - **Added**: Basic OPDS 1.2 support
