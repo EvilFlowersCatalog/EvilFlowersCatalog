@@ -19,6 +19,9 @@ from apps.core.views import SecuredView
 
 class ShelfRecordManagement(SecuredView):
     def get(self, request):
+        if request.user.is_anonymous:
+            raise UnauthorizedException(detail=_("You need to be logged in to access shelf"))
+
         shelf_records = ShelfRecordFilter(
             request.GET,
             queryset=ShelfRecord.objects.filter(user=request.user),
