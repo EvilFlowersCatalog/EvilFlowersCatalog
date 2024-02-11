@@ -14,13 +14,13 @@ Feel free to open pull requests but please keep in mind this checklist:
 ## Development
 
 We use [poetry](https://python-poetry.org/) for dependency management. Please write your source code according to the
-[PEP8](https://www.python.org/dev/peps/pep-0008/) code-style. [flake8](https://github.com/pycqa/flake8) is used for
+[PEP8](https://www.python.org/dev/peps/pep-0008/) code-style. [black](https://github.com/psf/black) is used for
 code-style and code-quality checks. Please, be sure that your IDE is following settings according to `.editorconfig`
 file.
 
 ```shell script
-# Run flake8
-poetry run flake8 .
+# Run black
+poetry run black .
 ```
 
 ## Documentation

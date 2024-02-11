@@ -2,7 +2,7 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.7.0 : TBD
+## 0.7.0 : 2024-02-11
 
 - **Added**: Basic OPDS 1.2 support
 - **Added**: Categories CRUD endpoints in management API
