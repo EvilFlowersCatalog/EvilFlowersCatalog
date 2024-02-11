@@ -4,7 +4,8 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 
 ## 0.7.1 : 2024-02-11
 
-- **Added**: `SECURE_SSL_REDIRECT` set to true in `production` environment settings (default false)
+- **Added**: `SECURE_SSL_REDIRECT` is now configurable with env variables
+- **Added**: `SECURE_PROXY_SSL_HEADER` for production environment
 
 ## 0.7.0 : 2024-02-11
 
