@@ -13,10 +13,10 @@ from apps.core.views import SecuredView
 
 class AcquisitionManagement(SecuredView):
     def post(self, request):
-        ...
+        raise ProblemDetailException(_("Not implemented"), status=HTTPStatus.NOT_IMPLEMENTED)
 
     def get(self, request):
-        ...
+        raise ProblemDetailException(_("Not implemented"), status=HTTPStatus.NOT_IMPLEMENTED)
 
 
 class AcquisitionDetail(SecuredView):

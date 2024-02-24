@@ -11,7 +11,7 @@ from isbnlib.registry import bibformatters
 class IntrospectionDriver(abc.ABC):
     @abc.abstractmethod
     def resolve(self, identifier: str) -> Optional[dict]:
-        ...
+        pass
 
 
 class IsbnDriver(IntrospectionDriver):

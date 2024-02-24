@@ -45,7 +45,7 @@ class BaseFeed(ABC):
 
     @abstractmethod
     def add_entry(self, entry):
-        ...
+        pass
 
     def add_link(self, rel: LinkType, href: str, link_type: str, title: Optional[str] = None):
         self._links.append(Link(rel=rel, href=href, type=link_type, title=title))

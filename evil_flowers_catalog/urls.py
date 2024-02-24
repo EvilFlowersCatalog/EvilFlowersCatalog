@@ -19,8 +19,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.views.static import serve
 
-urlpatterns = []
-urlpatterns += [
+urlpatterns = [
     path(r"api/v1/", include(("apps.api.urls", "api"), namespace="api")),
     path(r"opds/v1.2/", include(("apps.opds.urls", "opds"), namespace="opds")),
     path(r"opds/v2/", include(("apps.opds2.urls", "opds2"), namespace="opds2")),
