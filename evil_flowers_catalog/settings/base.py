@@ -9,6 +9,7 @@ https://docs.djangoproject.com/en/3.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.1/ref/settings/
 """
+
 import datetime
 import json
 import os
@@ -236,6 +237,10 @@ EVILFLOWERS_IMAGE_MIME = (
 EVILFLOWERS_IMAGE_THUMBNAIL = (768, 480)
 
 EVILFLOWERS_FEEDS_NEW_LIMIT = os.getenv("EVILFLOWERS_FEEDS_NEW_LIMIT", 20)
+
+EVILFLOWERS_CRON_JOBS = {
+    # 'popularity': '*/5 * * * *'
+}
 
 EVILFLOWERS_IDENTIFIERS = ["isbn", "google", "doi"]
 

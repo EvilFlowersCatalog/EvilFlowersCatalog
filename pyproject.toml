@@ -41,7 +41,7 @@ pdf = ["pymupdf"]
 apm = ["elastic-apm", "sentry-sdk", "psutil"]
 
 [tool.poetry.group.dev.dependencies]
-black = "^23.12.1"
+black = "^24.0"
 datamodel-code-generator = { version = "^0.25.2", extras = ["http"] }
 
 [tool.black]
