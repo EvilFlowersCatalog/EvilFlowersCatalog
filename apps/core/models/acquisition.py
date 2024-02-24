@@ -8,6 +8,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models.entry import Entry
@@ -62,9 +63,8 @@ class Acquisition(BaseModel):
             return f"data:{self.mime};base64,{encoded}"
         return None
 
-    @property
+    @cached_property
     def checksum(self) -> Optional[str]:
-        # TODO: create as a database column
         if self.content is not None:
             checksum = hashlib.sha256()
             while block := self.content.read(4096):

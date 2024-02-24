@@ -1,13 +1,13 @@
+import uuid
 from http import HTTPStatus
 
 from django.conf import settings
 from django.http import HttpResponse
-from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext as _
 
-from apps.api.filters.entries import EntryFilter
-from apps.core.errors import ProblemDetailException
+from apps.core.errors import ProblemDetailException, AuthorizationException
 from apps.core.models import Feed, Entry
 from apps.opds.models import (
     Link,
@@ -113,7 +113,7 @@ class CompleteFeedView(OpdsView):
             title=_("Complete %s feed") % (self.catalog.title,),
             author=self.catalog.creator,
             updated_at=self.catalog.touched_at,
-            qs=self.catalog.entries,
+            qs=self.catalog.entries.order_by("-touched_at"),
             links=[
                 Link(
                     rel=LinkType.SELF,
@@ -138,21 +138,27 @@ class LatestFeedView(OpdsView):
         entries = Entry.objects.filter(catalog=self.catalog).order_by("created_at")[
             : settings.EVILFLOWERS_FEEDS_NEW_LIMIT
         ]
-        entry_filter = EntryFilter(request.GET, queryset=Entry.objects.filter(pk__in=entries), request=request)
 
-        try:
-            updated_at = Entry.objects.filter(id__in=entries).latest("updated_at").updated_at
-        except Entry.DoesNotExist:
-            updated_at = self.catalog.updated_at
+        result = AcquisitionFeed(
+            f"urn:uuid:{uuid.uuid4()}",
+            title=_("Latest in %s") % (self.catalog.title,),
+            author=self.catalog.creator,
+            updated_at=self.catalog.touched_at,
+            qs=entries,
+            links=[
+                Link(
+                    rel=LinkType.SELF,
+                    href=reverse(
+                        "opds:new",
+                        kwargs={"catalog_name": catalog_name},
+                    ),
+                    type="application/atom+xml;profile=opds-catalog;kind=navigation",
+                )
+            ],
+        )
 
-        return render(
-            request,
-            "opds/feeds/latest.xml",
-            {
-                "catalog": self.catalog,
-                "updated_at": updated_at,
-                "entry_filter": entry_filter,
-            },
+        return HttpResponse(
+            result.to_xml(),
             content_type="application/atom+xml;profile=opds-catalog;kind=acquisition",
         )
 
@@ -162,25 +168,64 @@ class PopularFeedView(OpdsView):
         entries = Entry.objects.filter(catalog=self.catalog).order_by("-popularity")[
             : settings.EVILFLOWERS_FEEDS_NEW_LIMIT
         ]
-        entry_filter = EntryFilter(request.GET, queryset=Entry.objects.filter(pk__in=entries), request=request)
 
-        try:
-            updated_at = Entry.objects.filter(id__in=entries).latest("updated_at").updated_at
-        except Entry.DoesNotExist:
-            updated_at = self.catalog.updated_at
+        result = AcquisitionFeed(
+            f"urn:uuid:{uuid.uuid4()}",
+            title=_("Popular in %s") % (self.catalog.title,),
+            author=self.catalog.creator,
+            updated_at=self.catalog.touched_at,
+            qs=entries,
+            links=[
+                Link(
+                    rel=LinkType.SELF,
+                    href=reverse(
+                        "opds:popular",
+                        kwargs={"catalog_name": catalog_name},
+                    ),
+                    type="application/atom+xml;profile=opds-catalog;kind=navigation",
+                )
+            ],
+        )
 
-        return render(
-            request,
-            "opds/feeds/popular.xml",
-            {
-                "catalog": self.catalog,
-                "updated_at": updated_at,
-                "entry_filter": entry_filter,
-            },
+        return HttpResponse(
+            result.to_xml(),
             content_type="application/atom+xml;profile=opds-catalog;kind=acquisition",
         )
 
 
 class ShelfFeedView(OpdsView):
-    def get(self):
-        return HttpResponse("Not implemented", status=HTTPStatus.NOT_IMPLEMENTED)
+    def get(self, request, catalog_name: str):
+        if request.user.is_anonymous:
+            raise AuthorizationException(request)
+
+        try:
+            updated_at = Entry.objects.filter(shelf_records__user=request.user).latest("touched_at").touched_at
+        except Entry.DoesNotExist:
+            updated_at = timezone.now()
+
+        result = AcquisitionFeed(
+            f"urn:uuid:{uuid.uuid4()}",
+            title=_("Shelf of %s inside %s")
+            % (
+                request.user.full_name,
+                self.catalog.title,
+            ),
+            author=request.user,
+            updated_at=updated_at,
+            qs=Entry.objects.filter(shelf_records__user=request.user),
+            links=[
+                Link(
+                    rel=LinkType.SELF,
+                    href=reverse(
+                        "opds:shelf",
+                        kwargs={"catalog_name": catalog_name},
+                    ),
+                    type="application/atom+xml;profile=opds-catalog;kind=navigation",
+                )
+            ],
+        )
+
+        return HttpResponse(
+            result.to_xml(),
+            content_type="application/atom+xml;profile=opds-catalog;kind=acquisition",
+        )

@@ -21,3 +21,4 @@ node_modules/
 /data/
 /static/
 !/static/.gitkeep
+requirements.txt

@@ -15,6 +15,7 @@ Including another URLconf
 """
 from django.conf import settings
 from django.conf.urls.static import static
+from django.contrib import admin
 from django.urls import path, include
 from django.views.static import serve
 
@@ -24,6 +25,7 @@ urlpatterns += [
     path(r"opds/v1.2/", include(("apps.opds.urls", "opds"), namespace="opds")),
     path(r"opds/v2/", include(("apps.opds2.urls", "opds2"), namespace="opds2")),
     path(r"data/v1/", include(("apps.files.urls", "files"), namespace="files")),
+    path("admin/", admin.site.urls),
 ]
 
 if settings.DEBUG:

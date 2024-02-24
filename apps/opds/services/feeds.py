@@ -136,6 +136,7 @@ class AcquisitionFeed(BaseFeed):
                         kwargs={"acquisition_id": acquisition.pk},
                     ),
                     type=acquisition.mime,
+                    checksum=acquisition.checksum if complete else None,
                 )
             )
 

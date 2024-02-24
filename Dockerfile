@@ -2,7 +2,7 @@ FROM python:3.12-slim as builder
 
 # System setup
 RUN apt update -y
-RUN apt install -y libffi-dev build-essential libsasl2-dev libpq-dev libjpeg-dev libldap-dev
+RUN apt install --fix-missing -y libffi-dev build-essential libsasl2-dev libpq-dev libjpeg-dev libldap-dev
 
 # https://github.com/python-ldap/python-ldap/issues/432
 RUN echo 'INPUT ( libldap.so )' > /usr/lib/libldap_r.so
@@ -24,7 +24,7 @@ FROM python:3.12-slim
 
 # Dependencies
 RUN apt update -y
-RUN apt install -y supervisor curl postgresql-client libjpeg-tools argon2 tzdata ldap-utils swig cron
+RUN apt install --fix-missing -y supervisor curl postgresql-client libjpeg-tools argon2 tzdata ldap-utils swig cron
 
 WORKDIR /usr/src/app
 

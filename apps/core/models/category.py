@@ -21,5 +21,8 @@ class Category(BaseModel):
     label = models.CharField(max_length=255, null=True)
     scheme = models.CharField(max_length=255, null=True)
 
+    def __str__(self):
+        return f"{self.term} ({self.id})"
+
 
 __all__ = ["Category"]

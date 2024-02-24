@@ -36,7 +36,7 @@ jobs:
 
       - name: Create requirements.txt
         run: |
-          poetry export -f requirements.txt --without-hashes --output requirements.txt -E s3 -E pdf
+          poetry export -f requirements.txt --without-hashes --output requirements.txt -E s3 -E pdf -E apm
 
       - name: Log into registry ${{ env.REGISTRY }}
         if: github.event_name != 'pull_request'

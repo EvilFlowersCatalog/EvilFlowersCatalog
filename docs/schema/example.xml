@@ -1,0 +1,34 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+<feed
+		xmlns="http://www.w3.org/2005/Atom"
+		xmlns:dc="http://purl.org/dc/terms/"
+		xmlns:opds="http://opds-spec.org/2010/catalog"
+		xmlns:ef="http://elvira.dital/schema/evilflowers-opds.xsd"
+>
+	<id>urn:uuid:cfc0bc87-ce51-4f3d-bd82-38bb53f08aa9</id>
+	<link rel="self" href="/opds/v1.2/fiit/complete" type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+	<title>Complete FIIT STU feed</title>
+	<updated>2024-02-01T23:52:59.233911Z</updated>
+	<author>
+		<name>Arthur Dent</name>
+	</author>
+	<entry>
+		<title>Hitchhiker's guide to the galaxy 16</title>
+		<id>urn:uuid:a121bd87-08fd-419d-aeb3-75425e797710</id>
+		<updated>2024-02-01T22:54:55.269007Z</updated>
+		<link rel="http://opds-spec.org/image" href="/data/v1/covers/a121bd87-08fd-419d-aeb3-75425e797710"
+					type="image/png"/>
+		<link rel="http://opds-spec.org/acquisition" href="/data/v1/acquisitions/d98456e4-7293-4e00-85bc-7ce0bda4e57d"
+					type="application/pdf"/>
+		<author>
+			<name>Douglas Adams</name>
+		</author>
+		<author>
+			<name>Arthur Conan Doyle</name>
+		</author>
+		<summary type="text">The Hitchhiker's Guide to the Galaxy is a comedy science fiction series created by Douglas
+			Adams. Originally a 1978 radio comedy broadcast on BBC Radio 4, it was later adapted to other formats, including
+			stage shows, novels, comic books, a 1981 TV series, a 1984 video game, and 2005 feature film.
+		</summary>
+	</entry>
+</feed>

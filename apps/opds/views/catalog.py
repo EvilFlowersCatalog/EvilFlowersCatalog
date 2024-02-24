@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.http import HttpResponse
 from django.urls import reverse
+from django.utils.translation import gettext as _
 
 from apps.opds.models import OpdsFeed, Link, Author, NavigationEntry, Content, LinkType
 from apps.opds.views.base import OpdsView
@@ -32,6 +33,104 @@ class RootView(OpdsView):
             ),
             entries=[],
         )
+
+        # Popular
+        result.entries.append(
+            NavigationEntry(
+                id=request.build_absolute_uri(
+                    reverse(
+                        "opds:popular",
+                        kwargs={
+                            "catalog_name": self.catalog.url_name,
+                        },
+                    )
+                ),
+                title=_("Popular in %s") % (self.catalog.title,),
+                links=[
+                    Link(
+                        rel=LinkType.POPULAR,
+                        href=reverse(
+                            "opds:popular",
+                            kwargs={
+                                "catalog_name": self.catalog.url_name,
+                            },
+                        ),
+                        type="application/atom+xml;profile=opds;kind=navigation",
+                    )
+                ],
+                content=Content(type="text", value=_("Popular in %s") % (self.catalog.title,)),
+                updated=self.catalog.touched_at,
+            )
+        )
+
+        # Latest
+        result.entries.append(
+            NavigationEntry(
+                id=request.build_absolute_uri(
+                    reverse(
+                        "opds:new",
+                        kwargs={
+                            "catalog_name": self.catalog.url_name,
+                        },
+                    )
+                ),
+                title=_("New in %s") % (self.catalog.title,),
+                links=[
+                    Link(
+                        rel=LinkType.NEW,
+                        href=reverse(
+                            "opds:new",
+                            kwargs={
+                                "catalog_name": self.catalog.url_name,
+                            },
+                        ),
+                        type="application/atom+xml;profile=opds;kind=navigation",
+                    )
+                ],
+                content=Content(type="text", value=_("New in %s") % (self.catalog.title,)),
+                updated=self.catalog.touched_at,
+            )
+        )
+
+        if request.user.is_authenticated:
+            result.entries.append(
+                NavigationEntry(
+                    id=request.build_absolute_uri(
+                        reverse(
+                            "opds:shelf",
+                            kwargs={
+                                "catalog_name": self.catalog.url_name,
+                            },
+                        )
+                    ),
+                    title=_("Shelf of %s inside %s")
+                    % (
+                        request.user.full_name,
+                        self.catalog.title,
+                    ),
+                    links=[
+                        Link(
+                            rel=LinkType.SHELF,
+                            href=reverse(
+                                "opds:shelf",
+                                kwargs={
+                                    "catalog_name": self.catalog.url_name,
+                                },
+                            ),
+                            type="application/atom+xml;profile=opds;kind=navigation",
+                        )
+                    ],
+                    content=Content(
+                        type="text",
+                        value=_("Shelf of %s inside %s")
+                        % (
+                            request.user.full_name,
+                            self.catalog.title,
+                        ),
+                    ),
+                    updated=self.catalog.touched_at,
+                )
+            )
 
         for feed in feeds:
             result.entries.append(

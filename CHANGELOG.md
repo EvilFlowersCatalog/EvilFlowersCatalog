@@ -2,6 +2,15 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## 0.8.0 : TBD
+
+- **Added**: Elastic APM support
+- **Added**: Enabled Django Admin
+- **Added**: `/opds/v1.2/:catalog/popular` introduced
+- **Added**: `/opds/v1.2/:catalog/new` introduced
+- **Added**: `/opds/v1.2/:catalog/staff` introduced
+- **Changed**: APM client libraries are now optional using group `apm`
+
 ## 0.7.1 : 2024-02-11
 
 - **Added**: `SECURE_SSL_REDIRECT` is now configurable with env variables

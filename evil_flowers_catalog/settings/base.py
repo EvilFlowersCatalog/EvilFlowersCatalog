@@ -60,6 +60,9 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.sessions",
+    "django.contrib.staticfiles",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.messages",
@@ -270,9 +273,21 @@ LOGGING = {
     },
     "root": {
         "handlers": ["console"],
-        "level": "DEBUG",
+        "level": "INFO",
     },
 }
 
 CORS_ALLOW_ALL_ORIGINS = True
 SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "0") == "1"
+
+if os.getenv("ELASTIC_APM_SERVICE_NAME"):
+    INSTALLED_APPS.append("elasticapm.contrib.django")
+    LOGGING["handlers"]["elasticapm"] = {
+        "level": "INFO",
+        "class": "elasticapm.contrib.django.handlers.LoggingHandler",
+    }
+    LOGGING["root"]["handlers"].append("elasticapm")
+    MIDDLEWARE.append("elasticapm.contrib.django.middleware.TracingMiddleware")
+    ELASTIC_APM = {
+        "DEBUG": True,
+    }

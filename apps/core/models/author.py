@@ -21,5 +21,8 @@ class Author(BaseModel):
     def full_name(self) -> str:
         return f"{self.name} {self.surname}"
 
+    def __str__(self):
+        return f"{self.full_name} ({self.id})"
+
 
 __all__ = ["Author"]

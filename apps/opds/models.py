@@ -1,6 +1,6 @@
 import datetime
 from enum import Enum
-from typing import Literal, Optional, List, Union
+from typing import Optional, List, Union
 
 from pydantic import EmailStr
 from pydantic_xml import BaseXmlModel, attr, element
@@ -9,6 +9,7 @@ NSMAP = {
     "": "http://www.w3.org/2005/Atom",
     "dc": "http://purl.org/dc/terms/",
     "opds": "http://opds-spec.org/2010/catalog",
+    "ef": "http://elvira.dital/schema/evilflowers-opds.xsd",
 }
 
 
@@ -41,6 +42,7 @@ class LinkType(str, Enum):
     RELATED = "related"
     SUBSECTION = "subsection"
     POPULAR = "http://opds-spec.org/sort/popular"
+    SHELF = "http://opds-spec.org/shelf"
     NEW = "http://opds-spec.org/sort/new"
     IMAGE = "http://opds-spec.org/image"
     OPEN_ACCESS = "http://opds-spec.org/acquisition/open-access"
@@ -52,6 +54,7 @@ class Link(BaseXmlModel, tag="link", nsmap=NSMAP):
     href: str = attr()
     type: str = attr()
     title: Optional[str] = attr(default=None)
+    checksum: Optional[str] = attr(ns="ef", default=None)
 
 
 class OpdsEntry(BaseXmlModel, nsmap=NSMAP):

@@ -32,6 +32,10 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         return f"{self.name} {self.surname}"
 
     @property
+    def is_staff(self) -> bool:
+        return self.is_superuser
+
+    @property
     def permissions(self) -> List[str]:
         return self.get_user_permissions()
 
