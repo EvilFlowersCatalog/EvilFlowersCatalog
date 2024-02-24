@@ -20,10 +20,10 @@ from django.urls import path, include
 from django.views.static import serve
 
 urlpatterns = [
-    path(r"api/v1/", include(("apps.api.urls", "api"), namespace="api")),
-    path(r"opds/v1.2/", include(("apps.opds.urls", "opds"), namespace="opds")),
-    path(r"opds/v2/", include(("apps.opds2.urls", "opds2"), namespace="opds2")),
-    path(r"data/v1/", include(("apps.files.urls", "files"), namespace="files")),
+    path("api/v1/", include(("apps.api.urls", "api"), namespace="api")),
+    path("opds/v1.2/", include(("apps.opds.urls", "opds"), namespace="opds")),
+    path("opds/v2/", include(("apps.opds2.urls", "opds2"), namespace="opds2")),
+    path("data/v1/", include(("apps.files.urls", "files"), namespace="files")),
     path("admin/", admin.site.urls),
 ]
 
