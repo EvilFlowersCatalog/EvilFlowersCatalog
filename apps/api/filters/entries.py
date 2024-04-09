@@ -74,10 +74,8 @@ class EntryFilter(django_filters.FilterSet):
                 )
             )
 
-        # Authors & contributors
-        available_authors = Author.objects.filter(
-            Q(entries__in=self.qs) | Q(contribution_entries__in=self.qs)
-        ).distinct()
+        # Authors
+        available_authors = Author.objects.filter(entries__in=self.qs).distinct()
         for author in available_authors:
             url_params = self.request.GET.dict()
             url_params["author_id"] = author.id
@@ -86,7 +84,7 @@ class EntryFilter(django_filters.FilterSet):
                     title=author.full_name,
                     href=f"{self.request.path}?{urlencode(url_params)}",
                     group=_("Author"),
-                    count=self.qs.filter(Q(author=author) | Q(contributors=author)).distinct().count(),
+                    count=self.qs.filter(authors=author).distinct().count(),
                     is_active=self.request.GET.get("author_id") == author.id,
                 )
             )
@@ -107,16 +105,11 @@ class EntryFilter(django_filters.FilterSet):
 
     @staticmethod
     def filter_author(qs, name, value):
-        return qs.filter(
-            Q(author__name__unaccent__icontains=value)
-            | Q(author__surname__unaccent__icontains=value)
-            | Q(contributors__name__unaccent__icontains=value)
-            | Q(contributors__surname__unaccent__icontains=value)
-        )
+        return qs.filter(Q(authors__name__unaccent__icontains=value) | Q(authors__surname__unaccent__icontains=value))
 
     @staticmethod
     def filter_author_id(qs, name, value):
-        return qs.filter(Q(author_id=value) | Q(contributors__id=value))
+        return qs.filter(authors__id=value)
 
     @staticmethod
     def filter_query(qs, name, value):

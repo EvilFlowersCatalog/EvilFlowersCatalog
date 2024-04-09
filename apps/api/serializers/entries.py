@@ -61,7 +61,9 @@ class EntrySerializer:
         creator_id: UUID
         catalog_id: UUID
         shelf_record_id: Optional[UUID] = Field(default=None, validate_default=True)
-        author: Optional[AuthorSerializer.Base]
+        entry_authors: List[AuthorSerializer.Base] = Field(
+            default=[], validate_default=True, serialization_alias="authors"
+        )
         categories: List[CategorySerializer.Base] = Field(default=[], validate_default=True)
         language: Optional[LanguageSerializer.Base]
         feeds: List[FeedSerializer.Base] = Field(default=[], validate_default=True)
@@ -93,6 +95,10 @@ class EntrySerializer:
         def generate_feeds(cls, v, info: ValidationInfo):
             return v.all()
 
+        @field_validator("entry_authors", mode="before")
+        def generate_authors(cls, v, info: ValidationInfo):
+            return [entry_author.author for entry_author in v.order_by("position")]
+
     class Detailed(Base):
         published_at: Optional[str]
         publisher: Optional[str]
@@ -100,7 +106,6 @@ class EntrySerializer:
         content: Optional[str]
         identifiers: Optional[Dict]
         acquisitions: List[AcquisitionSerializer.Base] = Field(default=[], validate_default=True)
-        contributors: List[AuthorSerializer.Base] = Field(default=[], validate_default=True)
 
         @field_validator("published_at", mode="before")
         def generate_published_at(cls, v, info: ValidationInfo):
@@ -110,8 +115,4 @@ class EntrySerializer:
 
         @field_validator("acquisitions", mode="before")
         def generate_acquisitions(cls, v, info: ValidationInfo):
-            return v.all()
-
-        @field_validator("contributors", mode="before")
-        def generate_contributors(cls, v, info: ValidationInfo):
             return v.all()

@@ -47,7 +47,7 @@ class EntryManagement(SecuredView):
 
         form = EntryForm.create_from_request(request)
         form.fields["category_ids"].queryset = form.fields["category_ids"].queryset.filter(catalog=catalog)
-        form.fields["author_id"].queryset = form.fields["author_id"].queryset.filter(catalog=catalog)
+        form.fields["author_ids"].queryset = form.fields["author_ids"].queryset.filter(catalog=catalog)
 
         if not form.is_valid():
             raise ValidationException(form)
@@ -146,13 +146,12 @@ class EntryDetail(SecuredView):
 
         form = EntryForm.create_from_request(request)
         form.fields["category_ids"].queryset = form.fields["category_ids"].queryset.filter(catalog_id=catalog_id)
-        form.fields["author_id"].queryset = form.fields["author_id"].queryset.filter(catalog_id=catalog_id)
+        form.fields["author_ids"].queryset = form.fields["author_ids"].queryset.filter(catalog_id=catalog_id)
 
         if not form.is_valid():
             raise ValidationException(form)
 
         catalog = Catalog.objects.get(pk=catalog_id)
-
         service = EntryService(catalog, request.user)
 
         try:

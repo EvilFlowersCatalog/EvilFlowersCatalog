@@ -69,11 +69,9 @@ class EntryForm(Form):
 
     id = forms.UUIDField(required=False)
     language_code = forms.CharField(max_length=3)
-    author_id = forms.ModelChoiceField(queryset=Author.objects.all(), required=False)
-    author = FormField(AuthorForm, required=False)
     category_ids = forms.ModelMultipleChoiceField(queryset=Category.objects.all(), required=False)
-    contributors = FormFieldList(AuthorForm, required=False)
-    contributor_ids = forms.ModelMultipleChoiceField(queryset=Author.objects.all(), required=False)
+    authors = FormFieldList(AuthorForm, required=False)
+    author_ids = forms.ModelMultipleChoiceField(queryset=Author.objects.all(), required=False)
     feeds = forms.ModelMultipleChoiceField(queryset=Feed.objects.all(), required=False)
     categories = FormFieldList(CategoryForm, required=False)
     title = forms.CharField(max_length=255)
@@ -125,21 +123,15 @@ class EntryForm(Form):
             raise ValidationError("Invalid BibTeX record", "invalid-bibtex")
 
     def clean(self):
-        if "author_id" in self.cleaned_data.keys() and "author" in self.cleaned_data.keys():
+        if "author_ids" in self.cleaned_data.keys() and "authors" in self.cleaned_data.keys():
             raise ValidationError(
-                _("You have to provide author_id or author object (not both)"),
+                _("You have to provide author_ids or authors objects (not both)"),
                 "invalid",
             )
 
         if "category_ids" in self.cleaned_data.keys() and "categories" in self.cleaned_data.keys():
             raise ValidationError(
                 _("You have to provide category_ids or categories object (not both)"),
-                "invalid",
-            )
-
-        if "contributor_ids" in self.cleaned_data.keys() and "contributors" in self.cleaned_data.keys():
-            raise ValidationError(
-                _("You have to provide contributor_ids or contributors object (not both)"),
                 "invalid",
             )
 

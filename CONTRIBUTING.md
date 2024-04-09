@@ -1,4 +1,4 @@
-# Contributing to django-api-forms
+# Contributing to EvilFlowers OPDS Catalog
 
 If you like nice diagrams you can also check repository
 [code map](https://app.codesee.io/maps/public/2efe4d70-2287-11ec-b30b-77ee297ccc10).

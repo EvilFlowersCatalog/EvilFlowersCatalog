@@ -15,3 +15,4 @@ from .annotation import Annotation
 from .user_acquisition import UserAcquisition
 from .shelf_record import ShelfRecord
 from .annotation_item import AnnotationItem
+from .entry_author import EntryAuthor

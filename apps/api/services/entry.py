@@ -11,7 +11,7 @@ from django.db.models import Q
 from isbnlib.registry import bibformatters
 
 from apps.api.forms.entries import EntryForm
-from apps.core.models import Catalog, User, Entry, Author, Category, Acquisition, Price
+from apps.core.models import Catalog, User, Entry, Author, Category, Acquisition, Price, EntryAuthor
 
 
 class EntryService:
@@ -34,14 +34,6 @@ class EntryService:
             conditions.append(Q(identifiers__doi=entry.identifiers.get("doi")))
         if Entry.objects.exclude(pk=entry.pk).filter(catalog=self._catalog).filter(reduce(or_, conditions)).exists():
             raise self.AlreadyExists()
-
-        if "author" in form.cleaned_data.keys():
-            author, created = Author.objects.get_or_create(
-                catalog=self._catalog,
-                name=form.cleaned_data["author"]["name"],
-                surname=form.cleaned_data["author"]["surname"],
-            )
-            entry.author = author
 
         # TODO: implement these meta downloaders for real
         if all(
@@ -70,9 +62,9 @@ class EntryService:
                 entry.categories.add(category)
 
         if "category_ids" in form.cleaned_data.keys():
-            entry.contributors.clear()
-            for contributor in form.cleaned_data.get("category_ids", []):
-                entry.categories.add(contributor)
+            entry.categories.clear()
+            for category in form.cleaned_data.get("category_ids", []):
+                entry.categories.add(category)
 
         for record in form.cleaned_data.get("acquisitions", []):
             acquisition = Acquisition(
@@ -94,20 +86,20 @@ class EntryService:
                     value=price["value"],
                 )
 
-        if "contributors" in form.cleaned_data:
-            entry.contributors.clear()
-            for record in form.cleaned_data.get("contributors", []):
-                contributor, is_created = Author.objects.get_or_create(
+        if "authors" in form.cleaned_data.keys():
+            entry.authors.clear()
+            for index, item in enumerate(form.cleaned_data.get("authors")):
+                author, created = Author.objects.get_or_create(
                     catalog=self._catalog,
-                    name=record["name"],
-                    surname=record["surname"],
+                    name=item["name"],
+                    surname=item["surname"],
                 )
-                entry.contributors.add(contributor)
+                EntryAuthor.objects.create(entry=entry, author=author, position=index)
 
-        if "contributor_ids" in form.cleaned_data.keys():
-            entry.contributors.clear()
-            for contributor in form.cleaned_data.get("contributor_ids", []):
-                entry.contributors.add(contributor)
+        if "author_ids" in form.cleaned_data.keys():
+            entry.authors.clear()
+            for index, author in enumerate(form.cleaned_data.get("author_ids", [])):
+                EntryAuthor.objects.create(entry=entry, author=author, position=index)
 
         if "feeds" in form.cleaned_data:
             entry.feeds.clear()

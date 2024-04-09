@@ -40,15 +40,12 @@ class ShelfRecordFilter(django_filters.FilterSet):
     @staticmethod
     def filter_author(qs, name, value):
         return qs.filter(
-            Q(entry__author__name__unaccent__icontains=value)
-            | Q(entry__author__surname__unaccent__icontains=value)
-            | Q(entry__contributors__name__unaccent__icontains=value)
-            | Q(entry__contributors__surname__unaccent__icontains=value)
+            Q(entry__authors__name__unaccent__icontains=value) | Q(entry__authors__surname__unaccent__icontains=value)
         )
 
     @staticmethod
     def filter_author_id(qs, name, value):
-        return qs.filter(Q(entry__author_id=value) | Q(entry__contributors__id=value))
+        return qs.filter(entry__authors__id=value)
 
     @staticmethod
     def filter_query(qs, name, value):

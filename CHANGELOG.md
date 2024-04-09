@@ -8,8 +8,10 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Added**: Enabled Django Admin
 - **Added**: `/opds/v1.2/:catalog/popular` introduced
 - **Added**: `/opds/v1.2/:catalog/new` introduced
-- **Added**: `/opds/v1.2/:catalog/staff` introduced
+- **Added**: `/opds/v1.2/:catalog/shelf` introduced
+- **Changed**: `author_id` and `contributiors` merged into `EntryAuthor`
 - **Changed**: APM client libraries are now optional using group `apm`
+- **Fixed**: `evilflowres_metadata_fetch` -> `evilflowers_metadata_fetch` in `EntryConfig`
 
 ## 0.7.1 : 2024-02-11
 

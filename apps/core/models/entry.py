@@ -13,6 +13,7 @@ from django.utils.translation import gettext as _
 from partial_date import PartialDateField
 
 from apps.core.models.author import Author
+from apps.core.models.entry_author import EntryAuthor
 from apps.core.models.language import Language
 from apps.core.models.category import Category
 from apps.core.models.user import User
@@ -29,7 +30,7 @@ class EntryConfig(TypedDict):
     evilflowers_viewer_print: bool
     evilflowers_render_type: Literal["page", "document"]
     evilflowers_share_enabled: bool
-    evilflowres_metadata_fetch: bool
+    evilflowers_metadata_fetch: bool
 
 
 def default_entry_config() -> EntryConfig:
@@ -40,7 +41,7 @@ def default_entry_config() -> EntryConfig:
         evilflowers_viewer_print=True,
         evilflowers_share_enabled=True,
         evilflowers_render_type="document",
-        evilflowres_metadata_fetch=False,
+        evilflowers_metadata_fetch=False,
     )
 
 
@@ -60,7 +61,7 @@ class Entry(BaseModel):
 
     creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name="+")
     catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE, related_name="entries")
-    author = models.ForeignKey(Author, on_delete=models.CASCADE, null=True, related_name="entries")
+    authors = models.ManyToManyField(Author, related_name="entries", through=EntryAuthor)
     language = models.ForeignKey(Language, on_delete=models.CASCADE, related_name="entries", null=True)
     identifiers = HStoreField(
         null=True,
@@ -71,12 +72,6 @@ class Entry(BaseModel):
     publisher = models.CharField(max_length=255, null=True)
     summary = models.TextField(null=True)
     content = models.TextField(null=True)
-    contributors = models.ManyToManyField(
-        Author,
-        related_name="contribution_entries",
-        db_table="contributors",
-        verbose_name=_("Contributor"),
-    )
     categories = models.ManyToManyField(
         Category,
         related_name="entries",

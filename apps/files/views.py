@@ -105,10 +105,7 @@ class UserAcquisitionDownload(SecuredView):
                     "user_id": str(user_acquisition.user_id),
                     "title": user_acquisition.acquisition.entry.title,
                     "username": user_acquisition.user.username,
-                    "authors": ", ".join(
-                        [user_acquisition.acquisition.entry.author.full_name]
-                        + [c.full_name for c in user_acquisition.acquisition.entry.contributors.all()]
-                    ),
+                    "authors": ", ".join([a.full_name for a in user_acquisition.acquisition.entry.authors.all()]),
                 },
                 pages=depack(user_acquisition.range) if user_acquisition.range else None,
             )

@@ -102,12 +102,11 @@ class AcquisitionFeed(BaseFeed):
             title=entry.title,
             id=f"urn:uuid:{entry.id}",
             updated=entry.updated_at,
-            authors=[Author(name=entry.author.full_name)],
+            authors=[
+                Author(name=entry_author.author.full_name) for entry_author in entry.entry_authors.order_by("position")
+            ],
             summary=Summary(type="text", value=entry.summary),
         )
-
-        for contributor in entry.contributors.all():
-            acquisition_entry.authors.append(Author(name=contributor.full_name))
 
         for category in entry.categories.all():
             acquisition_entry.categories.append(
