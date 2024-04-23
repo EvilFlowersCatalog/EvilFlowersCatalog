@@ -2,7 +2,7 @@ from django import forms
 from django.core.validators import MinValueValidator
 from django_api_forms import Form
 
-from apps.core.models import UserAcquisition
+from apps.core.models import UserAcquisition, Annotation
 
 
 class CreateAnnotationForm(Form):
@@ -15,5 +15,6 @@ class UpdateAnnotationForm(Form):
 
 
 class AnnotationItemForm(Form):
+    annotation_id = forms.ModelChoiceField(queryset=Annotation.objects.all())
     content = forms.CharField()
     page = forms.IntegerField(validators=[MinValueValidator(1)])

@@ -32,7 +32,7 @@ class AnnotationItemManagement(SecuredView):
         if not has_object_permission(
             "check_user_acquisition_read",
             request.user,
-            form.cleaned_data["annotation"].user_acquisition,
+            form.cleaned_data["annotation_id"].user_acquisition,
         ):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
@@ -85,8 +85,8 @@ class AnnotationItemDetail(SecuredView):
 
         return SingleResponse(request, AnnotationItemSerializer.Base.model_validate(annotation_item))
 
-    def delete(self, request, annotation_id: UUID):
-        annotation_item = self._get_annotation_item(request, annotation_id)
+    def delete(self, request, annotation_item_id: UUID):
+        annotation_item = self._get_annotation_item(request, annotation_item_id)
         annotation_item.delete()
 
         return SingleResponse(request)
