@@ -9,8 +9,10 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Added**: `/opds/v1.2/:catalog/popular` introduced
 - **Added**: `/opds/v1.2/:catalog/new` introduced
 - **Added**: `/opds/v1.2/:catalog/shelf` introduced
+- **Added**: Cache for `base64` and JWTs in serialization/ORM layer
 - **Changed**: `author_id` and `contributiors` merged into `EntryAuthor`
 - **Changed**: APM client libraries are now optional using group `apm`
+- **Changed**: Unified cache access (Redis backend)
 - **Fixed**: `evilflowres_metadata_fetch` -> `evilflowers_metadata_fetch` in `EntryConfig`
 
 ## 0.7.1 : 2024-02-11

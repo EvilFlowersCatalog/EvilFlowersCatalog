@@ -3,9 +3,9 @@ from http import HTTPStatus
 
 from authlib.jose import JoseError
 from django.conf import settings
+from django.core.cache import cache
 from django.utils.translation import gettext as _
 from django.views import View
-from redis.client import Redis
 
 from apps.api.forms.tokens import AccessTokenForm, RefreshTokenForm
 from apps.api.serializers.tokens import TokenSerializer
@@ -39,17 +39,7 @@ class AccessTokenManagement(SecuredView):
         access_token = JWTFactory(user.pk).access()
         jti, refresh_token = JWTFactory(user.pk).refresh()
 
-        redis = Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            db=settings.REDIS_DATABASE,
-        )
-
-        redis.set(f"evilflowers:refresh_token:{jti}", jti)
-        redis.expire(
-            f"evilflowers:refresh_token:{jti}",
-            settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION,
-        )
+        cache.set(f"refresh_token.{jti}", jti, settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION.seconds)
 
         return SingleResponse(
             request,
@@ -69,13 +59,7 @@ class RefreshTokenManagement(View):
         except JoseError as e:
             raise UnauthorizedException(_("Invalid token."), previous=e)
 
-        redis = Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            db=settings.REDIS_DATABASE,
-        )
-
-        if not redis.exists(f"evilflowers:refresh_token:{claims['jti']}"):
+        if not cache.get(f"refresh_token.{claims['jti']}"):
             raise UnauthorizedException()
 
         return SingleResponse(

@@ -4,6 +4,7 @@ from typing import Optional, TypedDict, Literal
 
 from django.conf import settings
 from django.contrib.postgres.fields import HStoreField
+from django.core.cache import cache
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -96,12 +97,22 @@ class Entry(BaseModel):
     def thumbnail_base64(self) -> Optional[str]:
         if not self.thumbnail:
             return None
+
+        cache_key = f"entry.{self.id}.thumbnail.base64"
+        cached = cache.get(cache_key)
+
+        if cached:
+            return cached
+
         try:
             encoded = base64.b64encode(self.thumbnail.read()).decode("ascii")
         except FileNotFoundError:
             logging.warning("Unable to find %s", self.thumbnail.path)
             return None
-        return f"data:{self.image_mime};base64,{encoded}"
+
+        result = f"data:{self.image_mime};base64,{encoded}"
+        cache.set(cache_key, result, 60 * 60 * 24)  # TODO: settings
+        return result
 
     def read_config(self, config_name: str):
         current = default_entry_config() | self.config
