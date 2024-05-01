@@ -22,7 +22,7 @@ class SecuredView(View):
         auth_header = request.headers.get("Authorization", "")
 
         if not auth_header:
-            token = request.GET.get('access_token', None)
+            token = request.GET.get("access_token", None)
 
             if not token:
                 return AnonymousUser()
