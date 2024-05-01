@@ -1,4 +1,18 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
-	<xs:element name="hash" substitutionGroup="any"/>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:atom="http://www.w3.org/2005/Atom"
+           xmlns:ef="http://elvira.dital/schema/evilflowers-opds.xsd"
+           targetNamespace="http://elvira.dital/schema/evilflowers-opds.xsd"
+           elementFormDefault="qualified">
+
+    <!-- Import the Atom namespace -->
+    <xs:import namespace="http://www.w3.org/2005/Atom" schemaLocation="http://www.w3.org/2005/Atom"/>
+
+    <!-- Extend the Atom link element -->
+    <xs:complexType name="LinkType" base="atom:link">
+        <xs:complexContent>
+            <xs:extension base="atom:link">
+                <xs:attribute name="checksum" type="xs:string" use="optional"/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
 </xs:schema>

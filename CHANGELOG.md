@@ -9,6 +9,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Added**: `/opds/v1.2/:catalog/popular` introduced
 - **Added**: `/opds/v1.2/:catalog/new` introduced
 - **Added**: `/opds/v1.2/:catalog/shelf` introduced
+- **Added**: Possibility to pass `Bearer` token using `access_token` query parameter in HTTP requests
 - **Added**: Cache for `base64` and JWTs in serialization/ORM layer
 - **Changed**: `author_id` and `contributiors` merged into `EntryAuthor`
 - **Changed**: APM client libraries are now optional using group `apm`
