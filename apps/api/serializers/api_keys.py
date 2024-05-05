@@ -21,7 +21,7 @@ class ApiKeySerializer:
 
         @computed_field
         def token(self) -> str:
-            cache_key = f"api_key.{self.id}.token"
+            cache_key = f"api_key:{self.id}:token"
             cached = cache.get(cache_key)
 
             if cached:

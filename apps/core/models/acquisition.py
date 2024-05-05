@@ -60,7 +60,7 @@ class Acquisition(BaseModel):
     @property
     def base64(self) -> Optional[str]:
         if self.content is not None:
-            cache_key = f"acquisition.{self.id}.base64"
+            cache_key = f"acquisition:{self.id}:base64"
             cached = cache.get(cache_key)
 
             if cached:

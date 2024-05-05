@@ -39,7 +39,7 @@ class AccessTokenManagement(SecuredView):
         access_token = JWTFactory(user.pk).access()
         jti, refresh_token = JWTFactory(user.pk).refresh()
 
-        cache.set(f"refresh_token.{jti}", jti, settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION.seconds)
+        cache.set(f"refresh_token:{jti}", jti, settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION.seconds)
 
         return SingleResponse(
             request,
@@ -59,7 +59,11 @@ class RefreshTokenManagement(View):
         except JoseError as e:
             raise UnauthorizedException(_("Invalid token."), previous=e)
 
-        if not cache.get(f"refresh_token.{claims['jti']}"):
+        print(cache.get(f"refresh_token:{claims['jti']}"))
+        print(claims)
+        print(claims['jti'])
+
+        if not cache.get(f"refresh_token:{claims['jti']}"):
             raise UnauthorizedException()
 
         return SingleResponse(

@@ -98,7 +98,7 @@ class Entry(BaseModel):
         if not self.thumbnail:
             return None
 
-        cache_key = f"entry.{self.id}.thumbnail.base64"
+        cache_key = f"entry:{self.id}:thumbnail:base64"
         cached = cache.get(cache_key)
 
         if cached:
