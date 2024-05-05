@@ -59,10 +59,6 @@ class RefreshTokenManagement(View):
         except JoseError as e:
             raise UnauthorizedException(_("Invalid token."), previous=e)
 
-        print(cache.get(f"refresh_token:{claims['jti']}"))
-        print(claims)
-        print(claims['jti'])
-
         if not cache.get(f"refresh_token:{claims['jti']}"):
             raise UnauthorizedException()
 
