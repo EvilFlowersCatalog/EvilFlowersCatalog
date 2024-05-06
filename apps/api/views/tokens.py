@@ -39,7 +39,7 @@ class AccessTokenManagement(SecuredView):
         access_token = JWTFactory(user.pk).access()
         jti, refresh_token = JWTFactory(user.pk).refresh()
 
-        cache.set(f"refresh_token:{jti}", jti, settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION.seconds)
+        cache.set(f"refresh_token:{jti}", jti, settings.SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION.total_seconds())
 
         return SingleResponse(
             request,
