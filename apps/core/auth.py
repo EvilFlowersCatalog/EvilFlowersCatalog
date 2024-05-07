@@ -129,6 +129,7 @@ class BasicBackend(ModelBackend):
         except User.DoesNotExist:
             user = User(username=username, auth_source=auth_source)
             user.set_unusable_password()
+            user.save()
 
         result = connection.search(
             f"{config['ROOT_DN']}",
@@ -165,6 +166,7 @@ class BasicBackend(ModelBackend):
             return None
 
         connection.unbind()
+        user.save()
 
         for catalog_id, mode in config.get("CATALOGS", {}).items():
             if not UserCatalog.objects.filter(catalog_id=catalog_id, user=user).exists():
