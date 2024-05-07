@@ -2,6 +2,10 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## 0.7.2 : 2024-05.07
+
+- **Fixed**: Save user before assigning the catalogs
+
 ## 0.7.1 : 2024-02-11
 
 - **Added**: `SECURE_SSL_REDIRECT` is now configurable with env variables
