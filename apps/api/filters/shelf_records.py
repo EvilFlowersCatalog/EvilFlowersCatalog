@@ -22,7 +22,7 @@ class ShelfRecordFilter(django_filters.FilterSet):
     language_code = django_filters.CharFilter(field_name="entry__language__code", label=_("Language"))
     title = django_filters.CharFilter(field_name="entry__title", lookup_expr="unaccent__icontains")
     summary = django_filters.CharFilter(field_name="entry__summary", lookup_expr="unaccent__icontains")
-    query = django_filters.CharFilter(method="filter_name")
+    query = django_filters.CharFilter(method="filter_query")
     feed_id = django_filters.UUIDFilter(field_name="entry__feeds__id")
 
     @property

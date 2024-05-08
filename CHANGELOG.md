@@ -15,7 +15,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Changed**: APM client libraries are now optional using group `apm`
 - **Changed**: Unified cache access (Redis backend)
 - **Fixed**: `evilflowres_metadata_fetch` -> `evilflowers_metadata_fetch` in `EntryConfig`
-- **Fixed**: `query` param in `EntryFilter`
+- **Fixed**: `query` param in `EntryFilter` and `ShelfRecordFilter`
 
 ## 0.7.2 : 2024-05.07
 
