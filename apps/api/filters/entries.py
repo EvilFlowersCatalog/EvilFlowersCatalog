@@ -27,7 +27,7 @@ class EntryFilter(django_filters.FilterSet):
     language_code = django_filters.CharFilter(field_name="language__code", label=_("Language"))
     title = django_filters.CharFilter(lookup_expr="unaccent__icontains")
     summary = django_filters.CharFilter(lookup_expr="unaccent__icontains")
-    query = django_filters.CharFilter(method="filter_name")
+    query = django_filters.CharFilter(method="filter_query")
     feed_id = django_filters.UUIDFilter(field_name="feeds__id")
     published_at_gte = django_filters.CharFilter(method="filter_published_at_gte")
     published_at_lte = django_filters.CharFilter(method="filter_published_at_lte")
