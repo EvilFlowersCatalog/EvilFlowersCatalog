@@ -3,13 +3,11 @@ import hashlib
 from typing import Optional
 
 from django.conf import settings
-from django.core.cache import cache
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models.entry import Entry
@@ -60,17 +58,11 @@ class Acquisition(BaseModel):
     @property
     def base64(self) -> Optional[str]:
         if self.content is not None:
-            cache_key = f"acquisition:{self.id}:base64"
-            cached = cache.get(cache_key)
-
-            if cached:
-                return cached
-
             encoded = base64.b64encode(self.content.read()).decode("ascii")
             return f"data:{self.mime};base64,{encoded}"
         return None
 
-    @cached_property
+    @property
     def checksum(self) -> Optional[str]:
         if self.content is not None:
             checksum = hashlib.sha256()

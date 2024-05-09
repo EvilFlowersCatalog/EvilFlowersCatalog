@@ -2,7 +2,14 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.8.0 : TBD
+## 0.9.0 : TBD
+
+- **Added**:
+
+## 0.8.0 : 2024-05-09
+
+The cache layer implemented in this release have been removed and will be present in `0.9.0` due to the performance
+testing. I know it's kinda does not make any sense, but I want to have a relatable before sample.
 
 - **Added**: Elastic APM support
 - **Added**: Enabled Django Admin
@@ -10,14 +17,13 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Added**: `/opds/v1.2/:catalog/new` introduced
 - **Added**: `/opds/v1.2/:catalog/shelf` introduced
 - **Added**: Possibility to pass `Bearer` token using `access_token` query parameter in HTTP requests
-- **Added**: Cache for `base64` and JWTs in serialization/ORM layer
 - **Changed**: `author_id` and `contributiors` merged into `EntryAuthor`
 - **Changed**: APM client libraries are now optional using group `apm`
 - **Changed**: Unified cache access (Redis backend)
 - **Fixed**: `evilflowres_metadata_fetch` -> `evilflowers_metadata_fetch` in `EntryConfig`
 - **Fixed**: `query` param in `EntryFilter` and `ShelfRecordFilter`
 
-## 0.7.2 : 2024-05.07
+## 0.7.2 : 2024-05-07
 
 - **Fixed**: Save user before assigning the catalogs
 
