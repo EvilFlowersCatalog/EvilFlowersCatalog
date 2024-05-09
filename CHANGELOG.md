@@ -11,6 +11,8 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 The cache layer implemented in this release have been removed and will be present in `0.9.0` due to the performance
 testing. I know it's kinda does not make any sense, but I want to have a relatable before sample.
 
+🌈 Pink fluffy unicorns dancing on rainbow 🌈
+
 - **Added**: Elastic APM support
 - **Added**: Enabled Django Admin
 - **Added**: `/opds/v1.2/:catalog/popular` introduced
