@@ -4,7 +4,7 @@ info:
   description: |-
     A e-book catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2), written in Python with
     a straightforward management REST API for CRUD operations.
-  version: 0.6.0
+  version: 0.8.0
   license:
     url: 'https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/blob/master/LICENSE'
     name: MIT
