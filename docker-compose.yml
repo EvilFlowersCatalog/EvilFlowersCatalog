@@ -2,7 +2,7 @@ version: "3"
 
 services:
   db:
-    image: postgres:14-alpine
+    image: postgres:16
     volumes:
       - ./data/db:/var/lib/postgresql/data
     environment:
@@ -31,7 +31,7 @@ services:
     depends_on:
       - db
   redis:
-    image: "redis:7-alpine"
+    image: "redis:7"
     command: redis-server
     ports:
       - "6379:6379"
