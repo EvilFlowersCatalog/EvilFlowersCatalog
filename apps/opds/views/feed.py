@@ -113,7 +113,7 @@ class CompleteFeedView(OpdsView):
             title=_("Complete %s feed") % (self.catalog.title,),
             author=self.catalog.creator,
             updated_at=self.catalog.touched_at,
-            qs=self.catalog.entries.order_by("-touched_at"),
+            qs=self.catalog.entries.order_by("-created_at"),
             links=[
                 Link(
                     rel=LinkType.SELF,

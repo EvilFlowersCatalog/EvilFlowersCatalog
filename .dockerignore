@@ -1,6 +1,12 @@
 .idea/
-venv/
 .github/
+.git/
+.venv/
+.stoplight/
+__pycache__
+*.DS_Store
+*.pyo
+venv/
 evil_flowers_catalog.egg-info/
 .editorconfig
 .env
@@ -9,9 +15,7 @@ evil_flowers_catalog.egg-info/
 .gitignore
 data/
 logs/
-private'
-.git/
-.stoplight/
+private/
 media/
 docs/
 gen/

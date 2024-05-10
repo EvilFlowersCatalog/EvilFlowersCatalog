@@ -5,6 +5,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 ## 0.9.0 : TBD
 
 - **Added**: Application cache layer
+- **Changed**: Sort entries in Complete OPDS catalog by `created_at`
 
 ## 0.8.0 : 2024-05-09
 
