@@ -14,8 +14,8 @@ services:
   django:
     build: .
     volumes:
-      - media_storage:/usr/local/app/media
-      - private_storage:/usr/local/app/private
+      - ./data/evilflowers/media:/usr/local/app/media
+      - ./data/evilflowers/private:/usr/local/app/private
       - ./logs:/var/log
     environment:
       DATABASE_HOST: db
@@ -39,6 +39,3 @@ services:
       - ./data/redis:/data
     environment:
       REDIS_REPLICATION_MODE: master
-volumes:
-  private_storage:
-  media_storage:

@@ -71,7 +71,7 @@ class EntrySerializer:
         title: str
         image_url: Optional[str] = Field(serialization_alias="image")
         image_mime: Optional[str]
-        thumbnail_base64: Optional[str] = Field(serialization_alias="thumbnail")
+        thumbnail_url: Optional[str] = Field(serialization_alias="thumbnail")
         config: Optional[dict]
         citation: Optional[str]
         touched_at: datetime

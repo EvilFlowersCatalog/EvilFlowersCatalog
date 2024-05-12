@@ -132,3 +132,15 @@ class EntryImageDownload(SecuredView):
         sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime)}"
 
         return FileResponse(entry.image, filename=sanitized_filename)
+
+
+class EntryThumbnailDownload(SecuredView):
+    def get(self, request, entry_id: uuid.UUID):
+        try:
+            entry = Entry.objects.get(pk=entry_id, image__isnull=False)
+        except Entry.DoesNotExist:
+            raise ProblemDetailException(_("Entry thumbnail not found"), status=HTTPStatus.NOT_FOUND)
+
+        sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime)}"
+
+        return FileResponse(entry.thumbnail, filename=sanitized_filename)

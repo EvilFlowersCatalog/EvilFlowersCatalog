@@ -15,7 +15,6 @@ evil_flowers_catalog.egg-info/
 .gitignore
 data/
 logs/
-private/
 media/
 docs/
 gen/

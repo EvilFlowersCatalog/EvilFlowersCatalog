@@ -93,17 +93,10 @@ class Entry(BaseModel):
         return f"{settings.BASE_URL}{reverse('files:cover-download', kwargs={'entry_id': self.pk})}"
 
     @property
-    def thumbnail_base64(self) -> Optional[str]:
-        if not self.thumbnail:
+    def thumbnail_url(self) -> Optional[str]:
+        if not self.image:
             return None
-
-        try:
-            encoded = base64.b64encode(self.thumbnail.read()).decode("ascii")
-        except FileNotFoundError:
-            logging.warning("Unable to find %s", self.thumbnail.path)
-            return None
-
-        return f"data:{self.image_mime};base64,{encoded}"
+        return f"{settings.BASE_URL}{reverse('files:thumbnail-download', kwargs={'entry_id': self.pk})}"
 
     def read_config(self, config_name: str):
         current = default_entry_config() | self.config

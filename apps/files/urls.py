@@ -4,6 +4,7 @@ from apps.files.views import (
     AcquisitionDownload,
     EntryImageDownload,
     UserAcquisitionDownload,
+    EntryThumbnailDownload,
 )
 
 urlpatterns = [
@@ -19,4 +20,5 @@ urlpatterns = [
         name="user-acquisition-download",
     ),
     path("covers/<uuid:entry_id>", EntryImageDownload.as_view(), name="cover-download"),
+    path("thumbnails/<uuid:entry_id>", EntryThumbnailDownload.as_view(), name="thumbnail-download"),
 ]
