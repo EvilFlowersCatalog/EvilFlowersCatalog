@@ -84,6 +84,4 @@ class PDFModifier:
             except ValueError:
                 raise InvalidPage()
 
-        return File(
-            io.BytesIO(document.tobytes(garbage=3, deflate=True, deflate_images=True, linear=True))
-        )
+        return File(io.BytesIO(document.tobytes(garbage=3, deflate=True, deflate_images=True, linear=True)))
