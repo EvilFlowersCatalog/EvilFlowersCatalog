@@ -27,7 +27,7 @@ class AnnotationFilter(django_filters.FilterSet):
 
 class AnnotationItemFilter(django_filters.FilterSet):
     annotation_id = django_filters.UUIDFilter(lookup_expr="iexact")
-    page_number = django_filters.NumberFilter(field_name='page')
+    page_number = django_filters.NumberFilter(field_name="page")
 
     class Meta:
         model = AnnotationItem
