@@ -1,8 +1,8 @@
 {
   "_type": "export",
   "__export_format": 4,
-  "__export_date": "2024-04-23T13:33:08.700Z",
-  "__export_source": "insomnia.desktop.app:v8.6.1",
+  "__export_date": "2024-07-01T10:43:51.141Z",
+  "__export_source": "insomnia.desktop.app:v9.3.1",
   "resources": [
     {
       "_id": "req_fa729d8f62c84ead909760537071cbe9",
@@ -31,7 +31,6 @@
       },
       "metaSortKey": -1705249708690,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -114,7 +113,6 @@
       },
       "metaSortKey": -1705029269404.5,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -163,7 +161,6 @@
       },
       "metaSortKey": -1704919049761.75,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -212,7 +209,6 @@
       },
       "metaSortKey": -1704891494851.0625,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -269,7 +265,6 @@
       },
       "metaSortKey": -1704863939940.375,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -697,7 +692,6 @@
       },
       "metaSortKey": -1682143391274,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -724,7 +718,6 @@
       },
       "metaSortKey": -1681984815513.5,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -736,9 +729,9 @@
     {
       "_id": "req_aeacb8afe4c74baeb70a6d75718b3397",
       "parentId": "fld_3cf5e04343d8435a8639772346ccc171",
-      "modified": 1704655759377,
+      "modified": 1713978075365,
       "created": 1682626040661,
-      "url": "{{base_url}}/data/v1/user-acquisitions/6dcf760f-e258-4738-8aa3-ce85cf573777",
+      "url": "{{base_url}}/data/v1/user-acquisitions/:id",
       "name": "Download user acquisition",
       "description": "",
       "method": "GET",
@@ -771,9 +764,15 @@
         "type": "bearer",
         "token": "{% response 'body', 'req_05ebcd84410249ff9f33bd84bb6c7a9d', 'b64::JC5pdGVtc1swXS50b2tlbg==::46b', 'when-expired', 60 %}"
       },
+      "preRequestScript": "",
       "metaSortKey": -1681905527633.25,
       "isPrivate": false,
-      "pathParameters": [],
+      "pathParameters": [
+        {
+          "name": "id",
+          "value": "d0b16bcf-90fb-4731-bdd0-f9bd23a1d212"
+        }
+      ],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -809,7 +808,6 @@
       },
       "metaSortKey": -1694031719624,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -892,7 +890,6 @@
       },
       "metaSortKey": -1620888580033.5,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -940,7 +937,6 @@
       },
       "metaSortKey": -1620888580008.5,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1010,7 +1006,6 @@
       },
       "metaSortKey": -1620888579983.5,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1037,7 +1032,6 @@
       },
       "metaSortKey": -1620486001658,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1064,7 +1058,6 @@
       },
       "metaSortKey": -1620284712495.25,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1076,7 +1069,7 @@
     {
       "_id": "req_de44ef98881d45fc97cf3f3a6f68a64b",
       "parentId": "fld_cf923719ceb24e4c977903062c4ccae5",
-      "modified": 1708556612614,
+      "modified": 1715604326888,
       "created": 1613946724306,
       "url": "{{base_url}}/api/v1/entries",
       "name": "List entries",
@@ -1157,8 +1150,9 @@
       "headers": [],
       "authentication": {
         "type": "bearer",
-        "token": "{% response 'body', 'req_05ebcd84410249ff9f33bd84bb6c7a9d', 'b64::JC5pdGVtc1swXS50b2tlbg==::46b', 'always', 60 %}"
+        "token": "{% response 'body', 'req_05ebcd84410249ff9f33bd84bb6c7a9d', 'b64::JC5pdGVtc1swXS50b2tlbg==::46b', 'no-history', 60 %}"
       },
+      "preRequestScript": "",
       "metaSortKey": -1610131103813.5625,
       "isPrivate": false,
       "pathParameters": [],
@@ -1228,7 +1222,6 @@
       },
       "metaSortKey": -1610131103788.5625,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1276,7 +1269,7 @@
     {
       "_id": "req_b026924728234713ba161b56c5bc48fd",
       "parentId": "fld_cf923719ceb24e4c977903062c4ccae5",
-      "modified": 1662299240527,
+      "modified": 1715601119089,
       "created": 1614296375743,
       "url": "{{base_url}}/api/v1/catalogs/{% response 'body', 'req_de44ef98881d45fc97cf3f3a6f68a64b', 'b64::JC5pdGVtc1swXS5jYXRhbG9nX2lk::46b', 'always', 60 %}/entries/{% response 'body', 'req_de44ef98881d45fc97cf3f3a6f68a64b', 'b64::JC5pdGVtc1swXS5pZA==::46b', 'always', 60 %}",
       "name": "Entry detail",
@@ -1289,6 +1282,7 @@
         "type": "bearer",
         "token": "{% response 'body', 'req_05ebcd84410249ff9f33bd84bb6c7a9d', 'b64::JC5pdGVtc1swXS50b2tlbg==::46b', 'when-expired', 60 %}"
       },
+      "preRequestScript": "",
       "metaSortKey": -1610128613796.3984,
       "isPrivate": false,
       "pathParameters": [],
@@ -1354,7 +1348,6 @@
       },
       "metaSortKey": -1610127991304.6074,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1381,7 +1374,6 @@
       },
       "metaSortKey": -1610127887555.9756,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1445,7 +1437,7 @@
     {
       "_id": "req_09dd68312a12436190f510e1001d9558",
       "parentId": "fld_cf923719ceb24e4c977903062c4ccae5",
-      "modified": 1644617564893,
+      "modified": 1714036074437,
       "created": 1622922384653,
       "url": "{% response 'body', 'req_b026924728234713ba161b56c5bc48fd', 'b64::JC5yZXNwb25zZS5hY3F1aXNpdGlvbnNbMF0udXJs::46b', 'always', 60 %}",
       "name": "Download acquisition",
@@ -1453,7 +1445,14 @@
       "method": "GET",
       "body": {},
       "parameters": [],
-      "headers": [],
+      "headers": [
+        {
+          "id": "pair_34a00710c02b4a569d37a61737ac3a2f",
+          "name": "format",
+          "value": "base64",
+          "description": ""
+        }
+      ],
       "authentication": {
         "type": "basic",
         "useISO88591": false,
@@ -1461,6 +1460,7 @@
         "username": "{{username}}",
         "password": "{{password}}"
       },
+      "preRequestScript": "",
       "metaSortKey": -1610127783757.3438,
       "isPrivate": false,
       "pathParameters": [],
@@ -1571,7 +1571,6 @@
       },
       "metaSortKey": -1610137743726,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1620,7 +1619,6 @@
       },
       "metaSortKey": -1610137743676,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1656,7 +1654,6 @@
       },
       "metaSortKey": -1610124463851.125,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1683,7 +1680,6 @@
       },
       "metaSortKey": -1610117823938.6875,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1710,7 +1706,6 @@
       },
       "metaSortKey": -1610114503982.4688,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1747,7 +1742,6 @@
       },
       "metaSortKey": -1610137743826,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1771,7 +1765,7 @@
     {
       "_id": "req_57220a26bc124a71bf9d7c102a606bb9",
       "parentId": "fld_50864c0af1844259866856840926bc31",
-      "modified": 1704652723773,
+      "modified": 1715544591865,
       "created": 1610138308834,
       "url": "{{base_url}}/api/v1/catalogs",
       "name": "Create catalog",
@@ -1779,7 +1773,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n\t\"url_name\": \"poetry3\",\n\t\"title\": \"Poetry 3\",\n\t\"is_public\": true\n}"
+        "text": "{\n\t\"url_name\": \"openresearchlibrary\",\n\t\"title\": \"Open Research Library\",\n\t\"is_public\": false\n}"
       },
       "parameters": [],
       "headers": [
@@ -1793,6 +1787,7 @@
         "type": "bearer",
         "token": "{% response 'body', 'req_05ebcd84410249ff9f33bd84bb6c7a9d', 'b64::JC5pdGVtc1swXS50b2tlbg==::46b', 'when-expired', 60 %}"
       },
+      "preRequestScript": "",
       "metaSortKey": -1610137743776,
       "isPrivate": false,
       "pathParameters": [],
@@ -1858,7 +1853,6 @@
       },
       "metaSortKey": -1610084624326.5,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1885,7 +1879,6 @@
       },
       "metaSortKey": -1609978385527.5,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1962,7 +1955,6 @@
       },
       "metaSortKey": -1610137743826,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -1986,7 +1978,7 @@
     {
       "_id": "req_530a4eea52e94c3690042094a2dca55b",
       "parentId": "fld_4ed53dda50544546b70df72bc8b55a6f",
-      "modified": 1709999923451,
+      "modified": 1715000837821,
       "created": 1622918883303,
       "url": "{{base_url}}/api/v1/api_keys",
       "name": "Create API key",
@@ -1994,7 +1986,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n\t\"name\": \"Locust\"\n}"
+        "text": "{\n\t\"name\": \"Administrator\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -2011,6 +2003,7 @@
         "username": "{{username}}",
         "password": "{{password}}"
       },
+      "preRequestScript": "",
       "metaSortKey": -1610137743776,
       "isPrivate": false,
       "pathParameters": [],
@@ -2040,7 +2033,6 @@
       },
       "metaSortKey": -1609978385527.5,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -2052,7 +2044,7 @@
     {
       "_id": "req_2e3e44d5d79945b989603618f806340c",
       "parentId": "fld_4c290b6345674d5288d3167796d57a51",
-      "modified": 1699976771163,
+      "modified": 1715006027362,
       "created": 1643378227097,
       "url": "{{base_url}}/api/v1/token",
       "name": "Create Access Token",
@@ -2071,6 +2063,7 @@
         }
       ],
       "authentication": {},
+      "preRequestScript": "",
       "metaSortKey": -1610137743776,
       "isPrivate": false,
       "pathParameters": [],
@@ -2097,7 +2090,7 @@
     {
       "_id": "req_a083436a50bc4a95970b8d955cc6d5b1",
       "parentId": "fld_4c290b6345674d5288d3167796d57a51",
-      "modified": 1699976904816,
+      "modified": 1715005280031,
       "created": 1643378991394,
       "url": "{{base_url}}/api/v1/token/refresh",
       "name": "Refresh",
@@ -2116,6 +2109,7 @@
         }
       ],
       "authentication": {},
+      "preRequestScript": "",
       "metaSortKey": -1610137743751,
       "isPrivate": false,
       "pathParameters": [],
@@ -2194,7 +2188,6 @@
       },
       "metaSortKey": -1610137743826,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -2245,7 +2238,6 @@
       },
       "metaSortKey": -1610137743776,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -2272,7 +2264,6 @@
       },
       "metaSortKey": -1610058064651.75,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -2299,7 +2290,6 @@
       },
       "metaSortKey": -1610038144870.6875,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -2335,7 +2325,6 @@
       },
       "metaSortKey": -1610018225089.625,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -2362,7 +2351,6 @@
       },
       "metaSortKey": -1609978385527.5,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -2374,55 +2362,14 @@
     {
       "_id": "req_f8e7583ca56d467c8bd3a5579f28f5da",
       "parentId": "fld_49af24291bd143378eb6aa094fd3da3d",
-      "modified": 1682533537393,
+      "modified": 1715544434875,
       "created": 1643892480642,
       "url": "{{base_url}}/api/v1/status",
       "name": "Status",
       "description": "",
       "method": "GET",
       "body": {},
-      "parameters": [
-        {
-          "name": "order_by",
-          "value": "created_at",
-          "description": "",
-          "id": "pair_464e1d4fd3414fd9b64ac33f342af1c5"
-        },
-        {
-          "name": "name",
-          "value": "de",
-          "description": "",
-          "id": "pair_96646744e4f14d5884a50296ee7f108a",
-          "disabled": true
-        },
-        {
-          "name": "user_id",
-          "value": "",
-          "description": "",
-          "id": "pair_c967959f3a9d43b794f9eee44f3ceb4e",
-          "disabled": true
-        },
-        {
-          "name": "last_seen_at_gte",
-          "value": "2021-05-16T16:00:00:00",
-          "description": "",
-          "id": "pair_30a834e18b5543a89c553dd764dc9ad4",
-          "disabled": true
-        },
-        {
-          "name": "last_seen_at_gte",
-          "value": "2021-05-16T16:00:00:00",
-          "description": "",
-          "id": "pair_3826c1fc9cad41da98e93cb999dd8310",
-          "disabled": true
-        },
-        {
-          "name": "",
-          "value": "",
-          "description": "",
-          "id": "pair_f208f46dd6b64d7d99eef8dd5440c680"
-        }
-      ],
+      "parameters": [],
       "headers": [],
       "authentication": {
         "type": "basic",
@@ -2431,6 +2378,7 @@
         "username": "{{username}}",
         "password": "{{password}}"
       },
+      "preRequestScript": "",
       "metaSortKey": -1610137741425.25,
       "isPrivate": false,
       "pathParameters": [],
@@ -2445,9 +2393,9 @@
     {
       "_id": "req_cbfa590463f7443db8d6771fc38de801",
       "parentId": "fld_ab229853763447dfb46a38621b5d8821",
-      "modified": 1705243293847,
+      "modified": 1715855175679,
       "created": 1609712788530,
-      "url": "{{base_url}}/opds/v1.2/fiit",
+      "url": "{{base_url}}/opds/v1.2/openresearchlibrary",
       "name": "Catalog",
       "description": "",
       "method": "GET",
@@ -2461,6 +2409,7 @@
         "username": "{{username}}",
         "password": "{{password}}"
       },
+      "preRequestScript": "",
       "metaSortKey": -1609712788530,
       "isPrivate": false,
       "pathParameters": [],
@@ -2529,7 +2478,6 @@
       },
       "metaSortKey": -1609081080366.8438,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -2541,9 +2489,9 @@
     {
       "_id": "req_9961f26432024900bc43047c4396f066",
       "parentId": "fld_ab229853763447dfb46a38621b5d8821",
-      "modified": 1705243304241,
+      "modified": 1714572679652,
       "created": 1630257358850,
-      "url": "{{base_url}}/opds/v1.2/fiit/complete",
+      "url": "{{base_url}}/opds/v1.2/openresearchlibrary/complete",
       "name": "Complete",
       "description": "",
       "method": "GET",
@@ -2551,6 +2499,7 @@
       "parameters": [],
       "headers": [],
       "authentication": {},
+      "preRequestScript": "",
       "metaSortKey": -1609010890570.9375,
       "isPrivate": false,
       "pathParameters": [],
@@ -2607,7 +2556,6 @@
       "authentication": {},
       "metaSortKey": -1608870510979.125,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -2637,7 +2585,6 @@
       },
       "metaSortKey": -1608589751795.5,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -2661,7 +2608,6 @@
       "authentication": {},
       "metaSortKey": -1608028233428.25,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -2685,7 +2631,6 @@
       "authentication": {},
       "metaSortKey": -1607747474244.625,
       "isPrivate": false,
-      "pathParameters": [],
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
