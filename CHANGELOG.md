@@ -5,6 +5,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 ## 0.9.0 : TBD
 
 - **Added**: Application cache layer
+- **Added**: Summary in `EntrySerializer.Base`
 - **Added**: `/data/v1/thumbnails/:entry_id` introduced
 - **Changed**: Sort entries in Complete OPDS catalog by `created_at`
 - **Changed**: `EntrySerializer` now returns URL path in the `thumbnail` property instead of base64 image (performance)

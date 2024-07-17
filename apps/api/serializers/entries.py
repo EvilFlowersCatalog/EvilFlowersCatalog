@@ -69,6 +69,7 @@ class EntrySerializer:
         feeds: List[FeedSerializer.Base] = Field(default=[], validate_default=True)
         popularity: int
         title: str
+        summary: Optional[str]
         image_url: Optional[str] = Field(serialization_alias="image")
         image_mime: Optional[str]
         thumbnail_url: Optional[str] = Field(serialization_alias="thumbnail")
@@ -102,7 +103,6 @@ class EntrySerializer:
     class Detailed(Base):
         published_at: Optional[str]
         publisher: Optional[str]
-        summary: Optional[str]
         content: Optional[str]
         identifiers: Optional[Dict]
         acquisitions: List[AcquisitionSerializer.Base] = Field(default=[], validate_default=True)
