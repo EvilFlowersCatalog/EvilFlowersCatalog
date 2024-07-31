@@ -4,11 +4,13 @@ from django.conf import settings
 from django.utils import timezone
 from django.views.generic.base import View
 
+from apps import openapi
 from apps.api.response import SingleResponse
 from apps.core.models import Catalog, Entry, Acquisition, User
 
 
 class StatusManagement(View):
+    @openapi.metadata(description="Returns detail of running instance", tags=["Status"])
     def get(self, request):
         response = {
             "timestamp": timezone.now(),
@@ -26,4 +28,4 @@ class StatusManagement(View):
         if settings.DEBUG:
             response["python"] = sys.version
 
-        return SingleResponse(request, response)
+        return SingleResponse(request, data=response)

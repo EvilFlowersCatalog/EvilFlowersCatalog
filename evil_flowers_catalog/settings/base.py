@@ -75,6 +75,7 @@ INSTALLED_APPS = [
     "apps.files",
     "apps.opds",
     "apps.opds2",
+    "apps.openapi",
 ]
 
 MIDDLEWARE = [
@@ -265,11 +266,19 @@ EVILFLOWERS_STORAGE_S3_SECRET_KEY = os.getenv("EVILFLOWERS_STORAGE_S3_SECRET_KEY
 EVILFLOWERS_STORAGE_S3_SECURE = bool(int(os.getenv("EVILFLOWERS_STORAGE_S3_SECURE", 0)))
 EVILFLOWERS_STORAGE_S3_BUCKET = os.getenv("EVILFLOWERS_STORAGE_S3_BUCKET")
 
+# Cache
+EVILFLOWERS_CACHE_SERVER_HASHES = timedelta(minutes=int(os.getenv("EVILFLOWERS_CACHE_HASHES", 7 * 24 * 60)))
+EVILFLOWERS_CACHE_SERVER_API_KEYS = timedelta(minutes=int(os.getenv("EVILFLOWERS_CACHE_API_KEYS", 0)))
+EVILFLOWERS_CACHE_CLIENT_IMAGES = timedelta(minutes=int(os.getenv("EVILFLOWERS_CACHE_CLIENT_IMAGES", 24 * 60)))
+
 # Modifiers
 EVILFLOWERS_MODIFIERS = {"application/pdf": "apps.core.modifiers.pdf.PDFModifier"}
 
 # Admin
 EVILFLOWERS_CONTACT_EMAIL = os.getenv("CONTACT_EMAIL", "root@localhost")
+
+# OpenAPI
+EVILFLOWERS_OPENAPI_APPS = ["api", "files"]
 
 LOGGING = {
     "version": 1,

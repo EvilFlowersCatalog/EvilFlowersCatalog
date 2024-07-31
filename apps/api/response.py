@@ -9,6 +9,7 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.utils.translation import gettext as _
 from pydantic import BaseModel, RootModel
 
+from apps.api.serializers import Serializer
 from apps.core.errors import (
     ProblemDetailException,
     DetailType,
@@ -19,18 +20,18 @@ from apps.core.errors import (
 ResponseType = TypeVar("ResponseType")
 
 
-class SingleResponseModel(BaseModel):
+class SingleResponseModel(Serializer):
     response: ResponseType
 
 
-class PaginationModel(BaseModel):
+class PaginationModel(Serializer):
     page: int
     limit: Optional[int]
     pages: int
     total: int
 
 
-class PaginationResponseModel(BaseModel):
+class PaginationResponseModel(Serializer):
     items: RootModel[ResponseType]
     metadata: PaginationModel
 
@@ -92,9 +93,9 @@ class GeneralResponse(HttpResponse):
 
 
 class SingleResponse(GeneralResponse):
-    def __init__(self, request, data=None, **kwargs):
+    def __init__(self, request, *, data=None, **kwargs):
         if data is None:
-            kwargs["status"] = HTTPStatus.NO_CONTENT
+            kwargs.setdefault("status", HTTPStatus.NO_CONTENT)
         else:
             data = SingleResponseModel(response=data)
         super().__init__(request=request, data=data, **kwargs)

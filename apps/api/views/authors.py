@@ -44,7 +44,7 @@ class AuthorManagement(SecuredView):
 
         return SingleResponse(
             request,
-            AuthorSerializer.Detailed.model_validate(author),
+            data=AuthorSerializer.Detailed.model_validate(author),
             status=HTTPStatus.CREATED,
         )
 
@@ -65,7 +65,7 @@ class AuthorDetail(SecuredView):
     def get(self, request, author_id: UUID):
         author = self._get_author(request, author_id, "check_catalog_read")
 
-        return SingleResponse(request, AuthorSerializer.Detailed.model_validate(author))
+        return SingleResponse(request, data=AuthorSerializer.Detailed.model_validate(author))
 
     def put(self, request, author_id: UUID):
         form = CreateAuthorForm.create_from_request(request)
@@ -91,7 +91,7 @@ class AuthorDetail(SecuredView):
         form.populate(author)
         author.save()
 
-        return SingleResponse(request, AuthorSerializer.Detailed.model_validate(author))
+        return SingleResponse(request, data=AuthorSerializer.Detailed.model_validate(author))
 
     def delete(self, request, author_id: UUID):
         author = self._get_author(request, author_id)

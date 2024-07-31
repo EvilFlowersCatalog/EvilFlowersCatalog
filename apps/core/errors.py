@@ -11,6 +11,8 @@ from django_api_forms.forms import Form
 from django.utils.translation import gettext as _
 from pydantic import BaseModel
 
+from apps.api.serializers import Serializer
+
 
 class DetailType(Enum):
     OUT_OF_RANGE = "/out-of-range"
@@ -19,14 +21,14 @@ class DetailType(Enum):
     CONFLICT = "/conflict"
 
 
-class ProblemDetail(BaseModel):
+class ProblemDetail(Serializer):
     title: str
     type: Optional[DetailType] = None
     detail: Optional[str] = None
     trace: Optional[List[str]] = None
 
 
-class ValidationErrorItem(BaseModel):
+class ValidationErrorItem(Serializer):
     code: Optional[str] = None
     message: str
     path: Optional[List[str]] = None
@@ -40,6 +42,7 @@ class ProblemDetailException(Exception):
     def __init__(
         self,
         title: str,
+        *,
         status: int = HTTPStatus.INTERNAL_SERVER_ERROR,
         previous: Optional[BaseException] = None,
         to_sentry: Optional[bool] = False,

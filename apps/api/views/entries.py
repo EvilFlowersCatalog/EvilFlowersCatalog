@@ -60,7 +60,7 @@ class EntryManagement(SecuredView):
         except EntryService.AlreadyExists as e:
             raise ProblemDetailException(
                 "Entry already exists!",
-                HTTPStatus.CONFLICT,
+                status=HTTPStatus.CONFLICT,
                 detail=_("Entry with same title, isbn or DOI already exists in catalog %s") % (catalog.title,),
                 previous=e,
                 detail_type=DetailType.CONFLICT,
@@ -159,7 +159,7 @@ class EntryDetail(SecuredView):
         except EntryService.AlreadyExists as e:
             raise ProblemDetailException(
                 "Entry already exists!",
-                HTTPStatus.CONFLICT,
+                status=HTTPStatus.CONFLICT,
                 previous=e,
                 detail=_("Entry with same title, isbn or DOI already exists in catalog %s") % (catalog.title,),
             )

@@ -66,7 +66,7 @@ class CategoryDetail(SecuredView):
     def get(self, request, category_id: UUID):
         category = self._get_category(request, category_id, "check_catalog_read")
 
-        return SingleResponse(request, CategorySerializer.Detailed.model_validate(category))
+        return SingleResponse(request, data=CategorySerializer.Detailed.model_validate(category))
 
     def put(self, request, category_id: UUID):
         form = CategoryForm.create_from_request(request)
@@ -89,7 +89,7 @@ class CategoryDetail(SecuredView):
         form.populate(category)
         category.save()
 
-        return SingleResponse(request, CategorySerializer.Detailed.model_validate(category))
+        return SingleResponse(request, data=CategorySerializer.Detailed.model_validate(category))
 
     def delete(self, request, category_id: UUID):
         category = self._get_category(request, category_id)

@@ -46,13 +46,13 @@ class ShelfRecordManagement(SecuredView):
         if not created:
             return SingleResponse(
                 request,
-                ShelfRecordSerializer.Base.model_validate(shelf_record, context={"user": request.user}),
+                data=ShelfRecordSerializer.Base.model_validate(shelf_record, context={"user": request.user}),
                 status=HTTPStatus.OK,
             )
 
         return SingleResponse(
             request,
-            ShelfRecordSerializer.Base.model_validate(shelf_record, context={"user": request.user}),
+            data=ShelfRecordSerializer.Base.model_validate(shelf_record, context={"user": request.user}),
             status=HTTPStatus.CREATED,
         )
 

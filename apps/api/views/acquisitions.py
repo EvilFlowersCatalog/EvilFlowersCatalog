@@ -4,6 +4,7 @@ from uuid import UUID
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
+from apps import openapi
 from apps.core.errors import ProblemDetailException
 from apps.api.response import SingleResponse
 from apps.api.serializers.entries import AcquisitionSerializer
@@ -12,9 +13,11 @@ from apps.core.views import SecuredView
 
 
 class AcquisitionManagement(SecuredView):
+    @openapi.metadata(description="Create Acquisition", tags=["Acquisitions"])
     def post(self, request):
         raise ProblemDetailException(_("Not implemented"), status=HTTPStatus.NOT_IMPLEMENTED)
 
+    @openapi.metadata(description="List Acquisitions", tags=["Acquisitions"])
     def get(self, request):
         raise ProblemDetailException(_("Not implemented"), status=HTTPStatus.NOT_IMPLEMENTED)
 
@@ -32,7 +35,8 @@ class AcquisitionDetail(SecuredView):
 
         return acquisition
 
+    @openapi.metadata(description="Get Acquisition detail", tags=["Acquisitions"])
     def get(self, request, acquisition_id: UUID):
         acquisition = self._get_acquisition(request, acquisition_id, "check_catalog_read")
 
-        return SingleResponse(request, AcquisitionSerializer.Detailed.model_validate(acquisition))
+        return SingleResponse(request, data=AcquisitionSerializer.Detailed.model_validate(acquisition))

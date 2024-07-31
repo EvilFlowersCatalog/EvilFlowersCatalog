@@ -143,4 +143,4 @@ class EntryThumbnailDownload(SecuredView):
 
         sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime)}"
 
-        return FileResponse(entry.thumbnail, filename=sanitized_filename)
+        return FileResponse(streaming_content=entry.thumbnail, filename=sanitized_filename)

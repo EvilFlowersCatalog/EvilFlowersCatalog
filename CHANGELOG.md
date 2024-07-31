@@ -7,6 +7,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Added**: Application cache layer
 - **Added**: Summary in `EntrySerializer.Base`
 - **Added**: `/data/v1/thumbnails/:entry_id` introduced
+- **Added**: OpenAPI generator
 - **Changed**: Sort entries in Complete OPDS catalog by `created_at`
 - **Changed**: `EntrySerializer` now returns URL path in the `thumbnail` property instead of base64 image (performance)
 - **Fixed**: `page` -> `page_number` in AnnotationItemFilter

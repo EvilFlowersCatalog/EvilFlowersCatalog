@@ -38,7 +38,7 @@ class CatalogManagement(SecuredView):
 
         return SingleResponse(
             request,
-            CatalogSerializer.Detailed.model_validate(catalog),
+            data=CatalogSerializer.Detailed.model_validate(catalog),
             status=HTTPStatus.CREATED,
         )
 
@@ -64,7 +64,7 @@ class CatalogDetail(SecuredView):
     def get(self, request, catalog_id: UUID):
         catalog = self._get_catalog(request, catalog_id, "check_catalog_read")
 
-        return SingleResponse(request, CatalogSerializer.Detailed.model_validate(catalog))
+        return SingleResponse(request, data=CatalogSerializer.Detailed.model_validate(catalog))
 
     def put(self, request, catalog_id: UUID):
         form = CatalogForm.create_from_request(request)
@@ -83,7 +83,7 @@ class CatalogDetail(SecuredView):
         service = CatalogService()
         catalog = service.populate(catalog=catalog, form=form)
 
-        return SingleResponse(request, CatalogSerializer.Detailed.model_validate(catalog))
+        return SingleResponse(request, data=CatalogSerializer.Detailed.model_validate(catalog))
 
     def delete(self, request, catalog_id: UUID):
         catalog = self._get_catalog(request, catalog_id)

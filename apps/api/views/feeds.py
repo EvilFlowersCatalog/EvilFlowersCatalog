@@ -43,7 +43,7 @@ class FeedManagement(SecuredView):
         if "parents" in form.cleaned_data.keys():
             feed.parents.add(*form.cleaned_data["parents"])
 
-        return SingleResponse(request, FeedSerializer.Base.model_validate(feed), status=HTTPStatus.CREATED)
+        return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed), status=HTTPStatus.CREATED)
 
     def get(self, request):
         feeds = FeedFilter(request.GET, queryset=Feed.objects.all(), request=request).qs
@@ -67,7 +67,7 @@ class FeedDetail(SecuredView):
     def get(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)
 
-        return SingleResponse(request, FeedSerializer.Base.model_validate(feed))
+        return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed))
 
     def put(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)
@@ -102,7 +102,7 @@ class FeedDetail(SecuredView):
             feed.parents.clear()
             feed.parents.add(*form.cleaned_data["parents"])
 
-        return SingleResponse(request, FeedSerializer.Base.model_validate(feed))
+        return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed))
 
     def delete(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)

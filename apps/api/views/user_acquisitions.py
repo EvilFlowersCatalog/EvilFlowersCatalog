@@ -2,11 +2,11 @@ from http import HTTPStatus
 from uuid import UUID
 
 from django.conf import settings
-from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
+from apps import openapi
 from apps.api.filters.user_acquisitions import UserAcquisitionFilter
 from apps.api.forms.user_acquisitions import UserAcquisitionForm
 from apps.api.response import PaginationResponse, SingleResponse, SeeOtherResponse
@@ -14,9 +14,11 @@ from apps.api.serializers.user_acquisitions import UserAcquisitionSerializer
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.core.models import UserAcquisition
 from apps.core.views import SecuredView
+from apps.openapi.types import ParameterLocation
 
 
 class UserAcquisitionManagement(SecuredView):
+    @openapi.metadata(description="List UserAcquisitions", tags=["User Acquisitions"])
     def get(self, request):
         user_acquisitions = UserAcquisitionFilter(
             request.GET, queryset=UserAcquisition.objects.all(), request=request
@@ -24,6 +26,7 @@ class UserAcquisitionManagement(SecuredView):
 
         return PaginationResponse(request, user_acquisitions, serializer=UserAcquisitionSerializer.Base)
 
+    @openapi.metadata(description="Create UserAcquisition", tags=["User Acquisitions"])
     def post(self, request):
         form = UserAcquisitionForm.create_from_request(request)
 
@@ -61,12 +64,16 @@ class UserAcquisitionManagement(SecuredView):
 
         return SingleResponse(
             request,
-            UserAcquisitionSerializer.Base.model_validate(user_acquisition, context={"user": request.user}),
+            data=UserAcquisitionSerializer.Base.model_validate(user_acquisition, context={"user": request.user}),
             status=HTTPStatus.CREATED,
         )
 
 
+@openapi.parameter(
+    name="user_acquisition_id", param_type=UUID, location=ParameterLocation.PATH, description="UserAcquisition UUID"
+)
 class UserAcquisitionDetail(SecuredView):
+    @openapi.metadata(description="Get UserAcquisition", tags=["User Acquisitions"])
     def get(self, request, user_acquisition_id: UUID):
         try:
             user_acquisition = UserAcquisition.objects.get(pk=user_acquisition_id)
@@ -83,5 +90,5 @@ class UserAcquisitionDetail(SecuredView):
 
         return SingleResponse(
             request,
-            UserAcquisitionSerializer.Base.model_validate(user_acquisition, context={"user": request.user}),
+            data=UserAcquisitionSerializer.Base.model_validate(user_acquisition, context={"user": request.user}),
         )

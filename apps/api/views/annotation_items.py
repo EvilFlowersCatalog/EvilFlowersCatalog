@@ -4,6 +4,7 @@ from uuid import UUID
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
+from apps import openapi
 from apps.api.filters.annotations import AnnotationItemFilter
 from apps.api.forms.annotations import (
     AnnotationItemForm,
@@ -18,11 +19,13 @@ from apps.core.views import SecuredView
 
 
 class AnnotationItemManagement(SecuredView):
+    @openapi.metadata(description="List AnnotationItems", tags=["Annotation Items"])
     def get(self, request):
         annotation_items = AnnotationItemFilter(request.GET, queryset=AnnotationItem.objects.all(), request=request).qs
 
         return PaginationResponse(request, annotation_items, serializer=AnnotationItemSerializer.Base)
 
+    @openapi.metadata(description="Create AnnotationItem", tags=["Annotation Items"])
     def post(self, request):
         form = AnnotationItemForm.create_from_request(request)
 
@@ -42,7 +45,7 @@ class AnnotationItemManagement(SecuredView):
 
         return SingleResponse(
             request,
-            AnnotationItemSerializer.Base.model_validate(annotation_item),
+            data=AnnotationItemSerializer.Base.model_validate(annotation_item),
             status=HTTPStatus.CREATED,
         )
 
@@ -69,10 +72,12 @@ class AnnotationItemDetail(SecuredView):
 
         return annotation_item
 
+    @openapi.metadata(description="Get AnnotationItem detail", tags=["Annotation Items"])
     def get(self, request, annotation_item_id: UUID):
         annotation_item = self._get_annotation_item(request, annotation_item_id)
-        return SingleResponse(request, AnnotationItemSerializer.Base.model_validate(annotation_item))
+        return SingleResponse(request, data=AnnotationItemSerializer.Base.model_validate(annotation_item))
 
+    @openapi.metadata(description="Update AnnotationItem detail", tags=["Annotation Items"])
     def put(self, request, annotation_item_id: UUID):
         form = AnnotationItemForm.create_from_request(request)
         annotation_item = self._get_annotation_item(request, annotation_item_id)
@@ -83,8 +88,9 @@ class AnnotationItemDetail(SecuredView):
         form.populate(annotation_item)
         annotation_item.save()
 
-        return SingleResponse(request, AnnotationItemSerializer.Base.model_validate(annotation_item))
+        return SingleResponse(request, data=AnnotationItemSerializer.Base.model_validate(annotation_item))
 
+    @openapi.metadata(description="Delete AnnotationItem", tags=["Annotation Items"])
     def delete(self, request, annotation_item_id: UUID):
         annotation_item = self._get_annotation_item(request, annotation_item_id)
         annotation_item.delete()

@@ -4,6 +4,7 @@ from uuid import UUID
 
 from django.utils.translation import gettext as _
 
+from apps import openapi
 from apps.core.errors import (
     ValidationException,
     ProblemDetailException,
@@ -18,6 +19,7 @@ from apps.core.views import SecuredView
 
 
 class UserManagement(SecuredView):
+    @openapi.metadata(description="Create user", tags=["Users"])
     def post(self, request):
         form = CreateUserForm.create_from_request(request)
 
@@ -35,8 +37,9 @@ class UserManagement(SecuredView):
         user.set_password(form.cleaned_data["password"])
         user.save()
 
-        return SingleResponse(request, UserSerializer.Base.model_validate(user), status=HTTPStatus.CREATED)
+        return SingleResponse(request, data=UserSerializer.Base.model_validate(user), status=HTTPStatus.CREATED)
 
+    @openapi.metadata(description="List users", tags=["Users"])
     def get(self, request):
         users = UserFilter(request.GET, queryset=User.objects.all(), request=request).qs
 
@@ -59,11 +62,13 @@ class UserDetail(SecuredView):
 
         return user
 
+    @openapi.metadata(description="User detail", tags=["Users"])
     def get(self, request, user_id: UUID):
         user = self._get_user(request, user_id, lambda: request.user.has_perm("core.view_user"))
 
-        return SingleResponse(request, UserSerializer.Base.model_validate(user))
+        return SingleResponse(request, data=UserSerializer.Base.model_validate(user))
 
+    @openapi.metadata(description="Update User", tags=["Users"])
     def put(self, request, user_id: UUID):
         form = UserForm.create_from_request(request)
 
@@ -77,8 +82,9 @@ class UserDetail(SecuredView):
             user.set_password(form.cleaned_data["password"])
         user.save()
 
-        return SingleResponse(request, UserSerializer.Base.model_validate(user))
+        return SingleResponse(request, data=UserSerializer.Base.model_validate(user))
 
+    @openapi.metadata(description="Delete User", tags=["Users"])
     def delete(self, request, user_id: UUID):
         user = self._get_user(request, user_id, lambda: request.user.has_perm("core.delete_user"))
         user.delete()
@@ -87,8 +93,9 @@ class UserDetail(SecuredView):
 
 
 class UserMe(SecuredView):
+    @openapi.metadata(description="Return detail of the current User", tags=["Users"])
     def get(self, request):
         if request.user.is_anonymous:
             raise UnauthorizedException(detail=_("You have to log in!"))
 
-        return SingleResponse(request, UserSerializer.Detailed.model_validate(request.user))
+        return SingleResponse(request, data=UserSerializer.Detailed.model_validate(request.user))

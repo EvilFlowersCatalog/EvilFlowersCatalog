@@ -4,7 +4,7 @@ from apps.core.models import Acquisition
 
 
 class AcquisitionFilter(django_filters.FilterSet):
-    entry_id = django_filters.UUIDFilter(lookup_expr="iexact")
+    entry_id = django_filters.UUIDFilter(lookup_expr="exact")
     relation = django_filters.ChoiceFilter(choices=Acquisition.AcquisitionType.choices)
     mime = django_filters.CharFilter()
 

@@ -21,7 +21,7 @@ class FeedSerializer:
         url_name: str
         url: str
         content: str
-        per_page: Optional[int]
+        per_page: Optional[int] = None
         touched_at: datetime
         created_at: datetime
         updated_at: datetime
@@ -33,3 +33,6 @@ class FeedSerializer:
         @field_validator("children", mode="before")
         def generate_children(cls, v, info: ValidationInfo) -> List[UUID]:
             return v.all().values_list("id", flat=True)
+
+        class Meta:
+            examples = {}

@@ -43,7 +43,7 @@ class AccessTokenManagement(SecuredView):
 
         return SingleResponse(
             request,
-            TokenSerializer.Access(access_token=access_token, refresh_token=refresh_token, user=user),
+            data=TokenSerializer.Access(access_token=access_token, refresh_token=refresh_token, user=user),
         )
 
 
@@ -64,6 +64,6 @@ class RefreshTokenManagement(View):
 
         return SingleResponse(
             request,
-            TokenSerializer.Refresh(access_token=JWTFactory(claims["sub"]).access()),
+            data=TokenSerializer.Refresh(access_token=JWTFactory(claims["sub"]).access()),
             status=HTTPStatus.OK,
         )

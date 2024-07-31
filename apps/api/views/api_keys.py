@@ -50,4 +50,4 @@ class ApiKeyDetail(SecuredView):
 
         api_key.delete()
 
-        return SingleResponse(request, status=HTTPStatus.NO_CONTENT)
+        return SingleResponse(request)
