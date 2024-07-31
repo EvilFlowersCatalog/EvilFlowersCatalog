@@ -4,6 +4,7 @@ from uuid import UUID
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
+from apps import openapi
 from apps.api.filters.shelf_records import ShelfRecordFilter
 from apps.api.forms.shelf_records import ShelfRecordForm
 from apps.api.response import SingleResponse, PaginationResponse
@@ -18,6 +19,7 @@ from apps.core.views import SecuredView
 
 
 class ShelfRecordManagement(SecuredView):
+    @openapi.metadata(description="List ShelfRecords", tags=["Shelf Records"])
     def get(self, request):
         if request.user.is_anonymous:
             raise UnauthorizedException(detail=_("You need to be logged in to access shelf"))
@@ -30,6 +32,7 @@ class ShelfRecordManagement(SecuredView):
 
         return PaginationResponse(request, shelf_records, serializer=ShelfRecordSerializer.Base)
 
+    @openapi.metadata(description="Create ShelfRecord", tags=["Shelf Records"])
     def post(self, request):
         if request.user.is_anonymous:
             raise UnauthorizedException(detail=_("You need to be logged in to access shelf"))
@@ -58,6 +61,7 @@ class ShelfRecordManagement(SecuredView):
 
 
 class ShelfRecordDetail(SecuredView):
+    @openapi.metadata(description="ShelfRecord detail", tags=["Shelf Records"])
     def delete(self, request, shelf_record_id: UUID):
         try:
             shelf_record = ShelfRecord.objects.get(pk=shelf_record_id)

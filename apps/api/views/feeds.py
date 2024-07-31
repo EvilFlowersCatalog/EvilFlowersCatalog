@@ -4,6 +4,7 @@ from uuid import UUID
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
+from apps import openapi
 from apps.core.errors import ValidationException, ProblemDetailException
 from apps.api.filters.feeds import FeedFilter
 from apps.api.forms.feeds import FeedForm
@@ -14,6 +15,7 @@ from apps.core.views import SecuredView
 
 
 class FeedManagement(SecuredView):
+    @openapi.metadata(description="Create Feed", tags=["Feeds"])
     def post(self, request):
         form = FeedForm.create_from_request(request)
 
@@ -45,6 +47,7 @@ class FeedManagement(SecuredView):
 
         return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed), status=HTTPStatus.CREATED)
 
+    @openapi.metadata(description="List Feeds", tags=["Feeds"])
     def get(self, request):
         feeds = FeedFilter(request.GET, queryset=Feed.objects.all(), request=request).qs
 
@@ -64,11 +67,13 @@ class FeedDetail(SecuredView):
 
         return feed
 
+    @openapi.metadata(description="Get Feed detail", tags=["Feeds"])
     def get(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)
 
         return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed))
 
+    @openapi.metadata(description="Update Feed", tags=["Feeds"])
     def put(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)
 
@@ -104,6 +109,7 @@ class FeedDetail(SecuredView):
 
         return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed))
 
+    @openapi.metadata(description="Delete Feed", tags=["Feeds"])
     def delete(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)
         feed.delete()

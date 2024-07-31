@@ -4,6 +4,7 @@ from uuid import UUID
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
+from apps import openapi
 from apps.api.services.catalog import CatalogService
 from apps.core.errors import ValidationException, ProblemDetailException
 from apps.api.filters.catalogs import CatalogFilter
@@ -15,6 +16,7 @@ from apps.core.views import SecuredView
 
 
 class CatalogManagement(SecuredView):
+    @openapi.metadata(description="Create Catalog", tags=["Catalogs"])
     def post(self, request):
         form = CatalogForm.create_from_request(request)
 
@@ -42,6 +44,7 @@ class CatalogManagement(SecuredView):
             status=HTTPStatus.CREATED,
         )
 
+    @openapi.metadata(description="List Catalogs", tags=["Catalogs"])
     def get(self, request):
         catalogs = CatalogFilter(request.GET, queryset=Catalog.objects.all(), request=request).qs
 
@@ -61,11 +64,13 @@ class CatalogDetail(SecuredView):
 
         return catalog
 
+    @openapi.metadata(description="Get Catalog detail", tags=["Catalogs"])
     def get(self, request, catalog_id: UUID):
         catalog = self._get_catalog(request, catalog_id, "check_catalog_read")
 
         return SingleResponse(request, data=CatalogSerializer.Detailed.model_validate(catalog))
 
+    @openapi.metadata(description="Update Catalog", tags=["Catalogs"])
     def put(self, request, catalog_id: UUID):
         form = CatalogForm.create_from_request(request)
 
@@ -85,6 +90,7 @@ class CatalogDetail(SecuredView):
 
         return SingleResponse(request, data=CatalogSerializer.Detailed.model_validate(catalog))
 
+    @openapi.metadata(description="Delete Catalog", tags=["Catalogs"])
     def delete(self, request, catalog_id: UUID):
         catalog = self._get_catalog(request, catalog_id)
         catalog.delete()

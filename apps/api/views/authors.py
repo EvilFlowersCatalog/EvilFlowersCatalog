@@ -4,6 +4,7 @@ from uuid import UUID
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
+from apps import openapi
 from apps.core.errors import ValidationException, ProblemDetailException
 from apps.api.filters.authors import AuthorFilter
 from apps.api.forms.entries import CreateAuthorForm
@@ -14,11 +15,13 @@ from apps.core.views import SecuredView
 
 
 class AuthorManagement(SecuredView):
+    @openapi.metadata(description="List Authors", tags=["Authors"])
     def get(self, request):
         feeds = AuthorFilter(request.GET, queryset=Author.objects.all(), request=request).qs
 
         return PaginationResponse(request, feeds, serializer=AuthorSerializer.Detailed)
 
+    @openapi.metadata(description="Create Author", tags=["Authors"])
     def post(self, request):
         form = CreateAuthorForm.create_from_request(request)
 
@@ -62,11 +65,13 @@ class AuthorDetail(SecuredView):
 
         return author
 
+    @openapi.metadata(description="Get Author detail", tags=["Authors"])
     def get(self, request, author_id: UUID):
         author = self._get_author(request, author_id, "check_catalog_read")
 
         return SingleResponse(request, data=AuthorSerializer.Detailed.model_validate(author))
 
+    @openapi.metadata(description="Update Author", tags=["Authors"])
     def put(self, request, author_id: UUID):
         form = CreateAuthorForm.create_from_request(request)
         author = self._get_author(request, author_id)
@@ -93,6 +98,7 @@ class AuthorDetail(SecuredView):
 
         return SingleResponse(request, data=AuthorSerializer.Detailed.model_validate(author))
 
+    @openapi.metadata(description="Delete Author", tags=["Authors"])
     def delete(self, request, author_id: UUID):
         author = self._get_author(request, author_id)
         author.delete()

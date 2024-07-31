@@ -3,6 +3,7 @@ from uuid import UUID
 
 from django.utils.translation import gettext as _
 
+from apps import openapi
 from apps.core.errors import ValidationException, ProblemDetailException
 from apps.api.filters.api_keys import ApiKeyFilter
 from apps.api.forms.api_keys import ApiKeyForm
@@ -13,6 +14,7 @@ from apps.core.views import SecuredView
 
 
 class ApiKeyManagement(SecuredView):
+    @openapi.metadata(description="Create ApiKey", tags=["API Keys"])
     def post(self, request):
         form = ApiKeyForm.create_from_request(request)
 
@@ -32,6 +34,7 @@ class ApiKeyManagement(SecuredView):
             status=HTTPStatus.CREATED,
         )
 
+    @openapi.metadata(description="List ApiKeys", tags=["API Keys"])
     def get(self, request):
         api_keys = ApiKeyFilter(request.GET, queryset=ApiKey.objects.all(), request=request).qs
 
@@ -39,6 +42,7 @@ class ApiKeyManagement(SecuredView):
 
 
 class ApiKeyDetail(SecuredView):
+    @openapi.metadata(description="Delete ApiKey", tags=["API Keys"])
     def delete(self, request, api_key_id: UUID):
         try:
             api_key = ApiKey.objects.get(pk=api_key_id)

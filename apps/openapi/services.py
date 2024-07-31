@@ -206,7 +206,8 @@ class OpenApiOperation(OpenApiBaseModel):
                         "application/json": {
                             "schema": {"$ref": "#/components/schemas/apps__core__errors__ValidationError"}
                         }
-                    }
+                    },
+                    "description": "Validation error",
                 }
             case "ProblemDetailException":
                 self.responses[self._parse_http_status(details["kwargs"]["status"])] = {
@@ -282,9 +283,7 @@ class OpenApiOperation(OpenApiBaseModel):
                             },
                         }
 
-                self.responses[status_code] = {
-                    "content": {"application/json": {"schema": schema}},
-                }
+                self.responses[status_code] = {"content": {"application/json": {"schema": schema}}, "description": ""}
 
             case "SingleResponse":
                 status_code: HTTPStatus = HTTPStatus.OK
@@ -315,9 +314,7 @@ class OpenApiOperation(OpenApiBaseModel):
                 if "status" in details["kwargs"]:
                     status_code = self._parse_http_status(details["kwargs"]["status"])
 
-                self.responses[status_code] = {
-                    "content": {"application/json": {"schema": schema}},
-                }
+                self.responses[status_code] = {"content": {"application/json": {"schema": schema}}, "description": ""}
             case _ as constructor:
                 logging.warning(f"No ResponseFactory option for {constructor}")
 

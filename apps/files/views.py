@@ -11,6 +11,7 @@ from django.utils.text import slugify
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
+from apps import openapi
 from apps.api.response import SingleResponse, SeeOtherResponse
 from apps.core.errors import ProblemDetailException, DetailType, AuthorizationException
 from apps.core.fields.multirange import depack
@@ -20,6 +21,7 @@ from apps.core.views import SecuredView
 
 
 class AcquisitionDownload(SecuredView):
+    @openapi.metadata(description="Download Acquisition content", tags=["Files"])
     def get(self, request, acquisition_id: uuid.UUID):
         try:
             acquisition = Acquisition.objects.get(pk=acquisition_id)
@@ -68,12 +70,13 @@ class AcquisitionDownload(SecuredView):
         sanitized_filename = f"{slugify(acquisition.entry.title.lower())}{guess_extension(acquisition.mime)}"
 
         if request.GET.get("format", None) == "base64":
-            return SingleResponse(request, {"data": base64.b64encode(acquisition.content.read()).decode()})
+            return SingleResponse(request, data={"data": base64.b64encode(acquisition.content.read()).decode()})
 
         return FileResponse(acquisition.content, as_attachment=True, filename=sanitized_filename)
 
 
 class UserAcquisitionDownload(SecuredView):
+    @openapi.metadata(description="Download UserAcquisition content", tags=["Files"])
     def get(self, request, user_acquisition_id: uuid.UUID):
         try:
             user_acquisition = UserAcquisition.objects.select_related("acquisition", "acquisition__entry").get(
@@ -117,12 +120,13 @@ class UserAcquisitionDownload(SecuredView):
             content = user_acquisition.acquisition.content
 
         if request.GET.get("format", None) == "base64":
-            return SingleResponse(request, {"data": base64.b64encode(content.read()).decode()})
+            return SingleResponse(request, data={"data": base64.b64encode(content.read()).decode()})
 
         return FileResponse(content, as_attachment=True, filename=sanitized_filename)
 
 
 class EntryImageDownload(SecuredView):
+    @openapi.metadata(description="Download Entry cover image", tags=["Files"])
     def get(self, request, entry_id: uuid.UUID):
         try:
             entry = Entry.objects.get(pk=entry_id, image__isnull=False)
@@ -135,6 +139,7 @@ class EntryImageDownload(SecuredView):
 
 
 class EntryThumbnailDownload(SecuredView):
+    @openapi.metadata(description="Download Entry thumbnail", tags=["Files"])
     def get(self, request, entry_id: uuid.UUID):
         try:
             entry = Entry.objects.get(pk=entry_id, image__isnull=False)

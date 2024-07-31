@@ -8,6 +8,7 @@ from django.utils.decorators import method_decorator
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
+from apps import openapi
 from apps.api.services.entry_introspection_service import EntryIntrospectionService
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.api.filters.entries import EntryFilter
@@ -20,6 +21,7 @@ from apps.core.views import SecuredView
 
 
 class EntryPaginator(SecuredView):
+    @openapi.metadata(description="List Entries", tags=["Entries"])
     def get(self, request):
         entries = EntryFilter(request.GET, queryset=Entry.objects.all(), request=request).qs.distinct()
 
@@ -27,14 +29,16 @@ class EntryPaginator(SecuredView):
 
 
 class EntryIntrospection(SecuredView):
+    @openapi.metadata(description="Entry Introspection", tags=["Entries"])
     def get(self, request):
         service = EntryIntrospectionService(request.GET.get("driver"))
         result = service.resolve(request.GET.get("identifier"))
 
-        return SingleResponse(request, result)
+        return SingleResponse(request, data=result)
 
 
 class EntryManagement(SecuredView):
+    @openapi.metadata(description="Create Entry object", tags=["Entries"])
     @method_decorator(transaction.atomic)
     def post(self, request, catalog_id: uuid.UUID):
         try:
@@ -91,6 +95,7 @@ class EntryDetail(SecuredView):
 
         return entry
 
+    @openapi.metadata(description="Gent Entry detail", tags=["Entries"])
     def get(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
         entry = self.get_entry(request, catalog_id, entry_id, "check_entry_read")
 
@@ -99,6 +104,7 @@ class EntryDetail(SecuredView):
             data=EntrySerializer.Detailed.model_validate(entry, context={"user": request.user}),
         )
 
+    @openapi.metadata(description="Create Entry", tags=["Entries"])
     def post(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
         entry = self.get_entry(request, catalog_id, entry_id)
 
@@ -137,10 +143,11 @@ class EntryDetail(SecuredView):
 
         return SingleResponse(
             request,
-            AcquisitionSerializer.Detailed.model_validate(acquisition),
+            data=AcquisitionSerializer.Detailed.model_validate(acquisition),
             status=HTTPStatus.CREATED,
         )
 
+    @openapi.metadata(description="Update Entry", tags=["Entries"])
     def put(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
         entry = self.get_entry(request, catalog_id, entry_id)
 
@@ -169,6 +176,7 @@ class EntryDetail(SecuredView):
             data=EntrySerializer.Detailed.model_validate(entry, context={"user": request.user}),
         )
 
+    @openapi.metadata(description="Delete Entry", tags=["Entries"])
     def delete(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
         entry = self.get_entry(request, catalog_id, entry_id)
         entry.delete()

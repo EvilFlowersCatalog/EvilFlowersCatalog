@@ -4,6 +4,7 @@ from uuid import UUID
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
+from apps import openapi
 from apps.api.filters.categories import CategoryFilter
 from apps.api.forms.category import CategoryForm
 from apps.api.serializers.entries import CategorySerializer
@@ -14,6 +15,7 @@ from apps.core.views import SecuredView
 
 
 class CategoryManagement(SecuredView):
+    @openapi.metadata(description="Create Category", tags=["Categories"])
     def post(self, request):
         form = CategoryForm.create_from_request(request)
         form.fields["catalog_id"].required = True
@@ -36,10 +38,11 @@ class CategoryManagement(SecuredView):
 
         return SingleResponse(
             request,
-            CategorySerializer.Detailed.model_validate(category),
+            data=CategorySerializer.Detailed.model_validate(category),
             status=HTTPStatus.CREATED,
         )
 
+    @openapi.metadata(description="List Categories", tags=["Categories"])
     def get(self, request):
         catalogs = CategoryFilter(request.GET, queryset=Category.objects.all(), request=request).qs
 
@@ -63,11 +66,13 @@ class CategoryDetail(SecuredView):
 
         return category
 
+    @openapi.metadata(description="Get Category detail", tags=["Categories"])
     def get(self, request, category_id: UUID):
         category = self._get_category(request, category_id, "check_catalog_read")
 
         return SingleResponse(request, data=CategorySerializer.Detailed.model_validate(category))
 
+    @openapi.metadata(description="Update Category", tags=["Categories"])
     def put(self, request, category_id: UUID):
         form = CategoryForm.create_from_request(request)
         form.fields["catalog_id"].required = True
@@ -91,6 +96,7 @@ class CategoryDetail(SecuredView):
 
         return SingleResponse(request, data=CategorySerializer.Detailed.model_validate(category))
 
+    @openapi.metadata(description="Delete Category", tags=["Categories"])
     def delete(self, request, category_id: UUID):
         category = self._get_category(request, category_id)
         category.delete()
