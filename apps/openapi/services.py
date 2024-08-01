@@ -381,7 +381,7 @@ class OpenApiOperation(OpenApiBaseModel):
                     "properties": {
                         "metadata": {
                             "$ref": "#/components/schemas/"
-                                    + ".".join(
+                            + ".".join(
                                 (
                                     PaginationModel.__module__,
                                     PaginationModel.__qualname__,
@@ -400,7 +400,7 @@ class OpenApiOperation(OpenApiBaseModel):
                             "type": "array",
                             "items": {
                                 "$ref": "#/components/schemas/"
-                                        + ".".join(
+                                + ".".join(
                                     (
                                         self._serializers[serializer].__module__,
                                         self._serializers[serializer].__qualname__,
@@ -422,7 +422,7 @@ class OpenApiOperation(OpenApiBaseModel):
                             "properties": {
                                 "response": {
                                     "$ref": "#/components/schemas/"
-                                            + ".".join(
+                                    + ".".join(
                                         (
                                             self._serializers[serializer].__module__,
                                             self._serializers[serializer].__qualname__,
