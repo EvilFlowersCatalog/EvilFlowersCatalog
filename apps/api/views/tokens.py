@@ -7,6 +7,7 @@ from django.core.cache import cache
 from django.utils.translation import gettext as _
 from django.views import View
 
+from apps import openapi
 from apps.api.forms.tokens import AccessTokenForm, RefreshTokenForm
 from apps.api.serializers.tokens import TokenSerializer
 from apps.core.auth import JWTFactory, BasicBackend
@@ -19,6 +20,7 @@ from apps.core.views import SecuredView
 
 
 class AccessTokenManagement(SecuredView):
+    @openapi.metadata(description="Create Access Token", tags=["Tokens"])
     def post(self, request):
         form = AccessTokenForm.create_from_request(request)
 
@@ -48,6 +50,7 @@ class AccessTokenManagement(SecuredView):
 
 
 class RefreshTokenManagement(View):
+    @openapi.metadata(description="Refresh Access Token", tags=["Tokens"])
     def post(self, request):
         form = RefreshTokenForm.create_from_request(request)
 

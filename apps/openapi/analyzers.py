@@ -1,15 +1,17 @@
 import ast
-from typing import List
+from typing import List, Optional
 
 from apps.openapi.types import InstanceDetails, ExtractionResult
 
 
 class MethodAnalyzer(ast.NodeVisitor):
-    def __init__(self, filter_classes):
-        self.filter_classes = filter_classes
+    def __init__(self, filter_classes, form_classes):
+        self._filter_classes = filter_classes
+        self._form_classes = form_classes
         self.returns: List[InstanceDetails] = []
         self.raises: List[InstanceDetails] = []
         self.filters: List[str] = []
+        self.form: Optional[str] = None
 
     def visit_Return(self, node):
         constructor, args, kwargs = self._parse_call(node.value)
@@ -23,14 +25,18 @@ class MethodAnalyzer(ast.NodeVisitor):
 
     def visit_Call(self, node):
         if isinstance(node.func, ast.Name):
-            filter_name = node.func.id
+            class_name = node.func.id
         elif isinstance(node.func, ast.Attribute):
-            filter_name = self._get_full_expression(node.func)
+            class_name = self._get_full_expression(node.func)
         else:
-            filter_name = None
+            class_name = None
 
-        if filter_name in self.filter_classes:
-            self.filters.append(filter_name)
+        if class_name in self._filter_classes:
+            self.filters.append(self._filter_classes[class_name])
+
+        if class_name and class_name.split(".")[0] in self._form_classes:
+            self.form = self._form_classes[class_name.split(".")[0]]
+
         self.generic_visit(node)
 
     def _parse_call(self, node):
@@ -47,4 +53,4 @@ class MethodAnalyzer(ast.NodeVisitor):
         return ast.unparse(node)
 
     def get_results(self) -> ExtractionResult:
-        return self.returns, self.raises, self.filters
+        return self.returns, self.raises, self.filters, self.form

@@ -58,11 +58,19 @@ class OpenApiParameter(OpenApiBaseModel):
 
 
 ExtractionResult = NamedTuple(
-    "ExtractionResult", [("returns", List[InstanceDetails]), ("raises", List[InstanceDetails]), ("filters", List[str])]
+    "ExtractionResult",
+    [
+        ("returns", List[InstanceDetails]),
+        ("raises", List[InstanceDetails]),
+        ("filters", List[str]),
+        ("form", Optional[str]),
+    ],
 )
 
 OPENAPI_TYPES: Dict[str, Dict[str, str]] = {
     "str": {"type": "string"},
+    "bool": {"type": "boolean"},
     "uuid": {"type": "string", "format": "uuid"},
     "int": {"type": "integer", "format": "int32"},
+    "datetime": {"type": "string", "format": "date-time"},
 }

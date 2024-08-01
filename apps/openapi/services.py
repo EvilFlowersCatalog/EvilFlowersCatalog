@@ -11,7 +11,18 @@ from django.conf import settings
 
 import ast
 
-from django_api_forms import Form
+from django.forms import CharField, IntegerField, DateTimeField, ChoiceField, ModelChoiceField
+from django_api_forms import (
+    Form,
+    BooleanField,
+    EnumField,
+    DictionaryField,
+    ImageField,
+    FileField,
+    FormFieldList,
+    FormField,
+)
+from django_filters import FilterSet, UUIDFilter, DateTimeFilter, CharFilter, BooleanFilter, NumberFilter, ChoiceFilter
 from pydantic import Field
 
 from apps.api.response import PaginationModel
@@ -73,17 +84,27 @@ class OpenApiSpecification(OpenApiBaseModel):
     )
     paths: Dict[str, "OpenApiPathItem"] = Field(default_factory=dict)
     components: Dict[str, Dict] = Field(default_factory=lambda: {"schemas": {}})
+    security: List[Dict[str, List]] = Field(default_factory=dict)
 
     def __init__(self, **data: Any):
         super().__init__(**data)
 
+        # Find all Serializers
         self._serializers: Dict[str, Type] = self._find_all_subclasses(Serializer)
         for serializer in self._serializers.values():
             self.add_serializer(serializer)
 
+        # Find all Forms
         self._forms: Dict[str, Type] = self._find_all_subclasses(Form)
         for name, form in self._forms.items():
             self.add_form(name, form)
+
+        # Security schemes
+        self.components["securitySchemes"] = {
+            "basicAuth": {"type": "http", "scheme": "basic"},
+            "bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"},
+        }
+        self.security = [{"basicAuth": []}, {"bearerAuth": []}]
 
     def _convert_django_path(self, django_path: str) -> Tuple[str, Dict[str, Dict[str, str]]]:
         pattern = re.compile(r"<(?P<type>[^:]+):(?P<name>[^>]+)>")
@@ -109,13 +130,74 @@ class OpenApiSpecification(OpenApiBaseModel):
         source = inspect.getsource(method)
         dedented_source = textwrap.dedent(source)
         tree = ast.parse(dedented_source)
-        analyzer = MethodAnalyzer(self._find_all_subclasses(django_filters.FilterSet))
+        analyzer = MethodAnalyzer(
+            filter_classes=self._find_all_subclasses(django_filters.FilterSet),
+            form_classes=self._find_all_subclasses(Form),
+        )
         analyzer.visit(tree)
         return analyzer.get_results()
 
     def add_form(self, name: str, form: Type[Form]) -> None:
-        # Implement form addition logic if needed
-        pass
+        self.components["schemas"][name] = {"type": "object", "title": name, "properties": {}}
+        for field_name, field in form.base_fields.items():
+            self.components["schemas"][name]["properties"][field_name] = {
+                "title": field_name,
+                "description": field.help_text,
+            }
+
+            match field:
+                case CharField():
+                    self.components["schemas"][name]["properties"][field_name]["type"] = "string"
+                    if field.min_length:
+                        self.components["schemas"][name]["properties"][field_name]["minLength"] = field.min_length
+                    if field.max_length:
+                        self.components["schemas"][name]["properties"][field_name]["maxLength"] = field.max_length
+                case BooleanField():
+                    self.components["schemas"][name]["properties"][field_name]["type"] = "boolean"
+                case IntegerField():
+                    self.components["schemas"][name]["properties"][field_name]["type"] = "integer"
+                    if field.min_value:
+                        self.components["schemas"][name]["properties"][field_name]["minimum"] = field.min_value
+                    if field.max_value:
+                        self.components["schemas"][name]["properties"][field_name]["maximum"] = field.max_value
+                    if field.step_size:
+                        self.components["schemas"][name]["properties"][field_name]["multipleOf"] = field.step_size
+                case DateTimeField():
+                    self.components["schemas"][name]["properties"][field_name]["type"] = "string"
+                    self.components["schemas"][name]["properties"][field_name]["format"] = "date-time"
+                case ModelChoiceField():
+                    # FIXME: choose type according to the field_type - Model Field Type!!
+                    field_type = getattr(field.choices.queryset.model, field.to_field_name or "id")
+                    self.components["schemas"][name]["properties"][field_name]["type"] = "string"
+                case EnumField():
+                    self.components["schemas"][name]["properties"][field_name]["type"] = "string"
+                    self.components["schemas"][name]["properties"][field_name]["enum"] = field.enum.values
+                case DictionaryField():
+                    self.components["schemas"][name]["properties"][field_name]["type"] = "string"
+                case ImageField() | FileField():
+                    self.components["schemas"][name]["properties"][field_name]["type"] = "string"
+                    self.components["schemas"][name]["properties"][field_name]["format"] = "uri"
+                case ChoiceField():
+                    self.components["schemas"][name]["properties"][field_name]["type"] = "string"
+                    self.components["schemas"][name]["properties"][field_name]["enum"] = [
+                        item[0] for item in field.choices
+                    ]
+                case FormFieldList():
+                    self.components["schemas"][name]["properties"][field_name]["type"] = "array"
+                    self.components["schemas"][name]["properties"][field_name]["items"] = {
+                        "$ref": f"#/components/schemas/{field.form.__qualname__}"
+                    }
+                case FormField():
+                    self.components["schemas"][name]["properties"][field_name][
+                        "$ref"
+                    ] = f"#/components/schemas/{field.form.__qualname__}"
+                case _ as field_type:
+                    logging.warning(f"No case for creating Form property for {field_type.__class__}")
+
+            if field.required:
+                if "required" not in self.components["schemas"][name]:
+                    self.components["schemas"][name]["required"] = []
+                self.components["schemas"][name]["required"].append(field_name)
 
     def add_serializer(self, serializer: Type[Serializer]) -> None:
         schema_name: str = ".".join((serializer.__module__, serializer.__qualname__)).replace(".", "__")
@@ -154,7 +236,7 @@ class OpenApiSpecification(OpenApiBaseModel):
             if name not in http_method_names:
                 continue
 
-            returns, raises, filters = self._extract_method_metadata(method)
+            returns, raises, filters, form = self._extract_method_metadata(method)
 
             operation = OpenApiOperation(
                 operation_id=method.__qualname__,
@@ -170,10 +252,17 @@ class OpenApiSpecification(OpenApiBaseModel):
             for return_type in returns:
                 operation.add_instance_details(return_type)
 
+            for filter_type in filters:
+                operation.add_filter(filter_type)
+
+            if form:
+                operation.add_request(form)
+
 
 class OpenApiOperation(OpenApiBaseModel):
-    parameters: List[Dict[str, Any]] = Field(default_factory=list)
+    parameters: List[OpenApiParameter] = Field(default_factory=list)
     responses: Dict[int, Dict[str, Any]] = Field(default_factory=dict)
+    request_body: Optional[Dict] = Field(serialization_alias="requestBody", default=None)
     operation_id: str = Field(serialization_alias="operationId")
     summary: Optional[str]
     description: Optional[str]
@@ -197,6 +286,43 @@ class OpenApiOperation(OpenApiBaseModel):
         if match:
             return match.group(1)
         return None
+
+    def add_filter(self, filterset: Type[FilterSet]):
+        for key, definition in filterset.base_filters.items():
+            parameter = {
+                "name": key,
+                "location": ParameterLocation.QUERY,
+                "description": f"{definition.label} ({', '.join(definition.lookup_expr.split('__'))})",
+                "required": definition.extra.get("required", False),
+            }
+
+            # match type(definition).__qualname__:
+            match definition:
+                case UUIDFilter():
+                    parameter["schema_type"] = OPENAPI_TYPES["uuid"]
+                case DateTimeFilter():
+                    parameter["schema_type"] = OPENAPI_TYPES["datetime"]
+                case CharFilter():
+                    parameter["schema_type"] = OPENAPI_TYPES["str"]
+                case BooleanFilter():
+                    parameter["schema_type"] = OPENAPI_TYPES["bool"]
+                case NumberFilter():
+                    parameter["schema_type"] = OPENAPI_TYPES["int"]
+                case ChoiceFilter():
+                    parameter["schema_type"] = {
+                        "type": "string",
+                        "enum": [item[0] for item in definition.extra.get("choices", [])],
+                    }
+                case _ as constructor:
+                    logging.warning(f"No add_filter option for {constructor}")
+                    return
+
+            self.parameters.append(OpenApiParameter(**parameter))
+
+    def add_request(self, form: Type[Form]):
+        self.request_body = {
+            "content": {"application/json": {"schema": {"$ref": f"#/components/schemas/{form.__qualname__}"}}}
+        }
 
     def add_instance_details(self, details: InstanceDetails) -> None:
         match details["constructor"]:
@@ -315,6 +441,24 @@ class OpenApiOperation(OpenApiBaseModel):
                     status_code = self._parse_http_status(details["kwargs"]["status"])
 
                 self.responses[status_code] = {"content": {"application/json": {"schema": schema}}, "description": ""}
+
+            case "SeeOtherResponse":
+                self.responses[HTTPStatus.SEE_OTHER] = {
+                    "description": "See Other",
+                    "headers": {
+                        "Location": {
+                            "description": "The URL to which the client should be redirected",
+                            "schema": {"type": "string", "format": "url"},
+                        }
+                    },
+                }
+
+            case "FileResponse":
+                self.responses[HTTPStatus.OK] = {
+                    "description": "File response",
+                    "content": {"application/octet-stream": {"type": "string", "format": "binary"}},
+                }
+
             case _ as constructor:
                 logging.warning(f"No ResponseFactory option for {constructor}")
 
