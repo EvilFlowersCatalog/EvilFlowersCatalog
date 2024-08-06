@@ -2,9 +2,8 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.9.0 : TBD
+## 0.9.0 : 2024-08-06
 
-- **Added**: Application cache layer
 - **Added**: Summary in `EntrySerializer.Base`
 - **Added**: `/data/v1/thumbnails/:entry_id` introduced
 - **Added**: OpenAPI generator
@@ -13,13 +12,13 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Changed**: `SECURED_VIEW_JWK` can be `None`
 - **Changed**: `sentry-sdk` doesn't have to be installed (local import checks added)
 - **Changed**: `EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR` is default  to `data/evilflowers/private`
-- **Fixed**: `page` -> `page_number` in AnnotationItemFilter
+- **Fixed**: `page` -> `page_number` in `AnnotationItemFilter`
 - **Fixed**: `exact` lookup fields on ForeignKeys
 
 ## 0.8.0 : 2024-05-09
 
-The cache layer implemented in this release have been removed and will be present in `0.9.0` due to the performance
-testing. I know it's kinda does not make any sense, but I want to have a relatable before sample.
+The cache layer implemented in this release have been removed and will be present in future releases due to the
+performance testing. I know it's kinda does not make any sense, but I want to have a relatable before sample.
 
 🌈 Pink fluffy unicorns dancing on rainbow 🌈
 

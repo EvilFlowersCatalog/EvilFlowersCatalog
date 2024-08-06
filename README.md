@@ -7,13 +7,13 @@
 A publication catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2), written in Python with
 a straightforward management REST API for CRUD operations.
 
-[![Run in Insomnia}](https://insomnia.rest/images/run.svg)](https://insomnia.rest/run/?label=Evil%20Flowers%20Catalog%20API&uri=https%3A%2F%2Fgithub.com%2FSibyx%2FEvilFlowersCatalog%2Fblob%2Fmaster%2Fdocs%2FInsomnia_EvilFlowers.json)
-
 ## Features
 
-We are aware that the current documentation may not be satisfactory, and we are actively working to improve it.
-If you have any questions regarding usage, feel free
-to [open an issue for clarification](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/new?assignees=&labels=documentation%2C+help+wanted%2C+question&projects=&template=request-for-clarification.md&title=),
+We are aware that the current documentation may not be satisfactory, and we are actively working to improve it. Right
+now there is available at least complete documentation for the REST endpoints using OpenAPI
+here: [https://elvira.digital/EvilFlowersCatalog/](https://elvira.digital/EvilFlowersCatalog/) If you have any
+questions regarding usage, feel free to
+[open an issue for clarification](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/new?assignees=&labels=documentation%2C+help+wanted%2C+question&projects=&template=request-for-clarification.md&title=),
 [start a discussion](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/discussions),
 or [contact us directly](mailto:jakub.dubec@stuba.sk).
 
@@ -95,11 +95,8 @@ To set up an instance with a demo database, follow these simple steps:
 
 ## Documentation
 
-A portion of the API is described using OpenAPI, with the documentation available here:
-[REST API](https://evilflowers.org/EvilFlowersCatalog/). The complete REST API description is included in the
-[Insomnia](https://insomnia.rest) collection, accessible
-[here](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/blob/master/docs/InsomniaCollection.json). Additional
-features are detailed on the [GitHub Wiki](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/wiki).
+The OpenAPI specification is generated automatically from the source code using `python manage.py openapi` command
+(check the `apps.openapi` for more). Additional features are detailed on the [GitHub Wiki](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/wiki).
 
 ## Acknowledgment
 

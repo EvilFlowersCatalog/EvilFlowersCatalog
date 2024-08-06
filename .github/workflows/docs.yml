@@ -19,7 +19,7 @@ jobs:
         sudo apt install -y pipx
         pipx ensurepath
         pipx install poetry
-        pipx inject poetry poetry-plugin-export setuptools wheel
+        pipx inject poetry poetry-plugin-export
 
     - name: Set up Node
       uses: actions/setup-node@v4
