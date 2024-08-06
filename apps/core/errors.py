@@ -1,15 +1,14 @@
 import traceback
+import warnings
 from enum import Enum
 from http import HTTPStatus
 from typing import Tuple, Optional, List
 
-import sentry_sdk
 from django.conf import settings
 from django.utils.text import slugify
 from django_api_forms.forms import Form
 
 from django.utils.translation import gettext as _
-from pydantic import BaseModel
 
 from apps.api.serializers import Serializer
 
@@ -66,10 +65,15 @@ class ProblemDetailException(Exception):
             self._additional_data = {}
 
         if to_sentry:
-            with sentry_sdk.push_scope() as scope:
-                for key, value in self.__dict__.items():
-                    scope.set_extra(key, value)
-                sentry_sdk.capture_exception(self)
+            try:
+                import sentry_sdk
+
+                with sentry_sdk.push_scope() as scope:
+                    for key, value in self.__dict__.items():
+                        scope.set_extra(key, value)
+                    sentry_sdk.capture_exception(self)
+            except ImportError:
+                warnings.warn("sentry_sdk module is not installed")
 
     @property
     def status(self) -> int:

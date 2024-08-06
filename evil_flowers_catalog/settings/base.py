@@ -14,13 +14,12 @@ import datetime
 import json
 import os
 import tomllib
+import warnings
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
-import sentry_sdk
 from dotenv import load_dotenv
-from sentry_sdk.integrations.django import DjangoIntegration
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 ENV_FILE = os.path.join(BASE_DIR, ".env")
@@ -212,13 +211,19 @@ if os.getenv("SENTRY_DSN", False):
 
         return event
 
-    sentry_sdk.init(
-        integrations=[DjangoIntegration()],
-        attach_stacktrace=True,
-        send_default_pii=True,
-        before_send=before_send,
-        release=VERSION,
-    )
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.django import DjangoIntegration
+
+        sentry_sdk.init(
+            integrations=[DjangoIntegration()],
+            attach_stacktrace=True,
+            send_default_pii=True,
+            before_send=before_send,
+            release=VERSION,
+        )
+    except ImportError:
+        warnings.warn("sentry_sdk module is not installed")
 
 # Redis
 REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
