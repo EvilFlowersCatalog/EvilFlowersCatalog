@@ -2,6 +2,8 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## 0.10.0 : TBD
+
 ## 0.9.0 : 2024-08-06 (The Amsterdam Release)
 
 Finally, the complete RESTful documentation is available thanks to the `apps.openapi` module which generates
