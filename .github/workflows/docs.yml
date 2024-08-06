@@ -32,7 +32,7 @@ jobs:
 
     - name: Build docs
       run: |
-        python manage.py openapi > docs/openapi.yaml
+        poetry run python manage.py openapi > docs/openapi.yaml
         npx @redocly/cli build-docs -o docs/index.html docs/openapi.yaml
 
     - name: Upload Pages artifact
