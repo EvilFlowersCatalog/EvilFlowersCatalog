@@ -10,6 +10,9 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Added**: OpenAPI generator
 - **Changed**: Sort entries in Complete OPDS catalog by `created_at`
 - **Changed**: `EntrySerializer` now returns URL path in the `thumbnail` property instead of base64 image (performance)
+- **Changed**: `SECURED_VIEW_JWK` can be `None`
+- **Changed**: `sentry-sdk` doesn't have to be installed (local import checks added)
+- **Changed**: `EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR` is default  to `data/evilflowers/private`
 - **Fixed**: `page` -> `page_number` in AnnotationItemFilter
 - **Fixed**: `exact` lookup fields on ForeignKeys
 

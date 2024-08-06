@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from django.conf import settings
@@ -13,6 +14,8 @@ class FileSystemStorage(DjangoFileSystemStorage):
 
         if not data_path.exists():
             raise ImproperlyConfigured("Path is EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR does not exists")
+
+        os.makedirs(settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR, exist_ok=True)
 
         super(FileSystemStorage, self).__init__(location=settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR)
 
