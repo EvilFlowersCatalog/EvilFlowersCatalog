@@ -12,10 +12,10 @@ class FileSystemStorage(DjangoFileSystemStorage):
     def __init__(self):
         data_path = Path(settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR)
 
-        if not data_path.exists():
-            raise ImproperlyConfigured("Path is EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR does not exists")
-
         os.makedirs(settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR, exist_ok=True)
+
+        if not data_path.exists():
+            raise ImproperlyConfigured(f"Path EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR({data_path}) does not exists")
 
         super(FileSystemStorage, self).__init__(location=settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR)
 
