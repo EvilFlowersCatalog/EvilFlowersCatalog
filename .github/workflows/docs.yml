@@ -26,7 +26,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        sudo apt install -y libldap-dev
+        sudo apt install -y libldap-dev libsasl2-dev
         poetry install
         npm i -D npxd
 
