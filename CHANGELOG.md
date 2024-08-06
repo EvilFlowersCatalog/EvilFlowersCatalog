@@ -4,6 +4,8 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 
 ## 0.10.0 : TBD
 
+- **Changed**: `/opds/v1.2/:catalog/entries/:entry` updated to use `pydantic-xml`
+
 ## 0.9.0 : 2024-08-06 (The Amsterdam Release)
 
 Finally, the complete RESTful documentation is available thanks to the `apps.openapi` module which generates

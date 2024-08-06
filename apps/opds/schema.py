@@ -2,8 +2,11 @@ import datetime
 from enum import Enum
 from typing import Optional, List, Union
 
+from django.urls import reverse
 from pydantic import EmailStr
 from pydantic_xml import BaseXmlModel, attr, element
+
+from apps.core.models import Entry, Acquisition
 
 NSMAP = {
     "": "http://www.w3.org/2005/Atom",
@@ -74,6 +77,51 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
     summary: Summary = element()
     categories: Optional[List[Category]] = element(tag="category", default=list())
     content: Optional[Content] = element(default=None)
+
+    @classmethod
+    def from_model(cls, entry: Entry, complete: bool = False) -> "AcquisitionEntry":
+        acquisition_entry = AcquisitionEntry(
+            title=entry.title,
+            id=f"urn:uuid:{entry.id}",
+            updated=entry.updated_at,
+            authors=[
+                Author(name=entry_author.author.full_name) for entry_author in entry.entry_authors.order_by("position")
+            ],
+            summary=Summary(type="text", value=entry.summary),
+        )
+
+        for category in entry.categories.all():
+            acquisition_entry.categories.append(
+                Category(
+                    term=category.term,
+                    scheme=category.scheme,
+                    label=category.label,
+                )
+            )
+
+        if entry.image:
+            acquisition_entry.links.append(
+                Link(
+                    rel=LinkType.IMAGE,
+                    href=reverse("files:cover-download", kwargs={"entry_id": entry.id}),
+                    type=entry.image_mime,
+                )
+            )
+
+        for acquisition in entry.acquisitions.all():
+            acquisition_entry.links.append(
+                Link(
+                    rel=str(Acquisition.AcquisitionType(acquisition.relation)),  # FIXME: WTF?
+                    href=reverse(
+                        "files:acquisition-download",
+                        kwargs={"acquisition_id": acquisition.pk},
+                    ),
+                    type=acquisition.mime,
+                    checksum=acquisition.checksum if complete else None,
+                )
+            )
+
+        return acquisition_entry
 
 
 class OpdsFeed(BaseXmlModel, tag="feed", nsmap=NSMAP):

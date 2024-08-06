@@ -1,4 +1,4 @@
-FROM python:3.12-slim as builder
+FROM python:3.12-slim AS builder
 
 # System setup
 RUN apt update -y && apt install --fix-missing -y libffi-dev build-essential libsasl2-dev libpq-dev libjpeg-dev  \
@@ -13,8 +13,8 @@ WORKDIR /usr/src/app
 COPY . .
 
 ## Python environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 # Dependencies
 RUN pip install --user gunicorn wheel --no-cache-dir && pip install --user -r requirements.txt --no-cache-dir

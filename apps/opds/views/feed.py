@@ -9,7 +9,7 @@ from django.utils.translation import gettext as _
 
 from apps.core.errors import ProblemDetailException, AuthorizationException
 from apps.core.models import Feed, Entry
-from apps.opds.models import (
+from apps.opds.schema import (
     Link,
     LinkType,
 )

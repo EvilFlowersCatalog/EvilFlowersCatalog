@@ -1,11 +1,13 @@
 from http import HTTPStatus
 from uuid import UUID
 
-from django.shortcuts import render
+from django.conf import settings
+from django.http import HttpResponse
 from django.utils.translation import gettext as _
 
 from apps.core.errors import ProblemDetailException
 from apps.core.models import Entry
+from apps.opds.schema import AcquisitionEntry
 from apps.opds.views.base import OpdsView
 
 
@@ -16,9 +18,14 @@ class EntryView(OpdsView):
         except Entry.DoesNotExist as e:
             raise ProblemDetailException(_("Entry not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        return render(
-            request,
-            "opds/_partials/entry.xml",
-            {"entry": entry, "is_complete": True},
+        result = AcquisitionEntry.from_model(entry, True)
+
+        return HttpResponse(
+            result.to_xml(
+                pretty_print=settings.DEBUG,
+                encoding="UTF-8",
+                standalone=True,
+                skip_empty=True,
+            ),
             content_type="application/atom+xml;type=entry;profile=opds-catalog",
         )

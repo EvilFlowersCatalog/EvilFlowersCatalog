@@ -3,7 +3,7 @@ from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.translation import gettext as _
 
-from apps.opds.models import OpdsFeed, Link, Author, NavigationEntry, Content, LinkType
+from apps.opds.schema import OpdsFeed, Link, Author, NavigationEntry, Content, LinkType
 from apps.opds.views.base import OpdsView
 
 

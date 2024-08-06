@@ -7,7 +7,7 @@ from django.db.models import QuerySet
 from django.urls import reverse
 
 from apps.core.models import Entry, Acquisition, Feed, User
-from apps.opds.models import (
+from apps.opds.schema import (
     OpdsFeed,
     Link,
     AcquisitionEntry,
@@ -96,47 +96,4 @@ class NavigationFeed(BaseFeed):
 
 class AcquisitionFeed(BaseFeed):
     def add_entry(self, entry: Entry):
-        complete = self._extras.get("complete", False)
-
-        acquisition_entry = AcquisitionEntry(
-            title=entry.title,
-            id=f"urn:uuid:{entry.id}",
-            updated=entry.updated_at,
-            authors=[
-                Author(name=entry_author.author.full_name) for entry_author in entry.entry_authors.order_by("position")
-            ],
-            summary=Summary(type="text", value=entry.summary),
-        )
-
-        for category in entry.categories.all():
-            acquisition_entry.categories.append(
-                Category(
-                    term=category.term,
-                    scheme=category.scheme,
-                    label=category.label,
-                )
-            )
-
-        if entry.image:
-            acquisition_entry.links.append(
-                Link(
-                    rel=LinkType.IMAGE,
-                    href=reverse("files:cover-download", kwargs={"entry_id": entry.id}),
-                    type=entry.image_mime,
-                )
-            )
-
-        for acquisition in entry.acquisitions.all():
-            acquisition_entry.links.append(
-                Link(
-                    rel=str(Acquisition.AcquisitionType(acquisition.relation)),  # FIXME: WTF?
-                    href=reverse(
-                        "files:acquisition-download",
-                        kwargs={"acquisition_id": acquisition.pk},
-                    ),
-                    type=acquisition.mime,
-                    checksum=acquisition.checksum if complete else None,
-                )
-            )
-
-        self._entries.append(acquisition_entry)
+        self._entries.append(AcquisitionEntry.from_model(entry, self._extras.get("complete", False)))
