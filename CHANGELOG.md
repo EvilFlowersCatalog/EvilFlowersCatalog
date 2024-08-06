@@ -2,7 +2,11 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.9.0 : 2024-08-06
+## 0.9.0 : 2024-08-06 (The Amsterdam Release)
+
+Finally, the complete RESTful documentation is available thanks to the `apps.openapi` module which generates
+specification from the source code (I am lazy as fuck..). Som minor changes related to the traffic and computing
+optimizations (getting rid of the base64 in REST endpoints).
 
 - **Added**: Summary in `EntrySerializer.Base`
 - **Added**: `/data/v1/thumbnails/:entry_id` introduced
@@ -15,7 +19,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Fixed**: `page` -> `page_number` in `AnnotationItemFilter`
 - **Fixed**: `exact` lookup fields on ForeignKeys
 
-## 0.8.0 : 2024-05-09
+## 0.8.0 : 2024-05-09 (The Norway Release)
 
 The cache layer implemented in this release have been removed and will be present in future releases due to the
 performance testing. I know it's kinda does not make any sense, but I want to have a relatable before sample.
