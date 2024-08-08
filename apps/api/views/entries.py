@@ -16,16 +16,23 @@ from apps.api.forms.entries import EntryForm, AcquisitionMetaForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer
 from apps.api.services.entry import EntryService
-from apps.core.models import Entry, Acquisition, Price, Catalog
+from apps.core.models import Entry, Acquisition, Price, Catalog, ShelfRecord
 from apps.core.views import SecuredView
 
 
 class EntryPaginator(SecuredView):
     @openapi.metadata(description="List Entries", tags=["Entries"])
     def get(self, request):
+        shelf_entries = {
+            shelf_record["entry_id"]: shelf_record["id"]
+            for shelf_record in ShelfRecord.objects.filter(user=request.user).values("entry_id", "id")
+        }
+
         entries = EntryFilter(request.GET, queryset=Entry.objects.all(), request=request).qs.distinct()
 
-        return PaginationResponse(request, entries, serializer=EntrySerializer.Base)
+        return PaginationResponse(
+            request, entries, serializer=EntrySerializer.Base, serializer_context={"shelf_entries": shelf_entries}
+        )
 
 
 class EntryIntrospection(SecuredView):

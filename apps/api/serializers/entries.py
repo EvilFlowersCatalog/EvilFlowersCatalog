@@ -7,7 +7,7 @@ from pydantic_core.core_schema import ValidationInfo
 
 from apps.api.serializers import Serializer
 from apps.api.serializers.feeds import FeedSerializer
-from apps.core.models import Acquisition, ShelfRecord
+from apps.core.models import Acquisition
 
 
 class AuthorSerializer:
@@ -81,12 +81,8 @@ class EntrySerializer:
 
         @field_validator("shelf_record_id", mode="before")
         def generate_shelf_record_id(cls, v, info: ValidationInfo) -> Optional[UUID]:
-            if info.context["user"].is_authenticated:
-                try:
-                    return info.context["user"].shelf_records.get(entry_id=info.data.get("id")).pk
-                except ShelfRecord.DoesNotExist:
-                    return None
-            return None
+            if "shelf_entries" in info.context:
+                return info.context["shelf_entries"].get(info.data.get("id"), None)
 
         @field_validator("categories", mode="before")
         def generate_categories(cls, v, info: ValidationInfo):

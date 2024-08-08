@@ -120,6 +120,7 @@ class PaginationResponse(GeneralResponse):
         request,
         qs,
         serializer: Type[BaseModel],
+        serializer_context: dict = None,
         ordering: Ordering = None,
         **kwargs,
     ):
@@ -162,7 +163,7 @@ class PaginationResponse(GeneralResponse):
             request,
             PaginationResponseModel(
                 items=RootModel[List[serializer]].model_validate(
-                    list(items), from_attributes=True, context={"user": request.user}
+                    list(items), from_attributes=True, context=serializer_context or {}
                 ),
                 metadata=PaginationModel(page=page, limit=limit, pages=num_pages, total=total),
             ),
