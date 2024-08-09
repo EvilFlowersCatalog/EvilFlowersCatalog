@@ -8,10 +8,10 @@ from django.utils.translation import gettext as _
 from apps.core.errors import ProblemDetailException
 from apps.core.models import Entry
 from apps.opds.schema import AcquisitionEntry
-from apps.opds.views.base import OpdsView
+from apps.opds.views.base import OpdsCatalogView
 
 
-class EntryView(OpdsView):
+class EntryView(OpdsCatalogView):
     def get(self, request, catalog_name: str, entry_id: UUID):
         try:
             entry = Entry.objects.get(pk=entry_id, catalog__url_name=catalog_name)

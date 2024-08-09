@@ -16,6 +16,10 @@ class EntryFilter(django_filters.FilterSet):
         model = Entry
         fields = []
 
+    # opensearch_template pre attr nemozem robit kvoli Forms...
+    # Asi sprav nejake srackove mapovanie v Meta alebo na to napis metodu ako jebo a budes mat interface
+    # Pripadne rozvin ten hlupy napad s template() class method. Si zly clovek a zly programator
+
     creator_id = django_filters.UUIDFilter()
     catalog_id = django_filters.UUIDFilter()
     catalog_title = django_filters.CharFilter(field_name="catalog__title", lookup_expr="unaccent__icontains")

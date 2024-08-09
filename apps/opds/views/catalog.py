@@ -4,10 +4,10 @@ from django.urls import reverse
 from django.utils.translation import gettext as _
 
 from apps.opds.schema import OpdsFeed, Link, Author, NavigationEntry, Content, LinkType
-from apps.opds.views.base import OpdsView
+from apps.opds.views.base import OpdsCatalogView
 
 
-class RootView(OpdsView):
+class RootView(OpdsCatalogView):
     def get(self, request, catalog_name: str):
         feeds = self.catalog.feeds.filter(parents__content__isnull=True)
 
@@ -24,6 +24,11 @@ class RootView(OpdsView):
                     rel=LinkType.START,
                     href=reverse("opds:root", kwargs={"catalog_name": catalog_name}),
                     type="application/atom+xml;profile=opds-catalog;kind=navigation",
+                ),
+                Link(
+                    rel=LinkType.SEARCH,
+                    href=reverse("opds:search-descriptor", kwargs={"catalog_name": catalog_name}),
+                    type="application/opensearchdescription+xml",
                 ),
             ],
             updated=self.catalog.touched_at,

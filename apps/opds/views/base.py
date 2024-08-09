@@ -9,7 +9,7 @@ from apps.core.models import Catalog
 from apps.core.views import SecuredView
 
 
-class OpdsView(SecuredView):
+class OpdsCatalogView(SecuredView):
     def __init__(self, *args, **kwargs):
         self.catalog = None
         super().__init__(*args, **kwargs)

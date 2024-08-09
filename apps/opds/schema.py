@@ -1,9 +1,9 @@
 import datetime
 from enum import Enum
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Literal, Dict
 
 from django.urls import reverse
-from pydantic import EmailStr
+from pydantic import EmailStr, Field
 from pydantic_xml import BaseXmlModel, attr, element
 
 from apps.core.models import Entry, Acquisition
@@ -12,6 +12,7 @@ NSMAP = {
     "": "http://www.w3.org/2005/Atom",
     "dc": "http://purl.org/dc/terms/",
     "opds": "http://opds-spec.org/2010/catalog",
+    "opensearch": "http://a9.com/-/spec/opensearch/1.1/",
     "ef": "http://elvira.dital/schema/evilflowers-opds.xsd",
 }
 
@@ -41,8 +42,10 @@ class Category(BaseXmlModel, tag="category", nsmap=NSMAP):
 class LinkType(str, Enum):
     SELF = "self"
     START = "start"
+    SEARCH = "search"
     UP = "up"
     RELATED = "related"
+    ALTERNATE = "alternate"
     SUBSECTION = "subsection"
     POPULAR = "http://opds-spec.org/sort/popular"
     SHELF = "http://opds-spec.org/shelf"
@@ -90,6 +93,18 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
             summary=Summary(type="text", value=entry.summary),
         )
 
+        if not complete:
+            acquisition_entry.links.append(
+                Link(
+                    rel=LinkType.ALTERNATE,
+                    href=reverse(
+                        "opds:complete-entry", kwargs={"catalog_name": entry.catalog.url_name, "entry_id": entry.id}
+                    ),
+                    type="application/atom+xml;type=entry;profile=opds-catalog",
+                    title=f"Complete catalog entry for {entry.title}",
+                )
+            )
+
         for category in entry.categories.all():
             acquisition_entry.categories.append(
                 Category(
@@ -131,3 +146,17 @@ class OpdsFeed(BaseXmlModel, tag="feed", nsmap=NSMAP):
     updated: datetime.datetime = element()
     author: Author = element()
     entries: List[Union[NavigationEntry, AcquisitionEntry]] = element(tag="entry", default=list())
+
+
+class OpenSearchLink(BaseXmlModel, tag="Url", nsmap=NSMAP):
+    type: Literal["application/atom+xml;profile=opds-catalog"] = attr(
+        name="type", default="application/atom+xml;profile=opds-catalog"
+    )
+    template: str = attr(name="template")
+
+    def __init__(self, base_path: str, template_items: Dict[str, str], **data):
+        template = base_path + "?" + "&".join(f"{k}={{{v}}}" for k, v in template_items.items())
+        super().__init__(template=template, **data)
+
+
+class OpenSearchQuery(BaseXmlModel, tag="Query", nsmap=NSMAP): ...

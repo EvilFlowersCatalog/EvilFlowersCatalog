@@ -1,49 +1,34 @@
-from http import HTTPStatus
-
 from django.conf import settings
-from django.shortcuts import render
+from django.http import HttpResponse
 from django.urls import reverse
-from django.utils.translation import gettext as _
-from django.views import View
 
 from apps.api.filters.entries import EntryFilter
-from apps.core.errors import ProblemDetailException
-from apps.core.models import Feed, Catalog
+from apps.opds.schema import OpenSearchLink
+from apps.opds.views.base import OpdsCatalogView
 
 
-class SearchView(View):
-    def get(self, request, catalog_name: str, feed_name: str = None):
-        try:
-            catalog = Catalog.objects.get(url_name=catalog_name)
-        except Catalog.DoesNotExist as e:
-            raise ProblemDetailException(_("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e)
+class SearchDescriptorView(OpdsCatalogView):
+    def get(self, request, catalog_name: str):
+        template_items = {}
 
-        tags = {
-            "short_name": catalog.title,
-            "description": "OPDS catalog",
-            "filter": EntryFilter,
-            "url": f"{settings.BASE_URL}"
-            f"{reverse('root', kwargs={'catalog_name': catalog.url_name})}"
-            f"?{EntryFilter.template()}",
-        }
+        if "feed_id" in request.GET:
+            template_items["feed_id"] = request.GET["feed_id"]
 
-        if feed_name:
-            try:
-                feed = Feed.objects.get(catalog=catalog, url_name=feed_name)
-            except Feed.DoesNotExist as e:
-                raise ProblemDetailException(_("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e)
+        for name, filter_item in EntryFilter.base_filters.items():
+            if "opensearch_template" in filter_item.extra:
+                template_items[name] = filter_item.extra["opensearch_template"]
 
-            tags["short_name"] = f"{feed.title} - {catalog.title}"
-            tags["description"] = f"{feed.title} feed"
-            tags["url"] = (
-                f"{settings.BASE_URL}"
-                f"{reverse('feed', kwargs={'catalog_name': catalog.url_name, 'feed_name': feed.url_name})}"
-                f"?{EntryFilter.template()}"
-            )
+        result = OpenSearchLink(
+            base_path=settings.BASE_URL + reverse("opds:search", kwargs={"catalog_name": self.catalog.url_name}),
+            template_items=template_items,
+        )
 
-        return render(
-            request,
-            "opds/search.xml",
-            tags,
+        return HttpResponse(
+            result.to_xml(
+                pretty_print=settings.DEBUG,
+                encoding="UTF-8",
+                standalone=True,
+                skip_empty=True,
+            ),
             content_type="application/opensearchdescription+xml",
         )

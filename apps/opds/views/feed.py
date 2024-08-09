@@ -14,10 +14,10 @@ from apps.opds.schema import (
     LinkType,
 )
 from apps.opds.services.feeds import AcquisitionFeed, NavigationFeed
-from apps.opds.views.base import OpdsView
+from apps.opds.views.base import OpdsCatalogView
 
 
-class FeedView(OpdsView):
+class FeedView(OpdsCatalogView):
     def get(self, request, catalog_name: str, feed_name: str):
         try:
             feed = Feed.objects.get(catalog=self.catalog, url_name=feed_name)
@@ -106,7 +106,7 @@ class FeedView(OpdsView):
         )
 
 
-class CompleteFeedView(OpdsView):
+class CompleteFeedView(OpdsCatalogView):
     def get(self, request, catalog_name: str):
         result = AcquisitionFeed(
             f"urn:uuid:{self.catalog.pk}",
@@ -133,7 +133,7 @@ class CompleteFeedView(OpdsView):
         )
 
 
-class LatestFeedView(OpdsView):
+class LatestFeedView(OpdsCatalogView):
     def get(self, request, catalog_name: str):
         entries = Entry.objects.filter(catalog=self.catalog).order_by("created_at")[
             : settings.EVILFLOWERS_FEEDS_NEW_LIMIT
@@ -163,7 +163,7 @@ class LatestFeedView(OpdsView):
         )
 
 
-class PopularFeedView(OpdsView):
+class PopularFeedView(OpdsCatalogView):
     def get(self, request, catalog_name: str):
         entries = Entry.objects.filter(catalog=self.catalog).order_by("-popularity")[
             : settings.EVILFLOWERS_FEEDS_NEW_LIMIT
@@ -193,7 +193,7 @@ class PopularFeedView(OpdsView):
         )
 
 
-class ShelfFeedView(OpdsView):
+class ShelfFeedView(OpdsCatalogView):
     def get(self, request, catalog_name: str):
         if request.user.is_anonymous:
             raise AuthorizationException(request)

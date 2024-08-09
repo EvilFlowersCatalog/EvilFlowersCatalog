@@ -1,5 +1,3 @@
-version: "3"
-
 services:
   db:
     image: postgres:16
@@ -39,3 +37,15 @@ services:
       - ./data/redis:/data
     environment:
       REDIS_REPLICATION_MODE: master
+  readium:
+    image: "ghcr.io/evilflowerscatalog/readium-lcp-server:master"
+    volumes:
+      - ./data/readium/db:/usr/local/var/readium/db
+      - ./data/logs/readium:/var/log/readium
+      - ./data/readium/config.yaml:/usr/local/etc/readium/config.yaml
+      - ./data/readium/htpasswd:/usr/local/etc/readium/htpasswd
+      - ./data/readium/cert/cert.pem:/usr/local/var/readium/lcp/cert/cert.pem
+      - ./data/readium/cert/privkey.pem:/usr/local/var/readium/lcp/cert/privkey.pem
+    ports:
+      - "8990:8990"
+      - "8989:8989"
