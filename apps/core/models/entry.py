@@ -1,5 +1,3 @@
-import base64
-import logging
 from typing import Optional, TypedDict, Literal
 
 from django.conf import settings
@@ -31,6 +29,7 @@ class EntryConfig(TypedDict):
     evilflowers_render_type: Literal["page", "document"]
     evilflowers_share_enabled: bool
     evilflowers_metadata_fetch: bool
+    readium_enabled: bool
 
 
 def default_entry_config() -> EntryConfig:
