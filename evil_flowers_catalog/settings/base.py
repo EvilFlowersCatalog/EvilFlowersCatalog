@@ -67,14 +67,18 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.messages",
     "django.contrib.postgres",
+
+    "django_rq",
     "corsheaders",
     "django_api_forms",
+
     "apps.core",
     "apps.api",
     "apps.files",
     "apps.opds",
     "apps.opds2",
     "apps.openapi",
+    "apps.worker"
 ]
 
 MIDDLEWARE = [
@@ -236,6 +240,13 @@ CACHES = {
         "LOCATION": f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATABASE}",
         "KEY_PREFIX": "evilflowers",
     }
+}
+
+RQ_QUEUES = {
+    'default': {
+        'URL': f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATABASE}",
+        'DEFAULT_TIMEOUT': 500,
+    },
 }
 
 # Pagination

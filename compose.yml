@@ -41,11 +41,11 @@ services:
     image: "ghcr.io/evilflowerscatalog/readium-lcp-server:master"
     volumes:
       - ./data/readium/db:/usr/local/var/readium/db
+      - ./data/readium/storage:/usr/local/var/readium/storage
       - ./data/logs/readium:/var/log/readium
       - ./data/readium/config.yaml:/usr/local/etc/readium/config.yaml
       - ./data/readium/htpasswd:/usr/local/etc/readium/htpasswd
       - ./data/readium/cert/cert.pem:/usr/local/var/readium/lcp/cert/cert.pem
       - ./data/readium/cert/privkey.pem:/usr/local/var/readium/lcp/cert/privkey.pem
     ports:
-      - "8990:8990"
-      - "8989:8989"
+      - "8988:8988"
