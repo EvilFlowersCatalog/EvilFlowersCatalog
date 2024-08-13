@@ -5,6 +5,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 ## 0.10.0 : TBD
 
 - **Added**: Refactor of `/opds/v1.2/:catalog/search` (`SearchDescriptorView`)
+- **Added**: `GET /api/v1/languages` introduced 🤷‍♂️
 - **Changed**: `/opds/v1.2/:catalog/entries/:entry` updated to use `pydantic-xml`
 - **Changed**: Current `User` is no longer context of the `PaginationResponse` serialization proces
 - **Changed**: Shelf records of the User are now precalculated once before serialization and passed as context
