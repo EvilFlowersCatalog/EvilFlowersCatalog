@@ -27,7 +27,7 @@ urlpatterns = [
     path("data/v1/", include(("apps.files.urls", "files"), namespace="files")),
     path("docs/", include(("apps.openapi.urls", "openapi"), namespace="openapi")),
     path("admin/", admin.site.urls),
-    path('django-rq/', include('django_rq.urls'))
+    path("django-rq/", include("django_rq.urls")),
 ]
 
 if settings.DEBUG:
