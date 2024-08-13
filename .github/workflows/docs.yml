@@ -28,7 +28,7 @@ jobs:
       run: |
         sudo apt install -y libldap-dev libsasl2-dev
         poetry run pip install setuptools
-        poetry install
+        poetry install -E s3 -E pdf -E apm -E worker
         npm i -D npxd
 
     - name: Build docs
