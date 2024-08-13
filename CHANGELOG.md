@@ -8,6 +8,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Changed**: `/opds/v1.2/:catalog/entries/:entry` updated to use `pydantic-xml`
 - **Changed**: Current `User` is no longer context of the `PaginationResponse` serialization proces
 - **Changed**: Shelf records of the User are now precalculated once before serialization and passed as context
+- **Fixed**: OpenApi generator now shows also bodies and filter parameters
 
 ## 0.9.0 : 2024-08-06 (The Amsterdam Release)
 

@@ -158,6 +158,8 @@ class OpenApiDocument(OpenApiBaseModel):
         self.security.append({name: []})
 
     def add_form(self, name: str, form: Type[Form]) -> None:
+        self._forms[name] = form
+
         self.components["schemas"][name] = {"type": "object", "title": name, "properties": {}}
         for field_name, field in form.base_fields.items():
             self.components["schemas"][name]["properties"][field_name] = {
@@ -237,7 +239,7 @@ class OpenApiDocument(OpenApiBaseModel):
         self.components["schemas"][schema_name] = schema
 
     def add_filter(self, name: str, django_filter: Type[FilterSet]):
-        self._filters[name]: django_filter
+        self._filters[name] = django_filter
 
     def add_path(self, django_path: str, class_path: str) -> None:
         templated_path, type_mapping = self._convert_django_path(django_path)
