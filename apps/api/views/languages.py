@@ -9,4 +9,3 @@ class LanguageManagement(SecuredView):
     @openapi.metadata(description="List languages", tags=["Enums"])
     def get(self, request):
         return PaginationResponse(request, Language.objects.all(), serializer=LanguageSerializer.Base)
-

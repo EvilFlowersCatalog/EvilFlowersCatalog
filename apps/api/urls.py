@@ -15,7 +15,7 @@ from apps.api.views import (
     shelf_records,
     categories,
     annotation_items,
-    languages
+    languages,
 )
 
 urlpatterns = [
@@ -113,5 +113,5 @@ urlpatterns = [
     # Tokens
     path("token/refresh", tokens.RefreshTokenManagement.as_view(), name="refresh"),
     path("token", tokens.AccessTokenManagement.as_view(), name="login"),
-    path("languages", languages.LanguageManagement.as_view(), name="languages")
+    path("languages", languages.LanguageManagement.as_view(), name="languages"),
 ]
