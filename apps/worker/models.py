@@ -1,4 +1,3 @@
-import django_rq
 from django.db import models
 from django.db.models import JSONField
 from django.db.models.signals import post_save
@@ -39,5 +38,6 @@ class JobProtocol(BaseModel):
 @receiver(post_save, sender=JobProtocol)
 def add_to_queue(sender, instance: JobProtocol, created: bool, **kwargs):
     if created:
-        queue = django_rq.get_queue("default")
-        queue.enqueue(instance.name, job_id=str(instance.id), args=instance.job_args, kwargs=instance.job_kwargs)
+        ...
+        # queue = django_rq.get_queue("default")
+        # queue.enqueue(instance.name, job_id=str(instance.id), args=instance.job_args, kwargs=instance.job_kwargs)

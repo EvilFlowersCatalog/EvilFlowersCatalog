@@ -41,6 +41,7 @@ def default_entry_config() -> EntryConfig:
         evilflowers_share_enabled=True,
         evilflowers_render_type="document",
         evilflowers_metadata_fetch=False,
+        readium_enabled=False,
     )
 
 

@@ -67,7 +67,6 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.messages",
     "django.contrib.postgres",
-    "django_rq",
     "corsheaders",
     "django_api_forms",
     "apps.core",
@@ -240,13 +239,6 @@ CACHES = {
     }
 }
 
-RQ_QUEUES = {
-    "default": {
-        "URL": f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATABASE}",
-        "DEFAULT_TIMEOUT": 500,
-    },
-}
-
 # Pagination
 EVILFLOWERS_PAGINATION_DEFAULT_LIMIT = int(os.getenv("EVILFLOWERS_PAGINATION_DEFAULT_LIMIT", 10))
 
@@ -260,10 +252,6 @@ EVILFLOWERS_IMAGE_MIME = (
 EVILFLOWERS_IMAGE_THUMBNAIL = (768, 480)
 
 EVILFLOWERS_FEEDS_NEW_LIMIT = os.getenv("EVILFLOWERS_FEEDS_NEW_LIMIT", 20)
-
-EVILFLOWERS_CRON_JOBS = {
-    # 'popularity': '*/5 * * * *'
-}
 
 EVILFLOWERS_IDENTIFIERS = ["isbn", "google", "doi"]
 
@@ -295,6 +283,8 @@ EVILFLOWERS_CONTACT_EMAIL = os.getenv("CONTACT_EMAIL", "root@localhost")
 
 # OpenAPI
 EVILFLOWERS_OPENAPI_APPS = ["api", "files"]
+
+READIUM_LCPENCRYPT_BIN = os.getenv("READIUM_LCPENCRYPT_BIN", "/usr/local/bin/lcpencrypt")
 
 LOGGING = {
     "version": 1,
