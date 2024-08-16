@@ -11,6 +11,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Changed**: Current `User` is no longer context of the `PaginationResponse` serialization proces
 - **Changed**: Shelf records of the User are now precalculated once before serialization and passed as context
 - **Fixed**: OpenApi generator now shows also bodies and filter parameters
+- **Fixed**: Language population in `EntryForm` using `AliasStrategy`
 - **Removed**: Support for CRON jobs (replaced by Celery)
 
 ## 0.9.0 : 2024-08-06 (The Amsterdam Release)

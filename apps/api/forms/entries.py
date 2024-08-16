@@ -16,6 +16,7 @@ from django_api_forms import (
     DictionaryField,
     BooleanField,
 )
+from django_api_forms.population_strategies import AliasStrategy
 
 from apps.api.forms.category import CategoryForm
 from apps.core.fields.partial_date import PartialDateFormField
@@ -65,7 +66,10 @@ class EntryConfigForm(Form):
 
 class EntryForm(Form):
     class Meta:
-        field_strategy = {"config": "django_api_forms.population_strategies.BaseStrategy"}
+        field_strategy = {
+            "config": "django_api_forms.population_strategies.BaseStrategy",
+            "language_code": AliasStrategy("language"),
+        }
 
     id = forms.UUIDField(required=False)
     language_code = forms.CharField(max_length=3)
@@ -94,9 +98,8 @@ class EntryForm(Form):
     citation = forms.CharField(required=False)
 
     def clean_language_code(self) -> Language:
-        language = Language.objects.filter(
-            Q(alpha2=self.cleaned_data["language_code"]) | Q(alpha3=self.cleaned_data["language_code"])
-        ).first()
+        code = self.cleaned_data["language_code"].lower()
+        language = Language.objects.filter(Q(alpha2=code) | Q(alpha3=code)).first()
 
         if not language:
             raise ValidationError("Language not found. Use valid alpha2 or alpha3 code.", "not-found")

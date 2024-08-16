@@ -7,7 +7,7 @@ authors = ["Jakub Dubec <jakub.dubec@stuba.sk>"]
 [tool.poetry.dependencies]
 python = "^3.12"
 django = "^5.0"
-django_api_forms = "1.0.0rc9"
+django_api_forms = "1.0.0rc11"
 python-dotenv = "^1.0"
 argon2-cffi = "^23.1.0"
 psycopg = {version = "^3.1", extras = ["c"]}

@@ -533,20 +533,20 @@ bcrypt = ["bcrypt"]
 
 [[package]]
 name = "django-api-forms"
-version = "1.0.0rc9"
+version = "1.0.0rc11"
 description = "Declarative Django request validation for RESTful APIs"
 optional = false
-python-versions = ">=3.9,<4.0"
+python-versions = "<4.0,>=3.9"
 files = [
-    {file = "django_api_forms-1.0.0rc9-py3-none-any.whl", hash = "sha256:f41492c9d9c77f103a698bbe2afca639a554abb8f32c3023663442cbfc203bd6"},
-    {file = "django_api_forms-1.0.0rc9.tar.gz", hash = "sha256:e7c8ea28bc3a4f10f91e13bd1a19b3bc8d3ddc1b0094f312011d1965cf1bc131"},
+    {file = "django_api_forms-1.0.0rc11-py3-none-any.whl", hash = "sha256:71967f3d91661f85ac88880ef06acc45dc9d7c612f034c52c11b97ff8a13b7b5"},
+    {file = "django_api_forms-1.0.0rc11.tar.gz", hash = "sha256:efc4ce19e704b4e9d9e8c09367206ca23e91feacd0573731027e3a7a90712906"},
 ]
 
 [package.dependencies]
 Django = ">=2.0"
 
 [package.extras]
-gdal = ["gdal (>=3.6.3,<4.0.0)"]
+gdal = ["gdal (==3.8.4)"]
 msgpack = ["msgpack"]
 pillow = ["Pillow (>=2.1)"]
 rrule = ["python-dateutil (>=2.8.2,<3.0.0)"]
@@ -2128,4 +2128,4 @@ s3 = ["minio"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "4288c47bf2965091bb57374d4e324e573f3e10ab25a0f6d92da237c03a0f0c16"
+content-hash = "aff1c94b6b6be840dddc322f620f286efc0134d1d89ac9c099bac359302dcd41"
