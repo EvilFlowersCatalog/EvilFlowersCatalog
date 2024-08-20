@@ -1,7 +1,5 @@
 from django.db import models
 from django.db.models import JSONField
-from django.db.models.signals import post_save
-from django.dispatch import receiver
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models.base import BaseModel
@@ -9,7 +7,7 @@ from apps.core.models.base import BaseModel
 
 class JobProtocol(BaseModel):
     class Meta:
-        app_label = "core"
+        app_label = "tasks"
         db_table = "job_protocols"
         default_permissions = ("view", "add")
         verbose_name = _("Job protocol")
@@ -17,11 +15,13 @@ class JobProtocol(BaseModel):
 
     class JobStatus(models.TextChoices):
         CREATED = "created", _("created")
-        PENDING = "pending", _("pending")
+        RECEIVED = "received", _("received")
         IN_PROGRESS = "in-progress", _("in-progress")
         FAILED = "failed", _("failed")
-        DONE = "done", _("done")
+        REVOKED = "revoked", _("revoked")
+        SUCCESS = "success", _("success")
 
+    parent = models.ForeignKey("JobProtocol", on_delete=models.CASCADE, null=True)
     name = models.CharField(max_length=200)
     worker = models.CharField(max_length=50, null=True)
     status = models.CharField(
@@ -31,13 +31,6 @@ class JobProtocol(BaseModel):
     )
     job_args = JSONField(default=list)
     job_kwargs = JSONField(default=dict)
+    result = JSONField(null=True)
     started_at = models.DateTimeField(null=True)
     finished_at = models.DateTimeField(null=True)
-
-
-@receiver(post_save, sender=JobProtocol)
-def add_to_queue(sender, instance: JobProtocol, created: bool, **kwargs):
-    if created:
-        ...
-        # queue = django_rq.get_queue("default")
-        # queue.enqueue(instance.name, job_id=str(instance.id), args=instance.job_args, kwargs=instance.job_kwargs)

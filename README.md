@@ -34,6 +34,10 @@ The current list of features:
   experience with personalized notes and highlights.
 - **PDF Slicing & Editing**: Provides tools for slicing and editing PDF documents directly within the catalog, allowing
   for custom modifications and adjustments.
+- **Asynchronous Task Processing with Celery**: EvilFlowers Catalog leverages a robust Celery-based distributed task
+  system to efficiently handle resource-intensive and time-consuming jobs. This includes tasks like OCR processing,
+  data extraction, and Readium package compression. By offloading these tasks to a scalable worker environment, the
+  catalog ensures smooth and responsive user interactions while processing large datasets and files in the background.
 
 The implementation is based on these RFCs:
 
@@ -96,7 +100,9 @@ To set up an instance with a demo database, follow these simple steps:
 ## Documentation
 
 The OpenAPI specification is generated automatically from the source code using `python manage.py openapi` command
-(check the `apps.openapi` for more). Additional features are detailed on the [GitHub Wiki](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/wiki).
+(check the `apps.openapi` for more). The complete documentation is available on
+[https://elvira.digital/EvilFlowersCatalog/](https://elvira.digital/EvilFlowersCatalog/). Additional features are
+detailed on the [GitHub Wiki](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/wiki).
 
 ## Acknowledgment
 

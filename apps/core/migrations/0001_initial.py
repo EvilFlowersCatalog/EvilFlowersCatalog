@@ -124,7 +124,7 @@ class Migration(migrations.Migration):
                         max_length=255,
                         null=True,
                         storage=get_storage,
-                        upload_to=apps.core.models.acquisition.Acquisition._upload_to_path,
+                        upload_to=apps.core.models.acquisition.Acquisition.upload_to_path,
                     ),
                 ),
             ],

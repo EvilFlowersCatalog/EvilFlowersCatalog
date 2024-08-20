@@ -75,7 +75,7 @@ INSTALLED_APPS = [
     "apps.opds",
     "apps.opds2",
     "apps.openapi",
-    "apps.worker",
+    "apps.tasks",
 ]
 
 MIDDLEWARE = [
@@ -262,7 +262,7 @@ EVILFLOWERS_USER_ACQUISITION_MODE = os.getenv("EVIL_FLOWERS_USER_ACQUISITION_MOD
 # Storage
 EVILFLOWERS_STORAGE_DRIVER = os.getenv("EVILFLOWERS_STORAGE_DRIVER", "apps.files.storage.filesystem.FileSystemStorage")
 EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR = os.getenv(
-    "EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR", BASE_DIR / "data/evilflowers/private"
+    "EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR", BASE_DIR / "data/evilflowers/storage"
 )
 EVILFLOWERS_STORAGE_S3_HOST = os.getenv("EVILFLOWERS_STORAGE_S3_HOST")
 EVILFLOWERS_STORAGE_S3_ACCESS_KEY = os.getenv("EVILFLOWERS_STORAGE_S3_ACCESS_KEY")
@@ -315,3 +315,14 @@ if os.getenv("ELASTIC_APM_SERVICE_NAME"):
     ELASTIC_APM = {
         "DEBUG": True,
     }
+
+
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATABASE}")
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_TIMEZONE = os.getenv("CELERY_TIMEZONE", TIME_ZONE)
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", 30 * 60))  # Default: 30min
+CELERY_TASK_ROUTES = {
+    "evilflowers_ocr_worker.*": {"queue": "evilflowers_ocr_worker"},
+    "evilflowers_lcpencrypt_worker.*": {"queue": "evilflowers_lcpencrypt_worker"},
+}

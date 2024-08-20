@@ -2,6 +2,7 @@ import base64
 import hashlib
 from typing import Optional
 
+from celery import signature, chain, group
 from django.conf import settings
 from django.db import models
 from django.db.models.signals import post_save
@@ -37,8 +38,11 @@ class Acquisition(BaseModel):
         EPUB = "application/epub+zip", _("EPUB")
         MOBI = "application/x-mobipocket-ebook", _("MOBI")
 
-    def _upload_to_path(self, filename):
-        return f"catalogs/{self.entry.catalog.url_name}/{self.entry.pk}/{filename}"
+    def upload_base_path(self):
+        return f"catalogs/{self.entry.catalog.url_name}/{self.entry.pk}"
+
+    def upload_to_path(self, filename):
+        return f"{self.upload_base_path()}/{filename}"
 
     entry = models.ForeignKey(Entry, on_delete=models.CASCADE, related_name="acquisitions")
     relation = models.CharField(
@@ -47,7 +51,7 @@ class Acquisition(BaseModel):
         default=AcquisitionType.ACQUISITION,
     )
     mime = models.CharField(choices=AcquisitionMIME.choices, max_length=100)
-    content = models.FileField(upload_to=_upload_to_path, null=True, max_length=255, storage=get_storage)
+    content = models.FileField(upload_to=upload_to_path, null=True, max_length=255, storage=get_storage)
 
     @property
     def url(self) -> Optional[str]:
@@ -76,6 +80,40 @@ class Acquisition(BaseModel):
 def touch_entry(sender, instance: Acquisition, **kwargs):
     instance.entry.touched_at = timezone.now()
     instance.entry.save()
+
+
+@receiver(post_save, sender=Acquisition)
+def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
+    dependent_tasks = []
+
+    if created:
+        ocr_task = signature(
+            "evilflowers_ocr_worker.ocr",
+            args=[instance.content.name, instance.content.name, instance.entry.language.alpha3],
+            immutable=True,
+        )
+    else:
+        ocr_task = None
+
+    dependent_tasks.append(
+        signature(
+            "evilflowers_lcpencrypt_worker.lcpencrypt",
+            kwargs={
+                "input_file": instance.content.name,
+                "contentid": str(instance.pk),
+                "storage": instance.upload_base_path(),  # FIXME: support for S3
+                "filename": f"{instance.pk}.lcp.pdf",
+            },
+            immutable=True,
+            # Queue have to be defined explicitly, settings.CELERY_TASK_ROUTES is ignored for some reason
+            queue="evilflowers_lcpencrypt_worker",
+        )
+    )
+
+    if ocr_task is not None:
+        chain(ocr_task, group(dependent_tasks)).apply_async()
+    else:
+        group(dependent_tasks).apply_async()
 
 
 __all__ = ["Acquisition"]

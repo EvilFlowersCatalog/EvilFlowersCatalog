@@ -22,3 +22,4 @@ node_modules/
 /static/
 !/static/.gitkeep
 requirements.txt
+compose.local.yml

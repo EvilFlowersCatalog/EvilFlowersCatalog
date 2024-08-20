@@ -19,3 +19,4 @@ media/
 docs/
 gen/
 static/
+compose.local.yml

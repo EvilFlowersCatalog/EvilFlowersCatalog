@@ -10,7 +10,7 @@ RUN echo 'INPUT ( libldap.so )' > /usr/lib/libldap_r.so
 WORKDIR /usr/src/app
 
 # Copy source
-COPY . .
+COPY requirements.txt requirements.txt
 
 ## Python environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -18,10 +18,6 @@ ENV PYTHONUNBUFFERED=1
 
 # Dependencies
 RUN pip install --user gunicorn wheel --no-cache-dir && pip install --user -r requirements.txt --no-cache-dir
-
-FROM golang:1.22 AS readium
-
-RUN go install github.com/readium/readium-lcp-server/lcpencrypt@latest
 
 FROM python:3.12-slim
 
@@ -31,12 +27,10 @@ RUN apt update -y && apt install --fix-missing -y supervisor curl postgresql-cli
 
 WORKDIR /usr/src/app
 
+COPY . .
 COPY --from=builder /root/.local /root/.local
-COPY --from=builder /usr/src/app /usr/src/app
-COPY --from=readium /go/bin/lcpencrypt /usr/local/bin/lcpencrypt
 
 ENV PATH=/root/.local/bin:$PATH
-ENV READIUM_LCPENCRYPT_BIN=/usr/local/bin/lcpencrypt
 
 RUN date -I > BUILD.txt
 
