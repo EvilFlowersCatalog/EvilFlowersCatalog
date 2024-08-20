@@ -37,6 +37,7 @@ class Acquisition(BaseModel):
         PDF = "application/pdf", _("PDF")
         EPUB = "application/epub+zip", _("EPUB")
         MOBI = "application/x-mobipocket-ebook", _("MOBI")
+        READIUM_PACKAGE = "application/webpub+zip", _("READIUM PACKAGE")
 
     def upload_base_path(self):
         return f"catalogs/{self.entry.catalog.url_name}/{self.entry.pk}"

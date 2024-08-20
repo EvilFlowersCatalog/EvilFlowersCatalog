@@ -5,8 +5,10 @@ from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
-from apps.core.errors import ProblemDetailException
-from apps.api.response import SingleResponse
+from apps.api.filters.acquisitions import AcquisitionFilter
+from apps.api.forms.entries import AcquisitionMetaForm, AcquisitionForm
+from apps.core.errors import ProblemDetailException, ValidationException
+from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.entries import AcquisitionSerializer
 from apps.core.models import Acquisition
 from apps.core.views import SecuredView
@@ -19,7 +21,9 @@ class AcquisitionManagement(SecuredView):
 
     @openapi.metadata(description="List Acquisitions", tags=["Acquisitions"])
     def get(self, request):
-        raise ProblemDetailException(_("Not implemented"), status=HTTPStatus.NOT_IMPLEMENTED)
+        acquisitions = AcquisitionFilter(request.GET, queryset=Acquisition.objects.all(), request=request).qs
+
+        return PaginationResponse(request, acquisitions, serializer=AcquisitionSerializer.Base)
 
 
 class AcquisitionDetail(SecuredView):
@@ -40,3 +44,35 @@ class AcquisitionDetail(SecuredView):
         acquisition = self._get_acquisition(request, acquisition_id, "check_catalog_read")
 
         return SingleResponse(request, data=AcquisitionSerializer.Detailed.model_validate(acquisition))
+
+    @openapi.metadata(
+        description="Content of Acquisition is imutable from the API users perspective. You can only Acquisition "
+        "metadata such as it's type (relation) or pricing.",
+        tags=["Acquisitions"],
+    )
+    def put(self, request, acquisition_id: UUID):
+        acquisition = self._get_acquisition(request, acquisition_id, "check_catalog_manage")
+        form = AcquisitionMetaForm.create_from_request(request)
+
+        if not form.is_valid():
+            raise ValidationException(form)
+
+        form.populate(acquisition)
+        acquisition.save()
+
+        return SingleResponse(
+            request,
+            data=AcquisitionSerializer.Detailed.model_validate(acquisition),
+            status=HTTPStatus.OK,
+        )
+
+    @openapi.metadata(
+        description="Delete acquisition from the database. The related static files will be removed later during the "
+        "orphans removal process - check GitHub docs.",
+        tags=["Acquisitions"],
+    )
+    def delete(self, request, acquisition_id: UUID):
+        acquisition = self._get_acquisition(request, acquisition_id)
+        acquisition.delete()
+
+        return SingleResponse(request)

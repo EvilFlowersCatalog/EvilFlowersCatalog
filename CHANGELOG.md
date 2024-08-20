@@ -7,6 +7,8 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Added**: Refactor of `/opds/v1.2/:catalog/search` (`SearchDescriptorView`)
 - **Added**: `GET /api/v1/languages` introduced 🤷‍♂️
 - **Added**: Celery shared task queue
+- **Added**: Acquisition metadata update endpoint `PUT /api/v1/acquisitions/:acquisition` introduced
+- **Added**: Acquisition pagination endpoint `GET /api/v1/acquisitions` introduced
 - **Changed**: `/opds/v1.2/:catalog/entries/:entry` updated to use `pydantic-xml`
 - **Changed**: Current `User` is no longer context of the `PaginationResponse` serialization proces
 - **Changed**: Shelf records of the User are now precalculated once before serialization and passed as context
