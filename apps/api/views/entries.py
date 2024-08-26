@@ -1,7 +1,7 @@
 import json
 import mimetypes
-import uuid
 from http import HTTPStatus
+from uuid import uuid4, UUID
 
 from django.db import transaction
 from django.utils.decorators import method_decorator
@@ -16,22 +16,27 @@ from apps.api.forms.entries import EntryForm, AcquisitionMetaForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer
 from apps.api.services.entry import EntryService
-from apps.core.models import Entry, Acquisition, Price, Catalog, ShelfRecord
+from apps.core.models import Entry, Acquisition, Price, Catalog, ShelfRecord, User
 from apps.core.views import SecuredView
+
+
+def shelf_record_mapping(user: User) -> dict[UUID, UUID]:
+    return {
+        shelf_record["entry_id"]: shelf_record["id"]
+        for shelf_record in ShelfRecord.objects.filter(user=user).values("entry_id", "id")
+    }
 
 
 class EntryPaginator(SecuredView):
     @openapi.metadata(description="List Entries", tags=["Entries"])
     def get(self, request):
-        shelf_entries = {
-            shelf_record["entry_id"]: shelf_record["id"]
-            for shelf_record in ShelfRecord.objects.filter(user=request.user).values("entry_id", "id")
-        }
-
         entries = EntryFilter(request.GET, queryset=Entry.objects.all(), request=request).qs.distinct()
 
         return PaginationResponse(
-            request, entries, serializer=EntrySerializer.Base, serializer_context={"shelf_entries": shelf_entries}
+            request,
+            entries,
+            serializer=EntrySerializer.Base,
+            serializer_context={"shelf_entries": shelf_record_mapping(request.user)},
         )
 
 
@@ -47,7 +52,7 @@ class EntryIntrospection(SecuredView):
 class EntryManagement(SecuredView):
     @openapi.metadata(description="Create Entry object", tags=["Entries"])
     @method_decorator(transaction.atomic)
-    def post(self, request, catalog_id: uuid.UUID):
+    def post(self, request, catalog_id: UUID):
         try:
             catalog = Catalog.objects.get(pk=catalog_id)
         except Catalog.DoesNotExist as e:
@@ -79,7 +84,9 @@ class EntryManagement(SecuredView):
 
         return SingleResponse(
             request,
-            data=EntrySerializer.Detailed.model_validate(entry, context={"user": request.user}),
+            data=EntrySerializer.Detailed.model_validate(
+                entry, context={"shelf_entries": shelf_record_mapping(request.user)}
+            ),
             status=HTTPStatus.CREATED,
         )
 
@@ -88,8 +95,8 @@ class EntryDetail(SecuredView):
     @staticmethod
     def get_entry(
         request,
-        catalog_id: uuid.UUID,
-        entry_id: uuid.UUID,
+        catalog_id: UUID,
+        entry_id: UUID,
         checker: str = "check_entry_manage",
     ) -> Entry:
         try:
@@ -103,16 +110,18 @@ class EntryDetail(SecuredView):
         return entry
 
     @openapi.metadata(description="Gent Entry detail", tags=["Entries"])
-    def get(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
+    def get(self, request, catalog_id: UUID, entry_id: UUID):
         entry = self.get_entry(request, catalog_id, entry_id, "check_entry_read")
 
         return SingleResponse(
             request,
-            data=EntrySerializer.Detailed.model_validate(entry, context={"user": request.user}),
+            data=EntrySerializer.Detailed.model_validate(
+                entry, context={"shelf_entries": shelf_record_mapping(request.user)}
+            ),
         )
 
     @openapi.metadata(description="Create Entry", tags=["Entries"])
-    def post(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
+    def post(self, request, catalog_id: UUID, entry_id: UUID):
         entry = self.get_entry(request, catalog_id, entry_id)
 
         try:
@@ -137,7 +146,7 @@ class EntryDetail(SecuredView):
 
         if "content" in request.FILES.keys():
             acquisition.content.save(
-                f"{uuid.uuid4()}{mimetypes.guess_extension(acquisition.mime)}",
+                f"{uuid4()}{mimetypes.guess_extension(acquisition.mime)}",
                 request.FILES["content"],
             )
 
@@ -155,7 +164,7 @@ class EntryDetail(SecuredView):
         )
 
     @openapi.metadata(description="Update Entry", tags=["Entries"])
-    def put(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
+    def put(self, request, catalog_id: UUID, entry_id: UUID):
         entry = self.get_entry(request, catalog_id, entry_id)
 
         form = EntryForm.create_from_request(request)
@@ -180,11 +189,13 @@ class EntryDetail(SecuredView):
 
         return SingleResponse(
             request,
-            data=EntrySerializer.Detailed.model_validate(entry, context={"user": request.user}),
+            data=EntrySerializer.Detailed.model_validate(
+                entry, context={"shelf_entries": shelf_record_mapping(request.user)}
+            ),
         )
 
     @openapi.metadata(description="Delete Entry", tags=["Entries"])
-    def delete(self, request, catalog_id: uuid.UUID, entry_id: uuid.UUID):
+    def delete(self, request, catalog_id: UUID, entry_id: UUID):
         entry = self.get_entry(request, catalog_id, entry_id)
         entry.delete()
 
