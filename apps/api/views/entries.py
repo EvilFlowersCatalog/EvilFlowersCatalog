@@ -30,7 +30,12 @@ def shelf_record_mapping(user: User) -> dict[UUID, UUID]:
 class EntryPaginator(SecuredView):
     @openapi.metadata(description="List Entries", tags=["Entries"])
     def get(self, request):
-        entries = EntryFilter(request.GET, queryset=Entry.objects.all(), request=request).qs.distinct()
+        entries = (
+            EntryFilter(request.GET, queryset=Entry.objects.all(), request=request)
+            .qs.distinct()
+            .prefetch_related("acquisitions")
+            .all()
+        )
 
         return PaginationResponse(
             request,

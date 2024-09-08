@@ -67,6 +67,7 @@ class EntrySerializer:
         categories: List[CategorySerializer.Base] = Field(default=[], validate_default=True)
         language: Optional[LanguageSerializer.Base]
         feeds: List[FeedSerializer.Base] = Field(default=[], validate_default=True)
+        acquisitions: List[AcquisitionSerializer.Base] = Field(default=[], validate_default=True)
         popularity: int
         title: str
         summary: Optional[str]
@@ -96,19 +97,18 @@ class EntrySerializer:
         def generate_authors(cls, v, info: ValidationInfo):
             return [entry_author.author for entry_author in v.order_by("position")]
 
+        @field_validator("acquisitions", mode="before")
+        def generate_acquisitions(cls, v, info: ValidationInfo):
+            return v.all()
+
     class Detailed(Base):
         published_at: Optional[str]
         publisher: Optional[str]
         content: Optional[str]
         identifiers: Optional[Dict]
-        acquisitions: List[AcquisitionSerializer.Base] = Field(default=[], validate_default=True)
 
         @field_validator("published_at", mode="before")
         def generate_published_at(cls, v, info: ValidationInfo):
             # TODO: Use Annotated
             # https://docs.pydantic.dev/latest/concepts/types/#composing-types-via-annotated
             return str(v) if v else None
-
-        @field_validator("acquisitions", mode="before")
-        def generate_acquisitions(cls, v, info: ValidationInfo):
-            return v.all()
