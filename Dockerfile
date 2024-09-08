@@ -23,7 +23,7 @@ FROM python:3.12-slim
 
 # Dependencies
 RUN apt update -y && apt install --fix-missing -y supervisor curl postgresql-client libjpeg-tools argon2 tzdata \
-    ldap-utils swig cron
+    ldap-utils swig
 
 WORKDIR /usr/src/app
 
