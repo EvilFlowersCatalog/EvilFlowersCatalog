@@ -9,6 +9,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Added**: Celery shared task queue
 - **Added**: Acquisition metadata update endpoint `PUT /api/v1/acquisitions/:acquisition` introduced
 - **Added**: Acquisition pagination endpoint `GET /api/v1/acquisitions` introduced
+- **Changed**: Acquisitions in `GET /api/v1/entries` (`EntrySerializer.Base` now includes `Acquisitions.Base`) list
 - **Changed**: `/opds/v1.2/:catalog/entries/:entry` updated to use `pydantic-xml`
 - **Changed**: Current `User` is no longer context of the `PaginationResponse` serialization proces
 - **Changed**: Shelf records of the User are now precalculated once before serialization and passed as context
