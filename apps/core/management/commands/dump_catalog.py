@@ -61,7 +61,7 @@ class Command(BaseCommand):
             if settings.EVILFLOWERS_STORAGE_DRIVER == "apps.files.storage.filesystem.FileSystemStorage":
                 tar.add(
                     f"{settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR}/catalogs/{catalog.url_name}",
-                    f"catalogs/{catalog.url_name}",
+                    f"storage/catalogs/{catalog.url_name}",
                 )
 
         self.stdout.write(f"Finished: {timezone.now().isoformat()}")
