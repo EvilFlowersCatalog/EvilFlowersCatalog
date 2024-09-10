@@ -51,7 +51,7 @@ class Command(BaseCommand):
                             *Entry.objects.filter(catalog=catalog),
                             *Acquisition.objects.filter(entry__catalog=catalog),
                             *Price.objects.filter(acquisition__entry__catalog=catalog),
-                            *Feed.objects.filter(catalog=catalog),
+                            *Feed.objects.filter(catalog=catalog).order_by("created_at"),
                         ],
                     ).encode("utf-8")
                 ),

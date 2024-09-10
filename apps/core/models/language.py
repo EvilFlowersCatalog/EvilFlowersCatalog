@@ -4,6 +4,11 @@ from django.utils.translation import gettext as _
 from apps.core.models.base import BaseModel
 
 
+class LanguageManager(models.Manager):
+    def get_by_natural_key(self, alpha2):
+        return self.get(alpha2=alpha2)
+
+
 class Language(BaseModel):
     class Meta:
         app_label = "core"

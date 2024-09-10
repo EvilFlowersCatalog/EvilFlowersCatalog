@@ -87,7 +87,7 @@ def touch_entry(sender, instance: Acquisition, **kwargs):
 def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
     dependent_tasks = []
 
-    if created:
+    if created and instance.entry.language_id:
         ocr_task = signature(
             "evilflowers_ocr_worker.ocr",
             args=[instance.content.name, instance.content.name, instance.entry.language.alpha3],

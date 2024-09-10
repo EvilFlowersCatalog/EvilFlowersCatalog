@@ -42,8 +42,8 @@ class Command(BaseCommand):
 
                     # Iterate over deserialized data and save objects
                     for obj in deserialized_objects:
-                        if hasattr(obj.object, "creator"):
-                            obj.object.creator = User.objects.filter(is_superuser=True).first()
+                        if hasattr(obj.object, "creator_id"):
+                            obj.object.creator_id = User.objects.filter(is_superuser=True).first().pk
                         obj.save()
                         self.stdout.write(f"Saved {obj.object.__class__.__name__}: {obj.object.pk}")
 
