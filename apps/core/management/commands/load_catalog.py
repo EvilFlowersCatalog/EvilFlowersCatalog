@@ -8,7 +8,7 @@ from django.core.management import BaseCommand
 from django.core.serializers import deserialize
 from django.utils import timezone
 
-from apps.core.models import User
+from apps.core.models import User, Catalog
 
 
 class Command(BaseCommand):
@@ -37,11 +37,15 @@ class Command(BaseCommand):
 
                     entities_data = entities_file.read().decode("utf-8")
                     deserialized_objects = list(deserialize("json", entities_data))
+                    catalog_names = []
 
                     self.stdout.write(f"Deserialized {len(deserialized_objects)} objects from entities.json")
 
                     # Iterate over deserialized data and save objects
                     for obj in deserialized_objects:
+                        if isinstance(obj.object, Catalog):
+                            catalog_names.append(obj.object.url_name)
+
                         if hasattr(obj.object, "creator_id"):
                             obj.object.creator_id = User.objects.filter(is_superuser=True).first().pk
                         obj.save()
@@ -49,16 +53,22 @@ class Command(BaseCommand):
 
                     # Check for storage directory and extract it
                     if settings.EVILFLOWERS_STORAGE_DRIVER == "apps.files.storage.filesystem.FileSystemStorage":
-                        storage_dir = "storage"
-                        if storage_dir in tar.getnames():
-                            self.stdout.write(f"Extracting 'storage' directory to temporary folder")
-                            tar.extractall(path=temp_dir)
+                        self.stdout.write(f"Extracting 'storage' directory to temporary folder")
+                        tar.extractall(path=temp_dir)
 
-                            extracted_storage_path = os.path.join(temp_dir, storage_dir)
-                            destination_storage_path = settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR
+                        extracted_storage_path = os.path.join(temp_dir, "storage")
+                        destination_storage_path = settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR
 
-                            # Directly copy the entire storage directory
-                            shutil.copytree(extracted_storage_path, destination_storage_path, dirs_exist_ok=False)
+                        for catalog_name in catalog_names:
+                            source = os.path.join(extracted_storage_path, f"catalogs/{catalog_name}")
+                            destination = os.path.join(destination_storage_path, f"catalogs/{catalog_name}")
+
+                            self.stdout.write(f"Moving '{source}' to '{destination}'")
+
+                            shutil.copytree(
+                                source,
+                                destination,
+                            )
 
             except (tarfile.TarError, FileNotFoundError) as e:
                 self.stderr.write(f"Error processing TAR file: {e}")
