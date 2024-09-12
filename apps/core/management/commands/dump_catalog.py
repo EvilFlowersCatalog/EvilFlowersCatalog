@@ -14,7 +14,8 @@ class Command(BaseCommand):
     help = "Export catalog as TAR with related metadata"
 
     def add_arguments(self, parser):
-        parser.add_argument("--catalog", type=UUID, default=None)
+        parser.add_argument("--id", type=UUID, default=None, help="Catalog UUID")
+        parser.add_argument("--name", type=str, default=None, help="Catalog unique url_name")
         parser.add_argument("--output", type=str, default=None, help="Path to save the tar archive")
 
     @classmethod
@@ -28,8 +29,21 @@ class Command(BaseCommand):
         started_at = timezone.now()
         self.stdout.write(f"Started: {started_at.isoformat()}")
 
+        conditions = {}
+        if options.get("id"):
+            conditions["pk"] = options["id"]
+        elif options.get("name"):
+            conditions["url_name"] = options["name"]
+        else:
+            self.stderr.write(
+                self.style.ERROR(
+                    f"Catalog 'id' or 'name' (url_name) have to be provided. Use --help for more information"
+                )
+            )
+            return
+
         try:
-            catalog = Catalog.objects.get(pk=options["catalog"])
+            catalog = Catalog.objects.get(**conditions)
         except Catalog.DoesNotExist:
             self.stderr.write(f"Catalog {options['catalog']} does not exists!")
             return
