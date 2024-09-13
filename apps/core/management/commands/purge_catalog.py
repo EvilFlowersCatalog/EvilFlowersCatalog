@@ -1,14 +1,12 @@
 import shutil
-import tarfile
-from io import BytesIO
+from pathlib import Path
 from uuid import UUID
 
 from django.conf import settings
 from django.core.management import BaseCommand
-from django.core.serializers import serialize
 from django.utils import timezone
 
-from apps.core.models import Catalog, Entry, Acquisition, Feed, Category, Price, Author
+from apps.core.models import Catalog
 
 
 class Command(BaseCommand):
@@ -43,7 +41,9 @@ class Command(BaseCommand):
 
         # Related files
         if settings.EVILFLOWERS_STORAGE_DRIVER == "apps.files.storage.filesystem.FileSystemStorage":
-            shutil.rmtree(f"{settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR}/catalogs/{catalog.url_name}")
+            catalog_path = Path(f"{settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR}/catalogs/{catalog.url_name}")
+            if catalog_path.exists():
+                shutil.rmtree(catalog_path)
         else:
             self.stderr.write(
                 self.style.WARNING(
