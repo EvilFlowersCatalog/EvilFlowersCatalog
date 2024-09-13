@@ -8,7 +8,7 @@ from django.core.management import BaseCommand
 from django.core.serializers import serialize
 from django.utils import timezone
 
-from apps.core.models import Catalog, Entry, Acquisition, Feed, Category, Price, Author
+from apps.core.models import Catalog, Entry, Acquisition, Feed, Category, Price, Author, EntryAuthor
 
 
 class Command(BaseCommand):
@@ -106,6 +106,7 @@ class Command(BaseCommand):
                             *Category.objects.filter(catalog=catalog),
                             *Author.objects.filter(catalog=catalog),
                             *Entry.objects.filter(catalog=catalog),
+                            *EntryAuthor.objects.filter(entry__catalog=catalog),
                             *Acquisition.objects.filter(entry__catalog=catalog),
                             *Price.objects.filter(acquisition__entry__catalog=catalog),
                             *sorted_feeds,
