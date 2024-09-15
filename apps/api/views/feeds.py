@@ -45,13 +45,19 @@ class FeedManagement(SecuredView):
         if "parents" in form.cleaned_data.keys():
             feed.parents.add(*form.cleaned_data["parents"])
 
-        return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed), status=HTTPStatus.CREATED)
+        return SingleResponse(
+            request,
+            data=FeedSerializer.Base.model_validate(feed, context={"request": request}),
+            status=HTTPStatus.CREATED,
+        )
 
     @openapi.metadata(description="List Feeds", tags=["Feeds"])
     def get(self, request):
         feeds = FeedFilter(request.GET, queryset=Feed.objects.all(), request=request).qs
 
-        return PaginationResponse(request, feeds, serializer=FeedSerializer.Base)
+        return PaginationResponse(
+            request, feeds, serializer=FeedSerializer.Base, serializer_context={"request": request}
+        )
 
 
 class FeedDetail(SecuredView):
@@ -71,7 +77,7 @@ class FeedDetail(SecuredView):
     def get(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)
 
-        return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed))
+        return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed, context={"request": request}))
 
     @openapi.metadata(description="Update Feed", tags=["Feeds"])
     def put(self, request, feed_id: UUID):
@@ -107,7 +113,7 @@ class FeedDetail(SecuredView):
             feed.parents.clear()
             feed.parents.add(*form.cleaned_data["parents"])
 
-        return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed))
+        return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed, context={"request": request}))
 
     @openapi.metadata(description="Delete Feed", tags=["Feeds"])
     def delete(self, request, feed_id: UUID):

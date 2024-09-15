@@ -41,7 +41,7 @@ class EntryPaginator(SecuredView):
             request,
             entries,
             serializer=EntrySerializer.Base,
-            serializer_context={"shelf_entries": shelf_record_mapping(request.user)},
+            serializer_context={"shelf_entries": shelf_record_mapping(request.user), "request": request},
         )
 
 
@@ -90,7 +90,7 @@ class EntryManagement(SecuredView):
         return SingleResponse(
             request,
             data=EntrySerializer.Detailed.model_validate(
-                entry, context={"shelf_entries": shelf_record_mapping(request.user)}
+                entry, context={"shelf_entries": shelf_record_mapping(request.user), "request": request}
             ),
             status=HTTPStatus.CREATED,
         )
@@ -121,7 +121,7 @@ class EntryDetail(SecuredView):
         return SingleResponse(
             request,
             data=EntrySerializer.Detailed.model_validate(
-                entry, context={"shelf_entries": shelf_record_mapping(request.user)}
+                entry, context={"shelf_entries": shelf_record_mapping(request.user), "request": request}
             ),
         )
 
@@ -164,7 +164,7 @@ class EntryDetail(SecuredView):
 
         return SingleResponse(
             request,
-            data=AcquisitionSerializer.Detailed.model_validate(acquisition),
+            data=AcquisitionSerializer.Detailed.model_validate(acquisition, context={"request": request}),
             status=HTTPStatus.CREATED,
         )
 
@@ -195,7 +195,7 @@ class EntryDetail(SecuredView):
         return SingleResponse(
             request,
             data=EntrySerializer.Detailed.model_validate(
-                entry, context={"shelf_entries": shelf_record_mapping(request.user)}
+                entry, context={"shelf_entries": shelf_record_mapping(request.user), "request": request}
             ),
         )
 

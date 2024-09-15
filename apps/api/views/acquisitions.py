@@ -23,7 +23,9 @@ class AcquisitionManagement(SecuredView):
     def get(self, request):
         acquisitions = AcquisitionFilter(request.GET, queryset=Acquisition.objects.all(), request=request).qs
 
-        return PaginationResponse(request, acquisitions, serializer=AcquisitionSerializer.Base)
+        return PaginationResponse(
+            request, acquisitions, serializer=AcquisitionSerializer.Base, serializer_context={"request": request}
+        )
 
 
 class AcquisitionDetail(SecuredView):
@@ -43,7 +45,9 @@ class AcquisitionDetail(SecuredView):
     def get(self, request, acquisition_id: UUID):
         acquisition = self._get_acquisition(request, acquisition_id, "check_catalog_read")
 
-        return SingleResponse(request, data=AcquisitionSerializer.Detailed.model_validate(acquisition))
+        return SingleResponse(
+            request, data=AcquisitionSerializer.Detailed.model_validate(acquisition, context={"request": request})
+        )
 
     @openapi.metadata(
         description="Content of Acquisition is imutable from the API users perspective. You can only Acquisition "
@@ -62,7 +66,7 @@ class AcquisitionDetail(SecuredView):
 
         return SingleResponse(
             request,
-            data=AcquisitionSerializer.Detailed.model_validate(acquisition),
+            data=AcquisitionSerializer.Detailed.model_validate(acquisition, context={"request": request}),
             status=HTTPStatus.OK,
         )
 

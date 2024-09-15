@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -42,7 +41,7 @@ class Feed(BaseModel):
 
     @property
     def url(self):
-        return f"{settings.BASE_URL}{reverse('opds:feed', args=[self.catalog.url_name, self.url_name])}"
+        return reverse("opds:feed", args=[self.catalog.url_name, self.url_name])
 
 
 @receiver(post_save, sender=Feed)

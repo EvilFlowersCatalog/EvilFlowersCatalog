@@ -19,7 +19,7 @@ class FeedSerializer:
         title: str
         kind: Feed.FeedKind
         url_name: str
-        url: str
+        url: str = Field(default=None, validate_default=True)
         content: str
         per_page: Optional[int] = None
         touched_at: datetime
@@ -33,6 +33,10 @@ class FeedSerializer:
         @field_validator("children", mode="before")
         def generate_children(cls, v, info: ValidationInfo) -> List[UUID]:
             return v.all().values_list("id", flat=True)
+
+        @field_validator("url", mode="before")
+        def generate_absolute_url(cls, v, info: ValidationInfo) -> Optional[UUID]:
+            return info.context["request"].build_absolute_uri(v)
 
         class Meta:
             examples = {}

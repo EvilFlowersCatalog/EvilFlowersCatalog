@@ -19,7 +19,9 @@ class SearchDescriptorView(OpdsCatalogView):
                 template_items[name] = filter_item.extra["opensearch_template"]
 
         result = OpenSearchLink(
-            base_path=settings.BASE_URL + reverse("opds:search", kwargs={"catalog_name": self.catalog.url_name}),
+            base_path=request.build_absolute_uri(
+                reverse("opds:search", kwargs={"catalog_name": self.catalog.url_name})
+            ),
             template_items=template_items,
         )
 

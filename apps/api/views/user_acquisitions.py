@@ -24,7 +24,12 @@ class UserAcquisitionManagement(SecuredView):
             request.GET, queryset=UserAcquisition.objects.all(), request=request
         ).qs
 
-        return PaginationResponse(request, user_acquisitions, serializer=UserAcquisitionSerializer.Base)
+        return PaginationResponse(
+            request,
+            user_acquisitions,
+            serializer=UserAcquisitionSerializer.Base,
+            serializer_context={"request": request},
+        )
 
     @openapi.metadata(description="Create UserAcquisition", tags=["User Acquisitions"])
     def post(self, request):
@@ -64,7 +69,9 @@ class UserAcquisitionManagement(SecuredView):
 
         return SingleResponse(
             request,
-            data=UserAcquisitionSerializer.Base.model_validate(user_acquisition, context={"user": request.user}),
+            data=UserAcquisitionSerializer.Base.model_validate(
+                user_acquisition, context={"user": request.user, "request": request}
+            ),
             status=HTTPStatus.CREATED,
         )
 
@@ -90,5 +97,7 @@ class UserAcquisitionDetail(SecuredView):
 
         return SingleResponse(
             request,
-            data=UserAcquisitionSerializer.Base.model_validate(user_acquisition, context={"user": request.user}),
+            data=UserAcquisitionSerializer.Base.model_validate(
+                user_acquisition, context={"user": request.user, "request": request}
+            ),
         )

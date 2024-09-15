@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.db import models
 from django.urls import reverse
 
@@ -33,10 +32,7 @@ class UserAcquisition(BaseModel):
 
     @property
     def url(self) -> str:
-        return (
-            f"{settings.BASE_URL}"
-            f"{reverse('files:user-acquisition-download', kwargs={'user_acquisition_id': self.pk})}"
-        )
+        return reverse("files:user-acquisition-download", kwargs={"user_acquisition_id": self.pk})
 
     @property
     def entry(self) -> Entry:

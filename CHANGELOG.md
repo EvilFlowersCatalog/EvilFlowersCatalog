@@ -19,6 +19,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Fixed**: Language population in `EntryForm` using `AliasStrategy`
 - **Fixed**: Correct processing of shelf records in Entry detail
 - **Removed**: Support for CRON jobs (replaced by Celery)
+- **Removed**: `BASE_URL` setting
 
 ## 0.9.0 : 2024-08-06 (The Amsterdam Release)
 

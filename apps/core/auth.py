@@ -25,7 +25,7 @@ class JWTFactory:
 
     def _generate(self, additional_payload: dict) -> str:
         base_payload = {
-            "iss": settings.BASE_URL,
+            "iss": settings.INSTANCE_NAME,
             "sub": self._user_id,
             "iat": timezone.now(),
         }

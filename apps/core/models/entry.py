@@ -90,13 +90,13 @@ class Entry(BaseModel):
     def image_url(self) -> Optional[str]:
         if not self.image:
             return None
-        return f"{settings.BASE_URL}{reverse('files:cover-download', kwargs={'entry_id': self.pk})}"
+        return reverse("files:cover-download", kwargs={"entry_id": self.pk})
 
     @property
     def thumbnail_url(self) -> Optional[str]:
         if not self.image:
             return None
-        return f"{settings.BASE_URL}{reverse('files:thumbnail-download', kwargs={'entry_id': self.pk})}"
+        return reverse("files:thumbnail-download", kwargs={"entry_id": self.pk})
 
     def read_config(self, config_name: str):
         current = default_entry_config() | self.config

@@ -45,7 +45,11 @@ class AcquisitionSerializer:
     class Nested(Serializer):
         relation: Acquisition.AcquisitionType
         mime: Acquisition.AcquisitionMIME
-        url: Optional[str]
+        url: Optional[str] = Field(validate_default=True, default=None)
+
+        @field_validator("url", mode="before")
+        def generate_absolute_url(cls, v, info: ValidationInfo) -> Optional[UUID]:
+            return info.context["request"].build_absolute_uri(v)
 
     class Base(Nested):
         id: UUID
@@ -71,9 +75,9 @@ class EntrySerializer:
         popularity: int
         title: str
         summary: Optional[str]
-        image_url: Optional[str] = Field(serialization_alias="image")
+        image_url: Optional[str] = Field(serialization_alias="image", default=None, validate_default=True)
         image_mime: Optional[str]
-        thumbnail_url: Optional[str] = Field(serialization_alias="thumbnail")
+        thumbnail_url: Optional[str] = Field(serialization_alias="thumbnail", default=None, validate_default=True)
         config: Optional[dict]
         citation: Optional[str]
         touched_at: datetime
@@ -84,6 +88,10 @@ class EntrySerializer:
         def generate_shelf_record_id(cls, v, info: ValidationInfo) -> Optional[UUID]:
             if "shelf_entries" in info.context:
                 return info.context["shelf_entries"].get(info.data.get("id"), None)
+
+        @field_validator("image_url", "thumbnail_url", mode="before")
+        def generate_absolute_url(cls, v, info: ValidationInfo) -> Optional[UUID]:
+            return info.context["request"].build_absolute_uri(v)
 
         @field_validator("categories", mode="before")
         def generate_categories(cls, v, info: ValidationInfo):

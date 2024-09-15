@@ -3,7 +3,6 @@ import hashlib
 from typing import Optional
 
 from celery import signature, chain, group
-from django.conf import settings
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -58,7 +57,7 @@ class Acquisition(BaseModel):
     def url(self) -> Optional[str]:
         if not self.content:
             return None
-        return f"{settings.BASE_URL}{reverse('files:acquisition-download', kwargs={'acquisition_id': self.pk})}"
+        return reverse("files:acquisition-download", kwargs={"acquisition_id": self.pk})
 
     @property
     def base64(self) -> Optional[str]:
