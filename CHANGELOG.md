@@ -2,7 +2,7 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.10.0 : TBD
+## 0.10.0 : 2024-09-17 (STU Release)
 
 - **Added**: Refactor of `/opds/v1.2/:catalog/search` (`SearchDescriptorView`)
 - **Added**: `GET /api/v1/languages` introduced 🤷‍♂️
