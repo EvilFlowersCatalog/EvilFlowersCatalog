@@ -30,7 +30,9 @@ class ShelfRecordManagement(SecuredView):
             request=request,
         ).qs
 
-        return PaginationResponse(request, shelf_records, serializer=ShelfRecordSerializer.Base)
+        return PaginationResponse(
+            request, shelf_records, serializer=ShelfRecordSerializer.Base, serializer_context={"request": request}
+        )
 
     @openapi.metadata(description="Create ShelfRecord", tags=["Shelf Records"])
     def post(self, request):
@@ -49,13 +51,13 @@ class ShelfRecordManagement(SecuredView):
         if not created:
             return SingleResponse(
                 request,
-                data=ShelfRecordSerializer.Base.model_validate(shelf_record, context={"user": request.user}),
+                data=ShelfRecordSerializer.Base.model_validate(shelf_record, context={"request": request}),
                 status=HTTPStatus.OK,
             )
 
         return SingleResponse(
             request,
-            data=ShelfRecordSerializer.Base.model_validate(shelf_record, context={"user": request.user}),
+            data=ShelfRecordSerializer.Base.model_validate(shelf_record, context={"request": request}),
             status=HTTPStatus.CREATED,
         )
 

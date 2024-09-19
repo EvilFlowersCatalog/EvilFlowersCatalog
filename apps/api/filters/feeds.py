@@ -1,4 +1,8 @@
+import uuid
+
 import django_filters
+from django.core.exceptions import ValidationError
+from django.forms import UUIDField
 
 from apps.core.models import Feed
 
@@ -20,6 +24,10 @@ class FeedFilter(django_filters.FilterSet):
         if value == "null":
             return qs.filter(parents__isnull=True).distinct()
         else:
+            try:
+                value = uuid.UUID(value)
+            except ValueError:
+                raise ValidationError(UUIDField.default_error_messages["invalid"], code="invalid")
             return qs.filter(parents__id=value).distinct()
 
     @property

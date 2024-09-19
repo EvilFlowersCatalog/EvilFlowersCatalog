@@ -35,7 +35,7 @@ class Feed(BaseModel):
     source = models.CharField(max_length=20, choices=FeedSource.choices)
     content = models.TextField()
     per_page = models.IntegerField(null=True)
-    entries = models.ManyToManyField(Entry, related_name="feeds")
+    entries = models.ManyToManyField(Entry, related_name="feeds", symmetrical=False)
     parents = models.ManyToManyField("self", related_name="children", db_table="feed_parents", symmetrical=False)
     touched_at = models.DateTimeField(null=True, auto_now=True)
 

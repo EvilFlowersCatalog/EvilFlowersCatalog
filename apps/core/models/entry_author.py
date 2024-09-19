@@ -9,6 +9,7 @@ class EntryAuthor(models.Model):
         default_permissions = ()
         verbose_name = _("Entry author")
         verbose_name_plural = _("Entry authors")
+        unique_together = (("entry", "author"),)
         ordering = [
             "position",
         ]

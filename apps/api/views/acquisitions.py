@@ -6,7 +6,7 @@ from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
 from apps.api.filters.acquisitions import AcquisitionFilter
-from apps.api.forms.entries import AcquisitionMetaForm, AcquisitionForm
+from apps.api.forms.entries import AcquisitionMetaForm
 from apps.core.errors import ProblemDetailException, ValidationException
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.entries import AcquisitionSerializer

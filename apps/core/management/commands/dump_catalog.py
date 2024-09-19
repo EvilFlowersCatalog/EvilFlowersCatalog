@@ -17,6 +17,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--id", type=UUID, default=None, help="Catalog UUID")
         parser.add_argument("--name", type=str, default=None, help="Catalog unique url_name")
+        parser.add_argument("--skip-files", action="store_true", help="Do not include static files")
         parser.add_argument("--output", type=str, default=None, help="Path to save the tar archive")
 
     @classmethod
@@ -116,11 +117,12 @@ class Command(BaseCommand):
             )
 
             # Related files
-            if settings.EVILFLOWERS_STORAGE_DRIVER == "apps.files.storage.filesystem.FileSystemStorage":
-                tar.add(
-                    f"{settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR}/catalogs/{catalog.url_name}",
-                    f"storage/catalogs/{catalog.url_name}",
-                )
+            if not options["skip_files"]:
+                if settings.EVILFLOWERS_STORAGE_DRIVER == "apps.files.storage.filesystem.FileSystemStorage":
+                    tar.add(
+                        f"{settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR}/catalogs/{catalog.url_name}",
+                        f"storage/catalogs/{catalog.url_name}",
+                    )
 
         self.stdout.write(f"Finished: {timezone.now().isoformat()}")
         self.stdout.write(f"Duration: {timezone.now() - started_at}")

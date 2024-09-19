@@ -15,6 +15,7 @@ class Command(BaseCommand):
     help = "Import catalog from TAR with related metadata"
 
     def add_arguments(self, parser):
+        parser.add_argument("--skip-files", action="store_true", help="Skip static files")
         parser.add_argument("--input", type=str, required=True, help="Path to the tar archive")
 
     def handle(self, *args, **options):
@@ -52,23 +53,24 @@ class Command(BaseCommand):
                         self.stdout.write(f"Saved {obj.object.__class__.__name__}: {obj.object.pk}")
 
                     # Check for storage directory and extract it
-                    if settings.EVILFLOWERS_STORAGE_DRIVER == "apps.files.storage.filesystem.FileSystemStorage":
-                        self.stdout.write(f"Extracting 'storage' directory to temporary folder")
-                        tar.extractall(path=temp_dir)
+                    if not options["skip_files"]:
+                        if settings.EVILFLOWERS_STORAGE_DRIVER == "apps.files.storage.filesystem.FileSystemStorage":
+                            self.stdout.write(f"Extracting 'storage' directory to temporary folder")
+                            tar.extractall(path=temp_dir)
 
-                        extracted_storage_path = os.path.join(temp_dir, "storage")
-                        destination_storage_path = settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR
+                            extracted_storage_path = os.path.join(temp_dir, "storage")
+                            destination_storage_path = settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR
 
-                        for catalog_name in catalog_names:
-                            source = os.path.join(extracted_storage_path, f"catalogs/{catalog_name}")
-                            destination = os.path.join(destination_storage_path, f"catalogs/{catalog_name}")
+                            for catalog_name in catalog_names:
+                                source = os.path.join(extracted_storage_path, f"catalogs/{catalog_name}")
+                                destination = os.path.join(destination_storage_path, f"catalogs/{catalog_name}")
 
-                            self.stdout.write(f"Moving '{source}' to '{destination}'")
+                                self.stdout.write(f"Moving '{source}' to '{destination}'")
 
-                            shutil.copytree(
-                                source,
-                                destination,
-                            )
+                                shutil.copytree(
+                                    source,
+                                    destination,
+                                )
 
             except (tarfile.TarError, FileNotFoundError) as e:
                 self.stderr.write(f"Error processing TAR file: {e}")

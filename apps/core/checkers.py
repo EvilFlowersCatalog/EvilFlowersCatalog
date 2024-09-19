@@ -30,6 +30,9 @@ class CatalogChecker(AbacChecker):
         if user.is_superuser or obj.is_public:
             return True
 
+        if not user.is_authenticated:
+            return False
+
         return obj.users.contains(user)
 
 
