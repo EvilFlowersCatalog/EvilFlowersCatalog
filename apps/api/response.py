@@ -45,6 +45,8 @@ class Ordering:
         columns = []
         aliases = aliases or {}
 
+        # FIXME: user request.GET.getlist
+        # https://docs.djangoproject.com/en/5.1/ref/request-response/#django.http.QueryDict.getlist
         for column in request.GET.get("order_by", "created_at").split(","):
             column_name = column[1:] if column.startswith("-") else column
             if column_name in aliases.keys():

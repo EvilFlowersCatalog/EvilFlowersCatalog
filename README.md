@@ -57,8 +57,6 @@ The main goal is to implement the complete [OPDS 1.2](https://specs.opds.io/opds
 [OPDS 2.0](https://drafts.opds.io/opds-2.0) specifications. The ordered list below represents the current progress:
 
 - [ ] Readium DRM
-- [ ] [Previously Acquired Content](https://specs.opds.io/opds-1.2#61-relations-for-previously-acquired-content)
-    - [ ] Subscriptions (`/opds/subscriptions`)
 - [ ] [Facets](https://specs.opds.io/opds-1.2#4-facets)
 - [ ] [Search](https://specs.opds.io/opds-1.2#3-search)
 - [ ] [Pagination](https://datatracker.ietf.org/doc/html/rfc5005)

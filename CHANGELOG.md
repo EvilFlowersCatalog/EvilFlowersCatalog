@@ -2,12 +2,13 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.11.0 : 2024-09-19 (Too Drunk To Fuck)
+## 0.11.0 : TBD (Too Drunk To Fuck)
 
 This release is mainly focused on fixing bugs related to the production deployment on Slovak University of Technology.
 The title of the release is dedicated to the song by punk legend Dead Kennedys.
 
 - **Added**: `--skip-files` introduced in `dump_catalog` / `load_catalog` management commands
+- **Changed**: libpq compatible [environment variables](https://www.postgresql.org/docs/current/libpq-envars.html)
 - **Fixed**: Fixed `TypeError` caused by `AnonymousUser` in `CatalogChecker`
 - **Fixed**: Validate if `parent_id` in FeedFilter is valid `UUID`
 - **Fixed**: Static URLs for shelf records fixed (`request` missing in serialization context)
