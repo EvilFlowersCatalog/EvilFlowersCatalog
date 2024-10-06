@@ -7,23 +7,21 @@ on:
     branches: [ master ]
 
 jobs:
-  vogsphere:
+  restart-stu-development:
     runs-on: ubuntu-latest
-    environment: evilflowers.vogsphere.sk
+    environment: dev.evilflowers.elvira.stuba.sk
+
     steps:
-      - name: Install curl
+      - name: Add SSH private key
         run: |
-          sudo apt install -y curl
-      - name: Call deploy webhook
-        env:
-          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add SSH server to known hosts
         run: |
-          curl -X POST "$WEBHOOK_URL"
-      - name: Microsoft Teams Notification
-        uses: skitionek/notify-microsoft-teams@master
-        if: success()
-        with:
-          webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}
-          needs: ${{ toJson(needs) }}
-          job: ${{ toJson(job) }}
-          steps: ${{ toJson(steps) }}
+          ssh-keyscan -H ${{ secrets.SSH_SERVER }} >> ~/.ssh/known_hosts
+
+      - name: Restart evilflowers-dev.service on remote server
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_SERVER }} "sudo systemctl restart evilflowers-dev.service"
