@@ -2,7 +2,7 @@ import traceback
 import warnings
 from enum import Enum
 from http import HTTPStatus
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Any
 
 from django.conf import settings
 from django.utils.text import slugify
@@ -25,6 +25,7 @@ class ProblemDetail(Serializer):
     type: Optional[DetailType] = None
     detail: Optional[str] = None
     trace: Optional[List[str]] = None
+    additional_data: Optional[Any] = None
 
 
 class ValidationErrorItem(Serializer):
@@ -106,6 +107,7 @@ class ProblemDetailException(Exception):
             type=self.type,
             detail=self.detail,
             trace=traceback.format_exc().split("\n") if settings.DEBUG else None,
+            additional_data=self._additional_data
         )
 
 

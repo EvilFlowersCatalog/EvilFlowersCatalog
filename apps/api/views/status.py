@@ -73,12 +73,11 @@ class StatusManagement(View):
             response.build = settings.BUILD
             response.supervisord = processes
 
-        return SingleResponse(
-            request,
-            data=response,
-            status=(
-                HTTPStatus.OK
-                if all(value == "RUNNING" for value in processes.values())
-                else HTTPStatus.SERVICE_UNAVAILABLE
-            ),
-        )
+        if not all(value == "RUNNING" for value in processes.values()):
+            raise ProblemDetailException(
+                "Some processes are not running properly",
+                status=HTTPStatus.SERVICE_UNAVAILABLE,
+                additional_data=processes,
+            )
+
+        return SingleResponse(request, data=response, status=HTTPStatus.OK)
