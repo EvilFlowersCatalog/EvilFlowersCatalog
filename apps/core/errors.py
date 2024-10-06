@@ -107,7 +107,7 @@ class ProblemDetailException(Exception):
             type=self.type,
             detail=self.detail,
             trace=traceback.format_exc().split("\n") if settings.DEBUG else None,
-            additional_data=self._additional_data
+            additional_data=self._additional_data,
         )
 
 
