@@ -7,6 +7,8 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 This release is mainly focused on fixing bugs related to the production deployment on Slovak University of Technology.
 The title of the release is dedicated to the song by punk legend Dead Kennedys.
 
+As of this release - Docker images are based on Python 3.13.
+
 - **Added**: `--skip-files` introduced in `dump_catalog` / `load_catalog` management commands
 - **Added**: `unusablepassword` management command
 - **Changed**: libpq compatible [environment variables](https://www.postgresql.org/docs/current/libpq-envars.html)

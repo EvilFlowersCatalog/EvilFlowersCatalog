@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS builder
+FROM python:3.13-slim AS builder
 
 # System setup
 RUN apt update -y && apt install -y libffi-dev build-essential libsasl2-dev libpq-dev libjpeg-dev libldap-dev
@@ -14,7 +14,7 @@ COPY requirements.txt requirements.txt
 # Dependencies
 RUN pip install --user -r requirements.txt --no-cache-dir
 
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 ## Python environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
