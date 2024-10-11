@@ -13,7 +13,7 @@ class ExceptionMiddleware(object):
     def process_exception(request, exception):
         if isinstance(exception, ValidationException):
             return ValidationResponse(request, exception.payload, status=exception.status)
-        if isinstance(exception, ProblemDetailException):
+        elif isinstance(exception, ProblemDetailException):
             # FIXME: check this out, extra_headers propagation kinda sucks
             return ErrorResponse(
                 request,
