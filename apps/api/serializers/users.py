@@ -24,4 +24,4 @@ class UserSerializer:
 
     class Detailed(Base):
         permissions: List[str]
-        catalog_modes: dict[UUID, UserCatalog.Mode] = Field(default=dict, serialization_alias='catalogs')
+        catalog_modes: dict[UUID, UserCatalog.Mode] = Field(default=dict, serialization_alias="catalogs")
