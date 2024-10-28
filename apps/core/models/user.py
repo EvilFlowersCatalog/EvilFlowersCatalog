@@ -1,4 +1,5 @@
 from typing import List
+from uuid import UUID
 
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
@@ -38,6 +39,15 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     @property
     def permissions(self) -> List[str]:
         return self.get_user_permissions()
+
+    @property
+    def catalog_modes(self) -> dict[UUID, str]:
+        result = {}
+
+        for user_catalog in self.user_catalogs.all():
+            result[user_catalog.catalog_id] = user_catalog.mode
+
+        return result
 
 
 __all__ = ["User"]
