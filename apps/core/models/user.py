@@ -41,7 +41,7 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         return self.get_user_permissions()
 
     @property
-    def catalog_modes(self) -> dict[UUID, str]:
+    def catalog_permissions(self) -> dict[UUID, str]:
         result = {}
 
         for user_catalog in self.user_catalogs.all():
