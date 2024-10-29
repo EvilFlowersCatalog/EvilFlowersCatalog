@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "evil_flowers_catalog"
-version = "0.11.0"
+version = "0.12.0"
 description = "Publication catalog compatible with OPDS"
 authors = ["Jakub Dubec <jakub.dubec@stuba.sk>"]
 
@@ -14,7 +14,7 @@ psycopg = {version = "^3.1", extras = ["c"]}
 django-imap-backend = "^0"
 django-filter = "^24.3"
 redis = "^5.0"
-Pillow = "^10"
+Pillow = "^11"
 pycountry = "^24.6.1"
 django-object-checker = "^1.0.0"
 Authlib = "^1.3"
