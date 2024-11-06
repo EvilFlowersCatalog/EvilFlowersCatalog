@@ -66,7 +66,7 @@ class UserDetail(SecuredView):
     def get(self, request, user_id: UUID):
         user = self._get_user(request, user_id, lambda: request.user.has_perm("core.view_user"))
 
-        return SingleResponse(request, data=UserSerializer.Base.model_validate(user))
+        return SingleResponse(request, data=UserSerializer.Detailed.model_validate(user))
 
     @openapi.metadata(description="Update User", tags=["Users"])
     def put(self, request, user_id: UUID):
