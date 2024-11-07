@@ -54,13 +54,12 @@ class PDFModifier:
         try:
             chosen_template = get_template(f"files/license_{self._context['language']}.html")
         except TemplateDoesNotExist:
-            chosen_template = get_template("files/license.html")
+            chosen_template = get_template("files/license.txt")
 
         # Render the chosen template with the provided context data
-        license_html = chosen_template.render(self._context)
         document.insert_page(
             1,
-            text=license_html,
+            text=chosen_template.render(self._context),
             fontsize=11,
             width=595,
             height=842,

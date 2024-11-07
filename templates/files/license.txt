@@ -1,0 +1,14 @@
+Document Information
+--------------------
+
+User: {{ username }} ({{ user_id }})
+Title: {{ title }}
+Document ID: {{ doc_id }}
+Generated at: {{ generated_at }}
+
+License Terms
+-------------
+
+LICENSE AND ACCESS. This license grants a non-transferable, non-exclusive, limited license to access and use specified documents in compliance with the platform’s terms.
+
+This document was distributed using {{ instance_name }} based on the open-source project EvilFlowersCatalog.
