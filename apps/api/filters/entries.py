@@ -35,7 +35,7 @@ class EntryFilter(django_filters.FilterSet):
     feed_id = django_filters.UUIDFilter(field_name="feeds__id")
     published_at_gte = django_filters.CharFilter(method="filter_published_at_gte")
     published_at_lte = django_filters.CharFilter(method="filter_published_at_lte")
-    config__readium_enabled = django_filters.BooleanFilter(field_name='config__readium_enabled')
+    config__readium_enabled = django_filters.BooleanFilter(field_name="config__readium_enabled")
 
     @classmethod
     def template(cls) -> str:
