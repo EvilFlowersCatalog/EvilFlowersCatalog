@@ -4,7 +4,9 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 
 ## 0.12.0 : TBD
 
+- **Changed**: License files
 - **Fixed**: Catch `FileNotFoundError` in `/v1/data` endpoints
+- **Fixed**: Implicit Category creation in new Entry
 
 ## 0.11.0 : 2024-10-10 (Too Drunk To Fuck)
 

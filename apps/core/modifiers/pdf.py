@@ -6,6 +6,8 @@ import fitz
 import qrcode
 from django.conf import settings
 from django.core.files import File
+from django.template import TemplateDoesNotExist
+from django.template.loader import get_template
 from django.utils import timezone
 
 from apps.core.modifiers import ModifierContext, InvalidPage
@@ -48,26 +50,29 @@ class PDFModifier:
         if self._pages:
             document.select([i - 1 for i in self._pages])
 
-        # Add license page
-        license_text = f"""
-        This document was distributed using {settings.INSTANCE_NAME} based on the open source project
-        EvilFlowersCatalog\n
-        \n
-        User: {self._context['username']} ({self._context['user_id']})\n
-        Title: {self._context['title']}\n
-        Document ID: {self._context['id']}\n
-        Generated at: {self._context['generated_at']}
-        """
-        document.insert_page(
-            1,
-            text=license_text,
-            fontsize=11,
-            width=595,
-            height=842,
-            fontname="Helvetica",  # default font
-            fontfile=None,  # any font file name
-            color=(0, 0, 0),
-        )  # text color (RGB)
+        # Attempt to load the language-specific template, falling back to default if not found
+        try:
+            chosen_template = get_template(f'files/license_{self._context['language']}.html')
+        except TemplateDoesNotExist:
+            chosen_template = get_template('files/license.html')
+
+        # Render the chosen template with the provided context data
+        license_html = chosen_template.render(**self._context)
+        license_page = fitz.open("pdf")  # Create a blank PDF document
+        license_page.insert_page(0, text=license_html, fontsize=11, width=595, height=842)
+
+        document.insert_pdf(license_page, start_at=1)
+
+        # document.insert_page(
+        #     1,
+        #     text=license_html,
+        #     fontsize=11,
+        #     width=595,
+        #     height=842,
+        #     fontname="Helvetica",  # default font
+        #     fontfile=None,  # any font file name
+        #     color=(0, 0, 0),
+        # )  # text color (RGB)
 
         # Add QR codes to rest of pages
         qr = self.create_qr()

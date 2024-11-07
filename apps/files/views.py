@@ -112,6 +112,7 @@ class UserAcquisitionDownload(SecuredView):
                     "title": user_acquisition.acquisition.entry.title,
                     "username": user_acquisition.user.username,
                     "authors": ", ".join([a.full_name for a in user_acquisition.acquisition.entry.authors.all()]),
+                    "language": user_acquisition.acquisition.entry.language.alpha2
                 },
                 pages=depack(user_acquisition.range) if user_acquisition.range else None,
             )
