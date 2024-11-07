@@ -52,9 +52,9 @@ class PDFModifier:
 
         # Attempt to load the language-specific template, falling back to default if not found
         try:
-            chosen_template = get_template(f'files/license_{self._context['language']}.html')
+            chosen_template = get_template(f"files/license_{self._context['language']}.html")
         except TemplateDoesNotExist:
-            chosen_template = get_template('files/license.html')
+            chosen_template = get_template("files/license.html")
 
         # Render the chosen template with the provided context data
         license_html = chosen_template.render(**self._context)
