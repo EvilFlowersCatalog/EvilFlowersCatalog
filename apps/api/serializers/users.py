@@ -2,7 +2,10 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
+from pydantic import Field
+
 from apps.api.serializers import Serializer
+from apps.core.models import UserCatalog
 
 
 class UserSerializer:
@@ -21,3 +24,4 @@ class UserSerializer:
 
     class Detailed(Base):
         permissions: List[str]
+        catalog_permissions: dict[UUID, UserCatalog.Mode] = Field(default=dict)

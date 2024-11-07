@@ -6,6 +6,8 @@ import fitz
 import qrcode
 from django.conf import settings
 from django.core.files import File
+from django.template import TemplateDoesNotExist
+from django.template.loader import get_template
 from django.utils import timezone
 
 from apps.core.modifiers import ModifierContext, InvalidPage
@@ -48,19 +50,16 @@ class PDFModifier:
         if self._pages:
             document.select([i - 1 for i in self._pages])
 
-        # Add license page
-        license_text = f"""
-        This document was distributed using {settings.INSTANCE_NAME} based on the open source project
-        EvilFlowersCatalog\n
-        \n
-        User: {self._context['username']} ({self._context['user_id']})\n
-        Title: {self._context['title']}\n
-        Document ID: {self._context['id']}\n
-        Generated at: {self._context['generated_at']}
-        """
+        # Attempt to load the language-specific template, falling back to default if not found
+        try:
+            chosen_template = get_template(f"files/license_{self._context['language']}.html")
+        except TemplateDoesNotExist:
+            chosen_template = get_template("files/license.txt")
+
+        # Render the chosen template with the provided context data
         document.insert_page(
             1,
-            text=license_text,
+            text=chosen_template.render(self._context),
             fontsize=11,
             width=595,
             height=842,

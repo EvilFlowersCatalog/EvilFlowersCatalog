@@ -53,12 +53,14 @@ class EntryService:
             entry.categories.clear()
             for record in form.cleaned_data.get("categories", []):
                 category, created = Category.objects.get_or_create(
-                    creator=self._creator, catalog=self._catalog, term=record["term"]
+                    catalog=self._catalog,
+                    term=record["term"],
+                    defaults={
+                        "creator": self._creator,
+                        "label": record.get("label"),
+                        "scheme": record.get("scheme"),
+                    },
                 )
-                if created:
-                    category.label = record.get("label")
-                    category.scheme = record.get("scheme")
-                    category.save()
                 entry.categories.add(category)
 
         if "category_ids" in form.cleaned_data.keys():

@@ -2,6 +2,12 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## 0.12.0 : 2024-11-07
+
+- **Changed**: License files
+- **Fixed**: Catch `FileNotFoundError` in `/v1/data` endpoints
+- **Fixed**: Implicit Category creation in new Entry
+
 ## 0.11.0 : 2024-10-10 (Too Drunk To Fuck)
 
 This release is mainly focused on fixing bugs related to the production deployment on Slovak University of Technology.

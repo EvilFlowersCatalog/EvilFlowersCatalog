@@ -28,6 +28,9 @@ class AcquisitionDownload(SecuredView):
         except Acquisition.DoesNotExist:
             raise ProblemDetailException(_("Acquisition not found"), status=HTTPStatus.NOT_FOUND)
 
+        if not acquisition.content.storage.exists(acquisition.content.name):
+            raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND)
+
         if acquisition.relation != Acquisition.AcquisitionType.ACQUISITION.OPEN_ACCESS:
             request.user = self._authenticate(request)
 
@@ -109,6 +112,11 @@ class UserAcquisitionDownload(SecuredView):
                     "title": user_acquisition.acquisition.entry.title,
                     "username": user_acquisition.user.username,
                     "authors": ", ".join([a.full_name for a in user_acquisition.acquisition.entry.authors.all()]),
+                    "language": (
+                        user_acquisition.acquisition.entry.language.alpha2
+                        if user_acquisition.acquisition.entry.language
+                        else None
+                    ),
                 },
                 pages=depack(user_acquisition.range) if user_acquisition.range else None,
             )
@@ -135,6 +143,9 @@ class EntryImageDownload(SecuredView):
 
         sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime)}"
 
+        if not entry.image.storage.exists(entry.image.name):
+            raise ProblemDetailException(_("Entry image file not found"), status=HTTPStatus.NOT_FOUND)
+
         return FileResponse(entry.image, filename=sanitized_filename)
 
 
@@ -142,10 +153,13 @@ class EntryThumbnailDownload(SecuredView):
     @openapi.metadata(description="Download Entry thumbnail", tags=["Files"])
     def get(self, request, entry_id: uuid.UUID):
         try:
-            entry = Entry.objects.get(pk=entry_id, image__isnull=False)
+            entry = Entry.objects.get(pk=entry_id, thumbnail__isnull=False)
         except Entry.DoesNotExist:
             raise ProblemDetailException(_("Entry thumbnail not found"), status=HTTPStatus.NOT_FOUND)
 
         sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime)}"
+
+        if not entry.thumbnail.storage.exists(entry.thumbnail.name):
+            raise ProblemDetailException(_("Entry thumbnail file not found"), status=HTTPStatus.NOT_FOUND)
 
         return FileResponse(streaming_content=entry.thumbnail, filename=sanitized_filename)
