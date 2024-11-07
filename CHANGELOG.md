@@ -2,7 +2,7 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.12.0 : TBD
+## 0.12.0 : 2024-11-07
 
 - **Changed**: License files
 - **Fixed**: Catch `FileNotFoundError` in `/v1/data` endpoints
