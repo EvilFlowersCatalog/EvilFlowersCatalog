@@ -57,7 +57,7 @@ class PDFModifier:
             chosen_template = get_template("files/license.html")
 
         # Render the chosen template with the provided context data
-        license_html = chosen_template.render(**self._context)
+        license_html = chosen_template.render(self._context)
         license_page = fitz.open("pdf")  # Create a blank PDF document
         license_page.insert_page(0, text=license_html, fontsize=11, width=595, height=842)
 
