@@ -58,21 +58,16 @@ class PDFModifier:
 
         # Render the chosen template with the provided context data
         license_html = chosen_template.render(self._context)
-        license_page = fitz.open("pdf")  # Create a blank PDF document
-        license_page.insert_page(0, text=license_html, fontsize=11, width=595, height=842)
-
-        document.insert_pdf(license_page, start_at=1)
-
-        # document.insert_page(
-        #     1,
-        #     text=license_html,
-        #     fontsize=11,
-        #     width=595,
-        #     height=842,
-        #     fontname="Helvetica",  # default font
-        #     fontfile=None,  # any font file name
-        #     color=(0, 0, 0),
-        # )  # text color (RGB)
+        document.insert_page(
+            1,
+            text=license_html,
+            fontsize=11,
+            width=595,
+            height=842,
+            fontname="Helvetica",  # default font
+            fontfile=None,  # any font file name
+            color=(0, 0, 0),
+        )  # text color (RGB)
 
         # Add QR codes to rest of pages
         qr = self.create_qr()

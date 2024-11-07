@@ -4,7 +4,6 @@ on:
   workflow_run:
     workflows: [ "Docker build" ]
     types: [ completed ]
-    branches: [ develop ]
 
 jobs:
   restart-stu-development:
