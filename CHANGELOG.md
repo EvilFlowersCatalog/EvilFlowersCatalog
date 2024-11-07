@@ -4,9 +4,11 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 
 ## 0.12.0 : 2024-11-07
 
+- **Added**: `entry_defaults` management command introduced and executed on server start
 - **Changed**: License files
 - **Fixed**: Catch `FileNotFoundError` in `/v1/data` endpoints
 - **Fixed**: Implicit Category creation in new Entry
+- **Fixed**: No not rely on existence of all keys in ISBN introspection driver
 
 ## 0.11.0 : 2024-10-10 (Too Drunk To Fuck)
 

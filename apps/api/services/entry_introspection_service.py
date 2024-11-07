@@ -19,11 +19,11 @@ class IsbnDriver(IntrospectionDriver):
         data = meta(canonical(identifier))
 
         result = {
-            "publisher": data["Publisher"],
+            "publisher": data.get('Publisher'),
             "doi": None,
             "authors": [],
-            "year": data["Year"],
-            "language": data["Language"],
+            "year": data.get('Year'),
+            "language": data.get('Language'),
             "bibtex": bibformatters["bibtex"](data),
         }
 
