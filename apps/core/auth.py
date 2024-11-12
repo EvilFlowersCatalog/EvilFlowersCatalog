@@ -127,7 +127,7 @@ class BasicBackend(ModelBackend):
         try:
             user = User.objects.get(username=username)
         except User.DoesNotExist:
-            user = User(username=username.lower(), auth_source=auth_source)
+            user = User(username=username, auth_source=auth_source)
             user.set_unusable_password()
             user.save()
 
@@ -179,7 +179,7 @@ class BasicBackend(ModelBackend):
 
     def authenticate(self, request, basic=None, **kwargs):
         bits = base64.b64decode(basic).decode().split(":")
-        username = bits[0]
+        username = bits[0].lower()
         password = ":".join(bits[1:])
         user = None
 
