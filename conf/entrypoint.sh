@@ -9,5 +9,6 @@ done
 
 python3 manage.py migrate
 python3 manage.py setup
+python3 manage.py entry_defaults
 
 supervisord -c /etc/supervisord.conf

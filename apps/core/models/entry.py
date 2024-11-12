@@ -110,4 +110,4 @@ def touch_parents(sender, instance: Entry, **kwargs):
     instance.feeds.update(touched_at=timezone.now())
 
 
-__all__ = ["Entry"]
+__all__ = ["Entry", "default_entry_config"]

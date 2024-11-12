@@ -179,7 +179,7 @@ class BasicBackend(ModelBackend):
 
     def authenticate(self, request, basic=None, **kwargs):
         bits = base64.b64decode(basic).decode().split(":")
-        username = bits[0]
+        username = bits[0].lower()
         password = ":".join(bits[1:])
         user = None
 
