@@ -127,7 +127,7 @@ class BasicBackend(ModelBackend):
         try:
             user = User.objects.get(username=username)
         except User.DoesNotExist:
-            user = User(username=username, auth_source=auth_source)
+            user = User(username=username.lower(), auth_source=auth_source)
             user.set_unusable_password()
             user.save()
 
