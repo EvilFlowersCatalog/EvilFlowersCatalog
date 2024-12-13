@@ -2,7 +2,9 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.12.0 : 2024-11-07
+## 0.12.0 : 2024-12-13
+
+This release mostly bugfixes or necessities found by the tuning on the STU.
 
 - **Added**: `entry_defaults` management command introduced and executed on server start
 - **Changed**: License files
