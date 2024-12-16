@@ -2,6 +2,11 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## 0.13.0 : TBD
+
+- **Added**: Server-side annotation render for user acquisitions using `?annotations=true` query param
+- **Changed**: `EVIL_FLOWERS_USER_ACQUISITION_MODE` -> `EVILFLOWERS_USER_ACQUISITION_MODE` ⚠️
+
 ## 0.12.0 : 2024-12-13
 
 This release mostly bugfixes or necessities found by the tuning on the STU.

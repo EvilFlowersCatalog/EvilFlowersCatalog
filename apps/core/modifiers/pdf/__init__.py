@@ -9,8 +9,10 @@ from django.core.files import File
 from django.template import TemplateDoesNotExist
 from django.template.loader import get_template
 from django.utils import timezone
+import xml.etree.ElementTree as ET
 
 from apps.core.modifiers import ModifierContext, InvalidPage
+from apps.core.modifiers.pdf.annotations import shape_factory
 
 
 class PDFModifier:
@@ -34,8 +36,13 @@ class PDFModifier:
 
         return stream.getvalue()
 
-    def generate(self, file: File, page_num: Optional[int] = None) -> File:
+    def generate(
+        self, file: File, page_num: Optional[int] = None, annotation_map: dict[int, list[str]] = None
+    ) -> File:
         document = fitz.open(stream=file.read())
+
+        if not annotation_map:
+            annotation_map = {}
 
         document.set_metadata(
             document.metadata
@@ -70,12 +77,26 @@ class PDFModifier:
 
         # Add QR codes to rest of pages
         qr = self.create_qr()
+
         for index in range(2, len(document)):
             page = document[index]
+
             page.insert_image(
                 fitz.Rect(10, page.mediabox.y1 - 50, 50, page.mediabox.y1 - 10),
                 stream=io.BytesIO(qr),
             )
+
+            # annotation map is indexing pages from 1 and generated document is larger by license page
+            page_annotations = annotation_map.get(index - 1, [])
+            if page_annotations:
+                context = page.new_shape()
+
+                for page_annotation in page_annotations:
+                    for element in ET.fromstring(page_annotation):
+                        shape = shape_factory(element)
+                        shape.draw(element, context)
+
+                context.commit()
 
         if page_num:
             try:

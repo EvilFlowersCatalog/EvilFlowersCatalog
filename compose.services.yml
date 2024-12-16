@@ -1,0 +1,99 @@
+name: EvilFlowers Development Ecosystem
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - xpack.security.transport.ssl.key=/usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.key
+      - xpack.security.transport.ssl.certificate=/usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.crt
+      - xpack.security.transport.ssl.certificate_authorities=/usr/share/elasticsearch/config/certs/ca/ca.crt
+      - xpack.security.http.ssl.enabled=true
+      - xpack.security.http.ssl.key=/usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.key
+      - xpack.security.http.ssl.certificate=/usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.crt
+      - xpack.security.http.ssl.certificate_authorities=/usr/share/elasticsearch/config/certs/ca/ca.crt
+      - ELASTIC_PASSWORD=admin
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./data/elasticsearch:/usr/share/elasticsearch/data
+      - ./data/certs:/usr/share/elasticsearch/config/certs
+    ports:
+      - "9200:9200"
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.0
+    environment:
+      - ELASTICSEARCH_HOSTS=https://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=${KIBANA_SYSTEM_PASSWORD}
+      - SERVER_SSL_ENABLED=true
+      - SERVER_SSL_KEY=/usr/share/kibana/config/certs/kibana/kibana.key
+      - SERVER_SSL_CERTIFICATE=/usr/share/kibana/config/certs/kibana/kibana.crt
+      - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=/usr/share/kibana/config/certs/ca/ca.crt
+      - SERVER_PUBLICBASEURL=https://localhost:5601
+    volumes:
+      - ./data/certs:/usr/share/kibana/config/certs
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+
+
+  apm-server:
+    image: docker.elastic.co/apm/apm-server:8.15.0
+    environment:
+      - ELASTICSEARCH_HOSTS=https://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_PASSWORD=admin
+      - output.elasticsearch.hosts=["https://elasticsearch:9200"]
+      - output.elasticsearch.username=apm_system
+      - output.elasticsearch.password=${APM_SYSTEM_PASSWORD}
+      - apm-server.secret_token=ba2fd8d1-6552-4871-a730-daf8a1ecb06b
+      - apm-server.ssl.enabled=true
+      - apm-server.ssl.key=/usr/share/apm-server/config/certs/apm-server/apm-server.key
+      - apm-server.ssl.certificate=/usr/share/apm-server/config/certs/apm-server/apm-server.crt
+      - setup.template.enabled=true
+      - setup.template.overwrite=true
+      - logging.level=info
+    volumes:
+      - ./data/certs:/usr/share/apm-server/config/certs
+    ports:
+      - "8200:8200"
+    depends_on:
+      - elasticsearch
+
+  readium:
+    image: "ghcr.io/evilflowerscatalog/readium-lcp-server:master"
+    volumes:
+      - ./data/evilflowers:/mnt/data
+      - ./data/readium/db:/usr/local/var/readium/db
+      - ./data/readium/logs:/var/log/readium
+      - ./data/readium/cert/cert.pem:/usr/local/var/readium/lcp/cert/cert.pem
+      - ./data/readium/cert/privkey.pem:/usr/local/var/readium/lcp/cert/privkey.pem
+      - ./data/readium/config.yaml:/usr/local/etc/readium/config.yaml
+      - ./data/readium/htpasswd:/usr/local/etc/readium/htpasswd
+    ports:
+      - "8988:8988"
+      - "8989:8989"
+      - "8900:8900"
+
+  evilflowers-ocr-worker:
+    image: "ghcr.io/evilflowerscatalog/evilflowers-ocr-worker:master"
+    environment:
+      BROKER: "redis://docker.for.mac.localhost:6379/7"
+      STORAGE_PATH: /mnt/data
+    volumes:
+      - ./data/evilflowers/storage:/mnt/data
+
+  evilflowers-lcpencrypt-worker:
+    image: "ghcr.io/evilflowerscatalog/evilflowers-lcpencrypt-worker:master"
+    environment:
+      BROKER: "redis://docker.for.mac.localhost:6379/7"
+      STORAGE_PATH: /mnt/data
+    volumes:
+      - ./data/evilflowers/storage:/mnt/data

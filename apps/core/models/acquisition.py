@@ -95,20 +95,21 @@ def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
     else:
         ocr_task = None
 
-    dependent_tasks.append(
-        signature(
-            "evilflowers_lcpencrypt_worker.lcpencrypt",
-            kwargs={
-                "input_file": instance.content.name,
-                "contentid": str(instance.pk),
-                "storage": instance.upload_base_path(),  # FIXME: support for S3
-                "filename": f"{instance.pk}.lcp.pdf",
-            },
-            immutable=True,
-            # Queue have to be defined explicitly, settings.CELERY_TASK_ROUTES is ignored for some reason
-            queue="evilflowers_lcpencrypt_worker",
+    if instance.entry.config["readium_enabled"]:
+        dependent_tasks.append(
+            signature(
+                "evilflowers_lcpencrypt_worker.lcpencrypt",
+                kwargs={
+                    "input_file": instance.content.name,
+                    "contentid": str(instance.pk),
+                    "storage": instance.upload_base_path(),  # FIXME: support for S3
+                    "filename": f"{instance.pk}.lcp.pdf",
+                },
+                immutable=True,
+                # Queue have to be defined explicitly, settings.CELERY_TASK_ROUTES is ignored for some reason
+                queue="evilflowers_lcpencrypt_worker",
+            )
         )
-    )
 
     if ocr_task is not None:
         chain(ocr_task, group(dependent_tasks)).apply_async()
