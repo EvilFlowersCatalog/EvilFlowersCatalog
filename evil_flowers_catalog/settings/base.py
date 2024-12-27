@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     "apps.opds2",
     "apps.openapi",
     "apps.tasks",
+    "apps.readium",
 ]
 
 MIDDLEWARE = [
@@ -268,6 +269,17 @@ EVILFLOWERS_STORAGE_S3_SECRET_KEY = os.getenv("EVILFLOWERS_STORAGE_S3_SECRET_KEY
 EVILFLOWERS_STORAGE_S3_SECURE = bool(int(os.getenv("EVILFLOWERS_STORAGE_S3_SECURE", 0)))
 EVILFLOWERS_STORAGE_S3_BUCKET = os.getenv("EVILFLOWERS_STORAGE_S3_BUCKET")
 
+# Readium
+EVILFLOWERS_READIUM_DATADIR = str(os.getenv("EVILFLOWERS_READIUM_DATADIR", BASE_DIR / "data/evilflowers/readium"))
+EVILFLOWERS_READIUM_LCPSV_URL = os.getenv("EVILFLOWERS_READIUM_LCPSV_URL", "http://127.0.0.1:8989")
+EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL = os.getenv(
+    "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", "http://127.0.0.1:8989"
+)
+EVILFLOWERS_READIUM_BASE_URL = os.getenv(
+    "EVILFLOWERS_READIUM_BASE_URL",
+    f"http://{os.getenv('DJANGO_RUNSERVER_IP', '127.0.0.1')}:{os.getenv('DJANGO_RUNSERVER_PORT', '8000')}",
+)
+
 # Cache
 EVILFLOWERS_CACHE_SERVER_HASHES = timedelta(minutes=int(os.getenv("EVILFLOWERS_CACHE_HASHES", 7 * 24 * 60)))
 EVILFLOWERS_CACHE_SERVER_API_KEYS = timedelta(minutes=int(os.getenv("EVILFLOWERS_CACHE_API_KEYS", 0)))
@@ -280,7 +292,7 @@ EVILFLOWERS_MODIFIERS = {"application/pdf": "apps.core.modifiers.pdf.PDFModifier
 EVILFLOWERS_CONTACT_EMAIL = os.getenv("CONTACT_EMAIL", "root@localhost")
 
 # OpenAPI
-EVILFLOWERS_OPENAPI_APPS = ["api", "files"]
+EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium"]
 
 # Backups
 EVILFLOWERS_BACKUP_SCHEDULE = os.getenv("EVILFLOWERS_BACKUP_SCHEDULE")
