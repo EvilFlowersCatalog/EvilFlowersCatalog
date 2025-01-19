@@ -6,7 +6,7 @@ from apps.readium.models import License
 
 
 class CreateLicenseForm(Form):
-    entry_id = forms.ModelChoiceField(queryset=Entry.objects.filter(config__readium_drm=True))
+    entry_id = forms.ModelChoiceField(queryset=Entry.objects.filter(config__readium_enabled=True))
     state = forms.ChoiceField(choices=License.LicenseState.choices)
     duration = forms.DurationField()
     starts_at = forms.DateTimeField(required=False)
