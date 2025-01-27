@@ -29,7 +29,7 @@ class LicenseManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(form)
 
-        license = License()
+        license = License(user=request.user)
         form.populate(license)
 
         if not license.starts_at:
