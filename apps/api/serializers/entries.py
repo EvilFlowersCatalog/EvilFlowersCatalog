@@ -65,13 +65,17 @@ class EntrySerializer:
         creator_id: UUID
         catalog_id: UUID
         shelf_record_id: Optional[UUID] = Field(default=None, validate_default=True)
-        entry_authors: List[AuthorSerializer.Base] = Field(
-            default=[], validate_default=True, serialization_alias="authors"
+        # noinspection PyDataclass
+        entry_authors: list[AuthorSerializer.Base] = Field(
+            default_factory=list, validate_default=True, serialization_alias="authors"
         )
-        categories: List[CategorySerializer.Base] = Field(default=[], validate_default=True)
+        # noinspection PyDataclass
+        categories: List[CategorySerializer.Base] = Field(default_factory=list, validate_default=True)
         language: Optional[LanguageSerializer.Base]
-        feeds: List[FeedSerializer.Base] = Field(default=[], validate_default=True)
-        acquisitions: List[AcquisitionSerializer.Base] = Field(default=[], validate_default=True)
+        # noinspection PyDataclass
+        feeds: List[FeedSerializer.Base] = Field(default_factory=list, validate_default=True)
+        # noinspection PyDataclass
+        acquisitions: List[AcquisitionSerializer.Base] = Field(default_factory=list, validate_default=True)
         popularity: int
         title: str
         summary: Optional[str]

@@ -24,6 +24,7 @@ urlpatterns = [
     path("api/v1/", include(("apps.api.urls", "api"), namespace="api")),
     path("opds/v1.2/", include(("apps.opds.urls", "opds"), namespace="opds")),
     path("opds/v2/", include(("apps.opds2.urls", "opds2"), namespace="opds2")),
+    path("readium/v1/", include(("apps.readium.urls", "readium"), namespace="readium")),
     path("data/v1/", include(("apps.files.urls", "files"), namespace="files")),
     path("docs/", include(("apps.openapi.urls", "openapi"), namespace="openapi")),
     path("admin/", admin.site.urls),

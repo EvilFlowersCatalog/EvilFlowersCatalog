@@ -8,6 +8,7 @@ from apps.core.models import (
     UserAcquisition,
     ShelfRecord,
 )
+from apps.readium.models import License
 
 
 class CatalogChecker(AbacChecker):
@@ -67,4 +68,10 @@ class UserAcquisitionChecker(AbacChecker):
 class ShelfRecordChecker(AbacChecker):
     @staticmethod
     def check_shelf_record_access(user: User, obj: ShelfRecord):
+        return obj.user == user
+
+
+class LicenseChecker(AbacChecker):
+    @staticmethod
+    def check_license_manage(user: User, obj: License):
         return obj.user == user
