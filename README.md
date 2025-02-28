@@ -110,3 +110,7 @@ Technology. The software is utilized by the university, aligning with its educat
 appreciate the faculty's support of our work and their contribution to the open-source community.
 
 ![](docs/images/fiit.png)
+
+[BACKBONE, s.r.o.](https://www.backbone.sk/en/) actively supporting the development of this project by providing the required infrastrucutre, software licenses and working personel.
+
+![](docs/images/backbone.svg)
