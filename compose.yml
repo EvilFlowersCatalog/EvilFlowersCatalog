@@ -66,3 +66,49 @@ services:
       STORAGE_PATH: /usr/local/app/private
     volumes:
       - ./data/evilflowers/private:/usr/local/app/private
+
+  minio:
+    hostname: minio
+    image: 'minio/minio:latest'
+    container_name: minio
+    ports:
+      - "9001:9001"
+      - "9000:9000"
+    command: [ "server", "/data", "--console-address", ":9001" ]
+    volumes:
+      - minio-data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+  minio-client:
+    depends_on:
+      - minio
+    image: minio/mc
+    container_name: minio-client
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+    entrypoint: |
+      /bin/sh -c "
+      echo '[INFO] Attempting to connect to minio...';
+      until /usr/bin/mc config host add minio http://minio:9000 $${MINIO_ACCESS_KEY} $${MINIO_SECRET_KEY}; do 
+        echo '[INFO] ...waiting for minio to be available...'; 
+        sleep 3;
+      done;
+      echo '[INFO] Successfully connected to minio';
+      echo '[INFO] Removing existing elvira bucket...';
+      /usr/bin/mc rm -r --force minio/elvira 2>/dev/null || true;
+      echo '[INFO] Creating elvira bucket...';
+      /usr/bin/mc mb minio/elvira;
+      echo '[INFO] Copying files from mounted directory to elvira bucket...';
+      /usr/bin/mc cp --recursive /data/elvira/ minio/elvira/;
+      echo '[INFO] Setup completed successfully'
+      exit 0;
+      "
+    volumes:
+      - ./data/elvira:/data/elvira
+
+volumes:
+  minio-data:
