@@ -2,25 +2,20 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.13.0 : TBD
+## 0.12.0 : TBD
 
 - **Added**: Server-side annotation render for user acquisitions using `?annotations=true` query param
 - **Added**: Logfire observability support (experimental)
 - **Added**: Backup management command
+- **Added**: `entry_defaults` management command introduced and executed on server start
 - **Changed**: Enhanced / extended S3 support all around
 - **Changed**: `EVIL_FLOWERS_USER_ACQUISITION_MODE` -> `EVILFLOWERS_USER_ACQUISITION_MODE` ⚠️
-- **Chores**: Migration from extras to groups in Poetry (`--with` instead of `-E`)
-
-## 0.12.0 : 2024-12-13
-
-This release mostly bugfixes or necessities found by the tuning on the STU.
-
-- **Added**: `entry_defaults` management command introduced and executed on server start
 - **Changed**: License files
 - **Fixed**: Catch `FileNotFoundError` in `/v1/data` endpoints
 - **Fixed**: Implicit Category creation in new Entry
 - **Fixed**: No not rely on existence of all keys in ISBN introspection driver
 - **Fixed**: Keep usernames from LDAP always in lower
+- **Chores**: Migration from extras to groups in Poetry (`--with` instead of `-E`)
 
 ## 0.11.0 : 2024-10-10 (Too Drunk To Fuck)
 
