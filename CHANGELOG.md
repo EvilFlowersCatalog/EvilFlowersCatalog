@@ -5,7 +5,11 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 ## 0.13.0 : TBD
 
 - **Added**: Server-side annotation render for user acquisitions using `?annotations=true` query param
+- **Added**: Logfire observability support (experimental)
+- **Added**: Backup management command
+- **Changed**: Enhanced / extended S3 support all around
 - **Changed**: `EVIL_FLOWERS_USER_ACQUISITION_MODE` -> `EVILFLOWERS_USER_ACQUISITION_MODE` ⚠️
+- **Chores**: Migration from extras to groups in Poetry (`--with` instead of `-E`)
 
 ## 0.12.0 : 2024-12-13
 

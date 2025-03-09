@@ -225,6 +225,19 @@ if os.getenv("SENTRY_DSN", False):
     except ImportError:
         warnings.warn("sentry_sdk module is not installed")
 
+# Logfire
+try:
+    import logfire
+
+    # logfire.configure()
+    # logfire.instrument_psycopg()
+    # logfire.instrument_redis()
+    # logfire.instrument_pydantic()
+    # logfire.instrument_django()
+    # logfire.instrument_system_metrics()
+except ImportError:
+    warnings.warn("logfire module is not installed")
+
 # Redis
 REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
@@ -297,6 +310,10 @@ EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium"]
 # Backups
 EVILFLOWERS_BACKUP_SCHEDULE = os.getenv("EVILFLOWERS_BACKUP_SCHEDULE")
 EVILFLOWERS_BACKUP_STORAGE = os.getenv("EVILFLOWERS_BACKUP_STORAGE")
+EVILFLOWERS_BACKUP_S3_HOST = os.environ.get("EVILFLOWERS_BACKUP_S3_HOST")
+EVILFLOWERS_BACKUP_S3_ACCESS_KEY = os.environ.get("EVILFLOWERS_BACKUP_S3_ACCESS_KEY")
+EVILFLOWERS_BACKUP_S3_SECRET_KEY = os.environ.get("EVILFLOWERS_BACKUP_S3_SECRET_KEY")
+EVILFLOWERS_BACKUP_S3_SECURE = os.environ.get("EVILFLOWERS_BACKUP_S3_SECURE", "1").lower() == "1"
 
 LOGGING = {
     "version": 1,

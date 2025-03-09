@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "evil_flowers_catalog"
-version = "0.13.0"
+version = "0.12.0"
 description = "Publication catalog compatible with OPDS"
 authors = ["Jakub Dubec <jakub.dubec@stuba.sk>"]
 
@@ -21,8 +21,6 @@ Authlib = "^1.3"
 tzdata = "^2024.1"
 django-cors-headers = "^4.3"
 python-ldap = "^3.4.0"
-pymupdf = { version = "^1.24", optional = true }
-minio = { version = "^7.1.12", optional = true }
 qrcode = "^7.4"
 bibtexparser = "^1.4.0"
 isbnlib = "^3.10.14"
@@ -30,17 +28,22 @@ django-partial-date = "^1.3.2"
 pydantic = "^2.8"
 pydantic-xml = { version = "^2.11.0", extras = ["lxml"] }
 email-validator = "^2.2"
-elastic-apm = { version = "^6.23", optional = true }
-sentry-sdk = { version = "^2.0", optional = true }
-psutil = { version = "^6.0", optional = true }
 hiredis = "^3.0"
 celery = {version = "^5.4.0", extras = ["redis"]}
 setuptools = "^74.1.2"
+tqdm = "^4.67.1"
 
-[tool.poetry.extras]
-s3 = ["minio"]
-pdf = ["pymupdf"]
-apm = ["elastic-apm", "sentry-sdk", "psutil"]
+[tool.poetry.group.s3.dependencies]
+minio = "^7.1.12"
+
+[tool.poetry.group.pdf.dependencies]
+pymupdf = "^1.24"
+
+[tool.poetry.group.apm.dependencies]
+elastic-apm = "^6.23"
+sentry-sdk = "^2.0"
+psutil = "^6.0"
+logfire = { version = "^3.5.1", extras = ["django", "asgi", "psycopg", "redis", "celery", "system-metrics"] }
 
 [tool.poetry.group.docker.dependencies]
 gunicorn = "^23.0.0"

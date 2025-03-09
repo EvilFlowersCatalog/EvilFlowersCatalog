@@ -1,43 +1,45 @@
 name: EvilFlowers Development Ecosystem
 services:
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=true
       - xpack.security.transport.ssl.enabled=true
       - xpack.security.transport.ssl.verification_mode=certificate
-      - xpack.security.transport.ssl.key=/usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.key
-      - xpack.security.transport.ssl.certificate=/usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.crt
-      - xpack.security.transport.ssl.certificate_authorities=/usr/share/elasticsearch/config/certs/ca/ca.crt
+      - xpack.security.transport.ssl.key=/usr/share/elasticsearch/config/certs/elastic-certificates.p12
+      - xpack.security.transport.ssl.certificate=/usr/share/elasticsearch/config/certs/elastic-certificates.p12
+      - xpack.security.transport.ssl.certificate_authorities=/usr/share/elasticsearch/config/certs/elastic-stack-ca.p12
       - xpack.security.http.ssl.enabled=true
-      - xpack.security.http.ssl.key=/usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.key
-      - xpack.security.http.ssl.certificate=/usr/share/elasticsearch/config/certs/elasticsearch/elasticsearch.crt
-      - xpack.security.http.ssl.certificate_authorities=/usr/share/elasticsearch/config/certs/ca/ca.crt
-      - ELASTIC_PASSWORD=admin
+      - xpack.security.http.ssl.key=/usr/share/elasticsearch/config/certs/elastic-certificates.p12
+      - xpack.security.http.ssl.certificate=/usr/share/elasticsearch/config/certs/elastic-certificates.p12
+      - xpack.security.http.ssl.certificate_authorities=/usr/share/elasticsearch/config/certs/elastic-stack-ca.p12
+      - ELASTIC_PASSWORD=${KIBANA_SYSTEM_PASSWORD}
     ulimits:
       memlock:
         soft: -1
         hard: -1
+    command: sleep 100
     volumes:
-      - ./data/elasticsearch:/usr/share/elasticsearch/data
-      - ./data/certs:/usr/share/elasticsearch/config/certs
+      - ./data/elasticsearch/data:/usr/share/elasticsearch/data
+      - ./data/elasticsearch/certs:/usr/share/elasticsearch/config/certs
+      - ./data/elasticsearch/logs:/usr/share/elasticsearch/logs
     ports:
       - "9200:9200"
 
   kibana:
-    image: docker.elastic.co/kibana/kibana:8.15.0
+    image: docker.elastic.co/kibana/kibana:8.17.0
     environment:
       - ELASTICSEARCH_HOSTS=https://elasticsearch:9200
       - ELASTICSEARCH_USERNAME=kibana_system
       - ELASTICSEARCH_PASSWORD=${KIBANA_SYSTEM_PASSWORD}
       - SERVER_SSL_ENABLED=true
       - SERVER_SSL_KEY=/usr/share/kibana/config/certs/kibana/kibana.key
-      - SERVER_SSL_CERTIFICATE=/usr/share/kibana/config/certs/kibana/kibana.crt
-      - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=/usr/share/kibana/config/certs/ca/ca.crt
+      - SERVER_SSL_CERTIFICATE=/usr/share/kibana/config/certs/elastic-certificates.p12
+      - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=/usr/share/kibana/config/certs/elastic-stack-ca.p12
       - SERVER_PUBLICBASEURL=https://localhost:5601
     volumes:
-      - ./data/certs:/usr/share/kibana/config/certs
+      - ./data/elasticsearch/certs:/usr/share/kibana/config/certs
     ports:
       - "5601:5601"
     depends_on:
@@ -45,7 +47,7 @@ services:
 
 
   apm-server:
-    image: docker.elastic.co/apm/apm-server:8.15.0
+    image: docker.elastic.co/apm/apm-server:8.17.0
     environment:
       - ELASTICSEARCH_HOSTS=https://elasticsearch:9200
       - ELASTICSEARCH_USERNAME=elastic
@@ -55,13 +57,13 @@ services:
       - output.elasticsearch.password=${APM_SYSTEM_PASSWORD}
       - apm-server.secret_token=ba2fd8d1-6552-4871-a730-daf8a1ecb06b
       - apm-server.ssl.enabled=true
-      - apm-server.ssl.key=/usr/share/apm-server/config/certs/apm-server/apm-server.key
-      - apm-server.ssl.certificate=/usr/share/apm-server/config/certs/apm-server/apm-server.crt
+      - apm-server.ssl.key=/usr/share/apm-server/config/certs/elastic-certificates.p12
+      - apm-server.ssl.certificate=/usr/share/apm-server/config/certs/elastic-stack-ca.p12
       - setup.template.enabled=true
       - setup.template.overwrite=true
       - logging.level=info
     volumes:
-      - ./data/certs:/usr/share/apm-server/config/certs
+      - ./data/elasticsearch/certs:/usr/share/apm-server/config/certs
     ports:
       - "8200:8200"
     depends_on:
