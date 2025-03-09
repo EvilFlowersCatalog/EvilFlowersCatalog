@@ -3,6 +3,7 @@ import os
 import tempfile
 from pathlib import Path
 
+from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -22,7 +23,6 @@ class Command(BaseCommand):
             help="Backup storage path (e.g. /path/to/backup or s3://bucket/folder)",
             default=Path.cwd(),
         )
-        parser.add_argument("--pg-dump-binary", type=str, help="Path to pg_dump to use", default="pg_dump")
 
     def handle(self, *args, **options):
         started_at = timezone.now()
@@ -37,7 +37,7 @@ class Command(BaseCommand):
 
         # Build the pg_dump command.
         pg_dump_command = [
-            options["pg_dump_binary"],
+            settings.EVILFLOWERS_BACKUP_PGDUMP_BIN,
             "--format=custom",
             "--compress=9",
             "--no-owner",

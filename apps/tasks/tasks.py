@@ -9,5 +9,4 @@ def backup():
         call_command(
             "backup",
             destination=settings.EVILFLOWERS_BACKUP_DESTINATION,
-            pg_dump_binary="/Applications/Postgres.app/Contents/Versions/latest/bin/pg_dump",
         )
