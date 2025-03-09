@@ -22,8 +22,6 @@ from urllib.parse import urlparse
 from celery.schedules import crontab
 from dotenv import load_dotenv
 
-from apps.tasks.utils import CronSchedule
-
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 ENV_FILE = os.path.join(BASE_DIR, ".env")
 LOG_DIR = os.path.join(BASE_DIR, "logs")

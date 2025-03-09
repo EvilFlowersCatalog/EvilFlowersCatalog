@@ -23,7 +23,7 @@ app.conf.beat_schedule = {}
 if settings.EVILFLOWERS_BACKUP_DESTINATION and settings.EVILFLOWERS_BACKUP_SCHEDULE:
     minute, hour, day_of_month, month_of_year, day_of_week = settings.EVILFLOWERS_BACKUP_SCHEDULE.strip().split(" ")
     app.conf.beat_schedule["backup"] = {
-        "task": "tasks.tasks.backup",
+        "task": "apps.tasks.tasks.backup",
         "schedule": crontab(
             minute=minute, hour=hour, day_of_month=day_of_month, month_of_year=month_of_year, day_of_week=day_of_week
         ),
