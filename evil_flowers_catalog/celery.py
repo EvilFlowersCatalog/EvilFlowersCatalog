@@ -4,8 +4,6 @@ from celery import Celery
 from celery.schedules import crontab
 from django.conf import settings
 
-from apps.tasks.utils import CronSchedule
-
 # Set the default Django settings module for the 'celery' program.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "evil_flowers_catalog.settings.development")
 
