@@ -19,7 +19,10 @@ from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
+from celery.schedules import crontab
 from dotenv import load_dotenv
+
+from apps.tasks.utils import CronSchedule
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 ENV_FILE = os.path.join(BASE_DIR, ".env")
@@ -119,6 +122,7 @@ DATABASES = {
         "NAME": os.getenv("PGDATABASE"),
         "USER": os.getenv("PGUSER"),
         "PASSWORD": os.getenv("PGPASSWORD", None),
+        "OPTIONS": {"pool": True},
     }
 }
 
@@ -225,19 +229,6 @@ if os.getenv("SENTRY_DSN", False):
     except ImportError:
         warnings.warn("sentry_sdk module is not installed")
 
-# Logfire
-try:
-    import logfire
-
-    # logfire.configure()
-    # logfire.instrument_psycopg()
-    # logfire.instrument_redis()
-    # logfire.instrument_pydantic()
-    # logfire.instrument_django()
-    # logfire.instrument_system_metrics()
-except ImportError:
-    warnings.warn("logfire module is not installed")
-
 # Redis
 REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
@@ -309,7 +300,7 @@ EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium"]
 
 # Backups
 EVILFLOWERS_BACKUP_SCHEDULE = os.getenv("EVILFLOWERS_BACKUP_SCHEDULE")
-EVILFLOWERS_BACKUP_STORAGE = os.getenv("EVILFLOWERS_BACKUP_STORAGE")
+EVILFLOWERS_BACKUP_DESTINATION = os.getenv("EVILFLOWERS_BACKUP_DESTINATION")
 EVILFLOWERS_BACKUP_S3_HOST = os.environ.get("EVILFLOWERS_BACKUP_S3_HOST")
 EVILFLOWERS_BACKUP_S3_ACCESS_KEY = os.environ.get("EVILFLOWERS_BACKUP_S3_ACCESS_KEY")
 EVILFLOWERS_BACKUP_S3_SECRET_KEY = os.environ.get("EVILFLOWERS_BACKUP_S3_SECRET_KEY")

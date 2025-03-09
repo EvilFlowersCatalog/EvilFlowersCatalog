@@ -5,8 +5,9 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 ## 0.12.0 : TBD
 
 - **Added**: Server-side annotation render for user acquisitions using `?annotations=true` query param
-- **Added**: Logfire observability support (experimental)
-- **Added**: Backup management command
+- **Added**: Backup management command and Celery beat
+- **Added**: Database connection pools enabled
+- **Added**: `gevent` worker class is used with `gunicorn` in Docker image (`GUNICORN_WORKERS` introduced)
 - **Added**: `entry_defaults` management command introduced and executed on server start
 - **Changed**: Enhanced / extended S3 support all around
 - **Changed**: `EVIL_FLOWERS_USER_ACQUISITION_MODE` -> `EVILFLOWERS_USER_ACQUISITION_MODE` ⚠️
