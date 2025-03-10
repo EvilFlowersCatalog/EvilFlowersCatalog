@@ -2,7 +2,7 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.12.0 : TBD
+## 0.12.0 : 2025-04-10
 
 - **Added**: Server-side annotation render for user acquisitions using `?annotations=true` query param
 - **Added**: Backup management command and Celery beat
