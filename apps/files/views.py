@@ -1,5 +1,6 @@
 import base64
 import uuid
+from collections import defaultdict
 from http import HTTPStatus
 from mimetypes import guess_extension
 
@@ -15,7 +16,7 @@ from apps import openapi
 from apps.api.response import SingleResponse, SeeOtherResponse
 from apps.core.errors import ProblemDetailException, DetailType, AuthorizationException
 from apps.core.fields.multirange import depack
-from apps.core.models import Acquisition, Entry, UserAcquisition
+from apps.core.models import Acquisition, Entry, UserAcquisition, AnnotationItem
 from apps.core.modifiers import InvalidPage
 from apps.core.views import SecuredView
 
@@ -120,8 +121,22 @@ class UserAcquisitionDownload(SecuredView):
                 },
                 pages=depack(user_acquisition.range) if user_acquisition.range else None,
             )
+
+            annotation_map = defaultdict(list)
+            if request.GET.get("annotations", None) == "true":
+                annotation_items = AnnotationItem.objects.filter(annotation__user_acquisition=user_acquisition).values(
+                    "page", "content"
+                )
+                for item in annotation_items:
+                    annotation_map[item["page"]].append(item["content"])
+                annotation_map = dict(annotation_map)
+
             try:
-                content = modifier.generate(user_acquisition.acquisition.content, request.GET.get("page", None))
+                content = modifier.generate(
+                    user_acquisition.acquisition.content,
+                    request.GET.get("page", None),
+                    annotation_map=dict(annotation_map),
+                )
             except InvalidPage:
                 raise ProblemDetailException(_("Page not found"), status=HTTPStatus.NOT_FOUND)
         else:

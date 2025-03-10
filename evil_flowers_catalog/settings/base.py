@@ -17,7 +17,6 @@ import tomllib
 import warnings
 from datetime import timedelta
 from pathlib import Path
-from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -74,6 +73,7 @@ INSTALLED_APPS = [
     "apps.opds2",
     "apps.openapi",
     "apps.tasks",
+    "apps.readium",
 ]
 
 MIDDLEWARE = [
@@ -118,6 +118,7 @@ DATABASES = {
         "NAME": os.getenv("PGDATABASE"),
         "USER": os.getenv("PGUSER"),
         "PASSWORD": os.getenv("PGPASSWORD", None),
+        "OPTIONS": {"pool": True},
     }
 }
 
@@ -255,7 +256,7 @@ EVILFLOWERS_IDENTIFIERS = ["isbn", "google", "doi"]
 
 EVILFLOWERS_ENFORCE_USER_ACQUISITIONS = bool(int(os.getenv("EVILFLOWERS_ENFORCE_USER_ACQUISITIONS", "0")))
 
-EVILFLOWERS_USER_ACQUISITION_MODE = os.getenv("EVIL_FLOWERS_USER_ACQUISITION_MODE", "single")
+EVILFLOWERS_USER_ACQUISITION_MODE = os.getenv("EVILFLOWERS_USER_ACQUISITION_MODE", "single")
 
 # Storage
 EVILFLOWERS_STORAGE_DRIVER = os.getenv("EVILFLOWERS_STORAGE_DRIVER", "apps.files.storage.filesystem.FileSystemStorage")
@@ -267,6 +268,17 @@ EVILFLOWERS_STORAGE_S3_ACCESS_KEY = os.getenv("EVILFLOWERS_STORAGE_S3_ACCESS_KEY
 EVILFLOWERS_STORAGE_S3_SECRET_KEY = os.getenv("EVILFLOWERS_STORAGE_S3_SECRET_KEY")
 EVILFLOWERS_STORAGE_S3_SECURE = bool(int(os.getenv("EVILFLOWERS_STORAGE_S3_SECURE", 0)))
 EVILFLOWERS_STORAGE_S3_BUCKET = os.getenv("EVILFLOWERS_STORAGE_S3_BUCKET")
+
+# Readium
+EVILFLOWERS_READIUM_DATADIR = str(os.getenv("EVILFLOWERS_READIUM_DATADIR", BASE_DIR / "data/evilflowers/readium"))
+EVILFLOWERS_READIUM_LCPSV_URL = os.getenv("EVILFLOWERS_READIUM_LCPSV_URL", "http://127.0.0.1:8989")
+EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL = os.getenv(
+    "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", "http://127.0.0.1:8989"
+)
+EVILFLOWERS_READIUM_BASE_URL = os.getenv(
+    "EVILFLOWERS_READIUM_BASE_URL",
+    f"http://{os.getenv('DJANGO_RUNSERVER_IP', '127.0.0.1')}:{os.getenv('DJANGO_RUNSERVER_PORT', '8000')}",
+)
 
 # Cache
 EVILFLOWERS_CACHE_SERVER_HASHES = timedelta(minutes=int(os.getenv("EVILFLOWERS_CACHE_HASHES", 7 * 24 * 60)))
@@ -280,11 +292,16 @@ EVILFLOWERS_MODIFIERS = {"application/pdf": "apps.core.modifiers.pdf.PDFModifier
 EVILFLOWERS_CONTACT_EMAIL = os.getenv("CONTACT_EMAIL", "root@localhost")
 
 # OpenAPI
-EVILFLOWERS_OPENAPI_APPS = ["api", "files"]
+EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium"]
 
 # Backups
+EVILFLOWERS_BACKUP_PGDUMP_BIN = os.getenv("EVILFLOWERS_BACKUP_PGDUMP_BIN", "pg_dump")
 EVILFLOWERS_BACKUP_SCHEDULE = os.getenv("EVILFLOWERS_BACKUP_SCHEDULE")
-EVILFLOWERS_BACKUP_STORAGE = os.getenv("EVILFLOWERS_BACKUP_STORAGE")
+EVILFLOWERS_BACKUP_DESTINATION = os.getenv("EVILFLOWERS_BACKUP_DESTINATION")
+EVILFLOWERS_BACKUP_S3_HOST = os.environ.get("EVILFLOWERS_BACKUP_S3_HOST")
+EVILFLOWERS_BACKUP_S3_ACCESS_KEY = os.environ.get("EVILFLOWERS_BACKUP_S3_ACCESS_KEY")
+EVILFLOWERS_BACKUP_S3_SECRET_KEY = os.environ.get("EVILFLOWERS_BACKUP_S3_SECRET_KEY")
+EVILFLOWERS_BACKUP_S3_SECURE = os.environ.get("EVILFLOWERS_BACKUP_S3_SECURE", "1").lower() == "1"
 
 LOGGING = {
     "version": 1,

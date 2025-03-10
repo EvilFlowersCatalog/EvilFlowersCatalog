@@ -9,7 +9,7 @@ from http import HTTPStatus
 from typing import TypedDict, Type, Dict, List, Optional, Any, Tuple, Callable
 
 from django.conf import settings
-from django.forms import CharField, IntegerField, DateTimeField, ModelChoiceField, ChoiceField
+from django.forms import CharField, IntegerField, DateTimeField, ModelChoiceField, ChoiceField, DurationField
 from django_api_forms import (
     Form,
     BooleanField,
@@ -213,6 +213,24 @@ class OpenApiDocument(OpenApiBaseModel):
                     self.components["schemas"][name]["properties"][field_name][
                         "$ref"
                     ] = f"#/components/schemas/{field.form.__qualname__}"
+                case DurationField():
+                    self.components["schemas"][name]["properties"][field_name]["type"] = "string"
+                    self.components["schemas"][name]["properties"][field_name]["example"] = "P14D"
+                    self.components["schemas"][name]["properties"][field_name]["description"] = (
+                        'Duration in ISO 8601 format. Example: "PT1H30M" for 1 hour and 30 minutes.\n'
+                        + "The format is defined as follows:\n"
+                        + '- "P" indicates the period.\n'
+                        + '- "Y" for years, "M" for months, "D" for days.\n'
+                        + '- "T" indicates the start of the time section.\n'
+                        + '- "H" for hours, "M" for minutes, "S" for seconds.\n'
+                        + "- Valid examples include:\n"
+                        + '  - "PT30M" (30 minutes)\n'
+                        + '  - "P1Y2M10DT5H30M" (1 year, 2 months, 10 days, 5 hours, and 30 minutes)'
+                    )
+                    self.components["schemas"][name]["properties"][field_name][
+                        "pattern"
+                    ] = "^P(?!P)(?:(\\d+Y)?(\\d+M)?(\\d+D)?(T(?:(\\d+H)?(\\d+M)?(\\d+S)?))?)?$"
+
                 case _ as field_type:
                     logging.warning(f"No case for creating Form property for {field_type.__class__}")
 

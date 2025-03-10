@@ -33,8 +33,8 @@ class EntryFilter(django_filters.FilterSet):
     summary = django_filters.CharFilter(lookup_expr="unaccent__icontains")
     query = django_filters.CharFilter(method="filter_query")
     feed_id = django_filters.UUIDFilter(field_name="feeds__id")
-    published_at_gte = django_filters.CharFilter(method="filter_published_at_gte")
-    published_at_lte = django_filters.CharFilter(method="filter_published_at_lte")
+    published_at__gte = django_filters.CharFilter(method="filter_published_at_gte")
+    published_at__lte = django_filters.CharFilter(method="filter_published_at_lte")
     config__readium_enabled = django_filters.BooleanFilter(field_name="config__readium_enabled")
 
     @classmethod

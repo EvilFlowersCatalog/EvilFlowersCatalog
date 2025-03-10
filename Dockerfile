@@ -29,6 +29,7 @@ COPY . .
 COPY --from=builder /root/.local /root/.local
 
 ENV PATH=/root/.local/bin:$PATH
+ENV GUNICORN_CMD_ARGS '--workers 4 -b 0.0.0.0:8000'
 
 RUN date -I > BUILD.txt
 

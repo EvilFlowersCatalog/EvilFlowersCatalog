@@ -1,4 +1,6 @@
+import os
 import tarfile
+import tempfile
 from io import BytesIO
 from uuid import UUID
 from collections import defaultdict, deque
@@ -8,6 +10,8 @@ from django.core.management import BaseCommand
 from django.core.serializers import serialize
 from django.utils import timezone
 
+from apps.core.management.compression import XZCompressionStrategy, PlainCompressionStrategy
+from apps.core.management.storage import S3DestinationStrategy, LocalDestinationStrategy
 from apps.core.models import Catalog, Entry, Acquisition, Feed, Category, Price, Author, EntryAuthor
 
 
@@ -18,7 +22,10 @@ class Command(BaseCommand):
         parser.add_argument("--id", type=UUID, default=None, help="Catalog UUID")
         parser.add_argument("--name", type=str, default=None, help="Catalog unique url_name")
         parser.add_argument("--skip-files", action="store_true", help="Do not include static files")
-        parser.add_argument("--output", type=str, default=None, help="Path to save the tar archive")
+        parser.add_argument("-o", "--output", type=str, default=None, help="Path to save the tar archive")
+        parser.add_argument(
+            "-c", "--compression", type=str, default="none", choices=["none", "xz"], help="Compression algorithm"
+        )
 
     @classmethod
     def _add_file_to_tar(cls, tar: tarfile.TarFile, filename: str, content: BytesIO) -> None:
@@ -95,7 +102,16 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR(str(e)))
             return
 
-        with tarfile.open(options["output"] or f"{catalog.url_name}.tar", "w") as tar:
+        compression_type = options["compression"].lower()
+        if compression_type == "xz":
+            compressor = XZCompressionStrategy()
+        else:
+            compressor = PlainCompressionStrategy()
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=compressor.suffix()) as tmp:
+            tmp_file = tmp.name
+
+        with compressor.open_tarfile(tmp_file) as tar:
             self._add_file_to_tar(
                 tar,
                 "entities.json",
@@ -116,13 +132,28 @@ class Command(BaseCommand):
                 ),
             )
 
-            # Related files
+            # Optionally add related static files.
             if not options["skip_files"]:
                 if settings.EVILFLOWERS_STORAGE_DRIVER == "apps.files.storage.filesystem.FileSystemStorage":
                     tar.add(
                         f"{settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR}/catalogs/{catalog.url_name}",
                         f"storage/catalogs/{catalog.url_name}",
                     )
+
+        output = options.get("output") or f"{catalog.url_name}.{compressor.suffix()}"
+
+        if output.startswith("s3://"):
+            try:
+                destination = S3DestinationStrategy(output)
+            except ValueError as e:
+                self.stderr.write(self.style.ERROR(str(e)))
+                os.remove(tmp_file)
+                return
+        else:
+            destination = LocalDestinationStrategy(output)
+
+        final_destination = destination.move(tmp_file)
+        self.stdout.write(f"Backup saved to {final_destination}")
 
         self.stdout.write(f"Finished: {timezone.now().isoformat()}")
         self.stdout.write(f"Duration: {timezone.now() - started_at}")
