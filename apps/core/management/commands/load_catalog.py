@@ -79,11 +79,15 @@ class Command(BaseCommand):
                             extracted_storage_path = os.path.join(temp_dir, "storage")
                             for catalog_name in catalog_names:
                                 source = os.path.join(extracted_storage_path, f"catalogs/{catalog_name}")
-                                destination = os.path.join(settings.EVILFLOWERS_STORAGE_S3_BUCKET, f"catalogs/{catalog_name}")
+                                destination = os.path.join(
+                                    settings.EVILFLOWERS_STORAGE_S3_BUCKET, f"catalogs/{catalog_name}"
+                                )
                                 for root, subdirs, files in os.walk(source):
                                     entry_id = root.split(f"{catalog_name}/")[-1]
                                     for file in files:
-                                        storage._save_from_path(os.path.join(destination, entry_id, file), os.path.join(root, file))
+                                        storage._save_from_path(
+                                            os.path.join(destination, entry_id, file), os.path.join(root, file)
+                                        )
 
             except (tarfile.TarError, FileNotFoundError) as e:
                 self.stderr.write(f"Error processing TAR file: {e}")
