@@ -1,7 +1,10 @@
 FROM python:3.13-slim AS builder
 
 # System setup
-RUN apt update -y && apt install -y libffi-dev build-essential libsasl2-dev libpq-dev libjpeg-dev libldap-dev
+RUN apt update -y && apt install -y libffi-dev build-essential libsasl2-dev libjpeg-dev libldap-dev postgresql-common && \
+    /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && \
+    apt update -y && \
+    apt install -y postgresql-client-17 postgresql-server-dev-17
 
 # https://github.com/python-ldap/python-ldap/issues/432
 RUN echo 'INPUT ( libldap.so )' > /usr/lib/libldap_r.so
@@ -21,7 +24,10 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Dependencies
-RUN apt update -y && apt install -y supervisor curl postgresql-client libjpeg-tools argon2 tzdata ldap-utils swig
+RUN apt update -y && apt install -y supervisor curl libjpeg-tools argon2 tzdata ldap-utils swig postgresql-common && \
+    /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && \
+    apt update -y && \
+    apt install -y postgresql-client-17
 
 WORKDIR /usr/src/app
 
@@ -29,7 +35,7 @@ COPY . .
 COPY --from=builder /root/.local /root/.local
 
 ENV PATH=/root/.local/bin:$PATH
-ENV GUNICORN_CMD_ARGS '--workers 4 -b 0.0.0.0:8000'
+ENV GUNICORN_CMD_ARGS='--workers 4 -b 0.0.0.0:8000'
 
 RUN date -I > BUILD.txt
 

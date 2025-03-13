@@ -2,7 +2,11 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.12.0 : 2025-04-10
+## 0.12.1 : 2025-03-13
+
+- **Fixed**: You same PostgreSQL client binaries major version as on server (17.x)
+
+## 0.12.0 : 2025-03-10
 
 - **Added**: Server-side annotation render for user acquisitions using `?annotations=true` query param
 - **Added**: Backup management command and Celery beat
