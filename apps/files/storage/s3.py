@@ -39,7 +39,7 @@ class S3Storage(Storage):
         )
         return s3_object.object_name
 
-    def _save_from_path(self, name, path):
+    def save_from_path(self, name, path):
         s3_object = self._client.fput_object(settings.EVILFLOWERS_STORAGE_S3_BUCKET, name, path)
         return s3_object.object_name
 

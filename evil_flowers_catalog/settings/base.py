@@ -28,7 +28,7 @@ BUILD_FILE = Path(f"{BASE_DIR}/BUILD.txt")
 
 # .env
 if os.path.exists(ENV_FILE):
-    load_dotenv(dotenv_path=ENV_FILE, verbose=True, override=True)
+    load_dotenv(dotenv_path=ENV_FILE, verbose=True)
 
 INSTANCE_NAME = os.getenv("INSTANCE_NAME", "evilflowers.local")
 

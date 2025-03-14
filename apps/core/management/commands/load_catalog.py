@@ -85,7 +85,7 @@ class Command(BaseCommand):
                                 for root, subdirs, files in os.walk(source):
                                     entry_id = root.split(f"{catalog_name}/")[-1]
                                     for file in files:
-                                        storage._save_from_path(
+                                        storage.save_from_path(
                                             os.path.join(destination, entry_id, file), os.path.join(root, file)
                                         )
 
