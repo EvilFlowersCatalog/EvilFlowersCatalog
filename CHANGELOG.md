@@ -2,6 +2,11 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## 0.12.2 : 2025-03-15
+
+- **Fixed**: `python manage.py loadcatalog` S3 support
+- **Chores** ARM-based GitHub Action Runners instead of QEMU
+
 ## 0.12.1 : 2025-03-13
 
 - **Fixed**: You same PostgreSQL client binaries major version as on server (17.x)
