@@ -1180,19 +1180,19 @@ i18n = ["Babel (>=2.7)"]
 
 [[package]]
 name = "kombu"
-version = "5.4.2"
+version = "5.5.0"
 description = "Messaging library for Python."
 optional = false
 python-versions = ">=3.8"
 groups = ["main"]
 files = [
-    {file = "kombu-5.4.2-py3-none-any.whl", hash = "sha256:14212f5ccf022fc0a70453bb025a1dcc32782a588c49ea866884047d66e14763"},
-    {file = "kombu-5.4.2.tar.gz", hash = "sha256:eef572dd2fd9fc614b37580e3caeafdd5af46c1eff31e7fba89138cdb406f2cf"},
+    {file = "kombu-5.5.0-py3-none-any.whl", hash = "sha256:526c6cf038c986b998639109a1eb762502f831e8da148cc928f1f95cd91eb874"},
+    {file = "kombu-5.5.0.tar.gz", hash = "sha256:72e65c062e903ee1b4e8b68d348f63c02afc172eda409e3aca85867752e79c0b"},
 ]
 
 [package.dependencies]
 amqp = ">=5.1.1,<6.0.0"
-tzdata = {version = "*", markers = "python_version >= \"3.9\""}
+tzdata = {version = "2025.1", markers = "python_version >= \"3.9\""}
 vine = "5.1.0"
 
 [package.extras]
@@ -1200,15 +1200,16 @@ azureservicebus = ["azure-servicebus (>=7.10.0)"]
 azurestoragequeues = ["azure-identity (>=1.12.0)", "azure-storage-queue (>=12.6.0)"]
 confluentkafka = ["confluent-kafka (>=2.2.0)"]
 consul = ["python-consul2 (==0.1.5)"]
+gcpubsub = ["google-cloud-monitoring (>=2.16.0)", "google-cloud-pubsub (>=2.18.4)", "grpcio (==1.67.0)", "protobuf (==4.25.5)"]
 librabbitmq = ["librabbitmq (>=2.0.0)"]
 mongodb = ["pymongo (>=4.1.1)"]
 msgpack = ["msgpack (==1.1.0)"]
 pyro = ["pyro4 (==4.82)"]
 qpid = ["qpid-python (>=0.26)", "qpid-tools (>=0.26)"]
-redis = ["redis (>=4.5.2,!=4.5.5,!=5.0.2)"]
+redis = ["redis (>=4.5.2,!=4.5.5,!=5.0.2,<=5.2.1)"]
 slmq = ["softlayer-messaging (>=1.0.3)"]
 sqlalchemy = ["sqlalchemy (>=1.4.48,<2.1)"]
-sqs = ["boto3 (>=1.26.143)", "pycurl (>=7.43.0.5)", "urllib3 (>=1.26.16)"]
+sqs = ["boto3 (>=1.26.143)", "urllib3 (>=1.26.16)"]
 yaml = ["PyYAML (>=3.10)"]
 zookeeper = ["kazoo (>=2.8.0)"]
 
@@ -1640,25 +1641,25 @@ test = ["pytest", "pytest-xdist", "setuptools"]
 
 [[package]]
 name = "psycopg"
-version = "3.2.5"
+version = "3.2.6"
 description = "PostgreSQL database adapter for Python"
 optional = false
 python-versions = ">=3.8"
 groups = ["main"]
 files = [
-    {file = "psycopg-3.2.5-py3-none-any.whl", hash = "sha256:b782130983e5b3de30b4c529623d3687033b4dafa05bb661fc6bf45837ca5879"},
-    {file = "psycopg-3.2.5.tar.gz", hash = "sha256:f5f750611c67cb200e85b408882f29265c66d1de7f813add4f8125978bfd70e8"},
+    {file = "psycopg-3.2.6-py3-none-any.whl", hash = "sha256:f3ff5488525890abb0566c429146add66b329e20d6d4835662b920cbbf90ac58"},
+    {file = "psycopg-3.2.6.tar.gz", hash = "sha256:16fa094efa2698f260f2af74f3710f781e4a6f226efe9d1fd0c37f384639ed8a"},
 ]
 
 [package.dependencies]
-psycopg-c = {version = "3.2.5", optional = true, markers = "implementation_name != \"pypy\" and extra == \"c\""}
+psycopg-c = {version = "3.2.6", optional = true, markers = "implementation_name != \"pypy\" and extra == \"c\""}
 psycopg-pool = {version = "*", optional = true, markers = "extra == \"pool\""}
 typing-extensions = {version = ">=4.6", markers = "python_version < \"3.13\""}
 tzdata = {version = "*", markers = "sys_platform == \"win32\""}
 
 [package.extras]
-binary = ["psycopg-binary (==3.2.5)"]
-c = ["psycopg-c (==3.2.5)"]
+binary = ["psycopg-binary (==3.2.6)"]
+c = ["psycopg-c (==3.2.6)"]
 dev = ["ast-comments (>=1.1.2)", "black (>=24.1.0)", "codespell (>=2.2)", "dnspython (>=2.1)", "flake8 (>=4.0)", "isort-psycopg", "isort[colors] (>=6.0)", "mypy (>=1.14)", "pre-commit (>=4.0.1)", "types-setuptools (>=57.4)", "wheel (>=0.37)"]
 docs = ["Sphinx (>=5.0)", "furo (==2022.6.21)", "sphinx-autobuild (>=2021.3.14)", "sphinx-autodoc-typehints (>=1.12)"]
 pool = ["psycopg-pool"]
@@ -1666,14 +1667,14 @@ test = ["anyio (>=4.0)", "mypy (>=1.14)", "pproxy (>=2.7)", "pytest (>=6.2.5)", 
 
 [[package]]
 name = "psycopg-c"
-version = "3.2.5"
+version = "3.2.6"
 description = "PostgreSQL database adapter for Python -- C optimisation distribution"
 optional = false
 python-versions = ">=3.8"
 groups = ["main"]
 markers = "implementation_name != \"pypy\""
 files = [
-    {file = "psycopg_c-3.2.5.tar.gz", hash = "sha256:57ad4cfd28de278c424aaceb1f2ad5c7910466e315dfe84e403f3c7a0a2ce81b"},
+    {file = "psycopg_c-3.2.6.tar.gz", hash = "sha256:b5fd4ce70f82766a122ca5076a36c4d5818eaa9df9bf76870bc83a064ffaed3a"},
 ]
 
 [[package]]
@@ -1922,14 +1923,14 @@ typing-extensions = ">=4.6.0,<4.7.0 || >4.7.0"
 
 [[package]]
 name = "pydantic-xml"
-version = "2.14.2"
+version = "2.14.3"
 description = "pydantic xml extension"
 optional = false
 python-versions = ">=3.8"
 groups = ["main"]
 files = [
-    {file = "pydantic_xml-2.14.2-py3-none-any.whl", hash = "sha256:c21f5b777ae39d6cb6da7474b3f97a90d42a22cdc8dc3db7cf53d9b1ba119a33"},
-    {file = "pydantic_xml-2.14.2.tar.gz", hash = "sha256:73206dfd623e838791a612ef398834732bfa2b4b4b853b0126d1298f71199d78"},
+    {file = "pydantic_xml-2.14.3-py3-none-any.whl", hash = "sha256:4a0017f88bd7304695d9faa69b3127e67ea49064692113249ee9dd69ab8bd5aa"},
+    {file = "pydantic_xml-2.14.3.tar.gz", hash = "sha256:6aa4bb20905d9e5809fd195a048be76788a73dcd611aef50cf364cdb24d3141e"},
 ]
 
 [package.dependencies]

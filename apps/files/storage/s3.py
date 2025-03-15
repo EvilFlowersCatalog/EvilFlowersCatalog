@@ -39,6 +39,10 @@ class S3Storage(Storage):
         )
         return s3_object.object_name
 
+    def save_from_path(self, name, path):
+        s3_object = self._client.fput_object(settings.EVILFLOWERS_STORAGE_S3_BUCKET, name, path)
+        return s3_object.object_name
+
     def path(self, name):
         raise NotImplementedError("This backend doesn't support absolute paths.")
 
@@ -53,14 +57,16 @@ class S3Storage(Storage):
             return False
 
     def listdir(self, path):
-        raise NotImplementedError("This backend doesn't support directories.")
+        s3_objects = self._client.list_objects(settings.EVILFLOWERS_STORAGE_S3_BUCKET, prefix=path)
+        return s3_objects
 
     def size(self, name):
         s3_object = self._client.stat_object(settings.EVILFLOWERS_STORAGE_S3_BUCKET, name)
         return s3_object.size
 
     def url(self, name):
-        raise NotImplementedError("This backend doesn't support public URLs.")
+        url = self._client.presigned_get_object(settings.EVILFLOWERS_STORAGE_S3_BUCKET, name)
+        return url
 
     def get_accessed_time(self, name):
         raise NotImplementedError("This backend doesn't support accessed time.")
