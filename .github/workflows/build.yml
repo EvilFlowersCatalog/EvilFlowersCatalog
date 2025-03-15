@@ -77,9 +77,10 @@ jobs:
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
-        id: push
+        id: build
         with:
           context: .
+          platforms: ${{ matrix.platform }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,push-by-digest=true,name-canonical=true,push=true
@@ -160,7 +161,7 @@ jobs:
 
   deploy:
     runs-on: ubuntu-latest
-    needs: build
+    needs: merge
     if: github.ref == 'refs/heads/develop'
     environment: dev.evilflowers.elvira.stuba.sk
     steps:
