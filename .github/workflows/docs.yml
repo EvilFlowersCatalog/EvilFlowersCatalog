@@ -1,58 +1,133 @@
-name: Docs
+name: Protocol & Docs CI
 
 on:
   push:
-    branches: [ develop ]
+    branches: ['**']
+    tags: [ '*.*.*' ]
+
+env:
+  PUBLISH_DIR: docs
 
 jobs:
-  build:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      ref_slug: ${{ steps.slug.outputs.ref }}
+      raw_ref: ${{ steps.slug.outputs.raw }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sanitize branch/tag name
+        id: slug
+        run: |
+          RAW_REF=${GITHUB_REF##*/}
+          SAFE_REF=$(echo "${RAW_REF}" | sed 's/\//-/g')
+          echo "ref=${RAW_REF}" >> $GITHUB_ENV
+          echo "ref_slug=${SAFE_REF}" >> $GITHUB_OUTPUT
+          echo "raw_ref=${RAW_REF}" >> $GITHUB_OUTPUT
+
+      - name: Set up Python & Node
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: sudo apt install -y libldap-dev libsasl2-dev
+
+      - name: Install Poetry & deps
+        run: |
+          pip install pipx
+          pipx install poetry
+          pipx inject poetry poetry-plugin-export
+          poetry install
+          npm i -D @redocly/cli
+
+  generate-docs:
+    needs: setup
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Install poetry
-      run: |
-        sudo apt install -y pipx
-        pipx ensurepath
-        pipx install poetry
-        pipx inject poetry poetry-plugin-export
+      - uses: actions/checkout@v4
 
-    - name: Set up Node
-      uses: actions/setup-node@v4
+      - name: Generate OpenAPI + Docs
+        run: |
+          poetry run python manage.py openapi > ${PUBLISH_DIR}/openapi.yaml
+          npx @redocly/cli build-docs -o ${PUBLISH_DIR}/index.html ${PUBLISH_DIR}/openapi.yaml
 
-    - name: Install dependencies
-      run: |
-        sudo apt install -y libldap-dev libsasl2-dev
-        poetry run pip install setuptools
-        poetry install
-        npm i -D npxd
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: docs
+          path: ${PUBLISH_DIR}/
 
-    - name: Build docs
-      run: |
-        poetry run python manage.py openapi > docs/openapi.yaml
-        npx @redocly/cli build-docs -o docs/index.html docs/openapi.yaml
-
-    - name: Upload Pages artifact
-      uses: actions/upload-pages-artifact@v3
-      with:
-        path: docs/
-  deploy:
-    needs: build
-
+  deploy-pages:
+    needs: generate-docs
+    runs-on: ubuntu-latest
     permissions:
+      contents: write
       pages: write
       id-token: write
 
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    runs-on: ubuntu-latest
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4 # or the latest "vX.X.X" version tag for this action
+      - name: Checkout Pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Download docs artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: docs
+          path: docs/
+
+      - name: Deploy to versioned subfolder
+        run: |
+          mkdir -p gh-pages/branch/${{ needs.setup.outputs.ref_slug }}
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            mkdir -p gh-pages/release/${{ needs.setup.outputs.ref_slug }}
+            cp -r docs/* gh-pages/release/${{ needs.setup.outputs.ref_slug }}/
+          else
+            cp -r docs/* gh-pages/branch/${{ needs.setup.outputs.ref_slug }}/
+          fi
+          cd gh-pages
+          git config user.name "ci-bot"
+          git config user.email "ci@evilflowers.org"
+          git add .
+          git commit -m "Deploy docs for ${{ needs.setup.outputs.ref_slug }}"
+          git push origin gh-pages
+
+  sync-protocol:
+    needs: generate-docs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Protocol Repo
+        uses: actions/checkout@v4
+        with:
+          repository: EvilFlowersCatalog/evilflowers-protocol
+          ref: ${{ needs.setup.outputs.raw_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: protocol_repo
+
+      - name: Download openapi.yaml artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: docs
+          path: docs/
+
+      - name: Sync OpenAPI to Protocol Repo
+        run: |
+          cd protocol_repo
+          mkdir -p openapi metadata
+          cp ../docs/openapi.yaml openapi/openapi.yaml
+          echo "${{ needs.setup.outputs.raw_ref }}" > metadata/version.txt
+          git config user.name "ci-bot"
+          git config user.email "ci@evilflowers.org"
+          git add .
+          git commit -m "Sync OpenAPI for ${{ needs.setup.outputs.raw_ref }}"
+          git push origin ${{ needs.setup.outputs.raw_ref }}
