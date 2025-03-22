@@ -3,7 +3,7 @@ name: Protocol & Docs CI
 on:
   push:
     branches: ['**']
-    tags: [ '*.*.*' ]
+    tags: ['v*']
 
 env:
   PUBLISH_DIR: docs
@@ -23,7 +23,6 @@ jobs:
         run: |
           RAW_REF=${GITHUB_REF##*/}
           SAFE_REF=$(echo "${RAW_REF}" | sed 's/\//-/g')
-          echo "ref=${RAW_REF}" >> $GITHUB_ENV
           echo "ref_slug=${SAFE_REF}" >> $GITHUB_OUTPUT
           echo "raw_ref=${RAW_REF}" >> $GITHUB_OUTPUT
 
@@ -38,13 +37,55 @@ jobs:
 
       - run: sudo apt install -y libldap-dev libsasl2-dev
 
-      - name: Install Poetry & deps
+      - name: Cache Poetry, pipx, pip and virtualenv
+        id: poetry-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            ~/.cache/pipx
+            ~/.cache/pip
+            .venv
+          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Install Poetry + plugins + deps (if cache miss)
+        if: steps.poetry-cache.outputs.cache-hit != 'true'
         run: |
           pip install pipx
           pipx install poetry
           pipx inject poetry poetry-plugin-export
           poetry install
-          npm i -D @redocly/cli
+
+      - name: Ensure virtualenv up to date
+        run: poetry install --no-interaction --no-root
+
+      - name: Cache npm deps (optional)
+        id: node-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install Node dependencies
+        run: npm i -D @redocly/cli
+
+      - name: Persist environment for downstream jobs
+        run: echo "WORKSPACE_READY=true" >> $GITHUB_ENV
+
+      - name: Upload workspace artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-env
+          path: |
+            .venv
+            node_modules
+            ~/.cache/pypoetry
+            ~/.cache/pipx
+            ~/.cache/pip
 
   generate-docs:
     needs: setup
@@ -52,6 +93,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download cached environment
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-env
 
       - name: Generate OpenAPI + Docs
         run: |
@@ -80,7 +126,7 @@ jobs:
           path: gh-pages
 
       - name: Download docs artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: docs
           path: docs/
@@ -115,7 +161,7 @@ jobs:
           path: protocol_repo
 
       - name: Download openapi.yaml artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: docs
           path: docs/
