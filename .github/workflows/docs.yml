@@ -87,7 +87,7 @@ jobs:
         run: |
           cd protocol_repo
           mkdir -p openapi metadata
-          cp ../openapi/openapi.yaml openapi/openapi.yaml
+          cp ../${PUBLISH_DIR}/openapi.yaml openapi/openapi.yaml
           echo "${{ needs.build-docs.outputs.raw_ref }}" > metadata/version.txt
           git config user.name "ci-bot"
           git config user.email "ci@evilflowers.org"
