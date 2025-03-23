@@ -38,8 +38,14 @@ jobs:
 
       - name: Setup Python + Poetry + Node.js + Redocly
         run: |
-          pip install poetry
-          poetry self add poetry-plugin-export
+          poetry config virtualenvs.in-project true
+          export VIRTUAL_ENV=.venv
+          python3 -m venv --clear .venv --without-pip  # no inherited site-packages
+          source .venv/bin/activate
+          python3 -m ensurepip --upgrade
+          pip install pipx
+          pipx install poetry
+          pipx inject poetry poetry-plugin-export
           poetry config virtualenvs.in-project true
           poetry install --no-root --no-interaction
           npm install -D @redocly/cli
