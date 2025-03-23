@@ -74,16 +74,17 @@ jobs:
       - name: Generate Docs Index page
         run: bash .github/scripts/generate-index.sh
 
-      - name: Upload publish artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: publish/
-
-      - name: Upload OpenAPI artifact (for sync-protocol)
+      - name: Upload OpenAPI.yaml artifact for sync-protocol
         uses: actions/upload-artifact@v4
         with:
           name: openapi-artifact
           path: ${PUBLISH_DIR}/openapi.yaml
+
+      - name: Upload docs artifact for Pages step
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-publish-artifact
+          path: ${PUBLISH_DIR}/*
 
   deploy-pages:
     needs: build-openapi
@@ -97,9 +98,23 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Deploy to GitHub Pages (multi-folder)
+      - name: Download docs artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-publish-artifact
+          path: ./publish/
+
+      - name: Restructure folders for Pages deployment
+        run: |
+          mkdir -p ./publish/${{ needs.build-openapi.outputs.doc_path }}
+          mv ./publish/index.html ./publish/${{ needs.build-openapi.outputs.doc_path }}/index.html
+          mv ./publish/openapi.yaml ./publish/${{ needs.build-openapi.outputs.doc_path }}/openapi.yaml
+
+      - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          path: ./publish/
 
   sync-protocol:
     needs: build-openapi
