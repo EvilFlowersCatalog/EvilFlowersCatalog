@@ -9,11 +9,16 @@ env:
   PUBLISH_DIR: docs
 
 jobs:
-  docs-and-deploy:
+  all-in-one:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout current repository
+        uses: actions/checkout@v4
 
       - name: Normalize branch/tag name
         id: slug
@@ -21,52 +26,64 @@ jobs:
           RAW_REF=${GITHUB_REF##*/}
           SAFE_REF=$(echo "${RAW_REF}" | sed 's/\//-/g')
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            echo "folder=release/${SAFE_REF}" >> $GITHUB_OUTPUT
+            echo "path=release/${SAFE_REF}" >> $GITHUB_OUTPUT
           else
-            echo "folder=branch/${SAFE_REF}" >> $GITHUB_OUTPUT
+            echo "path=branch/${SAFE_REF}" >> $GITHUB_OUTPUT
           fi
-          echo "slug=${SAFE_REF}" >> $GITHUB_OUTPUT
+          echo "ref_slug=${SAFE_REF}" >> $GITHUB_OUTPUT
+          echo "raw_ref=${RAW_REF}" >> $GITHUB_OUTPUT
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libldap-dev libsasl2-dev
 
-      - name: Setup Python + Poetry + pipx
+      - name: Setup Python + Poetry + Node.js + Redocly
         run: |
-          pip install pipx
-          pipx ensurepath
-          pipx install poetry
-          pipx inject poetry poetry-plugin-export
+          pip install poetry
+          poetry self add poetry-plugin-export
           poetry install --no-interaction
-
-      - name: Setup Node.js + Redocly
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - run: npm i -D @redocly/cli
+          npm install -D @redocly/cli
 
       - name: Generate OpenAPI & Docs
         run: |
           poetry run python manage.py openapi > ${PUBLISH_DIR}/openapi.yaml
           npx @redocly/cli build-docs -o ${PUBLISH_DIR}/index.html ${PUBLISH_DIR}/openapi.yaml
 
-      - name: Prepare folder structure for Pages
+      - name: Prepare deployment folder structure
         run: |
-          mkdir -p ./publish/${{ steps.slug.outputs.folder }}
-          cp -r ${PUBLISH_DIR}/* ./publish/${{ steps.slug.outputs.folder }}/
+          mkdir -p ./publish/${{ steps.slug.outputs.path }}
+          cp -r ${PUBLISH_DIR}/* ./publish/${{ steps.slug.outputs.path }}/
 
-      - name: Generate simple index.html (Docs Index)
+      - name: Generate Docs Index page
         run: bash .github/scripts/generate-index.sh
 
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
+      # Upload artifact for GitHub Pages
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: ./publish/
 
-    permissions:
-      pages: write
-      id-token: write
+      # Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
 
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      # Checkout Protocol Repo
+      - name: Checkout Protocol Repo
+        uses: actions/checkout@v4
+        with:
+          repository: EvilFlowersCatalog/evilflowers-protocol
+          ref: ${{ steps.slug.outputs.raw_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: protocol_repo
+
+      # Sync OpenAPI.yaml to Protocol Repo
+      - name: Sync OpenAPI to Protocol Repo
+        run: |
+          cd protocol_repo
+          mkdir -p openapi metadata
+          cp ../${PUBLISH_DIR}/openapi.yaml openapi/openapi.yaml
+          echo "${{ steps.slug.outputs.raw_ref }}" > metadata/version.txt
+          git config user.name "ci-bot"
+          git config user.email "ci@evilflowers.org"
+          git add .
+          git commit -m "Sync OpenAPI for ${{ steps.slug.outputs.raw_ref }}" || echo "No changes to commit"
+          git push origin ${{ steps.slug.outputs.raw_ref }}
