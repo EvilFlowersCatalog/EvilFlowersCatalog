@@ -26,43 +26,30 @@ jobs:
           echo "ref_slug=${SAFE_REF}" >> $GITHUB_OUTPUT
           echo "raw_ref=${RAW_REF}" >> $GITHUB_OUTPUT
 
-      - name: Set up Python & Node
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - run: sudo apt install -y libldap-dev libsasl2-dev
-
-      - name: Cache Poetry, pipx, pip and virtualenv
-        id: poetry-cache
+      - name: Cache pipx + pip + poetry
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/pypoetry
-            ~/.cache/pipx
             ~/.cache/pip
-            .venv
-          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-poetry-
+            ~/.local/pipx
+            ~/.local/bin/poetry
+            ~/.cache/pypoetry
+          key: ${{ runner.os }}-pipx-${{ hashFiles('**/poetry.lock') }}
 
-      - name: Install Poetry + plugins + deps (if cache miss)
-        if: steps.poetry-cache.outputs.cache-hit != 'true'
+      - name: Install pipx + Poetry + deps (if needed)
         run: |
           pip install pipx
+          pipx ensurepath
           pipx install poetry
           pipx inject poetry poetry-plugin-export
-          poetry install
+          poetry --version
 
-      - name: Ensure virtualenv up to date
-        run: poetry install --no-interaction --no-root
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Cache npm deps (optional)
-        id: node-cache
         uses: actions/cache@v4
         with:
           path: node_modules
@@ -70,22 +57,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-      - name: Install Node dependencies
+      - name: Install Node deps
         run: npm i -D @redocly/cli
-
-      - name: Persist environment for downstream jobs
-        run: echo "WORKSPACE_READY=true" >> $GITHUB_ENV
-
-      - name: Upload workspace artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: shared-env
-          path: |
-            .venv
-            node_modules
-            ~/.cache/pypoetry
-            ~/.cache/pipx
-            ~/.cache/pip
 
   generate-docs:
     needs: setup
@@ -94,10 +67,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download cached environment
-        uses: actions/download-artifact@v4
+      - name: Cache pipx + Poetry again (same cache key)
+        uses: actions/cache@v4
         with:
-          name: shared-env
+          path: |
+            ~/.cache/pip
+            ~/.local/pipx
+            ~/.local/bin/poetry
+            ~/.cache/pypoetry
+          key: ${{ runner.os }}-pipx-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install pipx + poetry in generate-docs job
+        run: |
+          pip install pipx
+          pipx ensurepath
+          pipx install poetry
+          pipx inject poetry poetry-plugin-export
+          poetry --version
+          poetry install --no-interaction
 
       - name: Generate OpenAPI + Docs
         run: |
