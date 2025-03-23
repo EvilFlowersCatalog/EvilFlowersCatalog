@@ -14,6 +14,7 @@ jobs:
     outputs:
       ref_slug: ${{ steps.slug.outputs.ref }}
       raw_ref: ${{ steps.slug.outputs.raw }}
+      doc_path: ${{ steps.slug.outputs.path }}
 
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +24,11 @@ jobs:
         run: |
           RAW_REF=${GITHUB_REF##*/}
           SAFE_REF=$(echo "${RAW_REF}" | sed 's/\//-/g')
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "path=release/${SAFE_REF}" >> $GITHUB_OUTPUT
+          else
+            echo "path=branch/${SAFE_REF}" >> $GITHUB_OUTPUT
+          fi
           echo "ref_slug=${SAFE_REF}" >> $GITHUB_OUTPUT
           echo "raw_ref=${RAW_REF}" >> $GITHUB_OUTPUT
 
@@ -38,7 +44,7 @@ jobs:
             ~/.local/pipx
             ~/.local/bin/poetry
             node_modules
-          key: ${{ runner.os }}-ci-env-${{ hashFiles('**/poetry.lock', 'package-lock.json') }}
+          key: ${{ runner.os }}-ci-env-${{ hashFiles('poetry.lock', 'package-lock.json') }}
 
       - name: Setup Python + pipx + poetry
         run: |
@@ -60,54 +66,31 @@ jobs:
           poetry run python manage.py openapi > ${PUBLISH_DIR}/openapi.yaml
           npx @redocly/cli build-docs -o ${PUBLISH_DIR}/index.html ${PUBLISH_DIR}/openapi.yaml
 
-      - name: Upload OpenAPI artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: openapi
-          path: ${PUBLISH_DIR}/openapi.yaml
+      - name: Prepare deployment folder structure
+        run: |
+          mkdir -p publish/${{ steps.slug.outputs.path }}
+          cp -r ${PUBLISH_DIR}/* publish/${{ steps.slug.outputs.path }}/
 
-      - name: Upload docs artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload publish artifact
+        uses: actions/upload-pages-artifact@v4
         with:
-          name: docs
-          path: ${PUBLISH_DIR}/
+          path: publish/
 
-  deploy-docs:
+  deploy-pages:
     needs: build-openapi
     runs-on: ubuntu-latest
     permissions:
-      contents: write
       pages: write
       id-token: write
 
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
-      - name: Checkout gh-pages branch
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: gh-pages
-
-      - name: Download docs artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: docs
-          path: docs/
-
-      - name: Deploy to versioned subfolder
-        run: |
-          mkdir -p gh-pages/branch/${{ needs.build-openapi.outputs.ref_slug }}
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            mkdir -p gh-pages/release/${{ needs.build-openapi.outputs.ref_slug }}
-            cp -r docs/* gh-pages/release/${{ needs.build-openapi.outputs.ref_slug }}/
-          else
-            cp -r docs/* gh-pages/branch/${{ needs.build-openapi.outputs.ref_slug }}/
-          fi
-          cd gh-pages
-          git config user.name "ci-bot"
-          git config user.email "ci@evilflowers.org"
-          git add .
-          git commit -m "Deploy docs for ${{ needs.build-openapi.outputs.ref_slug }}"
-          git push origin gh-pages
+      - name: Deploy to GitHub Pages (multi-folder)
+        id: deployment
+        uses: actions/deploy-pages@v4
 
   sync-protocol:
     needs: build-openapi
