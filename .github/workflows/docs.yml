@@ -9,11 +9,8 @@ env:
   PUBLISH_DIR: docs
 
 jobs:
-  all-in-one:
+  docs-and-deploy:
     runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -24,34 +21,41 @@ jobs:
           RAW_REF=${GITHUB_REF##*/}
           SAFE_REF=$(echo "${RAW_REF}" | sed 's/\//-/g')
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            echo "path=release/${SAFE_REF}" >> $GITHUB_OUTPUT
+            echo "folder=release/${SAFE_REF}" >> $GITHUB_OUTPUT
           else
-            echo "path=branch/${SAFE_REF}" >> $GITHUB_OUTPUT
+            echo "folder=branch/${SAFE_REF}" >> $GITHUB_OUTPUT
           fi
-          echo "ref_slug=${SAFE_REF}" >> $GITHUB_OUTPUT
-          echo "raw_ref=${RAW_REF}" >> $GITHUB_OUTPUT
+          echo "slug=${SAFE_REF}" >> $GITHUB_OUTPUT
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libldap-dev libsasl2-dev
 
-      - name: Setup Python + Poetry + Node.js
+      - name: Setup Python + Poetry + pipx
         run: |
-          pip install poetry
-          poetry self add poetry-plugin-export
+          pip install pipx
+          pipx ensurepath
+          pipx install poetry
+          pipx inject poetry poetry-plugin-export
           poetry install --no-interaction
-          npm install -D @redocly/cli
+
+      - name: Setup Node.js + Redocly
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm i -D @redocly/cli
 
       - name: Generate OpenAPI & Docs
         run: |
           poetry run python manage.py openapi > ${PUBLISH_DIR}/openapi.yaml
           npx @redocly/cli build-docs -o ${PUBLISH_DIR}/index.html ${PUBLISH_DIR}/openapi.yaml
 
-      - name: Prepare folder structure for Pages + Protocol
+      - name: Prepare folder structure for Pages
         run: |
-          mkdir -p ./publish/${{ steps.slug.outputs.path }}
-          cp -r ${PUBLISH_DIR}/* ./publish/${{ steps.slug.outputs.path }}/
+          mkdir -p ./publish/${{ steps.slug.outputs.folder }}
+          cp -r ${PUBLISH_DIR}/* ./publish/${{ steps.slug.outputs.folder }}/
 
-      - name: Generate Docs Index page
+      - name: Generate simple index.html (Docs Index)
         run: bash .github/scripts/generate-index.sh
 
       - name: Deploy to GitHub Pages
@@ -59,22 +63,10 @@ jobs:
         with:
           path: ./publish/
 
-      - name: Checkout Protocol Repo
-        uses: actions/checkout@v4
-        with:
-          repository: EvilFlowersCatalog/evilflowers-protocol
-          ref: ${{ steps.slug.outputs.raw_ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          path: protocol_repo
+    permissions:
+      pages: write
+      id-token: write
 
-      - name: Sync OpenAPI to Protocol Repo
-        run: |
-          cd protocol_repo
-          mkdir -p openapi metadata
-          cp ../${PUBLISH_DIR}/openapi.yaml openapi/openapi.yaml
-          echo "${{ steps.slug.outputs.raw_ref }}" > metadata/version.txt
-          git config user.name "ci-bot"
-          git config user.email "ci@evilflowers.org"
-          git add .
-          git commit -m "Sync OpenAPI for ${{ steps.slug.outputs.raw_ref }}" || echo "No changes to commit"
-          git push origin ${{ steps.slug.outputs.raw_ref }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
