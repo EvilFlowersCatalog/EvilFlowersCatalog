@@ -3,13 +3,13 @@ name: Protocol & Docs CI
 on:
   push:
     branches: ['**']
-    tags: ['v*']
+    tags: ['*.*.*']
 
 env:
   PUBLISH_DIR: docs
 
 jobs:
-  setup:
+  build-openapi:
     runs-on: ubuntu-latest
     outputs:
       ref_slug: ${{ steps.slug.outputs.ref }}
@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sanitize branch/tag name
+      - name: Normalize branch/tag name
         id: slug
         run: |
           RAW_REF=${GITHUB_REF##*/}
@@ -26,70 +26,45 @@ jobs:
           echo "ref_slug=${SAFE_REF}" >> $GITHUB_OUTPUT
           echo "raw_ref=${RAW_REF}" >> $GITHUB_OUTPUT
 
-      - name: Cache pipx + pip + poetry
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libldap-dev libsasl2-dev
+
+      - name: Cache python + node + poetry + npm
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pip
+            ~/.cache/pypoetry
             ~/.local/pipx
             ~/.local/bin/poetry
-            ~/.cache/pypoetry
-          key: ${{ runner.os }}-pipx-${{ hashFiles('**/poetry.lock') }}
+            node_modules
+          key: ${{ runner.os }}-ci-env-${{ hashFiles('**/poetry.lock', 'package-lock.json') }}
 
-      - name: Install pipx + Poetry + deps (if needed)
+      - name: Setup Python + pipx + poetry
         run: |
           pip install pipx
           pipx ensurepath
           pipx install poetry
           pipx inject poetry poetry-plugin-export
-          poetry --version
+          poetry install --no-interaction
 
-      - name: Setup Node
+      - name: Setup Node.js + Redocly
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Cache npm deps (optional)
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+      - run: npm i -D @redocly/cli
 
-      - name: Install Node deps
-        run: npm i -D @redocly/cli
-
-  generate-docs:
-    needs: setup
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Cache pipx + Poetry again (same cache key)
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/pip
-            ~/.local/pipx
-            ~/.local/bin/poetry
-            ~/.cache/pypoetry
-          key: ${{ runner.os }}-pipx-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install pipx + poetry in generate-docs job
-        run: |
-          pip install pipx
-          pipx ensurepath
-          pipx install poetry
-          pipx inject poetry poetry-plugin-export
-          poetry --version
-          poetry install --no-interaction
-
-      - name: Generate OpenAPI + Docs
+      - name: Generate OpenAPI & Docs
         run: |
           poetry run python manage.py openapi > ${PUBLISH_DIR}/openapi.yaml
           npx @redocly/cli build-docs -o ${PUBLISH_DIR}/index.html ${PUBLISH_DIR}/openapi.yaml
+
+      - name: Upload OpenAPI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: ${PUBLISH_DIR}/openapi.yaml
 
       - name: Upload docs artifact
         uses: actions/upload-artifact@v4
@@ -97,8 +72,8 @@ jobs:
           name: docs
           path: ${PUBLISH_DIR}/
 
-  deploy-pages:
-    needs: generate-docs
+  deploy-docs:
+    needs: build-openapi
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -106,7 +81,7 @@ jobs:
       id-token: write
 
     steps:
-      - name: Checkout Pages branch
+      - name: Checkout gh-pages branch
         uses: actions/checkout@v4
         with:
           ref: gh-pages
@@ -120,22 +95,22 @@ jobs:
 
       - name: Deploy to versioned subfolder
         run: |
-          mkdir -p gh-pages/branch/${{ needs.setup.outputs.ref_slug }}
+          mkdir -p gh-pages/branch/${{ needs.build-openapi.outputs.ref_slug }}
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            mkdir -p gh-pages/release/${{ needs.setup.outputs.ref_slug }}
-            cp -r docs/* gh-pages/release/${{ needs.setup.outputs.ref_slug }}/
+            mkdir -p gh-pages/release/${{ needs.build-openapi.outputs.ref_slug }}
+            cp -r docs/* gh-pages/release/${{ needs.build-openapi.outputs.ref_slug }}/
           else
-            cp -r docs/* gh-pages/branch/${{ needs.setup.outputs.ref_slug }}/
+            cp -r docs/* gh-pages/branch/${{ needs.build-openapi.outputs.ref_slug }}/
           fi
           cd gh-pages
           git config user.name "ci-bot"
           git config user.email "ci@evilflowers.org"
           git add .
-          git commit -m "Deploy docs for ${{ needs.setup.outputs.ref_slug }}"
+          git commit -m "Deploy docs for ${{ needs.build-openapi.outputs.ref_slug }}"
           git push origin gh-pages
 
   sync-protocol:
-    needs: generate-docs
+    needs: build-openapi
     runs-on: ubuntu-latest
 
     steps:
@@ -143,24 +118,24 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: EvilFlowersCatalog/evilflowers-protocol
-          ref: ${{ needs.setup.outputs.raw_ref }}
+          ref: ${{ needs.build-openapi.outputs.raw_ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
           path: protocol_repo
 
-      - name: Download openapi.yaml artifact
+      - name: Download OpenAPI artifact
         uses: actions/download-artifact@v4
         with:
-          name: docs
-          path: docs/
+          name: openapi
+          path: openapi/
 
-      - name: Sync OpenAPI to Protocol Repo
+      - name: Push to Protocol Repo
         run: |
           cd protocol_repo
           mkdir -p openapi metadata
-          cp ../docs/openapi.yaml openapi/openapi.yaml
-          echo "${{ needs.setup.outputs.raw_ref }}" > metadata/version.txt
+          cp ../openapi/openapi.yaml openapi/openapi.yaml
+          echo "${{ needs.build-openapi.outputs.raw_ref }}" > metadata/version.txt
           git config user.name "ci-bot"
           git config user.email "ci@evilflowers.org"
           git add .
-          git commit -m "Sync OpenAPI for ${{ needs.setup.outputs.raw_ref }}"
-          git push origin ${{ needs.setup.outputs.raw_ref }}
+          git commit -m "Sync OpenAPI for ${{ needs.build-openapi.outputs.raw_ref }}"
+          git push origin ${{ needs.build-openapi.outputs.raw_ref }}
