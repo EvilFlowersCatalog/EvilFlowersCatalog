@@ -71,6 +71,9 @@ jobs:
           mkdir -p publish/${{ steps.slug.outputs.path }}
           cp -r ${PUBLISH_DIR}/* publish/${{ steps.slug.outputs.path }}/
 
+      - name: Generate Docs Index page
+        run: bash .github/scripts/generate-index.sh
+
       - name: Upload publish artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -114,7 +117,7 @@ jobs:
       - name: Download OpenAPI artifact
         uses: actions/download-artifact@v4
         with:
-          name: openapi
+          name: openapi-artifact
           path: openapi/
 
       - name: Push to Protocol Repo
