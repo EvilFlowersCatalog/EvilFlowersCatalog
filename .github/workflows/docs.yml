@@ -40,7 +40,8 @@ jobs:
         run: |
           pip install poetry
           poetry self add poetry-plugin-export
-          poetry install --no-interaction
+          poetry config virtualenvs.in-project true
+          poetry install --no-root --no-interaction
           npm install -D @redocly/cli
 
       - name: Generate OpenAPI & Docs
