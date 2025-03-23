@@ -9,12 +9,15 @@ env:
   PUBLISH_DIR: docs
 
 jobs:
-  all-in-one:
+  build-docs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pages: write
       id-token: write
+
+    environment:
+      name: evilflowers-protocol
 
     steps:
       - name: Checkout current repository
@@ -72,13 +75,20 @@ jobs:
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
 
+      - name: Setup SSH for deploy key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EVILFLOWERS_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
       # Checkout Protocol Repo
       - name: Checkout Protocol Repo
         uses: actions/checkout@v4
         with:
           repository: EvilFlowersCatalog/evilflowers-protocol
           ref: ${{ needs.build-docs.outputs.raw_ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          ssh-key: ${{ secrets.EVILFLOWERS_DEPLOY_KEY }}
           path: protocol_repo
           fetch-depth: 1
 
