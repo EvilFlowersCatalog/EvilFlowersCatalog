@@ -14,6 +14,8 @@ from apps.core.models.entry import Entry
 from apps.core.models.base import BaseModel
 from apps.files.storage import get_storage
 
+from apps.events.services import event_servise
+
 
 class Acquisition(BaseModel):
     class Meta:

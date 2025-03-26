@@ -269,6 +269,9 @@ EVILFLOWERS_STORAGE_S3_SECRET_KEY = os.getenv("EVILFLOWERS_STORAGE_S3_SECRET_KEY
 EVILFLOWERS_STORAGE_S3_SECURE = bool(int(os.getenv("EVILFLOWERS_STORAGE_S3_SECURE", 0)))
 EVILFLOWERS_STORAGE_S3_BUCKET = os.getenv("EVILFLOWERS_STORAGE_S3_BUCKET")
 
+# Events
+EVILFLOWERS_EVENT_BROKER = os.getenv("EVILFLOWERS_EVENT_BROKER")
+
 # Readium
 EVILFLOWERS_READIUM_DATADIR = str(os.getenv("EVILFLOWERS_READIUM_DATADIR", BASE_DIR / "data/evilflowers/readium"))
 EVILFLOWERS_READIUM_LCPSV_URL = os.getenv("EVILFLOWERS_READIUM_LCPSV_URL", "http://127.0.0.1:8989")
@@ -343,3 +346,9 @@ CELERY_TASK_ROUTES = {
     "evilflowers_ocr_worker.*": {"queue": "evilflowers_ocr_worker"},
     "evilflowers_lcpencrypt_worker.*": {"queue": "evilflowers_lcpencrypt_worker"},
 }
+
+
+KAFKA_HOST = os.getenv("KAFKA_HOST", "127.0.0.1")
+KAFKA_PORT = int(os.getenv("KAFKA_PORT", "9092"))
+
+KAFKA_BROKER_URL = os.getenv("KAFKA_BROKER_URL", f"{KAFKA_HOST}:{KAFKA_PORT}")
