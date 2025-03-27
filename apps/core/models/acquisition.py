@@ -89,10 +89,14 @@ def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
     dependent_tasks = []
 
     if created and instance.entry.language_id:
-        ocr_task = signature(
+        # ocr_task = signature(
+        #     "evilflowers_ocr_worker.ocr",
+        #     args=[instance.content.name, instance.content.name, instance.entry.language.alpha3],
+        #     immutable=True,
+        # )
+        event_servise.execute(
             "evilflowers_ocr_worker.ocr",
-            args=[instance.content.name, instance.content.name, instance.entry.language.alpha3],
-            immutable=True,
+            {"args": [instance.content.name, instance.content.name, instance.entry.language.alpha3]},
         )
     else:
         ocr_task = None

@@ -16,6 +16,7 @@ from apps.api.views import (
     categories,
     annotation_items,
     languages,
+    events_test,
 )
 
 urlpatterns = [
@@ -114,4 +115,6 @@ urlpatterns = [
     path("token/refresh", tokens.RefreshTokenManagement.as_view(), name="refresh"),
     path("token", tokens.AccessTokenManagement.as_view(), name="login"),
     path("languages", languages.LanguageManagement.as_view(), name="languages"),
+    # Events Test
+    path("events", events_test.event_test, name="events_test"),
 ]
