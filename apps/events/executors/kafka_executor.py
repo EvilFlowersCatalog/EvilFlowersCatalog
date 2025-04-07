@@ -1,9 +1,10 @@
 import json
 from kafka import KafkaProducer
 from django.conf import settings
+from .executor import Executor
 
 
-class KafkaExecutor:
+class KafkaExecutor(Executor):
     def __init__(self):
         self.producer = KafkaProducer(
             bootstrap_servers=getattr(settings, "KAFKA_BROKER_URL"),

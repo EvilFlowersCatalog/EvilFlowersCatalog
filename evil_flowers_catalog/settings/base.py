@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     "apps.openapi",
     "apps.tasks",
     "apps.readium",
+    "apps.events",
 ]
 
 MIDDLEWARE = [
@@ -345,10 +346,8 @@ CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", 30 * 60))  # De
 CELERY_TASK_ROUTES = {
     "evilflowers_ocr_worker.*": {"queue": "evilflowers_ocr_worker"},
     "evilflowers_lcpencrypt_worker.*": {"queue": "evilflowers_lcpencrypt_worker"},
+    "test.*": {"queue": "test"},
 }
 
 
-KAFKA_HOST = os.getenv("KAFKA_HOST", "127.0.0.1")
-KAFKA_PORT = int(os.getenv("KAFKA_PORT", "9092"))
-
-KAFKA_BROKER_URL = os.getenv("KAFKA_BROKER_URL", f"{KAFKA_HOST}:{KAFKA_PORT}")
+KAFKA_BROKER_URL = f"{os.getenv("KAFKA_HOST", "127.0.0.1")}:{int(os.getenv("KAFKA_PORT", "9092"))}"
