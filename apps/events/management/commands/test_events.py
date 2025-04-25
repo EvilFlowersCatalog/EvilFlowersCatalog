@@ -9,10 +9,10 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         event_broker = get_event_broker()
         event_broker.execute(
-            "test3",
+            "test",
             {
                 "args": [1, 2, 3],
-                "kwargs": {"data": "thisisthedata3"},
+                "kwargs": {"data": "thisisthedata"},
             },
         )
-        print("Hello world")
+        print("Test events done")

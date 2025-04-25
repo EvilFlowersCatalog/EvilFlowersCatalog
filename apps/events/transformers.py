@@ -1,7 +1,9 @@
-from .transformer import Transformer
+class Transformer:
+    def transform(self, payload: dict) -> dict:
+        pass
 
 
-class CeleryTransformer(Transformer):
+class DjangoTransformer(Transformer):
     def transform(self, payload: dict) -> dict:
         if "args" not in payload:
             payload["args"] = []
@@ -9,4 +11,5 @@ class CeleryTransformer(Transformer):
             payload["kwargs"] = {}
         if "queue" not in payload:
             payload["queue"] = ""
+        # TODO: serialize objects with django serializer
         return payload
