@@ -14,7 +14,7 @@ class EventExecutionService:
     def __init__(self):
         self.transformer = import_string(settings.EVILFLOWERS_EVENT_BROKER_TRANSFORMER)()
 
-    def execute(self, event: str, payload: dict):
+    def execute(self, event: str, payload):
         transformer_payload = self.transformer.transform(payload)
         self.executor.send(event, transformer_payload)
 
