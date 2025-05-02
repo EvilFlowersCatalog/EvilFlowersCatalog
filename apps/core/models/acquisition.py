@@ -14,6 +14,8 @@ from apps.core.models.entry import Entry
 from apps.core.models.base import BaseModel
 from apps.files.storage import get_storage
 
+from apps.events.services import get_event_broker
+
 
 class Acquisition(BaseModel):
     class Meta:
@@ -85,36 +87,30 @@ def touch_entry(sender, instance: Acquisition, **kwargs):
 @receiver(post_save, sender=Acquisition)
 def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
     dependent_tasks = []
+    event_broker = get_event_broker()
 
     if created and instance.entry.language_id:
-        ocr_task = signature(
+        event_broker.execute(
             "evilflowers_ocr_worker.ocr",
-            args=[instance.content.name, instance.content.name, instance.entry.language.alpha3],
-            immutable=True,
+            {
+                "args": [instance.content.name, instance.content.name, instance.entry.language.alpha3],
+            },
         )
     else:
         ocr_task = None
 
     if instance.entry.config["readium_enabled"]:
-        dependent_tasks.append(
-            signature(
-                "evilflowers_lcpencrypt_worker.lcpencrypt",
-                kwargs={
-                    "input_file": instance.content.name,
-                    "contentid": str(instance.pk),
-                    "storage": instance.upload_base_path(),  # FIXME: support for S3
-                    "filename": f"{instance.pk}.lcp.pdf",
-                },
-                immutable=True,
-                # Queue have to be defined explicitly, settings.CELERY_TASK_ROUTES is ignored for some reason
-                queue="evilflowers_lcpencrypt_worker",
-            )
-        )
 
-    if ocr_task is not None:
-        chain(ocr_task, group(dependent_tasks)).apply_async()
-    else:
-        group(dependent_tasks).apply_async()
+        event_broker.execute(
+            "evilflowers_lcpencrypt_worker.lcpencrypt",
+            kwargs={
+                "input_file": instance.content.name,
+                "contentid": str(instance.pk),
+                "storage": instance.upload_base_path(),  # FIXME: support for S3
+                "filename": f"{instance.pk}.lcp.pdf",
+            },
+            queue="evilflowers_lcpencrypt_worker",
+        )
 
 
 __all__ = ["Acquisition"]

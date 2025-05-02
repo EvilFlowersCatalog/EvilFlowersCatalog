@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     "apps.openapi",
     "apps.tasks",
     "apps.readium",
+    "apps.events",
 ]
 
 MIDDLEWARE = [
@@ -269,6 +270,10 @@ EVILFLOWERS_STORAGE_S3_SECRET_KEY = os.getenv("EVILFLOWERS_STORAGE_S3_SECRET_KEY
 EVILFLOWERS_STORAGE_S3_SECURE = bool(int(os.getenv("EVILFLOWERS_STORAGE_S3_SECURE", 0)))
 EVILFLOWERS_STORAGE_S3_BUCKET = os.getenv("EVILFLOWERS_STORAGE_S3_BUCKET")
 
+# Events
+EVILFLOWERS_EVENT_BROKER_EXECUTOR = os.getenv("EVILFLOWERS_EVENT_BROKER_EXECUTOR")
+EVILFLOWERS_EVENT_BROKER_TRANSFORMER = os.getenv("EVILFLOWERS_EVENT_BROKER_TRANSFORMER")
+
 # Readium
 EVILFLOWERS_READIUM_DATADIR = str(os.getenv("EVILFLOWERS_READIUM_DATADIR", BASE_DIR / "data/evilflowers/readium"))
 EVILFLOWERS_READIUM_LCPSV_URL = os.getenv("EVILFLOWERS_READIUM_LCPSV_URL", "http://127.0.0.1:8989")
@@ -342,4 +347,8 @@ CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", 30 * 60))  # De
 CELERY_TASK_ROUTES = {
     "evilflowers_ocr_worker.*": {"queue": "evilflowers_ocr_worker"},
     "evilflowers_lcpencrypt_worker.*": {"queue": "evilflowers_lcpencrypt_worker"},
+    "test.*": {"queue": "test"},
 }
+
+
+KAFKA_BROKER_URL = f"{os.getenv("KAFKA_HOST", "127.0.0.1")}:{int(os.getenv("KAFKA_PORT", "9092"))}"
