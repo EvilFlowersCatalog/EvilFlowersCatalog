@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 env:
-  LXC_DIR: lxc-build          # build output directory
-  IMAGE_TAR: lxc-image.tar.xz # final bundle
+  LXC_DIR: lxc-build
+  IMAGE_TAR: lxc-image.tar.xz
 
 jobs:
   lxc-image:
