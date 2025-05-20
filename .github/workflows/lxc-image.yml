@@ -1,4 +1,4 @@
-name: Build & publish LXD image
+name: Build & publish LXC image
 
 on:
   push:
@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
 
 env:
-  LXD_DIR: lxd-build          # build output directory
-  IMAGE_TAR: lxd-image.tar.xz # final bundle
+  LXC_DIR: lxc-build          # build output directory
+  IMAGE_TAR: lxc-image.tar.xz # final bundle
 
 jobs:
-  lxd-image:
+  lxc-image:
     runs-on: ubuntu-latest
 
     permissions:
@@ -31,17 +31,17 @@ jobs:
         run: |
           sudo snap install distrobuilder --classic
 
-      - name: Build LXD image
+      - name: Build LXC image
         run: |
-          mkdir -p "${LXD_DIR}"
-          distrobuilder build-lxd distrobuilder.yaml "${LXD_DIR}"
+          mkdir -p "${LXC_DIR}"
+          distrobuilder build-lxc distrobuilder.yaml "${LXC_DIR}"
 
       - name: Pack tarball
         run: |
-          tar -C "${LXD_DIR}" -cJf "${IMAGE_TAR}" .
+          tar -C "${LXC_DIR}" -cJf "${IMAGE_TAR}" .
 
       - name: Upload artefact
         uses: actions/upload-artifact@v4
         with:
-          name: lxd-image
+          name: lxc-image
           path: ${{ env.IMAGE_TAR }}
