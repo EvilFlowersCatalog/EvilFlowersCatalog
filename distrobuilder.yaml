@@ -22,7 +22,7 @@ packages:
   update: true
   cleanup: true
   sets:
-    - stage: build
+    - name: build
       packages:
         - build-essential
         - libffi-dev
@@ -30,7 +30,8 @@ packages:
         - libldap-dev
         - libjpeg-dev
         - postgresql-server-dev-17
-    - packages:
+    - name: runtime
+      packages:
         - python3
         - python3-pip
         - supervisor
@@ -83,5 +84,5 @@ actions:
       chmod +x /usr/src/app/conf/entrypoint.sh
 
 run:
-  cmd: [ "/usr/src/app/conf/entrypoint.sh" ]
+  command: [ "/usr/src/app/conf/entrypoint.sh" ]
   systemd: false
