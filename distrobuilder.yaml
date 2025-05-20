@@ -22,14 +22,16 @@ packages:
   update: true
   cleanup: true
   sets:
-    - packages:
+    - action: install
+      packages:
         - build-essential
         - libffi-dev
         - libsasl2-dev
         - libldap-dev
         - libjpeg-dev
         - postgresql-server-dev-17
-    - packages:
+    - action: install
+      packages:
         - python3
         - python3-pip
         - supervisor
@@ -83,4 +85,3 @@ actions:
   - trigger: post-files
     action: |
       /usr/src/app/conf/entrypoint.sh
-
