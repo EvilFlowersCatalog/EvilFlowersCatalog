@@ -29,7 +29,8 @@ packages:
         - libsasl2-dev
         - libldap-dev
         - libjpeg-dev
-        - postgresql-server-dev-17
+        - postgresql-server-dev
+        - postgresql-client
     - action: install
       packages:
         - python3
@@ -41,7 +42,6 @@ packages:
         - tzdata
         - ldap-utils
         - swig
-        - postgresql-client-17
         - postgresql-common
         - gnupg
 
@@ -67,17 +67,12 @@ files:
 actions:
   - trigger: post-packages
     action: |
-      echo "deb [arch=amd64] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
-        > /etc/apt/sources.list.d/pgdg.list
-      curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
-      apt-get update -y
       echo 'INPUT ( libldap.so )' > /usr/lib/libldap_r.so
   - trigger: post-files
     action: |
       python3 -m pip install --no-cache-dir --user -r /usr/src/app/requirements.txt
       date -I > /usr/src/app/BUILD.txt
-      apt-get purge -y build-essential libffi-dev libsasl2-dev libldap-dev \
-                       libjpeg-dev postgresql-server-dev-17
+      apt-get purge -y build-essential libffi-dev libsasl2-dev libldap-dev libjpeg-dev postgresql-server-dev
       apt-get autoremove -y --purge
       apt-get clean
       rm -rf /var/lib/apt/lists/*
