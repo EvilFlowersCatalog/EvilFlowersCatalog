@@ -22,16 +22,14 @@ packages:
   update: true
   cleanup: true
   sets:
-    - name: build
-      packages:
+    - packages:
         - build-essential
         - libffi-dev
         - libsasl2-dev
         - libldap-dev
         - libjpeg-dev
         - postgresql-server-dev-17
-    - name: runtime
-      packages:
+    - packages:
         - python3
         - python3-pip
         - supervisor
@@ -48,9 +46,9 @@ packages:
 environment:
   variables:
     - { key: PYTHONDONTWRITEBYTECODE, value: "1" }
-    - { key: PYTHONUNBUFFERED,       value: "1" }
-    - { key: PATH,                   value: "/root/.local/bin:$PATH" }
-    - { key: GUNICORN_CMD_ARGS,      value: "--workers 4 -b 0.0.0.0:8000" }
+    - { key: PYTHONUNBUFFERED, value: "1" }
+    - { key: PATH, value: "/root/.local/bin:$PATH" }
+    - { key: GUNICORN_CMD_ARGS, value: "--workers 4 -b 0.0.0.0:8000" }
 
 files:
   - generator: copy
@@ -84,5 +82,5 @@ actions:
       chmod +x /usr/src/app/conf/entrypoint.sh
 
 run:
-  command: [ "/usr/src/app/conf/entrypoint.sh" ]
+  command: ["/usr/src/app/conf/entrypoint.sh"]
   systemd: false
