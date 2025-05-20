@@ -33,12 +33,12 @@ jobs:
 
       - name: Build LXC image
         run: |
-          mkdir -p "${LXC_DIR}"
-          distrobuilder build-lxc distrobuilder.yaml "${LXC_DIR}"
+          sudo mkdir -p "${LXC_DIR}"
+          sudo distrobuilder build-lxc distrobuilder.yaml "${LXC_DIR}"
 
       - name: Pack tarball
         run: |
-          tar -C "${LXC_DIR}" -cJf "${IMAGE_TAR}" .
+          sudo tar -C "${LXC_DIR}" -cJf "${IMAGE_TAR}" .
 
       - name: Upload artefact
         uses: actions/upload-artifact@v4
