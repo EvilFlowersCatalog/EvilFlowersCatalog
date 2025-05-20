@@ -70,11 +70,11 @@ actions:
   - trigger: post-files
     action: |
       python3 -m pip install --no-cache-dir --user -r /usr/src/app/requirements.txt
-      date -I > /usr/src/app/BUILD.txt
-      apt-get purge -y build-essential libffi-dev libsasl2-dev libldap-dev libjpeg-dev
-      apt-get autoremove -y --purge
-      apt-get clean
-      rm -rf /var/lib/apt/lists/*
+#      date -I > /usr/src/app/BUILD.txt
+#      apt-get purge -y build-essential libffi-dev libsasl2-dev libldap-dev libjpeg-dev
+#      apt-get autoremove -y --purge
+#      apt-get clean
+#      rm -rf /var/lib/apt/lists/*
       chmod +x /usr/src/app/conf/entrypoint.sh
   - trigger: post-files
     action: |
