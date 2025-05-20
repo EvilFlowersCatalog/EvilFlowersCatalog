@@ -62,11 +62,11 @@ files:
     source: conf/entrypoint.sh
     path: /usr/src/app/conf/entrypoint.sh
     mode: "0755"
+  - generator: copy
+    source: conf/libldap_r.so
+    path: /usr/lib/libldap_r.so
 
 actions:
-  - trigger: post-packages
-    action: |
-      sh -c "echo 'INPUT ( libldap.so )' > /usr/lib/libldap_r.so"
   - trigger: post-files
     action: |
       python3 -m pip install --no-cache-dir --user -r /usr/src/app/requirements.txt
