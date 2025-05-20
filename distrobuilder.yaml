@@ -30,6 +30,7 @@ packages:
         - libldap-dev
         - libjpeg-dev
         - postgresql-client
+        - python3-venv
     - action: install
       packages:
         - python3
@@ -70,4 +71,6 @@ actions:
   - trigger: post-files
     action: |
       #!/bin/sh
+      python3 -m venv /opt/venv
+      source /opt/venv/bin/activate
       python3 -m pip install --no-cache-dir --user -r /usr/src/app/requirements.txt
