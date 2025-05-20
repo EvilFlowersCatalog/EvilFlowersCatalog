@@ -72,5 +72,5 @@ actions:
     action: |
       #!/bin/sh
       python3 -m venv /opt/venv
-      source /opt/venv/bin/activate
+      . /opt/venv/bin/activate
       python3 -m pip install --no-cache-dir --user -r /usr/src/app/requirements.txt
