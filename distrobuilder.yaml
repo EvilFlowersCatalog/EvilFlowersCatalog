@@ -69,4 +69,5 @@ files:
 actions:
   - trigger: post-files
     action: |
+      #!/bin/sh
       python3 -m pip install --no-cache-dir --user -r /usr/src/app/requirements.txt
