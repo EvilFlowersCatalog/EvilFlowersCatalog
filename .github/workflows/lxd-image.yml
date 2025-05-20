@@ -21,11 +21,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install distrobuilder & deps
+      - name: Install deps
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            debootstrap rsync gpg squashfs-tools xz-utils uidmap tar curl distrobuilder
+            debootstrap rsync gpg squashfs-tools xz-utils uidmap tar curl
+
+      - name: Install distrobuilder
+        run: |
+          sudo snap install distrobuilder --classic
 
       - name: Build LXD image
         run: |
