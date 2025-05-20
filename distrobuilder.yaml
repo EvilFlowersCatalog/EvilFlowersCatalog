@@ -1,0 +1,79 @@
+image:
+  distribution: debian
+  release: bookworm
+  architecture: amd64
+  variant: default
+
+source:
+  downloader: debootstrap
+  url: https://deb.debian.org/debian
+  suite: bookworm
+  variant: minbase
+
+targets:
+  lxd:
+    create_message: "Generated from distrobuilder in GitHub Actions"
+    expiry: 30d
+    profiles:
+      - default
+
+packages:
+  manager: apt
+  sets:
+    build-deps:
+      packages:
+        - build-essential
+        - libffi-dev
+        - libsasl2-dev
+        - libldap-dev
+        - libjpeg-dev
+        - postgresql-server-dev-17
+    runtime:
+      packages:
+        - python3
+        - python3-pip
+        - supervisor
+        - curl
+        - libjpeg-turbo-progs
+        - argon2
+        - tzdata
+        - ldap-utils
+        - swig
+        - postgresql-client-17
+        - postgresql-common
+        - gnupg
+
+environment:
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUNBUFFERED: "1"
+  PATH: "/root/.local/bin:$PATH"
+  GUNICORN_CMD_ARGS: "--workers 4 -b 0.0.0.0:8000"
+
+files:
+  - source: .
+    path: /usr/src/app
+    excludes: [ "distrobuilder.yaml", ".git", ".github" ]
+
+actions:
+  - trigger: post-packages
+    action: |
+      echo "deb [arch=amd64] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list
+      curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+      apt-get update -y
+      apt-get install -y postgresql-client-17 postgresql-common
+      echo 'INPUT ( libldap.so )' > /usr/lib/libldap_r.so
+
+  - trigger: post-files
+    action: |
+      python3 -m pip install --no-cache-dir --user -r /usr/src/app/requirements.txt
+      date -I > /usr/src/app/BUILD.txt
+      apt-get purge -y build-essential libffi-dev libsasl2-dev libldap-dev \
+        libjpeg-dev postgresql-server-dev-17
+      apt-get autoremove -y --purge
+      apt-get clean
+      rm -rf /var/lib/apt/lists/*
+
+run:
+  cmd: ["/usr/src/app/conf/entrypoint.sh"]
+  systemd: false
