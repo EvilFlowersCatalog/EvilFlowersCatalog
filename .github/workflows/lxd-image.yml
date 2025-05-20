@@ -21,27 +21,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install distrobuilder prerequisites
+      - name: Install distrobuilder & deps
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            debootstrap rsync gpg squashfs-tools xz-utils uidmap tar curl
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "stable"
-
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-
-      - name: Install distrobuilder
-        run: |
-          go install github.com/lxc/distrobuilder@latest
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+            debootstrap rsync gpg squashfs-tools xz-utils uidmap tar curl distrobuilder
 
       - name: Build LXD image
         run: |
@@ -57,12 +41,3 @@ jobs:
         with:
           name: lxd-image
           path: ${{ env.IMAGE_TAR }}
-
-      - name: Attach image to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/*.*.*')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.IMAGE_TAR }}
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
