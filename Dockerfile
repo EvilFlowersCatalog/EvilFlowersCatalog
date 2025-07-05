@@ -1,8 +1,8 @@
 FROM python:3.13-slim AS builder
 
 # System setup
-RUN apt update -y && apt install -y libffi-dev build-essential libsasl2-dev libjpeg-dev libldap-dev postgresql-common && \
-    /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && \
+RUN apt update -y && apt install -y git libffi-dev build-essential libsasl2-dev libjpeg-dev libldap-dev  \
+    postgresql-common && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && \
     apt update -y && \
     apt install -y postgresql-client-17 postgresql-server-dev-17
 

@@ -9,7 +9,7 @@ python = "^3.12"
 django = "^5.0"
 django_api_forms = "1.0.0rc11"
 python-dotenv = "^1.0"
-argon2-cffi = "^23.1.0"
+argon2-cffi = "^25.1.0"
 psycopg = {version = "^3.1", extras = ["c", "pool"]}
 django-imap-backend = "^0"
 django-filter = "^25.1"
@@ -23,7 +23,7 @@ django-cors-headers = "^4.7"
 python-ldap = "^3.4.0"
 qrcode = "^8.0"
 bibtexparser = "^1.4.0"
-isbnlib = "^3.10.14"
+isbnlib = { git = "https://github.com/EvilFlowersCatalog/isbnlib.git" }
 django-partial-date = "^1.3.2"
 pydantic = "^2.8"
 pydantic-xml = { version = "^2.11.0", extras = ["lxml"] }
@@ -36,7 +36,7 @@ setuptools = "*"
 minio = "^7.2"
 
 [tool.poetry.group.pdf.dependencies]
-pymupdf = "==1.24.*"
+pymupdf = "^1.26.3"
 
 [tool.poetry.group.apm.dependencies]
 elastic-apm = "^6.23"
@@ -49,7 +49,7 @@ gevent = "*"
 wheel = "*"
 
 [tool.poetry.group.dev.dependencies]
-black = "^24.0"
+black = "^25.1.0"
 datamodel-code-generator = { version = "^0.25.2", extras = ["http"] }
 
 
