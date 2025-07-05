@@ -53,7 +53,7 @@ black = "^24.0"
 datamodel-code-generator = { version = "^0.25.2", extras = ["http"] }
 
 
-[tool.poetry.group.manage_broker.dependencies]
+[tool.poetry.group.kafka.dependencies]
 kafka-python = "^2.1.5"
 
 [tool.black]
