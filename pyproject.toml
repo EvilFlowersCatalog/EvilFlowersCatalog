@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "evil_flowers_catalog"
-version = "0.12.2"
+version = "0.13.0"
 description = "Publication catalog compatible with OPDS"
 authors = ["Jakub Dubec <jakub.dubec@stuba.sk>"]
 

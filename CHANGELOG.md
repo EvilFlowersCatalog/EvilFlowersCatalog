@@ -2,6 +2,15 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## 0.13.0 : 2025-07-06
+
+- **Added**: Event broker system with support for Celery and Kafka
+- **Changed**: Background tasks now use the event broker system
+- **Changed**: Updated dependencies: argon2-cffi (^25.1.0), pymupdf (^1.26.3), black (^25.1.0)
+- **Changed**: Using custom isbnlib from EvilFlowersCatalog GitHub repository
+- **Changed**: Removed database connection pooling option (we use pgbounce now)
+- **Fixed**: PDF generation no longer uses linear parameter in tobytes()
+
 ## 0.12.2 : 2025-03-18
 
 - **Fixed**: `python manage.py loadcatalog` S3 support
