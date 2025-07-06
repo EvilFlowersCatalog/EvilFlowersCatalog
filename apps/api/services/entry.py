@@ -40,7 +40,7 @@ class EntryService:
             [
                 entry.citation is None,
                 (entry.identifiers and entry.identifiers.get("isbn")),
-                entry.read_config("evilflowres_metadata_fetch"),
+                entry.read_config("evilflowers_metadata_fetch"),
             ]
         ):
             metadata = isbnlib.meta(entry.identifiers["isbn"])

@@ -54,7 +54,7 @@ class EntryConfigForm(Form):
     evilflowers_annotations_create = BooleanField(required=False)
     evilflowers_viewer_print = BooleanField(required=False)
     evilflowers_share_enabled = BooleanField(required=False)
-    evilflowres_metadata_fetch = BooleanField(required=False)
+    evilflowers_metadata_fetch = BooleanField(required=False)
     readium_enabled = BooleanField(required=False)
     evilflowers_render_type = forms.ChoiceField(
         required=False,
