@@ -1125,7 +1125,7 @@ develop = false
 type = "git"
 url = "https://github.com/EvilFlowersCatalog/isbnlib.git"
 reference = "HEAD"
-resolved_reference = "ddc62f2b77214205a7413b5d049c2a008c5271d4"
+resolved_reference = "1c5da78deb92d1d64615466a1963bfe5158161ab"
 
 [[package]]
 name = "isort"
