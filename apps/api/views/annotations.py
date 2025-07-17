@@ -18,7 +18,7 @@ class AnnotationManagement(SecuredView):
     @openapi.metadata(
         description="Retrieve a paginated list of annotations created by users. Annotations include highlights, notes, bookmarks, and other user-generated content associated with entries. Supports filtering by user, entry, and annotation type.",
         tags=["Annotations"],
-        summary="List user annotations"
+        summary="List user annotations",
     )
     def get(self, request):
         annotations = AnnotationFilter(request.GET, queryset=Annotation.objects.all(), request=request).qs
@@ -28,7 +28,7 @@ class AnnotationManagement(SecuredView):
     @openapi.metadata(
         description="Create a new annotation for an entry. Annotations can be highlights, notes, bookmarks, or other user-generated content that enhances the reading experience. Each annotation is associated with a specific location within the entry.",
         tags=["Annotations"],
-        summary="Create annotation"
+        summary="Create annotation",
     )
     def post(self, request):
         form = CreateAnnotationForm.create_from_request(request)
@@ -75,7 +75,7 @@ class AnnotationDetail(SecuredView):
     @openapi.metadata(
         description="Retrieve detailed information about a specific annotation including its content, position, type, and associated entry information.",
         tags=["Annotations"],
-        summary="Get annotation details"
+        summary="Get annotation details",
     )
     def get(self, request, annotation_id: UUID):
         annotation = self._get_annotation(request, annotation_id)
@@ -84,7 +84,7 @@ class AnnotationDetail(SecuredView):
     @openapi.metadata(
         description="Update an existing annotation's content, position, or type. Only the annotation creator can modify their annotations. This allows users to edit their notes, adjust highlights, or change annotation properties.",
         tags=["Annotations"],
-        summary="Update annotation"
+        summary="Update annotation",
     )
     def put(self, request, annotation_id: UUID):
         form = UpdateAnnotationForm.create_from_request(request)
@@ -101,7 +101,7 @@ class AnnotationDetail(SecuredView):
     @openapi.metadata(
         description="Permanently delete an annotation. Only the annotation creator can delete their annotations. This action is irreversible and will remove all associated data.",
         tags=["Annotations"],
-        summary="Delete annotation"
+        summary="Delete annotation",
     )
     def delete(self, request, annotation_id: UUID):
         annotation = self._get_annotation(request, annotation_id)

@@ -17,7 +17,7 @@ class ApiKeyManagement(SecuredView):
     @openapi.metadata(
         description="Generate a new API key for the authenticated user. Creates a unique API key that can be used for programmatic access to the API. Superusers can create keys for other users by specifying a user_id. Returns the generated key details including the key value for initial setup.",
         tags=["API Keys"],
-        summary="Create new API key"
+        summary="Create new API key",
     )
     def post(self, request):
         form = ApiKeyForm.create_from_request(request)
@@ -41,7 +41,7 @@ class ApiKeyManagement(SecuredView):
     @openapi.metadata(
         description="Retrieve a paginated list of API keys in the system. Returns API key metadata including creation date, user association, and key status. Supports filtering and pagination. Superusers can view all keys, while regular users see only their own keys.",
         tags=["API Keys"],
-        summary="List API keys"
+        summary="List API keys",
     )
     def get(self, request):
         api_keys = ApiKeyFilter(request.GET, queryset=ApiKey.objects.all(), request=request).qs
@@ -53,7 +53,7 @@ class ApiKeyDetail(SecuredView):
     @openapi.metadata(
         description="Permanently delete an API key, immediately revoking its access to the API. Only the key owner or superusers can delete keys. Once deleted, the key cannot be recovered and any applications using it will lose access. Returns 404 if key doesn't exist or user lacks permission.",
         tags=["API Keys"],
-        summary="Delete API key"
+        summary="Delete API key",
     )
     def delete(self, request, api_key_id: UUID):
         try:

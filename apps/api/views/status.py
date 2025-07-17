@@ -38,11 +38,12 @@ class UnixStreamHTTPConnection(xmlrpc.client.Transport):
         connection.socket_path = self.socket_path
         return connection
 
+
 class StatusManagement(View):
     @openapi.metadata(
         description="System status and health check endpoint that provides real-time information about the application's operational status. Returns system statistics, process states, and version information. Includes supervisord process monitoring and fails with 503 if critical processes are not running properly.",
         tags=["Status"],
-        summary="System status and health check"
+        summary="System status and health check",
     )
     def get(self, request):
         response = StatusSerializer(

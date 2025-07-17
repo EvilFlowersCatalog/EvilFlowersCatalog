@@ -19,7 +19,7 @@ class LicenseManagement(SecuredView):
     @openapi.metadata(
         description="Retrieve a paginated list of licenses in the system. Returns license information including duration, start/end dates, user associations, and status. Supports filtering by various license attributes to help manage user access and permissions.",
         tags=["Licenses"],
-        summary="List all licenses"
+        summary="List all licenses",
     )
     def get(self, request):
         licenses = LicenseFilter(request.GET, queryset=License.objects.all(), request=request).qs
@@ -29,7 +29,7 @@ class LicenseManagement(SecuredView):
     @openapi.metadata(
         description="Create a new license for the authenticated user. Generates a license with specified duration, automatically setting start and expiration dates. If no start date is provided, defaults to current timestamp. Returns the created license with all metadata.",
         tags=["Licenses"],
-        summary="Create new license"
+        summary="Create new license",
     )
     def post(self, request):
         form = CreateLicenseForm.create_from_request(request)
@@ -74,7 +74,7 @@ class LicenseDetail(SecuredView):
     @openapi.metadata(
         description="Retrieve detailed information about a specific license. Returns comprehensive license data including duration, start/end dates, user information, and current status. Requires license manage permissions for the license owner.",
         tags=["Licenses"],
-        summary="Get license details"
+        summary="Get license details",
     )
     def get(self, request, license_id: UUID):
         license = self._get_license(request, license_id)
@@ -83,7 +83,7 @@ class LicenseDetail(SecuredView):
     @openapi.metadata(
         description="Update an existing license's information. Allows modification of license properties such as duration and metadata. Requires license manage permissions and validates the requesting user has appropriate access to the license.",
         tags=["Licenses"],
-        summary="Update license information"
+        summary="Update license information",
     )
     def put(self, request, annotation_id: UUID):
         form = UpdateLicenseForm.create_from_request(request)

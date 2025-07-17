@@ -18,7 +18,7 @@ class AuthorManagement(SecuredView):
     @openapi.metadata(
         description="Retrieve a paginated list of authors across all catalogs. Returns detailed author information including name, surname, and catalog associations. Supports filtering by various author attributes and provides comprehensive author metadata for content management.",
         tags=["Authors"],
-        summary="List all authors"
+        summary="List all authors",
     )
     def get(self, request):
         feeds = AuthorFilter(request.GET, queryset=Author.objects.all(), request=request).qs
@@ -28,7 +28,7 @@ class AuthorManagement(SecuredView):
     @openapi.metadata(
         description="Create a new author record in a specific catalog. Requires catalog write permissions and validates that the author name/surname combination is unique within the target catalog. Returns the created author with detailed information including catalog association.",
         tags=["Authors"],
-        summary="Create new author"
+        summary="Create new author",
     )
     def post(self, request):
         form = CreateAuthorForm.create_from_request(request)
@@ -76,7 +76,7 @@ class AuthorDetail(SecuredView):
     @openapi.metadata(
         description="Retrieve detailed information about a specific author. Returns comprehensive author data including name, surname, catalog information, and associated metadata. Requires catalog read permissions for the author's catalog.",
         tags=["Authors"],
-        summary="Get author details"
+        summary="Get author details",
     )
     def get(self, request, author_id: UUID):
         author = self._get_author(request, author_id, "check_catalog_read")
@@ -86,7 +86,7 @@ class AuthorDetail(SecuredView):
     @openapi.metadata(
         description="Update an existing author's information. Allows modification of author name, surname, and catalog association. Validates uniqueness constraints and requires catalog manage permissions. Returns the updated author with all current information.",
         tags=["Authors"],
-        summary="Update author information"
+        summary="Update author information",
     )
     def put(self, request, author_id: UUID):
         form = CreateAuthorForm.create_from_request(request)
@@ -117,7 +117,7 @@ class AuthorDetail(SecuredView):
     @openapi.metadata(
         description="Permanently delete an author from the catalog. Requires catalog manage permissions and will remove all associations with entries. This action cannot be undone and may affect content that references this author.",
         tags=["Authors"],
-        summary="Delete author"
+        summary="Delete author",
     )
     def delete(self, request, author_id: UUID):
         author = self._get_author(request, author_id)

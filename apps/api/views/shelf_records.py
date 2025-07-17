@@ -22,7 +22,7 @@ class ShelfRecordManagement(SecuredView):
     @openapi.metadata(
         description="Retrieve a paginated list of shelf records for the authenticated user. Returns all books, entries, and catalog items that the user has added to their personal shelf. Requires authentication and filters results to only show the current user's shelf items.",
         tags=["Shelf Records"],
-        summary="List user's shelf records"
+        summary="List user's shelf records",
     )
     def get(self, request):
         if request.user.is_anonymous:
@@ -41,7 +41,7 @@ class ShelfRecordManagement(SecuredView):
     @openapi.metadata(
         description="Add a new entry to the user's shelf. Creates a shelf record linking the authenticated user to a specific catalog entry. If the entry is already on the user's shelf, returns the existing record with HTTP 200 status. Requires authentication and valid entry ID.",
         tags=["Shelf Records"],
-        summary="Add entry to user's shelf"
+        summary="Add entry to user's shelf",
     )
     def post(self, request):
         if request.user.is_anonymous:
@@ -74,7 +74,7 @@ class ShelfRecordDetail(SecuredView):
     @openapi.metadata(
         description="Remove a specific entry from the user's shelf. Permanently deletes the shelf record identified by the provided UUID. Only the shelf record owner can delete their own records. Returns 404 if the record doesn't exist or the user lacks permission.",
         tags=["Shelf Records"],
-        summary="Remove entry from user's shelf"
+        summary="Remove entry from user's shelf",
     )
     def delete(self, request, shelf_record_id: UUID):
         try:
