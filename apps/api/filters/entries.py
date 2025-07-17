@@ -112,9 +112,7 @@ class EntryFilter(django_filters.FilterSet):
     def filter_author(qs, name, value):
         return (
             qs.annotate(
-                author_full_name=Concat(
-                    "authors__name", Value(" "), "authors__surname", output_field=CharField()
-                )
+                author_full_name=Concat("authors__name", Value(" "), "authors__surname", output_field=CharField())
             )
             .filter(
                 Q(author_full_name__unaccent__icontains=value)
@@ -132,10 +130,10 @@ class EntryFilter(django_filters.FilterSet):
     def filter_query(qs, name, value):
         # Enhanced search with author names and relevance ranking
         search_terms = value.strip().split()
-        
+
         # Build base query with all searchable fields
         base_query = Q()
-        
+
         for term in search_terms:
             term_query = (
                 Q(title__unaccent__icontains=term)
@@ -147,29 +145,21 @@ class EntryFilter(django_filters.FilterSet):
                 | Q(categories__term__unaccent__icontains=term)
             )
             base_query &= term_query
-        
+
         # Add author search with concatenated full name
         author_query = Q()
         for term in search_terms:
-            author_query |= (
-                Q(authors__name__unaccent__icontains=term)
-                | Q(authors__surname__unaccent__icontains=term)
-            )
-        
+            author_query |= Q(authors__name__unaccent__icontains=term) | Q(authors__surname__unaccent__icontains=term)
+
         # Combine with full name search
         full_query = base_query | author_query
-        
+
         # Apply filtering and add relevance ranking
         return (
             qs.annotate(
-                author_full_name=Concat(
-                    "authors__name", Value(" "), "authors__surname", output_field=CharField()
-                )
+                author_full_name=Concat("authors__name", Value(" "), "authors__surname", output_field=CharField())
             )
-            .filter(
-                full_query
-                | Q(author_full_name__unaccent__icontains=value)
-            )
+            .filter(full_query | Q(author_full_name__unaccent__icontains=value))
             .annotate(
                 # Relevance scoring: title matches get highest priority
                 relevance_score=Case(

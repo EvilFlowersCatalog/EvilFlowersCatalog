@@ -26,7 +26,15 @@ from pydantic import Field, BaseModel
 from apps.api.response import PaginationModel
 from apps.api.serializers import Serializer
 from apps.openapi.analyzers import MethodAnalyzer
-from apps.openapi.types import ParameterLocation, InstanceDetails, OPENAPI_TYPES, ExtractionResult
+from apps.openapi.types import (
+    ParameterLocation,
+    InstanceDetails,
+    OPENAPI_TYPES,
+    ExtractionResult,
+    COMMON_SCHEMAS,
+    HTTP_STATUS_DESCRIPTIONS,
+    CONTENT_TYPE_MAPPINGS,
+)
 
 
 class OpenApiInfo(TypedDict):
@@ -188,9 +196,43 @@ class OpenApiDocument(OpenApiBaseModel):
                     self.components["schemas"][name]["properties"][field_name]["type"] = "string"
                     self.components["schemas"][name]["properties"][field_name]["format"] = "date-time"
                 case ModelChoiceField():
-                    # FIXME: choose type according to the field_type - Model Field Type!!
-                    field_type = getattr(field.choices.queryset.model, field.to_field_name or "id")
-                    self.components["schemas"][name]["properties"][field_name]["type"] = "string"
+                    # Improved field type detection based on the model field type
+                    try:
+                        model_field = field.choices.queryset.model._meta.get_field(field.to_field_name or "id")
+                        field_type_name = model_field.get_internal_type()
+
+                        # Map Django field types to OpenAPI types
+                        field_type_mapping = {
+                            "AutoField": {"type": "integer"},
+                            "BigAutoField": {"type": "integer", "format": "int64"},
+                            "CharField": {"type": "string"},
+                            "TextField": {"type": "string"},
+                            "SlugField": {"type": "string", "pattern": "^[-a-zA-Z0-9_]+$"},
+                            "EmailField": {"type": "string", "format": "email"},
+                            "URLField": {"type": "string", "format": "uri"},
+                            "UUIDField": {"type": "string", "format": "uuid"},
+                            "IntegerField": {"type": "integer"},
+                            "BigIntegerField": {"type": "integer", "format": "int64"},
+                            "FloatField": {"type": "number", "format": "float"},
+                            "DecimalField": {"type": "string", "format": "decimal"},
+                            "BooleanField": {"type": "boolean"},
+                            "DateTimeField": {"type": "string", "format": "date-time"},
+                            "DateField": {"type": "string", "format": "date"},
+                            "TimeField": {"type": "string", "format": "time"},
+                        }
+
+                        field_schema = field_type_mapping.get(field_type_name, {"type": "string"})
+                        self.components["schemas"][name]["properties"][field_name].update(field_schema)
+
+                        # Add description based on the model field
+                        if hasattr(model_field, "help_text") and model_field.help_text:
+                            self.components["schemas"][name]["properties"][field_name][
+                                "description"
+                            ] = model_field.help_text
+
+                    except Exception as e:
+                        logging.warning(f"Could not determine field type for {field_name}: {e}")
+                        self.components["schemas"][name]["properties"][field_name]["type"] = "string"
                 case EnumField():
                     self.components["schemas"][name]["properties"][field_name]["type"] = "string"
                     self.components["schemas"][name]["properties"][field_name]["enum"] = field.enum.values
