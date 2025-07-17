@@ -8,6 +8,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.views import View
 
+from apps import openapi
 from apps.api.response import SingleResponse
 from apps.api.serializers.status import (
     StatusStatistics,
@@ -37,8 +38,12 @@ class UnixStreamHTTPConnection(xmlrpc.client.Transport):
         connection.socket_path = self.socket_path
         return connection
 
-
 class StatusManagement(View):
+    @openapi.metadata(
+        description="System status and health check endpoint that provides real-time information about the application's operational status. Returns system statistics, process states, and version information. Includes supervisord process monitoring and fails with 503 if critical processes are not running properly.",
+        tags=["Status"],
+        summary="System status and health check"
+    )
     def get(self, request):
         response = StatusSerializer(
             timestamp=timezone.now(),

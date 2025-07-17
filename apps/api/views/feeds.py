@@ -15,7 +15,11 @@ from apps.core.views import SecuredView
 
 
 class FeedManagement(SecuredView):
-    @openapi.metadata(description="Create Feed", tags=["Feeds"])
+    @openapi.metadata(
+        description="Create a new feed to organize and categorize entries within a catalog. Feeds can be used to group related publications, create reading lists, or organize content by topic, genre, or any custom criteria.",
+        tags=["Feeds"],
+        summary="Create a new feed"
+    )
     def post(self, request):
         form = FeedForm.create_from_request(request)
 
@@ -51,7 +55,11 @@ class FeedManagement(SecuredView):
             status=HTTPStatus.CREATED,
         )
 
-    @openapi.metadata(description="List Feeds", tags=["Feeds"])
+    @openapi.metadata(
+        description="Retrieve a paginated list of feeds with filtering options. Supports filtering by creator, catalog, title, kind (navigation/acquisition), and parent feed relationships.",
+        tags=["Feeds"],
+        summary="List feeds with filtering"
+    )
     def get(self, request):
         feeds = FeedFilter(request.GET, queryset=Feed.objects.all(), request=request).qs
 
@@ -73,13 +81,21 @@ class FeedDetail(SecuredView):
 
         return feed
 
-    @openapi.metadata(description="Get Feed detail", tags=["Feeds"])
+    @openapi.metadata(
+        description="Retrieve detailed information about a specific feed including its metadata, content, associated entries, and hierarchical relationships with parent and child feeds.",
+        tags=["Feeds"],
+        summary="Get feed details"
+    )
     def get(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)
 
         return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed, context={"request": request}))
 
-    @openapi.metadata(description="Update Feed", tags=["Feeds"])
+    @openapi.metadata(
+        description="Update feed metadata including title, content, associated entries, and feed relationships. Allows modification of feed organization and content curation.",
+        tags=["Feeds"],
+        summary="Update feed metadata"
+    )
     def put(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)
 
@@ -115,7 +131,11 @@ class FeedDetail(SecuredView):
 
         return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed, context={"request": request}))
 
-    @openapi.metadata(description="Delete Feed", tags=["Feeds"])
+    @openapi.metadata(
+        description="Permanently delete a feed and remove its organizational structure. This does not delete the entries within the feed, only the feed container itself. This action is irreversible.",
+        tags=["Feeds"],
+        summary="Delete feed"
+    )
     def delete(self, request, feed_id: UUID):
         feed = self._get_feed(request, feed_id)
         feed.delete()

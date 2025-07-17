@@ -20,7 +20,11 @@ from apps.core.views import SecuredView
 
 
 class AccessTokenManagement(SecuredView):
-    @openapi.metadata(description="Create Access Token", tags=["Tokens"])
+    @openapi.metadata(
+        description="Generate a new access token and refresh token pair using username and password authentication. Returns both an access token for immediate API access and a refresh token for obtaining new access tokens. Requires valid user credentials and creates a cached refresh token session.",
+        tags=["Tokens"],
+        summary="Create access token"
+    )
     def post(self, request):
         form = AccessTokenForm.create_from_request(request)
 
@@ -50,7 +54,11 @@ class AccessTokenManagement(SecuredView):
 
 
 class RefreshTokenManagement(View):
-    @openapi.metadata(description="Refresh Access Token", tags=["Tokens"])
+    @openapi.metadata(
+        description="Generate a new access token using a valid refresh token. Validates the refresh token against the cache and returns a new access token for continued API access. The refresh token must be previously issued and not expired.",
+        tags=["Tokens"],
+        summary="Refresh access token"
+    )
     def post(self, request):
         form = RefreshTokenForm.create_from_request(request)
 

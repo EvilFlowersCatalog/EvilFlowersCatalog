@@ -15,7 +15,11 @@ from apps.core.views import SecuredView
 
 
 class CategoryManagement(SecuredView):
-    @openapi.metadata(description="Create Category", tags=["Categories"])
+    @openapi.metadata(
+        description="Create a new category within a specific catalog. Requires catalog manage permissions and validates that the category term is unique within the system. Categories help organize and classify catalog entries for better content discovery and management.",
+        tags=["Categories"],
+        summary="Create new category"
+    )
     def post(self, request):
         form = CategoryForm.create_from_request(request)
         form.fields["catalog_id"].required = True
@@ -42,7 +46,11 @@ class CategoryManagement(SecuredView):
             status=HTTPStatus.CREATED,
         )
 
-    @openapi.metadata(description="List Categories", tags=["Categories"])
+    @openapi.metadata(
+        description="Retrieve a paginated list of categories across all catalogs. Returns detailed category information including terms, descriptions, and catalog associations. Supports filtering by various category attributes to help manage content organization.",
+        tags=["Categories"],
+        summary="List all categories"
+    )
     def get(self, request):
         catalogs = CategoryFilter(request.GET, queryset=Category.objects.all(), request=request).qs
 
@@ -66,13 +74,21 @@ class CategoryDetail(SecuredView):
 
         return category
 
-    @openapi.metadata(description="Get Category detail", tags=["Categories"])
+    @openapi.metadata(
+        description="Retrieve detailed information about a specific category. Returns comprehensive category data including term, description, catalog association, and metadata. Requires catalog read permissions for the category's catalog.",
+        tags=["Categories"],
+        summary="Get category details"
+    )
     def get(self, request, category_id: UUID):
         category = self._get_category(request, category_id, "check_catalog_read")
 
         return SingleResponse(request, data=CategorySerializer.Detailed.model_validate(category))
 
-    @openapi.metadata(description="Update Category", tags=["Categories"])
+    @openapi.metadata(
+        description="Update an existing category's information. Allows modification of category term, description, and catalog association. Validates uniqueness constraints and requires catalog manage permissions. Returns the updated category with all current information.",
+        tags=["Categories"],
+        summary="Update category information"
+    )
     def put(self, request, category_id: UUID):
         form = CategoryForm.create_from_request(request)
         form.fields["catalog_id"].required = True
@@ -96,7 +112,11 @@ class CategoryDetail(SecuredView):
 
         return SingleResponse(request, data=CategorySerializer.Detailed.model_validate(category))
 
-    @openapi.metadata(description="Delete Category", tags=["Categories"])
+    @openapi.metadata(
+        description="Permanently delete a category from the catalog. Requires catalog manage permissions and will remove all associations with entries. This action cannot be undone and may affect content organization that references this category.",
+        tags=["Categories"],
+        summary="Delete category"
+    )
     def delete(self, request, category_id: UUID):
         category = self._get_category(request, category_id)
         category.delete()

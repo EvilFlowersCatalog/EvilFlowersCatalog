@@ -18,7 +18,11 @@ from apps.openapi.types import ParameterLocation
 
 
 class UserAcquisitionManagement(SecuredView):
-    @openapi.metadata(description="List UserAcquisitions", tags=["User Acquisitions"])
+    @openapi.metadata(
+        description="Retrieve a paginated list of user acquisitions across the system. Returns acquisition records that represent user access to specific catalog entries. Supports filtering and pagination to manage large result sets. Includes acquisition details, user information, and associated entry metadata.",
+        tags=["User Acquisitions"],
+        summary="List all user acquisitions"
+    )
     def get(self, request):
         user_acquisitions = UserAcquisitionFilter(
             request.GET, queryset=UserAcquisition.objects.all(), request=request
@@ -31,7 +35,11 @@ class UserAcquisitionManagement(SecuredView):
             serializer_context={"request": request},
         )
 
-    @openapi.metadata(description="Create UserAcquisition", tags=["User Acquisitions"])
+    @openapi.metadata(
+        description="Create a new user acquisition record, granting a user access to a specific catalog entry. Supports both personal and shared acquisition types. Validates user permissions for the target entry and handles single acquisition mode restrictions. Returns existing acquisition with redirect if already exists in single mode.",
+        tags=["User Acquisitions"],
+        summary="Create new user acquisition"
+    )
     def post(self, request):
         form = UserAcquisitionForm.create_from_request(request)
 
@@ -80,7 +88,11 @@ class UserAcquisitionManagement(SecuredView):
     name="user_acquisition_id", param_type=UUID, location=ParameterLocation.PATH, description="UserAcquisition UUID"
 )
 class UserAcquisitionDetail(SecuredView):
-    @openapi.metadata(description="Get UserAcquisition", tags=["User Acquisitions"])
+    @openapi.metadata(
+        description="Retrieve detailed information about a specific user acquisition record. Returns acquisition metadata, associated entry details, user information, and access permissions. Validates that the requesting user has permission to view the acquisition record.",
+        tags=["User Acquisitions"],
+        summary="Get user acquisition details"
+    )
     def get(self, request, user_acquisition_id: UUID):
         try:
             user_acquisition = UserAcquisition.objects.get(pk=user_acquisition_id)

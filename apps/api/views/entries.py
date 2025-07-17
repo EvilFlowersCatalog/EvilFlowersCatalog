@@ -28,7 +28,11 @@ def shelf_record_mapping(user: User) -> dict[UUID, UUID]:
 
 
 class EntryPaginator(SecuredView):
-    @openapi.metadata(description="List Entries", tags=["Entries"])
+    @openapi.metadata(
+        description="Retrieve a paginated list of entries from the catalog. Supports advanced filtering by catalog, author, category, language, publication date, and full-text search across titles, summaries, and content.",
+        tags=["Entries"],
+        summary="List catalog entries with filtering and pagination"
+    )
     def get(self, request):
         entries = (
             EntryFilter(request.GET, queryset=Entry.objects.all(), request=request)
@@ -46,7 +50,11 @@ class EntryPaginator(SecuredView):
 
 
 class EntryIntrospection(SecuredView):
-    @openapi.metadata(description="Entry Introspection", tags=["Entries"])
+    @openapi.metadata(
+        description="Fetch metadata for a publication from external sources using various identifiers (ISBN, DOI, etc.). This endpoint allows you to retrieve detailed information about a book or publication before creating an entry in the catalog.",
+        tags=["Entries"],
+        summary="Fetch entry metadata from external sources"
+    )
     def get(self, request):
         service = EntryIntrospectionService(request.GET.get("driver"))
         result = service.resolve(request.GET.get("identifier"))
@@ -55,7 +63,11 @@ class EntryIntrospection(SecuredView):
 
 
 class EntryManagement(SecuredView):
-    @openapi.metadata(description="Create Entry object", tags=["Entries"])
+    @openapi.metadata(
+        description="Create a new entry in the specified catalog. An entry represents a publication (book, article, etc.) with metadata like title, authors, publication date, and associated acquisition files.",
+        tags=["Entries"],
+        summary="Create a new catalog entry"
+    )
     @method_decorator(transaction.atomic)
     def post(self, request, catalog_id: UUID):
         try:
@@ -114,7 +126,11 @@ class EntryDetail(SecuredView):
 
         return entry
 
-    @openapi.metadata(description="Gent Entry detail", tags=["Entries"])
+    @openapi.metadata(
+        description="Retrieve detailed information about a specific entry including its metadata, authors, categories, acquisition files, and user-specific information like shelf status.",
+        tags=["Entries"],
+        summary="Get entry details"
+    )
     def get(self, request, catalog_id: UUID, entry_id: UUID):
         entry = self.get_entry(request, catalog_id, entry_id, "check_entry_read")
 
@@ -125,7 +141,11 @@ class EntryDetail(SecuredView):
             ),
         )
 
-    @openapi.metadata(description="Create Entry", tags=["Entries"])
+    @openapi.metadata(
+        description="Create a new acquisition file for the specified entry. Acquisitions represent downloadable content (PDF, EPUB, etc.) associated with an entry, including file metadata and optional pricing information.",
+        tags=["Entries"],
+        summary="Create acquisition file for entry"
+    )
     def post(self, request, catalog_id: UUID, entry_id: UUID):
         entry = self.get_entry(request, catalog_id, entry_id)
 
@@ -168,7 +188,11 @@ class EntryDetail(SecuredView):
             status=HTTPStatus.CREATED,
         )
 
-    @openapi.metadata(description="Update Entry", tags=["Entries"])
+    @openapi.metadata(
+        description="Update the metadata of an existing entry. This includes title, summary, authors, categories, publication information, and configuration settings for features like OCR and annotations.",
+        tags=["Entries"],
+        summary="Update entry metadata"
+    )
     def put(self, request, catalog_id: UUID, entry_id: UUID):
         entry = self.get_entry(request, catalog_id, entry_id)
 
@@ -199,7 +223,11 @@ class EntryDetail(SecuredView):
             ),
         )
 
-    @openapi.metadata(description="Delete Entry", tags=["Entries"])
+    @openapi.metadata(
+        description="Remove an entry from the catalog. This will also delete all associated acquisition files and user data (annotations, shelf records). This action is irreversible.",
+        tags=["Entries"],
+        summary="Delete catalog entry"
+    )
     def delete(self, request, catalog_id: UUID, entry_id: UUID):
         entry = self.get_entry(request, catalog_id, entry_id)
         entry.delete()

@@ -16,7 +16,11 @@ from apps.core.views import SecuredView
 
 
 class CatalogManagement(SecuredView):
-    @openapi.metadata(description="Create Catalog", tags=["Catalogs"])
+    @openapi.metadata(
+        description="Create a new catalog to organize and manage publications. A catalog is a container for entries (books, articles, etc.) and can be configured with access permissions, visibility settings, and custom metadata.",
+        tags=["Catalogs"],
+        summary="Create a new catalog"
+    )
     def post(self, request):
         form = CatalogForm.create_from_request(request)
 
@@ -44,7 +48,11 @@ class CatalogManagement(SecuredView):
             status=HTTPStatus.CREATED,
         )
 
-    @openapi.metadata(description="List Catalogs", tags=["Catalogs"])
+    @openapi.metadata(
+        description="Retrieve a paginated list of catalogs accessible to the authenticated user. Supports filtering by title and URL name. Returns both public catalogs and private catalogs the user has access to.",
+        tags=["Catalogs"],
+        summary="List accessible catalogs"
+    )
     def get(self, request):
         catalogs = CatalogFilter(request.GET, queryset=Catalog.objects.all(), request=request).qs
 
@@ -64,13 +72,21 @@ class CatalogDetail(SecuredView):
 
         return catalog
 
-    @openapi.metadata(description="Get Catalog detail", tags=["Catalogs"])
+    @openapi.metadata(
+        description="Retrieve detailed information about a specific catalog, including its metadata, statistics, and access permissions. This endpoint provides comprehensive information about the catalog's configuration and contents.",
+        tags=["Catalogs"],
+        summary="Get catalog details"
+    )
     def get(self, request, catalog_id: UUID):
         catalog = self._get_catalog(request, catalog_id, "check_catalog_read")
 
         return SingleResponse(request, data=CatalogSerializer.Detailed.model_validate(catalog))
 
-    @openapi.metadata(description="Update Catalog", tags=["Catalogs"])
+    @openapi.metadata(
+        description="Update the metadata and configuration of an existing catalog. This includes title, description, visibility settings, and access permissions. Only users with manage permissions can update a catalog.",
+        tags=["Catalogs"],
+        summary="Update catalog metadata"
+    )
     def put(self, request, catalog_id: UUID):
         form = CatalogForm.create_from_request(request)
 
@@ -90,7 +106,11 @@ class CatalogDetail(SecuredView):
 
         return SingleResponse(request, data=CatalogSerializer.Detailed.model_validate(catalog))
 
-    @openapi.metadata(description="Delete Catalog", tags=["Catalogs"])
+    @openapi.metadata(
+        description="Permanently delete a catalog and all its associated entries, acquisition files, and user data. This action is irreversible and requires appropriate permissions. All content within the catalog will be lost.",
+        tags=["Catalogs"],
+        summary="Delete catalog"
+    )
     def delete(self, request, catalog_id: UUID):
         catalog = self._get_catalog(request, catalog_id)
         catalog.delete()

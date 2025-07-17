@@ -15,11 +15,19 @@ from apps.core.views import SecuredView
 
 
 class AcquisitionManagement(SecuredView):
-    @openapi.metadata(description="Create Acquisition", tags=["Acquisitions"])
+    @openapi.metadata(
+        description="Create a new acquisition file for an entry. Acquisitions represent downloadable content (PDF, EPUB, etc.) with associated metadata, pricing information, and access controls. Note: This endpoint is currently not implemented.",
+        tags=["Acquisitions"],
+        summary="Create acquisition file"
+    )
     def post(self, request):
         raise ProblemDetailException(_("Not implemented"), status=HTTPStatus.NOT_IMPLEMENTED)
 
-    @openapi.metadata(description="List Acquisitions", tags=["Acquisitions"])
+    @openapi.metadata(
+        description="Retrieve a paginated list of acquisition files with filtering options. Supports filtering by entry, file type, media type, and availability status. Acquisitions represent downloadable content associated with catalog entries.",
+        tags=["Acquisitions"],
+        summary="List acquisition files"
+    )
     def get(self, request):
         acquisitions = AcquisitionFilter(request.GET, queryset=Acquisition.objects.all(), request=request).qs
 
@@ -41,7 +49,11 @@ class AcquisitionDetail(SecuredView):
 
         return acquisition
 
-    @openapi.metadata(description="Get Acquisition detail", tags=["Acquisitions"])
+    @openapi.metadata(
+        description="Retrieve detailed information about a specific acquisition file including its metadata, file properties, pricing information, and download availability.",
+        tags=["Acquisitions"],
+        summary="Get acquisition details"
+    )
     def get(self, request, acquisition_id: UUID):
         acquisition = self._get_acquisition(request, acquisition_id, "check_catalog_read")
 
@@ -50,9 +62,9 @@ class AcquisitionDetail(SecuredView):
         )
 
     @openapi.metadata(
-        description="Content of Acquisition is imutable from the API users perspective. You can only Acquisition "
-        "metadata such as it's type (relation) or pricing.",
+        description="Update acquisition metadata including type, relation, pricing information, and availability settings. The actual file content is immutable - only metadata can be modified through the API. This allows for price updates, availability changes, and metadata corrections.",
         tags=["Acquisitions"],
+        summary="Update acquisition metadata"
     )
     def put(self, request, acquisition_id: UUID):
         acquisition = self._get_acquisition(request, acquisition_id, "check_catalog_manage")
@@ -71,9 +83,9 @@ class AcquisitionDetail(SecuredView):
         )
 
     @openapi.metadata(
-        description="Delete acquisition from the database. The related static files will be removed later during the "
-        "orphans removal process - check GitHub docs.",
+        description="Remove an acquisition file from the catalog. This deletes the database record immediately, while the actual file removal occurs later during the orphaned files cleanup process. This action is irreversible.",
         tags=["Acquisitions"],
+        summary="Delete acquisition file"
     )
     def delete(self, request, acquisition_id: UUID):
         acquisition = self._get_acquisition(request, acquisition_id)
