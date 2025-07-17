@@ -3,7 +3,8 @@ from urllib.parse import urlencode
 
 import django_filters
 from django.core.exceptions import ValidationError
-from django.db.models import Q
+from django.db.models import Q, Value, CharField, Case, When, IntegerField
+from django.db.models.functions import Concat, Lower
 from django.utils.translation import gettext as _
 from partial_date import PartialDate
 
@@ -16,9 +17,8 @@ class EntryFilter(django_filters.FilterSet):
         model = Entry
         fields = []
 
-    # opensearch_template pre attr nemozem robit kvoli Forms...
-    # Asi sprav nejake srackove mapovanie v Meta alebo na to napis metodu ako jebo a budes mat interface
-    # Pripadne rozvin ten hlupy napad s template() class method. Si zly clovek a zly programator
+    # OpenSearch template configuration
+    # TODO: Implement proper OpenSearch template mapping for better API compatibility
 
     creator_id = django_filters.UUIDFilter()
     catalog_id = django_filters.UUIDFilter()
@@ -110,7 +110,19 @@ class EntryFilter(django_filters.FilterSet):
 
     @staticmethod
     def filter_author(qs, name, value):
-        return qs.filter(Q(authors__name__unaccent__icontains=value) | Q(authors__surname__unaccent__icontains=value))
+        return (
+            qs.annotate(
+                author_full_name=Concat(
+                    "authors__name", Value(" "), "authors__surname", output_field=CharField()
+                )
+            )
+            .filter(
+                Q(author_full_name__unaccent__icontains=value)
+                | Q(authors__name__unaccent__icontains=value)
+                | Q(authors__surname__unaccent__icontains=value)
+            )
+            .distinct()
+        )
 
     @staticmethod
     def filter_author_id(qs, name, value):
@@ -118,10 +130,64 @@ class EntryFilter(django_filters.FilterSet):
 
     @staticmethod
     def filter_query(qs, name, value):
-        return qs.filter(
-            Q(title__unaccent__icontains=value)
-            | Q(summary__unaccent__icontains=value)
-            | Q(feeds__title__icontains=value)
+        # Enhanced search with author names and relevance ranking
+        search_terms = value.strip().split()
+        
+        # Build base query with all searchable fields
+        base_query = Q()
+        
+        for term in search_terms:
+            term_query = (
+                Q(title__unaccent__icontains=term)
+                | Q(summary__unaccent__icontains=term)
+                | Q(content__unaccent__icontains=term)
+                | Q(publisher__unaccent__icontains=term)
+                | Q(feeds__title__unaccent__icontains=term)
+                | Q(categories__label__unaccent__icontains=term)
+                | Q(categories__term__unaccent__icontains=term)
+            )
+            base_query &= term_query
+        
+        # Add author search with concatenated full name
+        author_query = Q()
+        for term in search_terms:
+            author_query |= (
+                Q(authors__name__unaccent__icontains=term)
+                | Q(authors__surname__unaccent__icontains=term)
+            )
+        
+        # Combine with full name search
+        full_query = base_query | author_query
+        
+        # Apply filtering and add relevance ranking
+        return (
+            qs.annotate(
+                author_full_name=Concat(
+                    "authors__name", Value(" "), "authors__surname", output_field=CharField()
+                )
+            )
+            .filter(
+                full_query
+                | Q(author_full_name__unaccent__icontains=value)
+            )
+            .annotate(
+                # Relevance scoring: title matches get highest priority
+                relevance_score=Case(
+                    When(title__unaccent__icontains=value, then=Value(100)),
+                    When(author_full_name__unaccent__icontains=value, then=Value(90)),
+                    When(authors__name__unaccent__icontains=value, then=Value(80)),
+                    When(authors__surname__unaccent__icontains=value, then=Value(80)),
+                    When(publisher__unaccent__icontains=value, then=Value(70)),
+                    When(categories__label__unaccent__icontains=value, then=Value(60)),
+                    When(summary__unaccent__icontains=value, then=Value(50)),
+                    When(content__unaccent__icontains=value, then=Value(40)),
+                    When(feeds__title__unaccent__icontains=value, then=Value(30)),
+                    default=Value(10),
+                    output_field=IntegerField(),
+                )
+            )
+            .distinct()
+            .order_by("-relevance_score", "-popularity", "-created_at")
         )
 
     @staticmethod
