@@ -6,10 +6,29 @@ from apps.core.models import Author
 
 
 class AuthorFilter(django_filters.FilterSet):
-    catalog_id = django_filters.UUIDFilter()
-    name = django_filters.CharFilter(lookup_expr="unaccent__icontains")
-    surname = django_filters.CharFilter(lookup_expr="unaccent__icontains")
-    query = django_filters.CharFilter(method="filter_query")
+    """
+    Author filtering system for finding and browsing content creators.
+
+    Provides comprehensive search capabilities for authors including name-based
+    filtering, catalog-specific searches, and intelligent full-text search
+    across author metadata.
+    """
+
+    catalog_id = django_filters.UUIDFilter(
+        help_text="Filter authors by catalog UUID. Returns only authors who have created content in the specified catalog."
+    )
+    name = django_filters.CharFilter(
+        lookup_expr="unaccent__icontains",
+        help_text="Filter authors by first name using case-insensitive partial matching. Supports Unicode normalization for international names.",
+    )
+    surname = django_filters.CharFilter(
+        lookup_expr="unaccent__icontains",
+        help_text="Filter authors by surname/last name using case-insensitive partial matching. Supports Unicode normalization for international names.",
+    )
+    query = django_filters.CharFilter(
+        method="filter_query",
+        help_text="Perform full-text search across author names. Searches both individual name fields and combined full names for comprehensive author discovery.",
+    )
 
     class Meta:
         model = Author

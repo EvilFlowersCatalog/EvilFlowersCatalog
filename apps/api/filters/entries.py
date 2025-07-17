@@ -13,6 +13,14 @@ from apps.opds.structures import Facet
 
 
 class EntryFilter(django_filters.FilterSet):
+    """
+    Comprehensive filtering system for catalog entries with advanced search capabilities.
+
+    Provides multiple filtering options including full-text search, metadata filtering,
+    and author/category faceting. Supports OpenSearch template compatibility for
+    standardized catalog browsing and discovery.
+    """
+
     class Meta:
         model = Entry
         fields = []
@@ -20,22 +28,71 @@ class EntryFilter(django_filters.FilterSet):
     # OpenSearch template configuration
     # TODO: Implement proper OpenSearch template mapping for better API compatibility
 
-    creator_id = django_filters.UUIDFilter()
-    catalog_id = django_filters.UUIDFilter()
-    catalog_title = django_filters.CharFilter(field_name="catalog__title", lookup_expr="unaccent__icontains")
-    author_id = django_filters.UUIDFilter(method="filter_author_id", label=_("Author"))
-    author = django_filters.CharFilter(method="filter_author")
-    category_id = django_filters.UUIDFilter(label=_("Category"), field_name="categories__id")
-    category_term = django_filters.CharFilter(field_name="categories__term")
-    language_id = django_filters.UUIDFilter()
-    language_code = django_filters.CharFilter(field_name="language__code", label=_("Language"))
-    title = django_filters.CharFilter(lookup_expr="unaccent__icontains")
-    summary = django_filters.CharFilter(lookup_expr="unaccent__icontains")
-    query = django_filters.CharFilter(method="filter_query")
-    feed_id = django_filters.UUIDFilter(field_name="feeds__id")
-    published_at__gte = django_filters.CharFilter(method="filter_published_at_gte")
-    published_at__lte = django_filters.CharFilter(method="filter_published_at_lte")
-    config__readium_enabled = django_filters.BooleanFilter(field_name="config__readium_enabled")
+    creator_id = django_filters.UUIDFilter(
+        help_text="Filter entries by the UUID of the user who created them. Useful for finding entries added by specific contributors."
+    )
+    catalog_id = django_filters.UUIDFilter(
+        help_text="Filter entries by catalog UUID. Returns only entries belonging to the specified catalog."
+    )
+    catalog_title = django_filters.CharFilter(
+        field_name="catalog__title",
+        lookup_expr="unaccent__icontains",
+        help_text="Filter entries by catalog title using case-insensitive partial matching. Supports Unicode normalization.",
+    )
+    author_id = django_filters.UUIDFilter(
+        method="filter_author_id",
+        label=_("Author"),
+        help_text="Filter entries by author UUID. Returns entries written by the specified author.",
+    )
+    author = django_filters.CharFilter(
+        method="filter_author",
+        help_text="Filter entries by author name using intelligent search. Searches across author names, surnames, and combined full names with partial matching.",
+    )
+    category_id = django_filters.UUIDFilter(
+        label=_("Category"),
+        field_name="categories__id",
+        help_text="Filter entries by category UUID. Returns entries tagged with the specified category.",
+    )
+    category_term = django_filters.CharFilter(
+        field_name="categories__term",
+        help_text="Filter entries by category term using exact matching. Categories help organize content by subject, genre, or classification.",
+    )
+    language_id = django_filters.UUIDFilter(
+        help_text="Filter entries by language UUID. Returns entries in the specified language."
+    )
+    language_code = django_filters.CharFilter(
+        field_name="language__code",
+        label=_("Language"),
+        help_text="Filter entries by ISO language code (e.g., 'en', 'es', 'fr'). Returns entries in the specified language.",
+    )
+    title = django_filters.CharFilter(
+        lookup_expr="unaccent__icontains",
+        help_text="Filter entries by title using case-insensitive partial matching. Supports Unicode normalization for international characters.",
+    )
+    summary = django_filters.CharFilter(
+        lookup_expr="unaccent__icontains",
+        help_text="Filter entries by summary/description content using case-insensitive partial matching. Searches within entry descriptions and abstracts.",
+    )
+    query = django_filters.CharFilter(
+        method="filter_query",
+        help_text="Perform comprehensive full-text search across all entry fields including title, summary, content, author names, categories, and publisher. Results are ranked by relevance with title matches having highest priority.",
+    )
+    feed_id = django_filters.UUIDFilter(
+        field_name="feeds__id",
+        help_text="Filter entries by feed UUID. Returns entries that belong to the specified feed or collection.",
+    )
+    published_at__gte = django_filters.CharFilter(
+        method="filter_published_at_gte",
+        help_text="Filter entries published on or after the specified date. Accepts partial dates (YYYY, YYYY-MM, YYYY-MM-DD) and full ISO dates.",
+    )
+    published_at__lte = django_filters.CharFilter(
+        method="filter_published_at_lte",
+        help_text="Filter entries published on or before the specified date. Accepts partial dates (YYYY, YYYY-MM, YYYY-MM-DD) and full ISO dates.",
+    )
+    config__readium_enabled = django_filters.BooleanFilter(
+        field_name="config__readium_enabled",
+        help_text="Filter entries by Readium LCP (Licensed Content Protection) availability. True returns only DRM-protected entries, False returns unprotected entries.",
+    )
 
     @classmethod
     def template(cls) -> str:

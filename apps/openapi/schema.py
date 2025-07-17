@@ -379,10 +379,16 @@ class OpenApiOperation(OpenApiBaseModel):
 
     def add_filter(self, filterset: Type[FilterSet]):
         for key, definition in filterset.base_filters.items():
+            # Use help_text if available, otherwise fall back to label with lookup expression
+            description = (
+                getattr(definition, "help_text", None)
+                or f"{definition.label} ({', '.join(definition.lookup_expr.split('__'))})"
+            )
+
             parameter = {
                 "name": key,
                 "location": ParameterLocation.QUERY,
-                "description": f"{definition.label} ({', '.join(definition.lookup_expr.split('__'))})",
+                "description": description,
                 "required": definition.extra.get("required", False),
             }
 
