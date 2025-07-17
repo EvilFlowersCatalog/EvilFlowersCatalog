@@ -21,7 +21,7 @@ class AuthorManagement(SecuredView):
         summary="List all authors",
     )
     def get(self, request):
-        feeds = AuthorFilter(request.GET, queryset=Author.objects.all(), request=request).qs
+        feeds = AuthorFilter(request.GET, queryset=Author.objects.all(), request=request).qs.select_related("catalog")
 
         return PaginationResponse(request, feeds, serializer=AuthorSerializer.Detailed)
 

@@ -2,9 +2,10 @@ import django_filters
 from django.db.models import Q
 
 from apps.core.models import Catalog
+from apps.api.filters.base import BaseSecuredFilter
 
 
-class CatalogFilter(django_filters.FilterSet):
+class CatalogFilter(BaseSecuredFilter):
     """
     Catalog filtering system for browsing and discovering content collections.
 
@@ -29,11 +30,12 @@ class CatalogFilter(django_filters.FilterSet):
     @property
     def qs(self):
         qs = super().qs
+        # Use cached access control from base class
+        catalog_ids = self.get_accessible_catalog_ids()
 
-        if not self.request.user.is_authenticated:
-            return qs.filter(is_public=True)
+        if catalog_ids is None:
+            # Superuser - no filtering needed
+            return qs
 
-        if not self.request.user.is_superuser:
-            qs = qs.filter(Q(users=self.request.user) | Q(is_public=True))
-
-        return qs
+        # Filter by accessible catalog IDs
+        return qs.filter(id__in=catalog_ids)

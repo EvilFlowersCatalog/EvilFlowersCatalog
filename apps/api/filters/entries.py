@@ -10,9 +10,10 @@ from partial_date import PartialDate
 
 from apps.core.models import Entry, Language, Category, Author
 from apps.opds.structures import Facet
+from apps.api.filters.base import BaseSecuredFilter
 
 
-class EntryFilter(django_filters.FilterSet):
+class EntryFilter(BaseSecuredFilter):
     """
     Comprehensive filtering system for catalog entries with advanced search capabilities.
 
@@ -156,14 +157,8 @@ class EntryFilter(django_filters.FilterSet):
     @property
     def qs(self):
         qs = super().qs
-
-        if not self.request.user.is_authenticated:
-            return qs.filter(catalog__is_public=True)
-
-        if not self.request.user.is_superuser:
-            qs = qs.filter(Q(catalog__users=self.request.user) | Q(catalog__is_public=True))
-
-        return qs
+        # Use cached access control from base class
+        return self.apply_catalog_access_control(qs)
 
     @staticmethod
     def filter_author(qs, name, value):
@@ -185,51 +180,46 @@ class EntryFilter(django_filters.FilterSet):
 
     @staticmethod
     def filter_query(qs, name, value):
-        # Enhanced search with author names and relevance ranking
+        # Optimized search implementation
         search_terms = value.strip().split()
 
-        # Build base query with all searchable fields
-        base_query = Q()
+        # Use simpler query structure for better performance
+        base_conditions = []
 
+        # Create efficient OR conditions for each term
         for term in search_terms:
-            term_query = (
-                Q(title__unaccent__icontains=term)
-                | Q(summary__unaccent__icontains=term)
-                | Q(content__unaccent__icontains=term)
-                | Q(publisher__unaccent__icontains=term)
-                | Q(feeds__title__unaccent__icontains=term)
-                | Q(categories__label__unaccent__icontains=term)
-                | Q(categories__term__unaccent__icontains=term)
+            term_conditions = (
+                Q(title__icontains=term)
+                | Q(summary__icontains=term)
+                | Q(publisher__icontains=term)
+                | Q(authors__name__icontains=term)
+                | Q(authors__surname__icontains=term)
+                | Q(categories__label__icontains=term)
+                | Q(categories__term__icontains=term)
             )
-            base_query &= term_query
+            base_conditions.append(term_conditions)
 
-        # Add author search with concatenated full name
-        author_query = Q()
-        for term in search_terms:
-            author_query |= Q(authors__name__unaccent__icontains=term) | Q(authors__surname__unaccent__icontains=term)
+        # Combine all conditions with AND (all terms must match somewhere)
+        if base_conditions:
+            combined_query = base_conditions[0]
+            for condition in base_conditions[1:]:
+                combined_query &= condition
+        else:
+            combined_query = Q()
 
-        # Combine with full name search
-        full_query = base_query | author_query
-
-        # Apply filtering and add relevance ranking
+        # Apply filtering with simpler relevance scoring
         return (
-            qs.annotate(
-                author_full_name=Concat("authors__name", Value(" "), "authors__surname", output_field=CharField())
-            )
-            .filter(full_query | Q(author_full_name__unaccent__icontains=value))
+            qs.filter(combined_query)
             .annotate(
-                # Relevance scoring: title matches get highest priority
+                # Simplified relevance scoring based on field priority
                 relevance_score=Case(
-                    When(title__unaccent__icontains=value, then=Value(100)),
-                    When(author_full_name__unaccent__icontains=value, then=Value(90)),
-                    When(authors__name__unaccent__icontains=value, then=Value(80)),
-                    When(authors__surname__unaccent__icontains=value, then=Value(80)),
-                    When(publisher__unaccent__icontains=value, then=Value(70)),
-                    When(categories__label__unaccent__icontains=value, then=Value(60)),
-                    When(summary__unaccent__icontains=value, then=Value(50)),
-                    When(content__unaccent__icontains=value, then=Value(40)),
-                    When(feeds__title__unaccent__icontains=value, then=Value(30)),
-                    default=Value(10),
+                    When(title__icontains=value, then=Value(100)),
+                    When(authors__name__icontains=value, then=Value(90)),
+                    When(authors__surname__icontains=value, then=Value(90)),
+                    When(publisher__icontains=value, then=Value(80)),
+                    When(categories__label__icontains=value, then=Value(70)),
+                    When(summary__icontains=value, then=Value(60)),
+                    default=Value(50),
                     output_field=IntegerField(),
                 )
             )

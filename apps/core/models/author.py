@@ -12,6 +12,14 @@ class Author(BaseModel):
         default_permissions = ()
         verbose_name = _("Author")
         verbose_name_plural = _("Authors")
+        indexes = [
+            models.Index(fields=["catalog_id"]),
+            models.Index(fields=["name"]),
+            models.Index(fields=["surname"]),
+            models.Index(fields=["catalog_id", "name"]),
+            models.Index(fields=["catalog_id", "surname"]),
+            models.Index(fields=["catalog_id", "name", "surname"]),
+        ]
 
     catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE)
     name = models.CharField(max_length=255)

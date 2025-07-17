@@ -3,9 +3,10 @@ from django.db.models import Value, CharField, Q
 from django.db.models.functions import Concat
 
 from apps.core.models import Author
+from apps.api.filters.base import BaseSecuredFilter
 
 
-class AuthorFilter(django_filters.FilterSet):
+class AuthorFilter(BaseSecuredFilter):
     """
     Author filtering system for finding and browsing content creators.
 
@@ -45,11 +46,5 @@ class AuthorFilter(django_filters.FilterSet):
     @property
     def qs(self):
         qs = super().qs
-
-        if not self.request.user.is_authenticated:
-            return qs.filter(catalog__is_public=True)
-
-        if not self.request.user.is_superuser:
-            qs = qs.filter(Q(catalog__users=self.request.user) | Q(catalog__is_public=True))
-
-        return qs
+        # Use cached access control from base class
+        return self.apply_related_catalog_access_control(qs, "catalog")

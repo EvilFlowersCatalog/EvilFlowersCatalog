@@ -54,7 +54,9 @@ class CatalogManagement(SecuredView):
         summary="List accessible catalogs",
     )
     def get(self, request):
-        catalogs = CatalogFilter(request.GET, queryset=Catalog.objects.all(), request=request).qs
+        catalogs = CatalogFilter(request.GET, queryset=Catalog.objects.all(), request=request).qs.select_related(
+            "creator"
+        )
 
         return PaginationResponse(request, catalogs, serializer=CatalogSerializer.Base)
 
@@ -63,7 +65,7 @@ class CatalogDetail(SecuredView):
     @staticmethod
     def _get_catalog(request, catalog_id: UUID, checker: str = "check_catalog_manage") -> Catalog:
         try:
-            catalog = Catalog.objects.get(pk=catalog_id)
+            catalog = Catalog.objects.select_related("creator").prefetch_related("users").get(pk=catalog_id)
         except Catalog.DoesNotExist as e:
             raise ProblemDetailException(_("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
