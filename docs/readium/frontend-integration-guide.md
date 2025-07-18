@@ -112,11 +112,16 @@ Check if an entry is available for borrowing and get calendar data.
 }
 ```
 
-### 2. User Licenses for Entry
+### 2. List User Licenses
 
-**GET** `/readium/v1/entries/{entry_id}/licenses`
+**GET** `/readium/v1/licenses`
 
-Get all licenses the current user has for a specific entry.
+Get all licenses for the current user. Use query parameters to filter by entry.
+
+**Query Parameters:**
+- `entry_id` (optional): Filter licenses for a specific entry
+- `user_id` (optional): Filter licenses for a specific user (admin only)
+- `state` (optional): Filter by license state (ready, active, returned, etc.)
 
 **Response:**
 ```json
@@ -138,13 +143,14 @@ Get all licenses the current user has for a specific entry.
 
 ### 3. Create License
 
-**POST** `/readium/v1/entries/{entry_id}/licenses`
+**POST** `/readium/v1/licenses`
 
 Create a new license for the current user to borrow an entry.
 
 **Request Body:**
 ```json
 {
+  "entry_id": "uuid",
   "start_date": "2023-12-01",
   "duration_days": 14,
   "passphrase_hint": "Your mother's maiden name"
@@ -249,6 +255,7 @@ Handle license creation and management:
 
 ```typescript
 interface CreateLicenseRequest {
+  entry_id: string;
   start_date?: string;
   duration_days?: number;
   passphrase_hint?: string;
@@ -256,17 +263,20 @@ interface CreateLicenseRequest {
 
 async function createLicense(
   entryId: string,
-  request: CreateLicenseRequest
+  request: Omit<CreateLicenseRequest, 'entry_id'>
 ): Promise<License> {
   const response = await fetch(
-    `/readium/v1/entries/${entryId}/licenses`,
+    `/readium/v1/licenses`,
     {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(request)
+      body: JSON.stringify({
+        entry_id: entryId,
+        ...request
+      })
     }
   );
 
@@ -278,9 +288,12 @@ async function createLicense(
   return response.json();
 }
 
-async function getUserLicenses(entryId: string): Promise<License[]> {
+async function getUserLicenses(entryId?: string): Promise<License[]> {
+  const params = new URLSearchParams();
+  if (entryId) params.append('entry_id', entryId);
+  
   const response = await fetch(
-    `/readium/v1/entries/${entryId}/licenses`,
+    `/readium/v1/licenses?${params}`,
     {
       headers: {
         'Authorization': `Bearer ${accessToken}`
@@ -369,7 +382,7 @@ sequenceDiagram
     F-->>U: Show availability
     
     U->>F: Request to borrow
-    F->>API: POST /readium/v1/entries/{id}/licenses
+    F->>API: POST /readium/v1/licenses
     API->>API: Check availability
     API->>API: Create license record
     API->>LS: Generate LCP license
