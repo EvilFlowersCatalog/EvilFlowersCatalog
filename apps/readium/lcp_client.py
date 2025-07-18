@@ -1,9 +1,9 @@
 import hashlib
 import requests
-from typing import Dict, Optional
+from typing import Dict
 from django.conf import settings
 from django.utils import timezone
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from apps.readium.models import License
 

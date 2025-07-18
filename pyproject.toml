@@ -31,6 +31,7 @@ email-validator = "^2.2"
 hiredis = "^3.0"
 celery = {version = "^5.4.0", extras = ["redis"]}
 setuptools = "*"
+requests = "^2.32.4"
 
 [tool.poetry.group.s3.dependencies]
 minio = "^7.2"
