@@ -62,9 +62,9 @@ class EntryFilter(BaseSecuredFilter):
         help_text="Filter entries by language UUID. Returns entries in the specified language."
     )
     language_code = django_filters.CharFilter(
-        field_name="language__code",
+        method="filter_language_code",
         label=_("Language"),
-        help_text="Filter entries by ISO language code (e.g., 'en', 'es', 'fr'). Returns entries in the specified language.",
+        help_text="Filter entries by ISO language code (e.g., 'en', 'es', 'fr'). Accepts both 2-letter (alpha2) and 3-letter (alpha3) ISO codes.",
     )
     title = django_filters.CharFilter(
         lookup_expr="unaccent__icontains",
@@ -111,14 +111,14 @@ class EntryFilter(BaseSecuredFilter):
         available_languages = Language.objects.filter(entries__in=self.qs).distinct()
         for language in available_languages:
             url_params = self.request.GET.dict()
-            url_params["language_code"] = language.code
+            url_params["language_code"] = language.alpha2
             facets.append(
                 Facet(
                     title=language.name,
                     href=f"{self.request.path}?{urlencode(url_params)}",
                     group=_("Language"),
                     count=self.qs.filter(language=language).count(),
-                    is_active=self.request.GET.get("language_code") == language.code,
+                    is_active=self.request.GET.get("language_code") == language.alpha2,
                 )
             )
 
@@ -242,3 +242,8 @@ class EntryFilter(BaseSecuredFilter):
             return qs.filter(published_at__lte=value)
         except ValidationError:
             return qs
+
+    @staticmethod
+    def filter_language_code(qs, name, value):
+        """Filter entries by language code, checking both alpha2 and alpha3 fields."""
+        return qs.filter(Q(language__alpha2=value) | Q(language__alpha3=value))
