@@ -30,6 +30,7 @@ class EntryConfig(TypedDict):
     evilflowers_share_enabled: bool
     evilflowers_metadata_fetch: bool
     readium_enabled: bool
+    readium_amount: int
 
 
 def default_entry_config() -> EntryConfig:
@@ -42,6 +43,7 @@ def default_entry_config() -> EntryConfig:
         evilflowers_render_type="document",
         evilflowers_metadata_fetch=False,
         readium_enabled=False,
+        readium_amount=1,
     )
 
 

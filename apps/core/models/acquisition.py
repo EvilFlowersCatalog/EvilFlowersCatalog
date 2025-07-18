@@ -28,10 +28,13 @@ class Acquisition(BaseModel):
     class AcquisitionType(models.TextChoices):
         ACQUISITION = "acquisition", _("acquisition")
         OPEN_ACCESS = "open-access", _("open-access")
+        BORROW = "borrow", _("borrow")
 
         def __str__(self):
             if self == self.OPEN_ACCESS:
                 return "http://opds-spec.org/acquisition/open-access"
+            elif self == self.BORROW:
+                return "http://opds-spec.org/acquisition/borrow"
             return "http://opds-spec.org/acquisition"
 
     class AcquisitionMIME(models.TextChoices):
