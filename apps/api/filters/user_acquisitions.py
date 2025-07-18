@@ -6,12 +6,12 @@ from apps.core.models import UserAcquisition
 class UserAcquisitionFilter(django_filters.FilterSet):
     """
     User acquisition filtering system for tracking user content access permissions.
-    
+
     Provides filtering capabilities for user acquisitions - records of user access
     to content including purchases, loans, and subscriptions. Supports filtering
     by user, content, access type, and time-based constraints.
     """
-    
+
     user_id = django_filters.UUIDFilter(
         help_text="Filter user acquisitions by user UUID. Returns access records for the specified user.",
     )

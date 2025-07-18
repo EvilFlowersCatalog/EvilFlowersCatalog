@@ -6,12 +6,12 @@ from apps.core.models import ApiKey
 class ApiKeyFilter(django_filters.FilterSet):
     """
     API key filtering system for authentication token management.
-    
+
     Provides filtering capabilities for API keys - authentication tokens used
     for programmatic access to the system. Supports filtering by user, name,
     and usage patterns.
     """
-    
+
     user_id = django_filters.UUIDFilter(
         help_text="Filter API keys by user UUID. Returns keys belonging to the specified user.",
     )

@@ -32,31 +32,29 @@ class EntryAvailabilityView(SecuredView):
                 previous=e,
                 detail_type=DetailType.NOT_FOUND,
             )
-        
+
         # Parse date parameters
-        start_date_str = request.GET.get('start_date')
-        end_date_str = request.GET.get('end_date')
-        
+        start_date_str = request.GET.get("start_date")
+        end_date_str = request.GET.get("end_date")
+
         start_date = None
         end_date = None
-        
+
         if start_date_str:
             start_date = parse_date(start_date_str)
             if start_date:
                 start_date = timezone.make_aware(datetime.combine(start_date, datetime.min.time()))
-        
+
         if end_date_str:
             end_date = parse_date(end_date_str)
             if end_date:
                 end_date = timezone.make_aware(datetime.combine(end_date, datetime.max.time()))
-        
+
         # Get availability data
         availability = LicenseAvailabilityService.get_entry_availability(
-            entry=entry,
-            start_date=start_date,
-            end_date=end_date
+            entry=entry, start_date=start_date, end_date=end_date
         )
-        
+
         return SingleResponse(request, data=availability)
 
 
@@ -76,16 +74,16 @@ class EntryLicensesView(SecuredView):
                 previous=e,
                 detail_type=DetailType.NOT_FOUND,
             )
-        
+
         # Filter licenses based on user permissions
         licenses = License.objects.filter(entry=entry)
-        
+
         # Users can only see their own licenses unless they're admin
         if not request.user.is_staff:
             licenses = licenses.filter(user=request.user)
-        
+
         return PaginationResponse(request, licenses, serializer=LicenseSerializer.Base)
-    
+
     @openapi.metadata(
         description="Create a new license for the authenticated user to access an entry. Validates availability and user permissions before creating the license.",
         tags=["Readium"],
@@ -101,36 +99,32 @@ class EntryLicensesView(SecuredView):
                 previous=e,
                 detail_type=DetailType.NOT_FOUND,
             )
-        
+
         # Parse request data
-        start_date_str = request.data.get('start_date')
-        duration_days = request.data.get('duration_days', 14)
-        passphrase_hint = request.data.get('passphrase_hint')
-        
+        start_date_str = request.data.get("start_date")
+        duration_days = request.data.get("duration_days", 14)
+        passphrase_hint = request.data.get("passphrase_hint")
+
         start_date = None
         if start_date_str:
             start_date = parse_date(start_date_str)
             if start_date:
                 start_date = timezone.make_aware(datetime.combine(start_date, datetime.min.time()))
-        
+
         try:
             license = LicenseAvailabilityService.create_license_for_user(
                 entry=entry,
                 user=request.user,
                 start_date=start_date,
                 duration_days=duration_days,
-                passphrase_hint=passphrase_hint
+                passphrase_hint=passphrase_hint,
             )
-            
+
             return SingleResponse(
-                request,
-                data=LicenseSerializer.Base.model_validate(license),
-                status=HTTPStatus.CREATED
+                request, data=LicenseSerializer.Base.model_validate(license), status=HTTPStatus.CREATED
             )
-            
+
         except ValueError as e:
             raise ProblemDetailException(
-                str(e),
-                status=HTTPStatus.BAD_REQUEST,
-                detail_type=DetailType.VALIDATION_ERROR
+                str(e), status=HTTPStatus.BAD_REQUEST, detail_type=DetailType.VALIDATION_ERROR
             )

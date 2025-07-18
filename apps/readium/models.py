@@ -16,7 +16,7 @@ class License(BaseModel):
         default_permissions = ()
         verbose_name = _("License")
         verbose_name_plural = _("Licenses")
-        unique_together = [['entry', 'user', 'state']]
+        unique_together = [["entry", "user", "state"]]
 
     class LicenseState(models.TextChoices):
         READY = "ready", _("Ready")
@@ -31,23 +31,24 @@ class License(BaseModel):
     state = models.CharField(choices=LicenseState.choices, default=LicenseState.READY, max_length=15)
     starts_at = models.DateTimeField()
     expires_at = models.DateTimeField()
-    
+
     # LCP-specific fields
     lcp_license_id = models.UUIDField(null=True, blank=True, unique=True)
     passphrase_hint = models.CharField(max_length=255, null=True, blank=True)
     passphrase_hash = models.CharField(max_length=64, null=True, blank=True)  # SHA256 hex
     content_id = models.CharField(max_length=255, null=True, blank=True)  # Reference to encrypted content
     device_count = models.PositiveIntegerField(default=0)
-    
+
     @property
     def is_active(self):
         return self.state == self.LicenseState.ACTIVE
-    
+
     @property
     def is_expired(self):
         from django.utils import timezone
+
         return timezone.now() > self.expires_at
-    
+
     @property
     def can_be_activated(self):
         return self.state == self.LicenseState.READY and not self.is_expired
@@ -60,43 +61,40 @@ def create_license_for_readium_entry(sender, instance: UserAcquisition, created:
     """
     if not created:
         return
-    
+
     entry = instance.acquisition.entry
-    
+
     # Only create license for readium-enabled entries
-    if not entry.read_config('readium_enabled'):
+    if not entry.read_config("readium_enabled"):
         return
-    
+
     # Check if user already has a license for this entry
     existing_license = License.objects.filter(
-        entry=entry,
-        user=instance.user,
-        state__in=[License.LicenseState.READY, License.LicenseState.ACTIVE]
+        entry=entry, user=instance.user, state__in=[License.LicenseState.READY, License.LicenseState.ACTIVE]
     ).first()
-    
+
     if existing_license:
         return  # User already has an active license
-    
+
     # Check availability
-    max_concurrent = entry.read_config('readium_amount')
+    max_concurrent = entry.read_config("readium_amount")
     active_licenses = License.objects.filter(
-        entry=entry,
-        state__in=[License.LicenseState.READY, License.LicenseState.ACTIVE]
+        entry=entry, state__in=[License.LicenseState.READY, License.LicenseState.ACTIVE]
     ).count()
-    
+
     if active_licenses >= max_concurrent:
         # Could raise an exception or handle differently
         return
-    
+
     # Create license with default 14-day duration
     start_date = timezone.now()
     end_date = start_date + timedelta(days=14)
-    
+
     License.objects.create(
         entry=entry,
         user=instance.user,
         starts_at=start_date,
         expires_at=end_date,
         state=License.LicenseState.READY,
-        content_id=str(instance.acquisition.pk)  # Reference to the acquisition
+        content_id=str(instance.acquisition.pk),  # Reference to the acquisition
     )

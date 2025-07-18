@@ -82,7 +82,7 @@ class LicenseDetail(SecuredView):
     def get(self, request, license_id: UUID):
         license = self._get_license(request, license_id)
         return SingleResponse(request, data=LicenseSerializer.Base.model_validate(license))
-    
+
     @openapi.metadata(
         description="Download the LCP license file for a specific license. Returns the actual LCP license JSON that can be imported into reading applications.",
         tags=["Licenses"],
@@ -90,7 +90,7 @@ class LicenseDetail(SecuredView):
     )
     def download(self, request, license_id: UUID):
         license = self._get_license(request, license_id)
-        
+
         # Check if license has an LCP license ID
         if not license.lcp_license_id:
             raise ProblemDetailException(
@@ -98,7 +98,7 @@ class LicenseDetail(SecuredView):
                 status=HTTPStatus.NOT_FOUND,
                 detail_type=DetailType.NOT_FOUND,
             )
-        
+
         # Check if license is still valid
         if license.state == License.LicenseState.REVOKED:
             raise ProblemDetailException(
@@ -106,33 +106,30 @@ class LicenseDetail(SecuredView):
                 status=HTTPStatus.FORBIDDEN,
                 detail_type=DetailType.FORBIDDEN,
             )
-        
+
         if license.is_expired:
             raise ProblemDetailException(
                 _("License has expired"),
                 status=HTTPStatus.FORBIDDEN,
                 detail_type=DetailType.FORBIDDEN,
             )
-        
+
         # Use LCP client to fetch fresh license
         lcp_client = LCPClient()
         try:
             fresh_license = lcp_client.fetch_fresh_license(license)
-            
+
             # Return as downloadable LCP license
-            response = JsonResponse(
-                fresh_license,
-                content_type="application/vnd.readium.lcp.license.v1.0+json"
-            )
-            response['Content-Disposition'] = f'attachment; filename="{license.entry.title}.lcpl"'
+            response = JsonResponse(fresh_license, content_type="application/vnd.readium.lcp.license.v1.0+json")
+            response["Content-Disposition"] = f'attachment; filename="{license.entry.title}.lcpl"'
             return response
-            
+
         except Exception as e:
             raise ProblemDetailException(
                 _("Failed to generate license file"),
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
                 detail_type=DetailType.INTERNAL_ERROR,
-                previous=e
+                previous=e,
             )
 
     @openapi.metadata(
@@ -142,80 +139,74 @@ class LicenseDetail(SecuredView):
     )
     def put(self, request, license_id: UUID):
         license = self._get_license(request, license_id)
-        
+
         # Handle state changes
-        new_state = request.data.get('state')
+        new_state = request.data.get("state")
         if new_state:
             self._handle_state_change(license, new_state, request.data)
-        
+
         # Handle other property updates
         form = UpdateLicenseForm.create_from_request(request)
         if form.is_valid():
             form.populate(license)
-        
+
         license.save()
         return SingleResponse(request, data=LicenseSerializer.Base.model_validate(license))
-    
+
     def _handle_state_change(self, license: License, new_state: str, data: dict):
         """Handle license state transitions with automatic LCP operations"""
         lcp_client = LCPClient()
-        
-        if new_state == 'active' and license.state == License.LicenseState.READY:
+
+        if new_state == "active" and license.state == License.LicenseState.READY:
             # Device registration
             license.state = License.LicenseState.ACTIVE
             license.device_count += 1
-            
-        elif new_state == 'returned' and license.state == License.LicenseState.ACTIVE:
+
+        elif new_state == "returned" and license.state == License.LicenseState.ACTIVE:
             # Return license
             try:
                 lcp_client.return_license(license)
                 license.state = License.LicenseState.RETURNED
             except Exception as e:
                 raise ProblemDetailException(
-                    _("Failed to return license"),
-                    detail=str(e),
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR
+                    _("Failed to return license"), detail=str(e), status=HTTPStatus.INTERNAL_SERVER_ERROR
                 )
-                
-        elif new_state == 'renewed' and license.state == License.LicenseState.ACTIVE:
+
+        elif new_state == "renewed" and license.state == License.LicenseState.ACTIVE:
             # Renew license
-            new_end_date = data.get('expires_at')
+            new_end_date = data.get("expires_at")
             if new_end_date:
                 try:
                     from django.utils.dateparse import parse_datetime
+
                     expires_at = parse_datetime(new_end_date)
                     if expires_at:
                         lcp_client.renew_license(license, expires_at)
                         license.expires_at = expires_at
                 except Exception as e:
                     raise ProblemDetailException(
-                        _("Failed to renew license"),
-                        detail=str(e),
-                        status=HTTPStatus.INTERNAL_SERVER_ERROR
+                        _("Failed to renew license"), detail=str(e), status=HTTPStatus.INTERNAL_SERVER_ERROR
                     )
             else:
                 # Default 14-day renewal
                 from datetime import timedelta
+
                 new_end_date = timezone.now() + timedelta(days=14)
                 try:
                     lcp_client.renew_license(license, new_end_date)
                     license.expires_at = new_end_date
                 except Exception as e:
                     raise ProblemDetailException(
-                        _("Failed to renew license"),
-                        detail=str(e),
-                        status=HTTPStatus.INTERNAL_SERVER_ERROR
+                        _("Failed to renew license"), detail=str(e), status=HTTPStatus.INTERNAL_SERVER_ERROR
                     )
-                    
-        elif new_state == 'revoked':
+
+        elif new_state == "revoked":
             # Revoke license
-            reason = data.get('reason', 'Revoked by administrator')
+            reason = data.get("reason", "Revoked by administrator")
             try:
                 lcp_client.revoke_license(license, reason)
                 license.state = License.LicenseState.REVOKED
             except Exception as e:
                 raise ProblemDetailException(
-                    _("Failed to revoke license"),
-                    detail=str(e),
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR
+                    _("Failed to revoke license"), detail=str(e), status=HTTPStatus.INTERNAL_SERVER_ERROR
                 )

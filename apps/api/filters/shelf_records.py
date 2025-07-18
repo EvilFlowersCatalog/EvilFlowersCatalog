@@ -8,12 +8,12 @@ from apps.core.models import ShelfRecord
 class ShelfRecordFilter(django_filters.FilterSet):
     """
     Shelf record filtering system for user reading collections and bookmarks.
-    
+
     Provides filtering capabilities for shelf records - user's personal collections
     of entries including reading lists, favorites, and bookmarks. Supports filtering
     by user, entry metadata, and content characteristics.
     """
-    
+
     catalog_id = django_filters.UUIDFilter(
         field_name="entry__catalog_id",
         help_text="Filter shelf records by catalog UUID. Returns shelf records for entries in the specified catalog.",
@@ -70,7 +70,7 @@ class ShelfRecordFilter(django_filters.FilterSet):
         field_name="entry__feeds__id",
         help_text="Filter shelf records by feed UUID. Returns shelf records for entries belonging to the specified feed.",
     )
-    
+
     class Meta:
         model = ShelfRecord
         fields = []
