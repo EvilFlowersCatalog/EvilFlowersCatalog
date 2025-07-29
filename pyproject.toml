@@ -43,6 +43,7 @@ pymupdf = "^1.26.3"
 elastic-apm = "^6.23"
 sentry-sdk = "^2.0"
 psutil = "^7.0"
+logfire = {extras = ["django", "psycopg", "redis", "requests", "system-metrics"], version = "^4.0.0"}
 
 [tool.poetry.group.docker.dependencies]
 gunicorn = "^23.0.0"
