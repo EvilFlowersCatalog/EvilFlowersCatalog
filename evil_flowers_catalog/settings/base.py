@@ -200,6 +200,7 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 100  # 100MB
 
 # Sentry
 if os.getenv("SENTRY_DSN", False):
+
     def before_send(event, hint):
         if "exc_info" in hint:
             exc_type, exc_value, tb = hint["exc_info"]
@@ -314,12 +315,12 @@ LOGGING = {
             "class": "logging.StreamHandler",
         },
         "syslog": {"class": "logging.handlers.SysLogHandler"},
-        'logfire': {
-            'class': 'logfire.LogfireLoggingHandler',
+        "logfire": {
+            "class": "logfire.LogfireLoggingHandler",
         },
     },
     "root": {
-        "handlers": ["console", 'logfire'],
+        "handlers": ["console", "logfire"],
         "level": "INFO",
     },
 }
@@ -342,6 +343,7 @@ if os.getenv("ELASTIC_APM_SERVICE_NAME"):
 if os.getenv("LOGFIRE_TOKEN", False):
     try:
         import logfire
+
         logfire.configure(environment=INSTANCE_NAME)
         logfire.instrument_django()
         logfire.instrument_psycopg(enable_commenter=True)
