@@ -319,6 +319,23 @@ LOGGING = {
             "class": "logfire.LogfireLoggingHandler",
         },
     },
+    "loggers": {
+        "django": {
+            "handlers": ["logfire"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apps": {
+            "handlers": ["logfire"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "celery": {
+            "handlers": ["logfire"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
     "root": {
         "handlers": ["console", "logfire"],
         "level": "INFO",
@@ -344,10 +361,25 @@ if os.getenv("LOGFIRE_TOKEN", False):
     try:
         import logfire
 
-        logfire.configure(environment=INSTANCE_NAME)
-        logfire.instrument_django()
-        logfire.instrument_psycopg(enable_commenter=True)
-        logfire.instrument_redis()
+        # Configure Logfire with enhanced settings
+        logfire.configure(
+            environment=INSTANCE_NAME,
+            service_name="evil-flowers-catalog",
+            service_version=VERSION,
+            console=False,
+        )
+
+        # Core instrumentation
+        logfire.instrument_django(
+            is_sql_commentor_enabled=True,
+            request_hook=lambda span, request: span.set_attributes({
+                "http.route": getattr(request.resolver_match, 'route', 'unknown') if hasattr(request, 'resolver_match') and request.resolver_match else 'unknown',
+                "user.id": request.user.id if hasattr(request, 'user') and request.user.is_authenticated else None,
+                "user.username": request.user.username if hasattr(request, 'user') and request.user.is_authenticated else None,
+            })
+        )
+
+        # Redis instrumentation
         logfire.instrument_requests()
         logfire.instrument_system_metrics()
     except ImportError:
