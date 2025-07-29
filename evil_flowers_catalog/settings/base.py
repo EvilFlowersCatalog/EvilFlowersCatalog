@@ -342,7 +342,7 @@ if os.getenv("ELASTIC_APM_SERVICE_NAME"):
 if os.getenv("LOGFIRE_TOKEN", False):
     try:
         import logfire
-        logfire.configure()
+        logfire.configure(environment=INSTANCE_NAME)
         logfire.instrument_django()
         logfire.instrument_psycopg(enable_commenter=True)
         logfire.instrument_redis()
