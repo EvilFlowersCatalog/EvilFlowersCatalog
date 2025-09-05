@@ -107,22 +107,66 @@ class BasicBackend(ModelBackend):
         BIND: str
         USER_ATTR_MAP: Dict[str, str]
         GROUP_MAP: Dict[str, str]
+        GROUP_ATTR: str
         FILTER: str
         SUPERADMIN_GROUP: Optional[str]
         CATALOGS: Optional[Dict[str, str]]
+        PROXY_USER_DN: Optional[str]
+        PROXY_USER_PASSWORD: Optional[str]
 
     def _ldap(self, username: str, password: str, auth_source: AuthSource) -> Optional[User]:
         config: BasicBackend.LdapConfig = auth_source.content
         connection = ldap.initialize(uri=config["URI"])
         connection.set_option(ldap.OPT_REFERRALS, 0)
 
-        try:
-            connection.simple_bind_s(config["BIND"].format(username=username), password)
-        except ldap.LDAPError as e:
-            logging.warning(
-                f"Unable to bind with external service (id={auth_source.pk}, name={auth_source.name}): {e}"
-            )
-            return None
+        # Proxy user authentication mode
+        if config.get("PROXY_USER_DN", False):
+            try:
+                # Bind with service account
+                connection.simple_bind_s(config["PROXY_USER_DN"], config["PROXY_USER_PASSWORD"])
+
+                # Search for user to verify existence and get DN
+                user_search = connection.search(
+                    f"{config['ROOT_DN']}",
+                    ldap.SCOPE_SUBTREE,
+                    config["FILTER"].format(username=username),
+                    ["dn"],
+                )
+
+                user_type, user_results = connection.result(user_search, 60)
+
+                if not user_results:
+                    logging.warning(f"User {username} not found in LDAP directory")
+                    return None
+
+                user_dn = user_results[0][0]  # Get the user's DN
+
+                # Unbind proxy connection and test user credentials
+                connection.unbind()
+                connection = ldap.initialize(uri=config["URI"])
+                connection.set_option(ldap.OPT_REFERRALS, 0)
+                connection.simple_bind_s(user_dn, password)
+
+                # Rebind with service account for attribute retrieval
+                connection.unbind()
+                connection = ldap.initialize(uri=config["URI"])
+                connection.set_option(ldap.OPT_REFERRALS, 0)
+                connection.simple_bind_s(config["PROXY_USER_DN"], config["PROXY_USER_PASSWORD"])
+
+            except ldap.LDAPError as e:
+                logging.warning(
+                    f"Unable to authenticate with proxy user (id={auth_source.pk}, name={auth_source.name}): {e}"
+                )
+                return None
+        else:
+            # Direct authentication mode (existing behavior)
+            try:
+                connection.simple_bind_s(config["BIND"].format(username=username), password)
+            except ldap.LDAPError as e:
+                logging.warning(
+                    f"Unable to bind with external service (id={auth_source.pk}, name={auth_source.name}): {e}"
+                )
+                return None
 
         try:
             user = User.objects.get(username=username)
@@ -149,7 +193,7 @@ class BasicBackend(ModelBackend):
 
             # LDAP groups
             user.groups.clear()
-            for ldap_group in attrs.get("memberOf", []):
+            for ldap_group in attrs.get(config.get("GROUP_ATTR", "memberOf"), []):
                 if ldap_group.decode() in config["GROUP_MAP"]:
                     try:
                         group = Group.objects.get(name=config["GROUP_MAP"][ldap_group.decode()])
