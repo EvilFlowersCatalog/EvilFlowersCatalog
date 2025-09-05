@@ -189,7 +189,9 @@ class BasicBackend(ModelBackend):
 
             # LDAP properties
             for model_property, ldap_property in config["USER_ATTR_MAP"].items():
-                setattr(user, model_property, attrs[ldap_property][0].decode())
+                # May not exist in LDAP profile
+                if ldap_property in attrs:
+                    setattr(user, model_property, attrs[ldap_property][0].decode())
 
             # LDAP groups
             user.groups.clear()
