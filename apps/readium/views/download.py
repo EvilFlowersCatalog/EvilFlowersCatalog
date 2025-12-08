@@ -1,3 +1,10 @@
+"""
+License Download View
+
+Implements the License Gateway pattern for Readium LCP.
+Reading apps call this endpoint to download .lcpl files.
+"""
+
 from http import HTTPStatus
 from uuid import UUID
 
@@ -9,7 +16,7 @@ from apps import openapi
 from apps.core.errors import ProblemDetailException, DetailType
 from apps.core.views import SecuredView
 from apps.readium.models import License
-from apps.readium.lcp_client import LCPClient
+from apps.readium.services import LicenseService
 
 
 class LicenseDownloadView(SecuredView):
@@ -61,19 +68,30 @@ class LicenseDownloadView(SecuredView):
                 detail_type=DetailType.FORBIDDEN,
             )
 
-        # Use LCP client to fetch fresh license
-        lcp_client = LCPClient()
+        # Fetch fresh license via LicenseService
+        # This is the License Gateway implementation
         try:
-            fresh_license = lcp_client.fetch_fresh_license(license)
+            fresh_license = LicenseService.fetch_fresh_license(license)
 
             # Return as downloadable LCP license
-            response = JsonResponse(fresh_license, content_type="application/vnd.readium.lcp.license.v1.0+json")
+            response = JsonResponse(
+                fresh_license,
+                content_type="application/vnd.readium.lcp.license.v1.0+json"
+            )
             response["Content-Disposition"] = f'attachment; filename="{license.entry.title}.lcpl"'
             return response
 
+        except ValueError as e:
+            # Validation errors (revoked, expired, etc.)
+            raise ProblemDetailException(
+                str(e),
+                status=HTTPStatus.FORBIDDEN,
+                detail_type=DetailType.FORBIDDEN,
+                previous=e,
+            )
         except Exception as e:
             raise ProblemDetailException(
-                _("Failed to generate license file"),
+                _("Failed to fetch license file"),
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
                 detail_type=DetailType.INTERNAL_ERROR,
                 previous=e,

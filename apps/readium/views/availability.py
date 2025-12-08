@@ -11,7 +11,7 @@ from apps.api.response import SingleResponse
 from apps.core.errors import ProblemDetailException, DetailType
 from apps.core.models import Entry
 from apps.core.views import SecuredView
-from apps.readium.services import LicenseAvailabilityService
+from apps.readium.services import LicenseService
 
 
 class EntryAvailabilityView(SecuredView):
@@ -49,7 +49,7 @@ class EntryAvailabilityView(SecuredView):
                 end_date = timezone.make_aware(datetime.combine(end_date, datetime.max.time()))
 
         # Get availability data
-        availability = LicenseAvailabilityService.get_entry_availability(
+        availability = LicenseService.get_entry_availability(
             entry=entry, start_date=start_date, end_date=end_date
         )
 

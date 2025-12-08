@@ -1,15 +1,7 @@
-from celery import Task
-
-from apps.core.models import Entry, Acquisition
-from evil_flowers_catalog.celery import app
-
-
-@app.task(bind=True, queue="evilflowers_lcpencrypt_worker")
-def drm_encrypted_content(self: Task, entry_id: str):
-    try:
-        entry = Entry.objects.get(pk=entry_id)
-    except Entry.DoesNotExist:
-        return
-
-    for acquisition in entry.acquisitions.filter(relation=Acquisition.AcquisitionType.ACQUISITION):
-        ...
+# Readium Celery Tasks
+#
+# Note: Content encryption is now triggered directly from License post_save signal
+# in apps/readium/models.py. The lcpencrypt worker is called with the License ID,
+# and when encryption completes, the webhook creates the LCP UserAcquisition.
+#
+# See apps/readium/views/hooks.py for the webhook implementation.

@@ -2,12 +2,13 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from django.db.models import Q, Count
 from django.utils import timezone
+from django.conf import settings
 
-from apps.core.models import Entry, User
+from apps.core.models import Entry, User, Acquisition
 from apps.readium.models import License
 
 
-class LicenseAvailabilityService:
+class LicenseService:
     """Service for managing license availability and calendar data"""
 
     @staticmethod

@@ -19,6 +19,7 @@ class UserAcquisition(BaseModel):
     class UserAcquisitionType(models.TextChoices):
         SHARED = "shared", _("Shared")
         PERSONAL = "personal", _("Personal")
+        LCP = "lcp", _("LCP Protected")
 
     acquisition = models.ForeignKey(Acquisition, on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE)

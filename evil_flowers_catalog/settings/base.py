@@ -315,29 +315,26 @@ LOGGING = {
             "class": "logging.StreamHandler",
         },
         "syslog": {"class": "logging.handlers.SysLogHandler"},
-        "logfire": {
-            "class": "logfire.LogfireLoggingHandler",
-        },
     },
     "loggers": {
         "django": {
-            "handlers": ["logfire"],
+            "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
         },
         "apps": {
-            "handlers": ["logfire"],
+            "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
         },
         "celery": {
-            "handlers": ["logfire"],
+            "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
         },
     },
     "root": {
-        "handlers": ["console", "logfire"],
+        "handlers": ["console"],
         "level": "INFO",
     },
 }
@@ -357,33 +354,7 @@ if os.getenv("ELASTIC_APM_SERVICE_NAME"):
         "DEBUG": True,
     }
 
-if os.getenv("LOGFIRE_TOKEN", False):
-    try:
-        import logfire
-
-        # Configure Logfire with enhanced settings
-        logfire.configure(
-            environment=INSTANCE_NAME,
-            service_name="evil-flowers-catalog",
-            service_version=VERSION,
-            console=False,
-        )
-
-        # Core instrumentation
-        logfire.instrument_django(
-            is_sql_commentor_enabled=True,
-            request_hook=lambda span, request: span.set_attributes({
-                "http.route": getattr(request.resolver_match, 'route', 'unknown') if hasattr(request, 'resolver_match') and request.resolver_match else 'unknown',
-                "user.id": request.user.id if hasattr(request, 'user') and request.user.is_authenticated else None,
-                "user.username": request.user.username if hasattr(request, 'user') and request.user.is_authenticated else None,
-            })
-        )
-
-        # Redis instrumentation
-        logfire.instrument_requests()
-        logfire.instrument_system_metrics()
-    except ImportError:
-        warnings.warn("logfire module is not installed")
+# Logfire removed - using console logging only
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATABASE}")
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
