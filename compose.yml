@@ -9,6 +9,9 @@ services:
       POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
+    networks:
+      - shared
+
   django:
     build: .
     volumes:
@@ -16,6 +19,9 @@ services:
       - ./data/evilflowers/private:/usr/local/app/private
       - ./logs:/var/log
     environment:
+      DATAVERSE_BASE_URL: "http://dataverse:8080"
+      DATAVERSE_API_TOKEN: "1f5d7a1c-3cca-4518-95dc-dc04ce5aff3b"
+      DATAVERSE_WORKFLOW_SECRET: "123"
       EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR: /mnt/data
       REDIS_DATABASE: 1
       REDIS_HOST: redis
@@ -25,14 +31,18 @@ services:
       PGUSER: postgres
       PGPASSWORD: postgres
       DJANGO_SETTINGS_MODULE: evil_flowers_catalog.settings.development
-      SECRET_KEY: 'oqjwvmob^(qwlil^8ub8%a@o5@a!^x0j1*^*1m@y46k%(6+w'
+      SECRET_KEY: "oqjwvmob^(qwlil^8ub8%a@o5@a!^x0j1*^*1m@y46k%(6+w"
       SECURED_VIEW_JWK: '{  "p": "w0ZHQN8tDhB80-X0AoOnCx72mP0leUs7pRpyQ_fJVahS-6Rz34wMoyxsdjVFTOO1lp4y14l5MYBZ0GTpEEL5wOgLZXMPZmyjrUa3SVN-K0VKD8fDKdHVALYtqiHulT9OAIDzzHN1d1uXRnrlNoDLWkqaW-4yZC1bKTGJfV8yk3k",  "kty": "RSA",  "q": "q8WYI8dY5eTj12Q0l3KwWDOyVbgCX1bZUd7CEfoUoiRSOnk2HYnxx7aGri4Zh_vfJ1NM8lEkjHe91qIONbzqt-JwzXGV21UEQE6WtmKaMBHBaHz22NczkpiVcEL6otfjWNdsh3YxLpBnKNEndT4NhdnNL9vN4HNeqz8Uq_SVr5M",  "d": "DnPkzyaxOY1mg7a9Ndi2jqDJo4jo2zOPnSbf-W2mLWQlk_sZ1sf1OpwDeskUMVfW4zJ9RP3mdiCUoz9cT9tX6dZzVmJKo-n9n3RLSDo26lR_TV9ynUtq8A3dghzkoO-xe3kD7OFAWj5RrSr50Y9r_DkXRkuaXeN6rRN7_x5wX4Foh0GKfSQQEa2a5qxqyQGF3EYlyT_lhqKrtHpbtXVHo9RQJw2vX4gpyzdLBwNdrkc03dXKU2mZeRHLpBNQiejx8lS63OthzG5gjdBsIT3YtxaNtRHlvZQnKCau_nE4jT_jLl3IX2I3ZeRGrxyd4dYMbu84tgoDHRfWmpn92150sQ",  "e": "AQAB",  "qi": "GMsGGp-Ikcw9infNMCLwqRSXgZdyicLXZiFagG3vJcG2_1vfgFNAR0yIr855SJv-sCmhGK1lTGYZzi0rcPc3wLUT8Kd_G_SbYUenbHhioDDozvfTGlyw1v8PkNhjp7iI3oF2ANXWzUruK-Lp-WupbxYvqyUBUKpqp1o6XN4IW1k",  "dp": "e1-lmQjn8GDeXQqGFiiTm2UerB4UVQQBVRjWZLbiz2mftDl8tBpJybZBeJXDiQa9LcIZoS_MEEhldlKrJYkLPqPcv2Xoru-ooctx9bP4nOIUHtA5L-zQxLhVNY5mrIjogUz3u46fAqAtfWwb8UmCMTO9PqPJ1p0JYYdYtIs26xE",  "dq": "jImaNIvBXDatg2jk7pRTW5bQbfmjV0XDgIx01Ch8AT0eWeEaOYjHXNMl1hS5ptyYc6Bf8FIbSSIfHCBy59ytXc3S5QPtzAn-9G5YONjrtjCQwWCcxkUsWOCmQ7dJQTrJM8LtdNdq3eIfxPF7Cx2-Cqlsi5-XDfDWn914mEgAwCk",  "n": "gwaqui74iVp7fSiCe2A7L-P2YQ0CqO81LhbqqCCQ4Czd-QMlNv0z5mexMvqd0J5f71V3yJW02tFjZeIGat0uU5ZelQEiUojRshawupu3Ndedwoy7AaphOaUvjwwH_02awqWj7DXfDE_jgoULvZv6UkRUQtHhYp6ZW4xO_f8z8uUj2lUYv9PeaxQgexxLQRvjuRMIHN5tYuB1nYXKw_i1TDyHuGCXvefM2iKRk7kWlk7Far2pGqzuHnQ_OjTy9tgJbVZ0m2uYOmuVe48D17yQoleZr1dFv8zcIJ0KEsK5nMAdHeiEQdmZfukZ5RRR4i_S5a0Mj0bQ5vKxODnjZkdlew"}'
     ports:
-      - 8000:8000
+      - "8000:8000"
     depends_on:
       - db
+      - redis
+    networks:
+      - shared
+
   redis:
-    image: "redis:7"
+    image: redis:7
     command: redis-server
     ports:
       - "6379:6379"
@@ -40,41 +50,45 @@ services:
       - ./data/redis:/data
     environment:
       REDIS_REPLICATION_MODE: master
+    networks:
+      - shared
+
   readium:
-    image: "ghcr.io/evilflowerscatalog/readium-lcp-server:master"
+    image: ghcr.io/evilflowerscatalog/readium-lcp-server:master
     volumes:
       - ./data/readium/db:/usr/local/var/readium/db
       - ./data/readium/storage:/usr/local/var/readium/storage
       - ./data/evilflowers/private:/usr/local/app/private
       - ./data/logs/readium:/var/log/readium
-      - ./data/readium/config.yaml:/usr/local/etc/readium/config.yaml
-      - ./data/readium/htpasswd:/usr/local/etc/readium/htpasswd
+      - ./data/readium/config.yaml:/usr/local/etc/readium
+      - ./data/readium/htpasswd:/usr/local/etc/htpasswd
       - ./data/readium/cert/cert.pem:/usr/local/var/readium/lcp/cert/cert.pem
       - ./data/readium/cert/privkey.pem:/usr/local/var/readium/lcp/cert/privkey.pem
     ports:
       - "8988:8988"
-  evilflowers-ocr-worker:
-    image: "ghcr.io/evilflowerscatalog/evilflowers-ocr-worker:master"
-    environment:
-      BROKER: ""
-    volumes:
-      - ./data/evilflowers/private:/usr/local/app/private
+    networks:
+      - shared
+
   evilflowers-lcpencrypt-worker:
-    image: "ghcr.io/evilflowerscatalog/evilflowers-lcpencrypt-worker:master"
+    image: ghcr.io/evilflowerscatalog/evilflowers-lcpencrypt-worker:master
     environment:
-      BROKER: "redis://docker.for.mac.localhost:6379/7"
+      BROKER: "redis://redis:6379/7"
       STORAGE_PATH: /usr/local/app/private
     volumes:
       - ./data/evilflowers/private:/usr/local/app/private
+    depends_on:
+      - redis
+    networks:
+      - shared
 
   minio:
     hostname: minio
-    image: 'minio/minio:latest'
+    image: minio/minio:latest
     container_name: minio
     ports:
       - "9001:9001"
       - "9000:9000"
-    command: [ "server", "/data", "--console-address", ":9001" ]
+    command: ["server", "/data", "--console-address", ":9001"]
     volumes:
       - minio-data:/data
     environment:
@@ -82,6 +96,13 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+    networks:
+      - shared
 
 volumes:
   minio-data:
+
+networks:
+  shared:
+    external: true
+    name: evilflowers_shared
