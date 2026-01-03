@@ -1,4 +1,5 @@
 name: EvilFlowers Development Ecosystem
+
 services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0

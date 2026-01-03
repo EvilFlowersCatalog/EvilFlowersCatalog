@@ -57,6 +57,7 @@ class Acquisition(BaseModel):
     )
     mime = models.CharField(choices=AcquisitionMIME.choices, max_length=100)
     content = models.FileField(upload_to=upload_to_path, null=True, max_length=255, storage=get_storage)
+    file_url = models.URLField(null=True, blank=True, max_length=2048)
 
     @property
     def url(self) -> Optional[str]:
