@@ -9,7 +9,7 @@ services:
     user: payara
     environment:
       DATAVERSE_SITEURL: "http://${MACHINE_IP:-localhost}:8080"
-      DATAVERSE_DB_HOST: db
+      DATAVERSE_DB_HOST: postgres
       DATAVERSE_DB_PASSWORD: secret
       DATAVERSE_DB_USER: dataverse
       DATAVERSE_FEATURE_API_BEARER_AUTH: "1"
@@ -34,8 +34,7 @@ services:
       - dataverse
       - shared
     depends_on:
-      - db
-      - db_init
+      - postgres
       - solr
       - dv_initializer
     volumes:
@@ -59,9 +58,6 @@ services:
       - dev
     networks:
       - dataverse
-    depends_on:
-      - dv_postinit
-
 
   dv_initializer:
     container_name: dv_initializer
@@ -75,24 +71,6 @@ services:
       - ./data/app/data:/dv
     networks:
       - dataverse
-
-  dv_postinit:
-    image: curlimages/curl:8.6.0
-    container_name: dv_postinit
-    restart: "no"
-    depends_on:
-      - db
-      - dataverse
-    networks:
-      - dataverse
-      - shared
-    command:
-      - sh
-      - -lc
-      - >
-        until nc -z db 5432; do sleep 2; done;
-        until curl -fsS http://dataverse:8080/api/info/version >/dev/null; do sleep 2; done;
-        curl -fsS -X PUT -d 'burrito' http://dataverse:8080/api/admin/settings/:BuiltinUsersKey
 
   previewers-provider:
     image: trivadis/dataverse-previewers-provider:latest
@@ -122,6 +100,21 @@ services:
     command:
       - deploy
     restart: "no"
+
+  postgres:
+    container_name: postgres
+    hostname: postgres
+    image: postgres:17
+    restart: on-failure
+    environment:
+      - POSTGRES_USER=dataverse
+      - POSTGRES_PASSWORD=secret
+    ports:
+      - "5433:5432"
+    networks:
+      - dataverse
+    volumes:
+      - ./data/postgresql/data:/var/lib/postgresql/data
 
   solr_initializer:
     container_name: solr_initializer
