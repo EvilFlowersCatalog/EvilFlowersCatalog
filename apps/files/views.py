@@ -32,11 +32,30 @@ class AcquisitionDownload(SecuredView):
         if not acquisition.content.storage.exists(acquisition.content.name):
             raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND)
 
-        if acquisition.relation != Acquisition.AcquisitionType.ACQUISITION.OPEN_ACCESS:
+        # Check if this is an internal service request
+        secret_key = settings.SECRET_KEY
+        is_internal_service = (
+            secret_key
+            and request.headers.get("X-Internal-Service-Secret") == secret_key
+        )
+
+        if acquisition.relation != Acquisition.AcquisitionType.OPEN_ACCESS and not is_internal_service:
             request.user = self._authenticate(request)
 
-        if not has_object_permission("check_entry_read", request.user, acquisition.entry):
-            raise AuthorizationException(request)
+        # For open-access, allow anonymous users if catalog is public
+        # For other relations, require authentication and permission check
+        # Internal service requests bypass permission checks
+        if acquisition.relation == Acquisition.AcquisitionType.OPEN_ACCESS:
+            # Open-access: only check if catalog is public (allow anonymous)
+            if not acquisition.entry.catalog.is_public:
+                raise AuthorizationException(request)
+        elif is_internal_service:
+            # Internal service request: allow access without permission checks
+            pass
+        else:
+            # Non-open-access: require authentication and permission
+            if not has_object_permission("check_entry_read", request.user, acquisition.entry):
+                raise AuthorizationException(request)
 
         if request.user.is_authenticated and settings.EVILFLOWERS_ENFORCE_USER_ACQUISITIONS:
             if settings.EVILFLOWERS_USER_ACQUISITION_MODE == "single":

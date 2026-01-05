@@ -284,6 +284,17 @@ EVILFLOWERS_READIUM_BASE_URL = os.getenv(
     f"http://{os.getenv('DJANGO_RUNSERVER_IP', '127.0.0.1')}:{os.getenv('DJANGO_RUNSERVER_PORT', '8000')}",
 )
 
+<<<<<<< Updated upstream
+=======
+# Text Service
+EVILFLOWERS_TEXT_SERVICE_URL = os.getenv("EVILFLOWERS_TEXT_SERVICE_URL", "http://127.0.0.1:8000")
+# Internal Catalog API URL for service-to-service communication (used by text-service)
+EVILFLOWERS_CATALOG_API_INTERNAL_URL = os.getenv(
+    "EVILFLOWERS_CATALOG_API_INTERNAL_URL",
+    f"http://{os.getenv('DJANGO_RUNSERVER_IP', '127.0.0.1')}:{os.getenv('DJANGO_RUNSERVER_PORT', '8000')}"
+)
+
+>>>>>>> Stashed changes
 # Cache
 EVILFLOWERS_CACHE_SERVER_HASHES = timedelta(minutes=int(os.getenv("EVILFLOWERS_CACHE_HASHES", 7 * 24 * 60)))
 EVILFLOWERS_CACHE_SERVER_API_KEYS = timedelta(minutes=int(os.getenv("EVILFLOWERS_CACHE_API_KEYS", 0)))

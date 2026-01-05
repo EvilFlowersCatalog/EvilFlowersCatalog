@@ -20,6 +20,18 @@ services:
       REDIS_DATABASE: 1
       REDIS_HOST: redis
       SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION: 6000
+<<<<<<< Updated upstream
+=======
+      EVILFLOWERS_EVENT_BROKER_EXECUTOR: "apps.events.services.CeleryEventExecutionService"
+      EVILFLOWERS_EVENT_BROKER_TRANSFORMER: "apps.events.transformers.DjangoTransformer"
+      CELERY_BROKER_URL: "amqp://guest:guest@rabbitmq:5672//"
+      # Text Service Configuration
+      EVILFLOWERS_TEXT_SERVICE_URL: "http://host.docker.internal:8010"
+      # Redis URL for text-service Celery tasks (must match text-service REDIS_URL)
+      TEXT_SERVICE_REDIS_URL: "redis://redis:6379/0"
+      # Internal Catalog API URL for service-to-service communication (used by text-service)
+      EVILFLOWERS_CATALOG_API_INTERNAL_URL: "http://django:8000"
+>>>>>>> Stashed changes
       PGHOST: db
       PGDATABASE: evil_flowers_catalog
       PGUSER: postgres
@@ -31,6 +43,10 @@ services:
       - 8000:8000
     depends_on:
       - db
+    networks:
+      - default
+      - shared-redis
+
   redis:
     image: "redis:7"
     command: redis-server
@@ -40,6 +56,10 @@ services:
       - ./data/redis:/data
     environment:
       REDIS_REPLICATION_MODE: master
+    networks:
+      - default
+      - shared-redis
+
   readium:
     image: "ghcr.io/evilflowerscatalog/readium-lcp-server:master"
     volumes:
@@ -62,10 +82,14 @@ services:
   evilflowers-lcpencrypt-worker:
     image: "ghcr.io/evilflowerscatalog/evilflowers-lcpencrypt-worker:master"
     environment:
-      BROKER: "redis://docker.for.mac.localhost:6379/7"
+      BROKER: "redis://redis:6379/7"
       STORAGE_PATH: /usr/local/app/private
     volumes:
       - ./data/evilflowers/private:/usr/local/app/private
+    networks:
+      - default
+      - shared-redis
+
 
   minio:
     hostname: minio
@@ -85,3 +109,7 @@ services:
 
 volumes:
   minio-data:
+
+networks:
+  shared-redis:
+    external: true

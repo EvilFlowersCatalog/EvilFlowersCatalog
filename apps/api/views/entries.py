@@ -3,7 +3,9 @@ import mimetypes
 from http import HTTPStatus
 from uuid import uuid4, UUID
 
+from django.conf import settings
 from django.db import transaction
+from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
@@ -18,6 +20,15 @@ from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer
 from apps.api.services.entry import EntryService
 from apps.core.models import Entry, Acquisition, Price, Catalog, ShelfRecord, User
 from apps.core.views import SecuredView
+
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    force=True  # Override any existing config
+)
+logger = logging.getLogger(__name__)
 
 
 def shelf_record_mapping(user: User) -> dict[UUID, UUID]:
@@ -185,10 +196,33 @@ class EntryDetail(SecuredView):
         )
 
         if "content" in request.FILES.keys():
+            # Save acquisition first to get the PK
+            acquisition.save()
+            
             acquisition.content.save(
                 f"{uuid4()}{mimetypes.guess_extension(acquisition.mime)}",
                 request.FILES["content"],
             )
+<<<<<<< Updated upstream
+=======
+            
+            # Process file with text service via Celery (non-blocking)
+            if acquisition.content and acquisition.mime == Acquisition.AcquisitionMIME.PDF:
+                try:
+                    text_client = TextServiceClient()
+                    # Build full URL for acquisition download using internal URL (accessible to services)
+                    internal_base_url = getattr(settings, "EVILFLOWERS_CATALOG_API_INTERNAL_URL", "http://127.0.0.1:8000")
+                    acquisition_path = reverse("files:acquisition-download", kwargs={"acquisition_id": acquisition.pk})
+                    acquisition_url = f"{internal_base_url.rstrip('/')}{acquisition_path}"
+                    result = text_client.process_acquisition(acquisition_url)
+                    if result:
+                        logger.info(f"Text processing task enqueued: acquisition_id={acquisition.pk}, task_id={result.get('task_id')}")
+                    else:
+                        logger.warning(f"Text processing task enqueue returned None for acquisition_id={acquisition.pk}")
+                except Exception as e:
+                    # Log error but don't fail the upload
+                    logger.exception(f"Failed to enqueue text processing task for acquisition_id={acquisition.pk}: {e}")
+>>>>>>> Stashed changes
 
         for price in form.cleaned_data.get("prices", []):
             Price.objects.create(
