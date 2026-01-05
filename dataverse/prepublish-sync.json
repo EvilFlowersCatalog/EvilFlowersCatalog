@@ -1,6 +1,6 @@
 {
   "type": "Workflow",
-  "name": "postpublish-sync",
+  "name": "prepublish-sync",
   "steps": [
     {
       "provider": ":internal",
