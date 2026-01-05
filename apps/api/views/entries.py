@@ -12,6 +12,7 @@ from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
 from apps.api.services.entry_introspection_service import EntryIntrospectionService
+from apps.api.services.text_service_client import TextServiceClient
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.api.filters.entries import EntryFilter
 from apps.api.forms.entries import EntryForm, AcquisitionMetaForm
@@ -203,8 +204,6 @@ class EntryDetail(SecuredView):
                 f"{uuid4()}{mimetypes.guess_extension(acquisition.mime)}",
                 request.FILES["content"],
             )
-<<<<<<< Updated upstream
-=======
             
             # Process file with text service via Celery (non-blocking)
             if acquisition.content and acquisition.mime == Acquisition.AcquisitionMIME.PDF:
@@ -222,7 +221,6 @@ class EntryDetail(SecuredView):
                 except Exception as e:
                     # Log error but don't fail the upload
                     logger.exception(f"Failed to enqueue text processing task for acquisition_id={acquisition.pk}: {e}")
->>>>>>> Stashed changes
 
         for price in form.cleaned_data.get("prices", []):
             Price.objects.create(
