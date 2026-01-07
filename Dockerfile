@@ -1,12 +1,5 @@
-FROM python:3.14-slim AS builder
+FROM python:3.13-slim AS builder
 
-<<<<<<< Updated upstream
-# System setup
-RUN apt update -y && apt install -y git libffi-dev build-essential libsasl2-dev libjpeg-dev libldap-dev  \
-    postgresql-common libxml2-dev libxslt1-dev && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && \
-    apt update -y && \
-    apt install -y postgresql-client-17 postgresql-server-dev-17
-=======
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
     if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
         sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
@@ -19,7 +12,6 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     git libffi-dev build-essential libsasl2-dev libjpeg-dev libldap-dev \
     libpq-dev libxml2-dev libxslt1-dev && \
     rm -rf /var/lib/apt/lists/*
->>>>>>> Stashed changes
 
 RUN echo 'INPUT ( libldap.so )' > /usr/lib/libldap_r.so
 
@@ -31,12 +23,8 @@ ENV CFLAGS="-DINT64CONST(n)=n##LL -DUINT64CONST(n)=n##ULL"
 
 RUN pip install --user -r requirements.txt --no-cache-dir
 
-<<<<<<< Updated upstream
-FROM python:3.14-slim
-=======
 
 FROM python:3.13-slim
->>>>>>> Stashed changes
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
