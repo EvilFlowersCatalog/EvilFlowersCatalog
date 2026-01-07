@@ -19,8 +19,9 @@ services:
       - ./data/evilflowers/private:/usr/local/app/private
       - ./logs:/var/log
     environment:
-      DATAVERSE_BASE_URL: "http://dataverse:8080"
-      DATAVERSE_API_TOKEN: "1f5d7a1c-3cca-4518-95dc-dc04ce5aff3b"
+      DV_PUBLIC_INTERNAL: "http://dataverse:8080"
+      DV_PUBLIC_BASE: http://localhost:8080
+      DV_API_TOKEN: "1036e3d5-332a-48e3-95c6-db96e7826df4"
       DATAVERSE_WORKFLOW_SECRET: "123"
       EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR: /mnt/data
       REDIS_DATABASE: 1
