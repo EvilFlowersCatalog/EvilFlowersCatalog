@@ -116,5 +116,6 @@ urlpatterns = [
     path("token", tokens.AccessTokenManagement.as_view(), name="login"),
     path("languages", languages.LanguageManagement.as_view(), name="languages"),
     # Dataverse
-    path("dataverse-sync", dataverse.DataverseSync.as_view())
+    path("dataverse-sync", dataverse.DataverseSync.as_view(), name="dataverse-sync"),
+    path("dataverse-prepublish", dataverse.DataversePrepublishIngest.as_view(), name="dataverse-prepublish"),
 ]
