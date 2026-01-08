@@ -1,3 +1,7 @@
+version: "2.4"
+include:
+  - ./dataverse/compose.yml
+
 services:
   db:
     image: postgres:16
@@ -11,6 +15,24 @@ services:
       - "5432:5432"
     networks:
       - shared
+
+  db_init:
+    image: postgres:16
+    restart: "no"
+    depends_on:
+      - db
+    networks:
+      - shared
+    volumes:
+      - ./dataverse/db:/init
+    command:
+      - sh
+      - -lc
+      - >
+        until pg_isready -h db -p 5432 -U postgres; do sleep 2; done;
+        psql -h db -p 5432 -U postgres -d postgres -f /init/01_dataverse.sql
+    environment:
+      PGPASSWORD: postgres
 
   django:
     build: .
