@@ -4,8 +4,6 @@ set -euo pipefail
 usage() {
   echo "Usage: $0 <DATAVERSE_API_TOKEN> [-u|--url DATAVERSE_URL] [-f|--file WORKFLOW_JSON] [-t|--trigger pre|post]"
   echo "Examples:"
-  echo "  $0 \"xxxxxxxx\" -t post -f postpublish-sync.json"
-  echo "  $0 \"xxxxxxxx\" -t pre  -f prepublish-sync.json"
   echo "  $0 \"xxxxxxxx\" --url http://127.0.0.1:8080 --trigger pre --file my-workflow.json"
 }
 
