@@ -14,6 +14,7 @@ services:
     volumes:
       - ./data/evilflowers/media:/usr/local/app/media
       - ./data/evilflowers/private:/usr/local/app/private
+      - ./data/evilflowers/private:/mnt/data  # Mount for shared storage with text-service
       - ./logs:/var/log
     environment:
       EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR: /mnt/data
@@ -89,7 +90,34 @@ services:
     networks:
       - default
       - shared-redis
+  evilflowers-text-service:
+    image: "ghcr.io/evilflowerscatalog/evilflowers-text-service:main"
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+      STORAGE_PATH: /mnt/data
+      SEARCH_SERVICE_URL: ${SEARCH_SERVICE_URL:-http://search-service:8001}
+      TABLE_EXTRACTOR: "PdfPlumber"
+      TEXT_EXTRACTOR_MODE: "None"
+      CATALOG_API_URL: "http://django:8000"
+      CATALOG_SECRET_KEY: ${SECRET_KEY}
+    volumes:
+      - ./data/evilflowers/private:/mnt/data
+    networks:
+      - default
+      - shared-redis
+    depends_on:
+      - redis
+      - search-service
 
+  search-service:
+    image: "ghcr.io/evilflowerscatalog/evilflowers-search-service:main"
+    container_name: search-service
+    ports:
+      - "8001:8001"
+    environment:
+      - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-http://elasticsearch:9200}
+    networks:
+      - default
 
   minio:
     hostname: minio

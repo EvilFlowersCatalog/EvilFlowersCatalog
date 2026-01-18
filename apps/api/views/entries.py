@@ -23,13 +23,19 @@ from apps.core.models import Entry, Acquisition, Price, Catalog, ShelfRecord, Us
 from apps.core.views import SecuredView
 
 import logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    force=True  # Override any existing config
-)
-logger = logging.getLogger(__name__)
+import sys
+
+# Get logger with explicit name that matches Django's logging config
+logger = logging.getLogger('apps.api.views.entries')
+
+# Ensure logger has handlers and correct level
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 
 def shelf_record_mapping(user: User) -> dict[UUID, UUID]:
@@ -209,18 +215,12 @@ class EntryDetail(SecuredView):
             if acquisition.content and acquisition.mime == Acquisition.AcquisitionMIME.PDF:
                 try:
                     text_client = TextServiceClient()
-                    # Build full URL for acquisition download using internal URL (accessible to services)
-                    internal_base_url = getattr(settings, "EVILFLOWERS_CATALOG_API_INTERNAL_URL", "http://127.0.0.1:8000")
-                    acquisition_path = reverse("files:acquisition-download", kwargs={"acquisition_id": acquisition.pk})
-                    acquisition_url = f"{internal_base_url.rstrip('/')}{acquisition_path}"
-                    result = text_client.process_acquisition(acquisition_url)
-                    if result:
-                        logger.info(f"Text processing task enqueued: acquisition_id={acquisition.pk}, task_id={result.get('task_id')}")
-                    else:
-                        logger.warning(f"Text processing task enqueue returned None for acquisition_id={acquisition.pk}")
-                except Exception as e:
+                    source = acquisition.content.name
+                    entry_id = str(acquisition.entry.pk)
+                    text_client.process_acquisition(source, entry_id)
+                except Exception:
                     # Log error but don't fail the upload
-                    logger.exception(f"Failed to enqueue text processing task for acquisition_id={acquisition.pk}: {e}")
+                    logger.exception(f"Failed to enqueue text processing task for acquisition_id={acquisition.pk}")
 
         for price in form.cleaned_data.get("prices", []):
             Price.objects.create(
