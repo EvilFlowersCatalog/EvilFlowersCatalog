@@ -43,7 +43,7 @@ services:
     environment:
       DV_PUBLIC_INTERNAL: "http://dataverse:8080"
       DV_PUBLIC_BASE: http://localhost:8080
-      DV_API_TOKEN: "" # change me
+      DV_API_TOKEN: "538ce247-e209-4953-b1fd-35115e77dcc3" # change me
       DATAVERSE_WORKFLOW_SECRET: "123"
       EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR: /mnt/data
       REDIS_DATABASE: 1

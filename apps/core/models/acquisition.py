@@ -3,6 +3,7 @@ import hashlib
 from typing import Optional
 
 from celery import signature, chain, group
+from django.conf import settings
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -61,6 +62,10 @@ class Acquisition(BaseModel):
 
     @property
     def url(self) -> Optional[str]:
+        # If file_url is set (external URL like Dataverse), return it directly
+        if self.file_url:
+            return self.file_url
+        # Otherwise, return the download URL for stored content
         if not self.content:
             return None
         return reverse("files:acquisition-download", kwargs={"acquisition_id": self.pk})
@@ -90,6 +95,22 @@ def touch_entry(sender, instance: Acquisition, **kwargs):
 
 @receiver(post_save, sender=Acquisition)
 def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
+    """
+    Trigger background tasks (OCR, Readium encryption) after an acquisition is saved.
+
+    For Dataverse / external acquisitions where `content` is empty and only `file_url` is set,
+    we skip background processing because there is no local file to work with.
+    We also skip if the event broker is not configured (development setups).
+    """
+
+    # Skip when there is no stored file (e.g., Dataverse URL-only acquisitions)
+    if not instance.content:
+        return
+
+    # Skip when event broker executor is not configured
+    if not getattr(settings, "EVILFLOWERS_EVENT_BROKER_EXECUTOR", None):
+        return
+
     dependent_tasks = []
     event_broker = get_event_broker()
 

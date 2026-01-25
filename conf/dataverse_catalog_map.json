@@ -1,0 +1,9 @@
+{
+  "dataset_id": {
+    "45": "url1"
+  },
+  "global_id_prefix": {
+    "perma:DV/": "url1"
+  },
+  "default": "url1"
+}
