@@ -39,6 +39,7 @@ services:
     volumes:
       - ./data/evilflowers/media:/usr/local/app/media
       - ./data/evilflowers/private:/usr/local/app/private
+      - ./data/evilflowers/private:/mnt/data  # Mount for shared storage with text-service
       - ./logs:/var/log
     environment:
       DV_PUBLIC_INTERNAL: "http://dataverse:8080"
@@ -48,6 +49,9 @@ services:
       REDIS_DATABASE: 1
       REDIS_HOST: redis
       SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION: 6000
+      EVILFLOWERS_TEXT_SERVICE_URL: "http://host.docker.internal:8010"
+      TEXT_SERVICE_REDIS_URL: "redis://redis:6379/0"
+      EVILFLOWERS_CATALOG_API_INTERNAL_URL: "http://django:8000"
       PGHOST: db
       PGDATABASE: evil_flowers_catalog
       PGUSER: postgres
@@ -110,21 +114,40 @@ services:
       - ./data/evilflowers/private:/usr/local/app/private
     depends_on:
       - redis
+    networks:
+      - shared  
 
-  evilflowers-lcpencrypt-worker:
-    image: "ghcr.io/evilflowerscatalog/evilflowers-lcpencrypt-worker:master"
+  evilflowers-text-service:
+    image: "ghcr.io/evilflowerscatalog/evilflowers-text-service:main"
+    platform: linux/amd64
+    container_name: text-service
     environment:
-      BROKER: "redis://redis:6379/7"
-      STORAGE_PATH: /usr/local/app/private
-      LCPSV_URL: "http://readium:8989"
-      # LOGFIRE_TOKEN: ""
-      # LOGFIRE_SERVICE_NAME: "evilflowers-lcpencrypt-worker"
-      # LOGFIRE_ENVIRONMENT: "development"
+      REDIS_URL: "redis://redis:6379/0"
+      STORAGE_PATH: /mnt/data
+      SEARCH_SERVICE_URL: ${SEARCH_SERVICE_URL:-http://search-service:8001}
+      TABLE_EXTRACTOR: "PdfPlumber"
+      TEXT_EXTRACTOR_MODE: "None"
+      CATALOG_API_URL: "http://django:8000"
+      CATALOG_SECRET_KEY: ${SECRET_KEY}
     volumes:
-      - ./data/evilflowers/private:/usr/local/app/private
+      - ./data/evilflowers/private:/mnt/data
+    networks:
+      - shared
     depends_on:
       - redis
-      - readium
+      - evil-flowers-search-service
 
+  evil-flowers-search-service:
+    image: "ghcr.io/evilflowerscatalog/evilflowers-search-service:main"
+    platform: linux/amd64
+    container_name: search-service
+    ports:
+      - "8001:8001"
+    environment:
+      - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-http://elasticsearch:9200}
+      - USE_MILVUS_LITE=true
+    networks:
+      - shared
+   
 volumes:
   minio-data:
