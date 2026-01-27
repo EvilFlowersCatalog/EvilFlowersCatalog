@@ -1,3 +1,4 @@
+
 import json
 import mimetypes
 from http import HTTPStatus
@@ -26,13 +27,13 @@ import logging
 import sys
 
 # Get logger with explicit name that matches Django's logging config
-logger = logging.getLogger("apps.api.views.entries")
+logger = logging.getLogger('apps.api.views.entries')
 
 # Ensure logger has handlers and correct level
 if not logger.handlers:
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(logging.INFO)
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 logger.setLevel(logging.INFO)
@@ -206,11 +207,22 @@ class EntryDetail(SecuredView):
         if "content" in request.FILES.keys():
             # Save acquisition first to get the PK
             acquisition.save()
-
+            
             acquisition.content.save(
                 f"{uuid4()}{mimetypes.guess_extension(acquisition.mime)}",
                 request.FILES["content"],
             )
+            
+            # Process file with text service via Celery (non-blocking)
+            if acquisition.content and acquisition.mime == Acquisition.AcquisitionMIME.PDF:
+                try:
+                    text_client = TextServiceClient()
+                    source = acquisition.content.name
+                    entry_id = str(acquisition.entry.pk)
+                    text_client.process_acquisition(source, entry_id)
+                except Exception:
+                    # Log error but don't fail the upload
+                    logger.exception(f"Failed to enqueue text processing task for acquisition_id={acquisition.pk}")
 
             # Process file with text service via Celery (non-blocking)
             if acquisition.content and acquisition.mime == Acquisition.AcquisitionMIME.PDF:

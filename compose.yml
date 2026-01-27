@@ -48,12 +48,10 @@ services:
       DATAVERSE_WORKFLOW_SECRET: "123"
       REDIS_DATABASE: 1
       REDIS_HOST: redis
-      DV_PUBLIC_INTERNAL: "http://dataverse:8080"
-      DV_PUBLIC_BASE: http://localhost:8080
-      DV_API_TOKEN: "538ce247-e209-4953-b1fd-35115e77dcc3" # change me
-      DATAVERSE_WORKFLOW_SECRET: "123"
-      DATAVERSE_RESUME_WORKFLOW: "1"
-      DJANGO_LOG_LEVEL: "DEBUG"
+      SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION: 6000
+      EVILFLOWERS_TEXT_SERVICE_URL: "http://host.docker.internal:8010"
+      TEXT_SERVICE_REDIS_URL: "redis://redis:6379/0"
+      EVILFLOWERS_CATALOG_API_INTERNAL_URL: "http://django:8000"
       PGHOST: db
       PGDATABASE: evil_flowers_catalog
       PGUSER: postgres
@@ -108,11 +106,9 @@ services:
       - ./data/readium/cert/privkey.pem:/usr/local/var/readium/lcp/cert/privkey.pem
     ports:
       - "8988:8988"
-    networks:
-      - shared
 
-  evilflowers-lcpencrypt-worker:
-    image: ghcr.io/evilflowerscatalog/evilflowers-lcpencrypt-worker:master
+  evilflowers-ocr-worker:
+    image: "ghcr.io/evilflowerscatalog/evilflowers-ocr-worker:master"
     environment:
       BROKER: "redis://redis:6379/7"
       STORAGE_PATH: /usr/local/app/private
@@ -155,23 +151,5 @@ services:
     networks:
       - shared
    
-  minio:
-    hostname: minio
-    image: minio/minio:latest
-    container_name: minio
-    ports:
-      - "9001:9001"
-      - "9000:9000"
-    command: ["server", "/data", "--console-address", ":9001"]
-    volumes:
-      - minio-data:/data
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-    networks:
-      - shared
-
 volumes:
   minio-data:
