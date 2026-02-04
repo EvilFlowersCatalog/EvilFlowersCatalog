@@ -47,12 +47,12 @@ services:
       DV_API_TOKEN: "538ce247-e209-4953-b1fd-35115e77dcc3" # change me
       DATAVERSE_WORKFLOW_SECRET: "123"
       EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR: /mnt/data
-      REDIS_DATABASE: 1
+      REDIS_DATABASE: 0
       REDIS_HOST: redis
       SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION: 6000
       EVILFLOWERS_EVENT_BROKER_EXECUTOR: "apps.events.services.CeleryEventExecutionService"
       EVILFLOWERS_EVENT_BROKER_TRANSFORMER: "apps.events.transformers.DjangoTransformer"
-      CELERY_BROKER_URL: "redis://redis:6379/1"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
       EVILFLOWERS_TEXT_SERVICE_URL: "http://host.docker.internal:8010"
       TEXT_SERVICE_REDIS_URL: "redis://redis:6379/0"
       EVILFLOWERS_CATALOG_API_INTERNAL_URL: "http://django:8000"
@@ -103,7 +103,7 @@ services:
       - ./data/readium/storage:/usr/local/var/readium/storage
       - ./data/evilflowers/private:/usr/local/app/private
       - ./data/logs/readium:/var/log/readium
-      - ./data/readium/config.yaml:/usr/local/etc/readium
+      - ./data/readium/config.yaml:/usr/local/etc/readium/config.yaml:ro
       - ./data/readium/htpasswd:/usr/local/etc/htpasswd
       - ./data/readium/cert/cert.pem:/usr/local/var/readium/lcp/cert/cert.pem
       - ./data/readium/cert/privkey.pem:/usr/local/var/readium/lcp/cert/privkey.pem
