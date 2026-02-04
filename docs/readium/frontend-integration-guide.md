@@ -6,10 +6,11 @@ application that consumes the Evil Flowers Catalog API.
 ## Overview
 
 The Evil Flowers Catalog implements a complete Readium LCP server integration that allows:
-- **Protected content distribution**: PDF files encrypted with LCP
+- **Protected content distribution**: EPUB and PDF files encrypted with LCP
 - **License management**: Time-limited borrowing with concurrent user limits
 - **Availability calendar**: Real-time view of borrowing slots
-- **Content management server**: All license operations go through the content management system
+- **User passphrase management**: Users set their own passphrase for content protection
+- **Content management server**: All license operations go through the catalog API
 
 ## Architecture Components
 
@@ -19,76 +20,116 @@ graph TB
         UI[User Interface]
         API[API Client]
     end
-    
-    subgraph "Evil Flowers Catalog (Content Management Server)"
+
+    subgraph "Evil Flowers Catalog"
         REST[REST API]
-        LCP[LCP Integration]
+        LCP[LCP Services]
         DB[(Database)]
+        Worker[Celery Worker]
     end
-    
+
+    subgraph "Background Workers"
+        Encrypt[lcpencrypt Worker]
+    end
+
     subgraph "Readium LCP Infrastructure"
         LS[License Server<br/>:8989]
         SS[Status Server<br/>:8990]
     end
-    
-    subgraph "External Services"
-        Reader[LCP Reading Apps]
+
+    subgraph "Reading Applications"
+        Reader[Thorium Reader<br/>Aldiko Next<br/>etc.]
     end
-    
+
     UI --> API
     API --> REST
     REST --> LCP
+    REST --> DB
+    Worker --> Encrypt
+    Encrypt --> LS
     LCP --> LS
     LCP --> SS
-    REST --> DB
-    
-    Reader -.-> SS
-    Reader -.-> REST
-    
+
+    Reader -.->|Status checks| SS
+    Reader -.->|License download| REST
+
     classDef frontend fill:#e1f5fe
-    classDef cms fill:#f3e5f5
+    classDef catalog fill:#f3e5f5
+    classDef workers fill:#fff9c4
     classDef lcp fill:#fff3e0
-    classDef external fill:#f1f8e9
-    
+    classDef reader fill:#f1f8e9
+
     class UI,API frontend
-    class REST,LCP,DB cms
+    class REST,LCP,DB,Worker catalog
+    class Encrypt workers
     class LS,SS lcp
-    class Reader external
+    class Reader reader
 ```
 
-### Backend Services
+### Key Services
 
-1. **Evil Flowers Catalog API** (Content Management Server)
-   - Primary interface for all frontend operations
-   - User authentication and authorization
-   - License availability management
-   - Coordinates with LCP servers behind the scenes
+| Service | Port | Description |
+|---------|------|-------------|
+| Evil Flowers Catalog API | 8000 | Primary interface for all frontend operations |
+| LCP License Server | 8989 | Generates LCP licenses, stores encryption keys |
+| LCP Status Server | 8990 | Manages license status, device registration, returns |
+| lcpencrypt Worker | - | Encrypts content and registers with License Server |
 
-2. **LCP License Server** (`http://127.0.0.1:8989`)
-   - Generates and manages LCP licenses
-   - Handles content encryption
-   - Accessible only through content management server
+## User Setup: LCP Passphrase
 
-3. **LCP Status Server** (`http://127.0.0.1:8990`)
-   - Manages license status documents
-   - Handles device registration
-   - Processes license updates (return, renewal, revocation)
+**Important**: Before a user can borrow LCP-protected content, they must set up their LCP passphrase.
 
-### Frontend Integration Points
+### Setting User Passphrase
 
-The frontend integrates exclusively with the Evil Flowers Catalog API. Direct access to LCP servers is not permitted in content management mode.
+**PUT** `/api/v1/users/{user_id}`
+
+Update user profile to set the LCP passphrase:
+
+```json
+{
+  "lcp_passphrase": "user-chosen-passphrase",
+  "lcp_passphrase_hint": "Hint to remember passphrase"
+}
+```
+
+**Response** (in detailed user view):
+```json
+{
+  "id": "uuid",
+  "username": "john.doe",
+  "has_lcp_passphrase": true,
+  "lcp_passphrase_hint": "Hint to remember passphrase"
+}
+```
+
+### Checking Passphrase Status
+
+**GET** `/api/v1/users/{user_id}` or `/api/v1/users/me`
+
+Check if user has passphrase set:
+
+```json
+{
+  "id": "uuid",
+  "username": "john.doe",
+  "has_lcp_passphrase": true,
+  "lcp_passphrase_hint": "Hint to remember passphrase"
+}
+```
 
 ## API Endpoints
+
+Base path: `/readium/v1/`
 
 ### 1. Entry Availability
 
 **GET** `/readium/v1/entries/{entry_id}/availability`
 
-Check if an entry is available for borrowing and get calendar data.
+Check if an entry is available for borrowing and get calendar data with encryption status.
 
 **Query Parameters:**
-- `start_date` (optional): ISO date string (e.g., "2023-12-01")
-- `end_date` (optional): ISO date string (e.g., "2023-12-31")
+- `start_date` (optional): ISO date string (e.g., "2024-01-01")
+- `end_date` (optional): ISO date string (e.g., "2024-03-31")
 
 **Response:**
 ```json
@@ -97,47 +138,66 @@ Check if an entry is available for borrowing and get calendar data.
   "max_concurrent": 3,
   "calendar": [
     {
-      "date": "2023-12-01",
+      "date": "2024-01-15",
       "available_slots": 2,
       "total_slots": 3,
       "is_available": true
     },
     {
-      "date": "2023-12-02",
+      "date": "2024-01-16",
       "available_slots": 0,
       "total_slots": 3,
       "is_available": false
     }
-  ]
+  ],
+  "encryption": {
+    "status": "registered",
+    "ready_for_licensing": true,
+    "encrypted_at": "2024-01-10T14:30:00Z",
+    "error_message": null
+  }
 }
 ```
+
+**Encryption Status Values:**
+| Status | Description | Can Create License? |
+|--------|-------------|---------------------|
+| `not_started` | Encryption hasn't been triggered | No |
+| `pending` | Waiting to start encryption | No |
+| `encrypting` | Encryption in progress | No |
+| `completed` | Encrypted but not registered | No |
+| `failed` | Encryption failed | No |
+| `registered` | Ready for licensing | Yes |
 
 ### 2. List User Licenses
 
 **GET** `/readium/v1/licenses`
 
-Get all licenses for the current user. Use query parameters to filter by entry.
+Get all licenses for the current user (non-admins only see their own).
 
 **Query Parameters:**
-- `entry_id` (optional): Filter licenses for a specific entry
-- `user_id` (optional): Filter licenses for a specific user (admin only)
-- `state` (optional): Filter by license state (ready, active, returned, etc.)
+- `entry_id` (optional): Filter by entry UUID
+- `user_id` (optional): Filter by user UUID (admin only)
+- `state` (optional): Filter by state (ready, active, returned, expired, revoked, cancelled)
 
 **Response:**
 ```json
 {
   "results": [
     {
-      "id": "uuid",
-      "entry_id": "uuid",
-      "user_id": "uuid",
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "entry_id": "660e8400-e29b-41d4-a716-446655440001",
+      "user_id": "770e8400-e29b-41d4-a716-446655440002",
       "state": "active",
-      "starts_at": "2023-12-01T10:00:00Z",
-      "expires_at": "2023-12-15T10:00:00Z",
-      "lcp_license_id": "uuid",
-      "device_count": 2
+      "starts_at": "2024-01-15T10:00:00Z",
+      "expires_at": "2024-01-29T10:00:00Z",
+      "created_at": "2024-01-15T09:55:00Z",
+      "updated_at": "2024-01-15T10:00:00Z"
     }
-  ]
+  ],
+  "count": 1,
+  "next": null,
+  "previous": null
 }
 ```
 
@@ -150,23 +210,62 @@ Create a new license for the current user to borrow an entry.
 **Request Body:**
 ```json
 {
-  "entry_id": "uuid",
-  "start_date": "2023-12-01",
-  "duration_days": 14,
-  "passphrase_hint": "Your mother's maiden name"
+  "entry_id": "660e8400-e29b-41d4-a716-446655440001",
+  "user_passphrase": "optional-override-passphrase",
+  "passphrase_hint": "Optional custom hint",
+  "start_date": "2024-01-15T10:00:00Z",
+  "duration_days": 14
 }
 ```
 
-**Response:**
+**Field Details:**
+| Field | Required | Description |
+|-------|----------|-------------|
+| `entry_id` | Yes | UUID of the entry to license |
+| `user_passphrase` | No* | Passphrase for this license. If not provided, uses user's default |
+| `passphrase_hint` | No | Hint for this license. Falls back to user's default hint |
+| `start_date` | No | License start (default: now) |
+| `duration_days` | No | Duration in days (default: 14) |
+
+*If `user_passphrase` is not provided, the user must have `lcp_passphrase_hash` set in their profile.
+
+**Success Response (201 Created):**
 ```json
 {
-  "id": "uuid",
-  "entry_id": "uuid",
-  "user_id": "uuid",
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "entry_id": "660e8400-e29b-41d4-a716-446655440001",
+  "user_id": "770e8400-e29b-41d4-a716-446655440002",
   "state": "ready",
-  "starts_at": "2023-12-01T10:00:00Z",
-  "expires_at": "2023-12-15T10:00:00Z",
-  "lcp_license_id": "uuid"
+  "starts_at": "2024-01-15T10:00:00Z",
+  "expires_at": "2024-01-29T10:00:00Z",
+  "created_at": "2024-01-15T09:55:00Z",
+  "updated_at": "2024-01-15T09:55:00Z"
+}
+```
+
+**Error Responses:**
+
+No passphrase available (400):
+```json
+{
+  "title": "No LCP passphrase available. Please set your default passphrase via PUT /api/v1/users/{user_id} or provide 'user_passphrase' in this request.",
+  "type": "/validation-error"
+}
+```
+
+No available slots (400):
+```json
+{
+  "title": "Cannot create license: No available slots for the requested period",
+  "type": "/validation-error"
+}
+```
+
+Content not ready (400):
+```json
+{
+  "title": "Content not ready for licensing. Current status: encrypting",
+  "type": "/validation-error"
 }
 ```
 
@@ -179,41 +278,216 @@ Get detailed information about a specific license.
 **Response:**
 ```json
 {
-  "id": "uuid",
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "entry_id": "660e8400-e29b-41d4-a716-446655440001",
   "entry": {
-    "id": "uuid",
-    "title": "Example Book",
-    "readium_enabled": true,
-    "readium_amount": 3
+    "id": "660e8400-e29b-41d4-a716-446655440001",
+    "title": "Example Book"
   },
-  "user_id": "uuid",
+  "user_id": "770e8400-e29b-41d4-a716-446655440002",
   "state": "active",
-  "starts_at": "2023-12-01T10:00:00Z",
-  "expires_at": "2023-12-15T10:00:00Z",
-  "lcp_license_id": "uuid",
-  "device_count": 2
+  "starts_at": "2024-01-15T10:00:00Z",
+  "expires_at": "2024-01-29T10:00:00Z",
+  "created_at": "2024-01-15T09:55:00Z",
+  "updated_at": "2024-01-15T10:00:00Z"
 }
 ```
 
-### 5. Download License File
+### 5. Update License State
+
+**PUT** `/readium/v1/licenses/{license_id}`
+
+Update license state (return, renew, revoke, cancel).
+
+**Request Body for Return:**
+```json
+{
+  "state": "returned"
+}
+```
+
+**Request Body for Renewal:**
+```json
+{
+  "state": "renewed",
+  "duration_days": 14
+}
+```
+
+**Request Body for Revocation (admin):**
+```json
+{
+  "state": "revoked",
+  "reason": "Terms of service violation"
+}
+```
+
+**Request Body for Cancellation:**
+```json
+{
+  "state": "cancelled",
+  "reason": "User requested cancellation"
+}
+```
+
+### 6. Download License File (License Gateway)
 
 **GET** `/readium/v1/licenses/{license_id}.lcpl`
 
-Download the actual LCP license file for use in reading applications.
+Download the LCP license file for use in reading applications.
 
 **Response:**
 - Content-Type: `application/vnd.readium.lcp.license.v1.0+json`
 - Content-Disposition: `attachment; filename="BookTitle.lcpl"`
 
-Returns the LCP license JSON that can be imported into Readium-compatible reading applications.
+The response is the complete LCP license JSON that can be imported into Readium-compatible reading applications like Thorium Reader or Aldiko Next.
+
+### 7. Encryption Status (Admin)
+
+**GET** `/readium/v1/entries/{entry_id}/encryption`
+
+Get detailed encryption status for an entry.
+
+**Response:**
+```json
+{
+  "readium_enabled": true,
+  "has_acquisition": true,
+  "encryption": {
+    "status": "registered",
+    "lcp_content_id": "abc123-def456",
+    "ready_for_licensing": true,
+    "encrypted_at": "2024-01-10T14:30:00Z",
+    "registered_at": "2024-01-10T14:31:00Z",
+    "error_message": null
+  }
+}
+```
+
+### 8. Trigger Encryption (Admin)
+
+**POST** `/readium/v1/entries/{entry_id}/encryption`
+
+Manually trigger content encryption (requires `core.change_entry` permission).
+
+**Request Body:**
+```json
+{
+  "force": false
+}
+```
+
+Set `force: true` to re-encrypt content that's already encrypted.
+
+**Response (202 Accepted):**
+```json
+{
+  "message": "Encryption triggered successfully",
+  "lcp_content_id": "abc123-def456",
+  "status": "encrypting"
+}
+```
+
+## License States
+
+```mermaid
+stateDiagram-v2
+    [*] --> ready: License created
+    ready --> active: First device opens
+    active --> returned: User returns
+    active --> expired: Time expires
+    active --> revoked: Admin revokes
+    active --> cancelled: User cancels
+    ready --> expired: Time expires (never opened)
+    ready --> cancelled: User cancels
+
+    returned --> [*]
+    expired --> [*]
+    revoked --> [*]
+    cancelled --> [*]
+```
+
+| State | Description | Can Download LCPL? |
+|-------|-------------|-------------------|
+| `ready` | License created, not yet opened | Yes |
+| `active` | At least one device registered | Yes |
+| `returned` | User returned early | No |
+| `expired` | Past expiration date | No |
+| `revoked` | Admin revoked | No |
+| `cancelled` | User cancelled | No |
+
+## Complete Borrowing Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant API as Catalog API
+    participant LS as License Server
+    participant SS as Status Server
+    participant R as Reading App
+
+    Note over U,F: 1. Setup (one-time)
+    U->>F: Set LCP passphrase
+    F->>API: PUT /api/v1/users/{id}<br/>{lcp_passphrase: "..."}
+    API-->>F: Updated user
+
+    Note over U,F: 2. Browse & Check
+    U->>F: View entry details
+    F->>API: GET /readium/v1/entries/{id}/availability
+    API-->>F: Availability + encryption status
+    F-->>U: Show availability calendar
+
+    Note over U,F: 3. Borrow
+    U->>F: Click "Borrow"
+    F->>API: POST /readium/v1/licenses<br/>{entry_id: "..."}
+    API->>API: Check availability
+    API->>API: Create license record
+    API->>LS: Generate LCP license
+    LS-->>API: LCP license with ID
+    API->>SS: Register license
+    API-->>F: License created (state: ready)
+    F-->>U: Success message
+
+    Note over U,R: 4. Read
+    U->>F: Click "Read"
+    F->>API: GET /readium/v1/licenses/{id}.lcpl
+    API->>LS: Fetch fresh license
+    LS-->>API: Current LCP license
+    API-->>F: License file (.lcpl)
+    F->>R: Open with license
+    R->>R: Prompt for passphrase
+    U->>R: Enter passphrase
+    R->>SS: Register device
+    R-->>U: Display content
+
+    Note over U,F: 5. Return (optional)
+    U->>F: Click "Return"
+    F->>API: PUT /readium/v1/licenses/{id}<br/>{state: "returned"}
+    API->>LS: Update license dates
+    API-->>F: License returned
+    F-->>U: Confirmation
+```
 
 ## Frontend Implementation
 
-### 1. Availability Calendar Component
-
-Create a calendar component that displays borrowing availability:
+### TypeScript Interfaces
 
 ```typescript
+interface User {
+  id: string;
+  username: string;
+  has_lcp_passphrase: boolean;
+  lcp_passphrase_hint?: string;
+}
+
+interface EncryptionStatus {
+  status: 'not_started' | 'pending' | 'encrypting' | 'completed' | 'failed' | 'registered';
+  ready_for_licensing: boolean;
+  encrypted_at?: string;
+  error_message?: string;
+}
+
 interface AvailabilityDay {
   date: string;
   available_slots: number;
@@ -225,433 +499,371 @@ interface EntryAvailability {
   available: boolean;
   max_concurrent: number;
   calendar: AvailabilityDay[];
+  encryption?: EncryptionStatus;
 }
 
-async function getEntryAvailability(
-  entryId: string,
-  startDate?: string,
-  endDate?: string
-): Promise<EntryAvailability> {
-  const params = new URLSearchParams();
-  if (startDate) params.append('start_date', startDate);
-  if (endDate) params.append('end_date', endDate);
-
-  const response = await fetch(
-    `/readium/v1/entries/${entryId}/availability?${params}`,
-    {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      }
-    }
-  );
-
-  return response.json();
+interface License {
+  id: string;
+  entry_id: string;
+  user_id: string;
+  state: 'ready' | 'active' | 'returned' | 'expired' | 'revoked' | 'cancelled';
+  starts_at: string;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
 }
-```
 
-### 2. License Management
-
-Handle license creation and management:
-
-```typescript
 interface CreateLicenseRequest {
   entry_id: string;
+  user_passphrase?: string;
+  passphrase_hint?: string;
   start_date?: string;
   duration_days?: number;
-  passphrase_hint?: string;
-}
-
-async function createLicense(
-  entryId: string,
-  request: Omit<CreateLicenseRequest, 'entry_id'>
-): Promise<License> {
-  const response = await fetch(
-    `/readium/v1/licenses`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        entry_id: entryId,
-        ...request
-      })
-    }
-  );
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || 'Failed to create license');
-  }
-
-  return response.json();
-}
-
-async function getUserLicenses(entryId?: string): Promise<License[]> {
-  const params = new URLSearchParams();
-  if (entryId) params.append('entry_id', entryId);
-  
-  const response = await fetch(
-    `/readium/v1/licenses?${params}`,
-    {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      }
-    }
-  );
-
-  const data = await response.json();
-  return data.results;
 }
 ```
 
-### 3. Borrowing Workflow
+### API Client
 
-Implement the complete borrowing workflow:
+```typescript
+class ReadiumApiClient {
+  constructor(private baseUrl: string, private getAccessToken: () => string) {}
+
+  private async fetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${this.getAccessToken()}`,
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.title || 'API request failed');
+    }
+
+    return response.json();
+  }
+
+  // User passphrase management
+  async setUserPassphrase(userId: string, passphrase: string, hint?: string): Promise<User> {
+    return this.fetch(`/api/v1/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        lcp_passphrase: passphrase,
+        lcp_passphrase_hint: hint,
+      }),
+    });
+  }
+
+  async getCurrentUser(): Promise<User> {
+    return this.fetch('/api/v1/users/me');
+  }
+
+  // Availability
+  async getAvailability(entryId: string, startDate?: string, endDate?: string): Promise<EntryAvailability> {
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+
+    const query = params.toString() ? `?${params}` : '';
+    return this.fetch(`/readium/v1/entries/${entryId}/availability${query}`);
+  }
+
+  // License management
+  async createLicense(request: CreateLicenseRequest): Promise<License> {
+    return this.fetch('/readium/v1/licenses', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async getLicenses(entryId?: string): Promise<{ results: License[] }> {
+    const params = entryId ? `?entry_id=${entryId}` : '';
+    return this.fetch(`/readium/v1/licenses${params}`);
+  }
+
+  async getLicense(licenseId: string): Promise<License> {
+    return this.fetch(`/readium/v1/licenses/${licenseId}`);
+  }
+
+  async returnLicense(licenseId: string): Promise<License> {
+    return this.fetch(`/readium/v1/licenses/${licenseId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ state: 'returned' }),
+    });
+  }
+
+  async renewLicense(licenseId: string, durationDays: number = 14): Promise<License> {
+    return this.fetch(`/readium/v1/licenses/${licenseId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ state: 'renewed', duration_days: durationDays }),
+    });
+  }
+
+  // License file download URL
+  getLicenseDownloadUrl(licenseId: string): string {
+    return `${this.baseUrl}/readium/v1/licenses/${licenseId}.lcpl`;
+  }
+}
+```
+
+### Borrowing Service
 
 ```typescript
 class BorrowingService {
-  async checkAvailability(entryId: string): Promise<boolean> {
-    const availability = await getEntryAvailability(entryId);
-    return availability.available;
+  constructor(private api: ReadiumApiClient) {}
+
+  async ensurePassphraseSet(): Promise<boolean> {
+    const user = await this.api.getCurrentUser();
+    return user.has_lcp_passphrase;
   }
 
-  async borrowEntry(
-    entryId: string,
-    startDate: string,
-    durationDays: number = 14,
-    passphraseHint?: string
-  ): Promise<License> {
-    // Check if user already has a license
-    const existingLicenses = await getUserLicenses(entryId);
-    const activeLicense = existingLicenses.find(
-      license => ['ready', 'active'].includes(license.state)
+  async checkCanBorrow(entryId: string): Promise<{
+    canBorrow: boolean;
+    reason?: string;
+    availability?: EntryAvailability;
+  }> {
+    const availability = await this.api.getAvailability(entryId);
+
+    // Check encryption status
+    if (!availability.encryption?.ready_for_licensing) {
+      return {
+        canBorrow: false,
+        reason: `Content not ready: ${availability.encryption?.status || 'unknown'}`,
+        availability,
+      };
+    }
+
+    // Check slot availability
+    if (!availability.available) {
+      return {
+        canBorrow: false,
+        reason: 'No available slots',
+        availability,
+      };
+    }
+
+    // Check existing license
+    const licenses = await this.api.getLicenses(entryId);
+    const activeLicense = licenses.results.find(l =>
+      ['ready', 'active'].includes(l.state)
     );
 
     if (activeLicense) {
-      throw new Error('You already have an active license for this entry');
+      return {
+        canBorrow: false,
+        reason: 'You already have an active license',
+        availability,
+      };
     }
 
-    // Create new license
-    return createLicense(entryId, {
-      start_date: startDate,
+    return { canBorrow: true, availability };
+  }
+
+  async borrow(entryId: string, durationDays: number = 14): Promise<License> {
+    // Verify passphrase is set
+    const hasPassphrase = await this.ensurePassphraseSet();
+    if (!hasPassphrase) {
+      throw new Error('Please set your LCP passphrase in your profile settings first');
+    }
+
+    // Create license
+    return this.api.createLicense({
+      entry_id: entryId,
       duration_days: durationDays,
-      passphrase_hint: passphraseHint
     });
   }
 
-  async returnEntry(licenseId: string): Promise<void> {
-    // This would typically involve calling the LCP Status Server
-    // to update the license status to "returned"
-    const response = await fetch(
-      `/readium/v1/licenses/${licenseId}`,
-      {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          state: 'returned'
-        })
+  async return(licenseId: string): Promise<License> {
+    return this.api.returnLicense(licenseId);
+  }
+}
+```
+
+### UI Components Example (React)
+
+```tsx
+function BorrowButton({ entryId }: { entryId: string }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const borrowingService = useBorrowingService();
+  const router = useRouter();
+
+  const handleBorrow = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { canBorrow, reason } = await borrowingService.checkCanBorrow(entryId);
+
+      if (!canBorrow) {
+        setError(reason || 'Cannot borrow at this time');
+        return;
       }
-    );
 
-    if (!response.ok) {
-      throw new Error('Failed to return entry');
+      const license = await borrowingService.borrow(entryId);
+      router.push(`/read/${license.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to borrow');
+    } finally {
+      setLoading(false);
     }
-  }
+  };
+
+  return (
+    <div>
+      <button onClick={handleBorrow} disabled={loading}>
+        {loading ? 'Borrowing...' : 'Borrow'}
+      </button>
+      {error && <p className="error">{error}</p>}
+    </div>
+  );
+}
+
+function PassphraseSetup() {
+  const [passphrase, setPassphrase] = useState('');
+  const [hint, setHint] = useState('');
+  const [loading, setLoading] = useState(false);
+  const api = useReadiumApi();
+  const user = useCurrentUser();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      await api.setUserPassphrase(user.id, passphrase, hint);
+      alert('Passphrase set successfully!');
+    } catch (err) {
+      alert('Failed to set passphrase');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <h3>Set LCP Passphrase</h3>
+      <p>This passphrase will be required to open borrowed content in reading apps.</p>
+
+      <label>
+        Passphrase (min 4 characters):
+        <input
+          type="password"
+          value={passphrase}
+          onChange={(e) => setPassphrase(e.target.value)}
+          minLength={4}
+          required
+        />
+      </label>
+
+      <label>
+        Hint (optional):
+        <input
+          type="text"
+          value={hint}
+          onChange={(e) => setHint(e.target.value)}
+          placeholder="Something to help you remember"
+        />
+      </label>
+
+      <button type="submit" disabled={loading || passphrase.length < 4}>
+        {loading ? 'Saving...' : 'Save Passphrase'}
+      </button>
+    </form>
+  );
 }
 ```
 
-## License Borrowing Flow
+## Reading App Integration
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant F as Frontend
-    participant API as Content Mgmt Server
-    participant LS as LCP License Server
-    participant SS as Status Server
-    participant R as Reading App
-    
-    U->>F: Browse entry
-    F->>API: GET /readium/v1/entries/{id}/availability
-    API-->>F: Calendar data
-    F-->>U: Show availability
-    
-    U->>F: Request to borrow
-    F->>API: POST /readium/v1/licenses
-    API->>API: Check availability
-    API->>API: Create license record
-    API->>LS: Generate LCP license
-    LS-->>API: LCP license JSON
-    API->>SS: Notify status server
-    API-->>F: License created
-    F-->>U: Success message
-    
-    U->>F: Request to read
-    F->>API: GET /readium/v1/licenses/{id}.lcpl
-    API->>LS: Fetch fresh license
-    LS-->>API: Fresh LCP license
-    API-->>F: License file
-    F->>R: Pass license to reading app
-    R-->>U: Open protected content
-    
-    Note over API,LS: All license operations
-    Note over API,LS: go through content
-    Note over API,LS: management server
-```
+### Supported Reading Applications
 
-## User Experience Flows
+| Application | Platform | Website |
+|-------------|----------|---------|
+| Thorium Reader | Windows, macOS, Linux | https://thorium.edrlab.org/ |
+| Aldiko Next | Android, iOS | https://www.aldiko.com/ |
+| Cantook by Aldiko | iOS | App Store |
 
-### 1. Browsing Available Entries
+### Opening Content
+
+1. **Download the .lcpl file** from `/readium/v1/licenses/{id}.lcpl`
+2. **Open with reading app** - the app will:
+   - Parse the license
+   - Download the encrypted content from the URL in the license
+   - Prompt for the user's passphrase
+   - Decrypt and display the content
+
+### Deep Linking (Mobile)
+
+For mobile apps, use URL schemes:
 
 ```typescript
-// When displaying entry details
-const entryId = "entry-uuid";
-const availability = await getEntryAvailability(entryId);
+// iOS/Android deep link
+const openInReadingApp = (licenseUrl: string) => {
+  // Thorium Reader
+  window.location.href = `thorium://open?url=${encodeURIComponent(licenseUrl)}`;
 
-if (availability.available) {
-  // Show "Available to Borrow" button
-  showBorrowButton();
-} else {
-  // Show availability calendar
-  showAvailabilityCalendar(availability.calendar);
-}
-```
-
-### 2. Borrowing Process
-
-```typescript
-async function handleBorrowClick(entryId: string) {
-  try {
-    // 1. Check current availability
-    const availability = await getEntryAvailability(entryId);
-    if (!availability.available) {
-      showError("No available slots at this time");
-      return;
-    }
-
-    // 2. Show borrowing form
-    const borrowingDetails = await showBorrowingForm({
-      maxDuration: 14,
-      defaultDuration: 14
-    });
-
-    // 3. Create license
-    const license = await borrowingService.borrowEntry(
-      entryId,
-      borrowingDetails.startDate,
-      borrowingDetails.duration,
-      borrowingDetails.passphraseHint
-    );
-
-    // 4. Show success message
-    showSuccess(`Successfully borrowed until ${license.expires_at}`);
-
-    // 5. Update UI state
-    updateEntryState(entryId, 'borrowed');
-
-  } catch (error) {
-    showError(error.message);
-  }
-}
-```
-
-### 3. Reading Protected Content
-
-```typescript
-async function handleReadClick(entryId: string) {
-  try {
-    // 1. Get user's license
-    const licenses = await getUserLicenses(entryId);
-    const activeLicense = licenses.find(
-      license => ['ready', 'active'].includes(license.state)
-    );
-
-    if (!activeLicense) {
-      showError("No active license found");
-      return;
-    }
-
-    // 2. Get LCP license file
-    const lcpLicenseUrl = `/readium/v1/licenses/${activeLicense.id}.lcpl`;
-
-    // 3. Pass to Readium reading system
-    await readiumReader.openPublication({
-      licenseUrl: lcpLicenseUrl,
-      onPassphraseRequired: () => promptForPassphrase()
-    });
-
-  } catch (error) {
-    showError("Failed to open publication");
-  }
-}
+  // Or trigger download and let OS handle .lcpl file type
+  window.location.href = licenseUrl;
+};
 ```
 
 ## Error Handling
 
-Common error scenarios and how to handle them:
-
-### License Creation Errors
-
 ```typescript
-try {
-  await createLicense(entryId, licenseRequest);
-} catch (error) {
-  if (error.message.includes('No available slots')) {
-    showAvailabilityCalendar();
-  } else if (error.message.includes('already has an active license')) {
-    showExistingLicenseInfo();
-  } else {
-    showGenericError(error.message);
+const ERROR_MESSAGES: Record<string, string> = {
+  'No LCP passphrase available': 'Please set your passphrase in profile settings',
+  'No available slots': 'All copies are currently borrowed. Check availability calendar.',
+  'Content not ready': 'This content is being prepared. Please try again later.',
+  'already has an active license': 'You already have this item borrowed.',
+  'License has been revoked': 'This license is no longer valid.',
+  'License has expired': 'This license has expired. Please borrow again.',
+};
+
+function getReadableError(error: Error): string {
+  for (const [key, message] of Object.entries(ERROR_MESSAGES)) {
+    if (error.message.includes(key)) {
+      return message;
+    }
   }
+  return 'An unexpected error occurred. Please try again.';
 }
-```
-
-### Availability Check Errors
-
-```typescript
-try {
-  const availability = await getEntryAvailability(entryId);
-  if (!availability.available) {
-    showAlternativeOptions(availability.calendar);
-  }
-} catch (error) {
-  showError("Unable to check availability");
-}
-```
-
-## Integration with Existing Acquisition System
-
-The Readium integration works seamlessly with the existing UserAcquisition system:
-
-1. **Automatic License Creation**: When a user creates a UserAcquisition for a readium-enabled entry, a license is automatically created
-2. **Unified Access Control**: Both systems respect the same permission model
-3. **Consistent API**: Uses the same authentication and error handling patterns
-
-## Testing
-
-### Unit Tests
-
-```typescript
-describe('BorrowingService', () => {
-  it('should create license when entry is available', async () => {
-    // Mock availability check
-    mockGetEntryAvailability.mockResolvedValue({
-      available: true,
-      max_concurrent: 3,
-      calendar: []
-    });
-
-    const license = await borrowingService.borrowEntry(
-      'entry-id',
-      '2023-12-01',
-      14
-    );
-
-    expect(license).toBeDefined();
-    expect(license.state).toBe('ready');
-  });
-
-  it('should throw error when no slots available', async () => {
-    mockGetEntryAvailability.mockResolvedValue({
-      available: false,
-      max_concurrent: 3,
-      calendar: []
-    });
-
-    await expect(
-      borrowingService.borrowEntry('entry-id', '2023-12-01', 14)
-    ).rejects.toThrow('No available slots');
-  });
-});
-```
-
-### Integration Tests
-
-```typescript
-describe('Readium Integration', () => {
-  it('should complete full borrowing workflow', async () => {
-    // 1. Check availability
-    const availability = await getEntryAvailability(entryId);
-    expect(availability.available).toBe(true);
-
-    // 2. Create license
-    const license = await createLicense(entryId, {
-      start_date: '2023-12-01',
-      duration_days: 14
-    });
-    expect(license.state).toBe('ready');
-
-    // 3. Verify license in user's list
-    const userLicenses = await getUserLicenses(entryId);
-    expect(userLicenses).toContain(license);
-  });
-});
 ```
 
 ## Security Considerations
 
-1. **Authentication**: All API calls require valid JWT tokens
-2. **Authorization**: Users can only access their own licenses
-3. **Passphrase Security**: Passphrases are hashed before storage
-4. **License Validation**: All license operations validate user permissions
-5. **Content Protection**: Encrypted content can only be accessed with valid licenses
+1. **Passphrase Security**
+   - Passphrases are hashed (SHA-256) before storage
+   - Never transmitted in plain text after initial setup
+   - Users should choose unique passphrases
 
-## Performance Optimization
+2. **License Protection**
+   - Licenses are user-specific and non-transferable
+   - Device registration tracked by Status Server
+   - Expired/revoked licenses cannot be used
 
-1. **Caching**: Cache availability data for frequently accessed entries
-2. **Pagination**: Use pagination for large license lists
-3. **Lazy Loading**: Load license details only when needed
-4. **Background Sync**: Update license status in background
+3. **Content Protection**
+   - Content encrypted with AES-256-CBC
+   - Encryption keys stored only in License Server
+   - Content cannot be accessed without valid license + passphrase
+
+## Performance Tips
+
+1. **Cache availability data** (short TTL ~1-5 minutes)
+2. **Prefetch user's licenses** on app load
+3. **Show optimistic UI** while license is being created
+4. **Background refresh** license status periodically
 
 ```typescript
-// Example caching strategy
-const availabilityCache = new Map<string, {
-  data: EntryAvailability;
-  timestamp: number;
-}>();
-
-async function getCachedAvailability(entryId: string): Promise<EntryAvailability> {
-  const cached = availabilityCache.get(entryId);
-  const now = Date.now();
-
-  if (cached && (now - cached.timestamp) < 5 * 60 * 1000) { // 5 minutes
-    return cached.data;
-  }
-
-  const data = await getEntryAvailability(entryId);
-  availabilityCache.set(entryId, { data, timestamp: now });
-  return data;
+// Example: SWR hook for availability
+function useAvailability(entryId: string) {
+  return useSWR(
+    `/readium/v1/entries/${entryId}/availability`,
+    () => api.getAvailability(entryId),
+    { refreshInterval: 60000 } // Refresh every minute
+  );
 }
 ```
-
-## Monitoring and Analytics
-
-Track key metrics for the borrowing system:
-
-```typescript
-// Analytics events
-analytics.track('license_created', {
-  entry_id: entryId,
-  duration_days: durationDays,
-  user_id: userId
-});
-
-analytics.track('entry_borrowed', {
-  entry_id: entryId,
-  license_id: licenseId,
-  available_slots_remaining: availableSlots
-});
-
-analytics.track('availability_checked', {
-  entry_id: entryId,
-  is_available: availability.available,
-  total_slots: availability.max_concurrent
-});
-```
-
-This completes the frontend integration guide for Readium LCP in the Evil Flowers Catalog system.
