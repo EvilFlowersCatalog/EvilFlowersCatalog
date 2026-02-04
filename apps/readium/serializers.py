@@ -3,6 +3,7 @@ from typing import Optional
 from uuid import UUID
 
 from apps.api.serializers import Serializer
+from apps.api.serializers.entries import EntrySerializer
 from apps.readium.models import License
 
 
@@ -16,3 +17,7 @@ class LicenseSerializer:
         expires_at: Optional[datetime]
         created_at: datetime
         updated_at: datetime
+
+
+    class Detailed(Base):
+        entry: EntrySerializer.Base
