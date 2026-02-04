@@ -50,7 +50,7 @@ gevent = "*"
 wheel = "*"
 
 [tool.poetry.group.dev.dependencies]
-black = "^25.1.0"
+black = "^26.1.0"
 datamodel-code-generator = { version = "^0.25.2", extras = ["http"] }
 
 
