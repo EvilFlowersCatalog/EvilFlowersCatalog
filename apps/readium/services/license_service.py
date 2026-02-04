@@ -15,7 +15,7 @@ from django.utils import timezone
 from django.conf import settings
 import uuid
 
-from apps.core.models import Entry, User
+from apps.core.models import Entry, User, Acquisition
 from apps.readium.models import License, EncryptedContent
 from .content_encryption_service import ContentEncryptionService
 from .lcp_server_client import LCPServerClient
@@ -34,9 +34,7 @@ class LicenseService:
     """
 
     @staticmethod
-    def get_entry_availability(
-        entry: Entry, start_date: datetime = None, end_date: datetime = None
-    ) -> Dict:
+    def get_entry_availability(entry: Entry, start_date: datetime = None, end_date: datetime = None) -> Dict:
         """
         Get availability information for an entry over a date range.
 
@@ -176,8 +174,8 @@ class LicenseService:
     def create_license(
         entry: Entry,
         user: User,
-        user_passphrase: str,
-        passphrase_hint: str = None,
+        user_passphrase: Optional[str] = None,
+        passphrase_hint: Optional[str] = None,
         start_date: datetime = None,
         duration_days: int = 14,
         print_limit: int = 10,
@@ -196,8 +194,8 @@ class LicenseService:
         Args:
             entry: Entry to license
             user: User receiving license
-            user_passphrase: User's chosen passphrase for this license
-            passphrase_hint: Optional hint for passphrase
+            user_passphrase: Optional passphrase for this license. If not provided, uses user's default passphrase.
+            passphrase_hint: Optional hint for passphrase. If not provided, uses user's default hint.
             start_date: License start date (default: now)
             duration_days: License duration in days (default: 14)
             print_limit: Max pages to print (default: 10)
@@ -207,38 +205,52 @@ class LicenseService:
             License: Created license with LCP license ID
 
         Raises:
-            ValueError: If validation fails or content not ready
+            ValueError: If validation fails or content not ready, or if user has no default passphrase
         """
         if start_date is None:
             start_date = timezone.now()
 
         end_date = start_date + timedelta(days=duration_days)
 
+        # Handle passphrase: use provided or user's default
+        if user_passphrase is None:
+            if not user.lcp_passphrase_hash:
+                raise ValueError(
+                    "No LCP passphrase available. Please set your default passphrase via "
+                    "PUT /api/users/{user_id}/lcp-passphrase or provide 'user_passphrase' in this request."
+                )
+            passphrase_hash = user.lcp_passphrase_hash
+            # Use user's default hint if no custom hint provided
+            if passphrase_hint is None:
+                passphrase_hint = user.lcp_passphrase_hint
+        else:
+            # Hash the provided passphrase (uppercase for LCP spec compliance)
+            passphrase_hash = LCPServerClient.hash_passphrase(user_passphrase)
+
         # Validate availability
         availability = LicenseService.can_user_borrow(entry, user, start_date, end_date)
         if not availability["can_borrow"]:
             raise ValueError(f"Cannot create license: {availability['reason']}")
 
-        # Get the entry's acquisition (should be only one for readium entries)
+        # Get the entry's acquisition suitable for LCP (EPUB or PDF)
         acquisition = entry.acquisitions.filter(
-            entry=entry, acquisition_type="epub"
+            mime__in=[
+                Acquisition.AcquisitionMIME.EPUB,
+                Acquisition.AcquisitionMIME.PDF,
+            ]
         ).first()
         if not acquisition:
-            raise ValueError("Entry has no EPUB acquisition")
+            raise ValueError("Entry has no EPUB or PDF acquisition suitable for LCP protection")
 
         # Ensure content is encrypted
         if not hasattr(acquisition, "encrypted_content"):
-            raise ValueError(
-                "Content not encrypted. Trigger encryption first via ContentEncryptionService."
-            )
+            raise ValueError("Content not encrypted. Trigger encryption first via ContentEncryptionService.")
 
         encrypted_content = acquisition.encrypted_content
 
         # Ensure content is registered with LCP Server
         if not ContentEncryptionService.is_ready_for_licensing(acquisition):
-            raise ValueError(
-                f"Content not ready for licensing. Current status: {encrypted_content.status}"
-            )
+            raise ValueError(f"Content not ready for licensing. Current status: {encrypted_content.status}")
 
         # Create License record
         license = License.objects.create(
@@ -255,7 +267,11 @@ class LicenseService:
             # Generate LCP license via License Server
             lcp_client = LCPServerClient()
             lcp_license = lcp_client.generate_license(
-                license, user_passphrase, print_limit=print_limit, copy_limit=copy_limit
+                license,
+                user_passphrase=user_passphrase,
+                passphrase_hash=passphrase_hash,
+                print_limit=print_limit,
+                copy_limit=copy_limit,
             )
 
             # Register with Status Server

@@ -18,6 +18,5 @@ class LicenseSerializer:
         created_at: datetime
         updated_at: datetime
 
-
     class Detailed(Base):
         entry: EntrySerializer.Base

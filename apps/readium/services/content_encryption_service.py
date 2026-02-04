@@ -94,21 +94,21 @@ class ContentEncryptionService:
         event_broker = get_event_broker()
         event_broker.execute(
             "evilflowers_lcpencrypt_worker.lcpencrypt",
-            kwargs={
-                "input_file": acquisition.content.name,
-                "contentid": encrypted_content.lcp_content_id,
-                "storage": acquisition.upload_base_path(),
-                "filename": output_filename,
-                "lcpsv": getattr(settings, "EVILFLOWERS_READIUM_LCPSV_URL", None),
-                "notify": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None),
+            {
+                "kwargs": {
+                    "input_file": acquisition.content.name,
+                    "contentid": encrypted_content.lcp_content_id,
+                    "storage": acquisition.upload_base_path(),
+                    "filename": output_filename,
+                    "lcpsv": getattr(settings, "EVILFLOWERS_READIUM_LCPSV_URL", None),
+                    "notify": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None),
+                },
+                "queue": "evilflowers_lcpencrypt_worker",
             },
-            queue="evilflowers_lcpencrypt_worker",
         )
 
     @staticmethod
-    def mark_encryption_completed(
-        lcp_content_id: str, encrypted_url: Optional[str] = None
-    ) -> EncryptedContent:
+    def mark_encryption_completed(lcp_content_id: str, encrypted_url: Optional[str] = None) -> EncryptedContent:
         """
         Mark encryption as completed. Called by webhook after lcpencrypt finishes.
 
@@ -127,9 +127,7 @@ class ContentEncryptionService:
             encrypted_content.encrypted_url = encrypted_url
         else:
             # Generate default URL
-            encrypted_content.encrypted_url = ContentEncryptionService.get_encrypted_content_url(
-                encrypted_content
-            )
+            encrypted_content.encrypted_url = ContentEncryptionService.get_encrypted_content_url(encrypted_content)
 
         encrypted_content.save()
         return encrypted_content

@@ -26,9 +26,7 @@ class LCPServerClient:
 
     def __init__(self):
         self.license_server_url = settings.EVILFLOWERS_READIUM_LCPSV_URL
-        self.provider_url = getattr(
-            settings, "EVILFLOWERS_READIUM_PROVIDER_URL", settings.EVILFLOWERS_BASE_URL
-        )
+        self.provider_url = getattr(settings, "EVILFLOWERS_READIUM_PROVIDER_URL", settings.EVILFLOWERS_BASE_URL)
 
     @staticmethod
     def hash_passphrase(passphrase: str) -> str:
@@ -49,9 +47,10 @@ class LCPServerClient:
     def generate_license(
         self,
         license: License,
-        user_passphrase: str,
+        user_passphrase: str = None,
+        passphrase_hash: str = None,
         print_limit: int = 10,
-        copy_limit: int = 2048
+        copy_limit: int = 2048,
     ) -> Dict:
         """
         Generate a new LCP license by calling the License Server.
@@ -63,7 +62,8 @@ class LCPServerClient:
 
         Args:
             license: License model instance (should have encrypted_content set)
-            user_passphrase: User's chosen passphrase (will be hashed)
+            user_passphrase: User's chosen passphrase (will be hashed). Either this or passphrase_hash must be provided.
+            passphrase_hash: Pre-computed SHA-256 hash of passphrase. Either this or user_passphrase must be provided.
             print_limit: Number of pages allowed to print (default: 10)
             copy_limit: Number of characters allowed to copy (default: 2048)
 
@@ -71,17 +71,24 @@ class LCPServerClient:
             Complete LCP license as JSON dict
 
         Raises:
-            ValueError: If license missing encrypted_content
+            ValueError: If license missing encrypted_content or if neither passphrase nor hash provided
             Exception: If LCP Server returns error
         """
         if not license.encrypted_content:
             raise ValueError("License must have encrypted_content before generating")
 
-        # Hash the user passphrase
-        passphrase_hash = self.hash_passphrase(user_passphrase)
+        # Handle passphrase: use provided hash or hash the plain passphrase
+        if passphrase_hash is not None:
+            # Use pre-computed hash (uppercase for LCP spec)
+            final_hash = passphrase_hash.upper()
+        elif user_passphrase is not None:
+            # Hash the user passphrase
+            final_hash = self.hash_passphrase(user_passphrase)
+        else:
+            raise ValueError("Either user_passphrase or passphrase_hash must be provided")
 
         # Update license with passphrase hash
-        license.passphrase_hash = passphrase_hash
+        license.passphrase_hash = final_hash
         license.save()
 
         # Prepare partial license payload per LCP spec
@@ -96,7 +103,7 @@ class LCPServerClient:
             "encryption": {
                 "user_key": {
                     "text_hint": license.passphrase_hint or "Your library password",
-                    "hex_value": passphrase_hash,
+                    "hex_value": final_hash,
                 }
             },
             "rights": {
@@ -181,12 +188,7 @@ class LCPServerClient:
         except requests.RequestException as e:
             raise Exception(f"Failed to fetch fresh license: {str(e)}")
 
-    def update_license_rights(
-        self,
-        license: License,
-        print_limit: int = 10,
-        copy_limit: int = 2048
-    ) -> None:
+    def update_license_rights(self, license: License, print_limit: int = 10, copy_limit: int = 2048) -> None:
         """
         Update license rights on LCP Server.
 

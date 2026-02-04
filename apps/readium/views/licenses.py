@@ -50,17 +50,22 @@ class LicenseManagement(SecuredView):
 
         Required fields:
         - entry_id: UUID of the entry to license
-        - user_passphrase: User's chosen passphrase for decryption
-        - passphrase_hint: Hint for the passphrase (optional)
+
+        Optional fields:
+        - user_passphrase: User's chosen passphrase for this license (if not provided, uses user's default passphrase)
+        - passphrase_hint: Hint for the passphrase (if not provided, uses user's default hint)
         - duration_days: License duration in days (default: 14)
+        - start_date: License start date (default: now)
+
+        Note: If user_passphrase is not provided, the user must have a default LCP passphrase set in their profile.
         """,
         tags=["Licenses"],
         summary="Create new LCP license",
     )
     def post(self, request):
-        # Extract required parameters
+        # Extract parameters
         entry_id = request.data.get("entry_id")
-        user_passphrase = request.data.get("user_passphrase")
+        user_passphrase = request.data.get("user_passphrase")  # Optional - will use user's default if not provided
         passphrase_hint = request.data.get("passphrase_hint")
         duration_days = int(request.data.get("duration_days", 14))
         start_date_str = request.data.get("start_date")
@@ -69,13 +74,6 @@ class LicenseManagement(SecuredView):
         if not entry_id:
             raise ProblemDetailException(
                 _("entry_id is required"),
-                status=HTTPStatus.BAD_REQUEST,
-                detail_type=DetailType.VALIDATION_ERROR,
-            )
-
-        if not user_passphrase:
-            raise ProblemDetailException(
-                _("user_passphrase is required"),
                 status=HTTPStatus.BAD_REQUEST,
                 detail_type=DetailType.VALIDATION_ERROR,
             )
@@ -94,6 +92,7 @@ class LicenseManagement(SecuredView):
         start_date = None
         if start_date_str:
             from django.utils.dateparse import parse_datetime
+
             start_date = parse_datetime(start_date_str)
 
         # Create license via service
@@ -181,10 +180,7 @@ class LicenseDetail(SecuredView):
             fresh_license = LicenseService.fetch_fresh_license(license)
 
             # Return as downloadable LCP license
-            response = JsonResponse(
-                fresh_license,
-                content_type="application/vnd.readium.lcp.license.v1.0+json"
-            )
+            response = JsonResponse(fresh_license, content_type="application/vnd.readium.lcp.license.v1.0+json")
             response["Content-Disposition"] = f'attachment; filename="{license.entry.title}.lcpl"'
             return response
 

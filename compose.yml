@@ -40,6 +40,7 @@ services:
       - ./data/redis:/data
     environment:
       REDIS_REPLICATION_MODE: master
+
   readium:
     image: "ghcr.io/evilflowerscatalog/readium-lcp-server:master"
     volumes:
@@ -53,12 +54,14 @@ services:
       - ./data/readium/cert/privkey.pem:/usr/local/var/readium/lcp/cert/privkey.pem
     ports:
       - "8988:8988"
+
   evilflowers-ocr-worker:
     image: "ghcr.io/evilflowerscatalog/evilflowers-ocr-worker:master"
     environment:
       BROKER: ""
     volumes:
       - ./data/evilflowers/private:/usr/local/app/private
+
   evilflowers-lcpencrypt-worker:
     image: "ghcr.io/evilflowerscatalog/evilflowers-lcpencrypt-worker:master"
     environment:
@@ -66,22 +69,6 @@ services:
       STORAGE_PATH: /usr/local/app/private
     volumes:
       - ./data/evilflowers/private:/usr/local/app/private
-
-  minio:
-    hostname: minio
-    image: 'minio/minio:latest'
-    container_name: minio
-    ports:
-      - "9001:9001"
-      - "9000:9000"
-    command: [ "server", "/data", "--console-address", ":9001" ]
-    volumes:
-      - minio-data:/data
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
 
 volumes:
   minio-data:

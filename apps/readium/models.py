@@ -31,14 +31,10 @@ class EncryptedContent(BaseModel):
         FAILED = "failed", _("Encryption Failed")
         REGISTERED = "registered", _("Registered with LCP Server")
 
-    acquisition = models.OneToOneField(
-        Acquisition, on_delete=models.CASCADE, related_name="encrypted_content"
-    )
+    acquisition = models.OneToOneField(Acquisition, on_delete=models.CASCADE, related_name="encrypted_content")
 
     # Encryption status
-    status = models.CharField(
-        max_length=20, choices=EncryptionStatus.choices, default=EncryptionStatus.PENDING
-    )
+    status = models.CharField(max_length=20, choices=EncryptionStatus.choices, default=EncryptionStatus.PENDING)
 
     # LCP Server content ID (used for all licenses of this publication)
     lcp_content_id = models.CharField(max_length=255, unique=True)
@@ -50,12 +46,8 @@ class EncryptedContent(BaseModel):
     encrypted_url = models.URLField(max_length=500, null=True, blank=True)
 
     # Encryption metadata
-    encryption_algorithm = models.CharField(
-        max_length=50, default="http://www.w3.org/2001/04/xmlenc#aes256-cbc"
-    )
-    content_key_encrypted = models.TextField(
-        null=True, blank=True
-    )  # Encrypted content key from LCP server
+    encryption_algorithm = models.CharField(max_length=50, default="http://www.w3.org/2001/04/xmlenc#aes256-cbc")
+    content_key_encrypted = models.TextField(null=True, blank=True)  # Encrypted content key from LCP server
 
     # Tracking
     encrypted_at = models.DateTimeField(null=True, blank=True)

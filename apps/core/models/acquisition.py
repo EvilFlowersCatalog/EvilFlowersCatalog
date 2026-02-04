@@ -89,9 +89,12 @@ def touch_entry(sender, instance: Acquisition, **kwargs):
 
 @receiver(post_save, sender=Acquisition)
 def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
-    dependent_tasks = []
+    import logging
+
+    logger = logging.getLogger(__name__)
     event_broker = get_event_broker()
 
+    # OCR task for new acquisitions with language set
     if created and instance.entry.language_id:
         event_broker.execute(
             "evilflowers_ocr_worker.ocr",
@@ -99,21 +102,17 @@ def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
                 "args": [instance.content.name, instance.content.name, instance.entry.language.alpha3],
             },
         )
-    else:
-        ocr_task = None
 
-    if instance.entry.config["readium_enabled"]:
+    # Readium LCP encryption via proper service (replaces legacy direct worker call)
+    if created and instance.entry.read_config("readium_enabled"):
+        from apps.readium.services import ContentEncryptionService
 
-        event_broker.execute(
-            "evilflowers_lcpencrypt_worker.lcpencrypt",
-            kwargs={
-                "input_file": instance.content.name,
-                "contentid": str(instance.pk),
-                "storage": instance.upload_base_path(),  # FIXME: support for S3
-                "filename": f"{instance.pk}.lcp.pdf",
-            },
-            queue="evilflowers_lcpencrypt_worker",
-        )
+        try:
+            ContentEncryptionService.encrypt_acquisition(instance)
+            logger.info(f"Triggered LCP encryption for acquisition {instance.pk}")
+        except ValueError as e:
+            # Log but don't fail - encryption can be triggered manually later
+            logger.warning(f"Failed to trigger encryption for acquisition {instance.pk}: {e}")
 
 
 __all__ = ["Acquisition"]
