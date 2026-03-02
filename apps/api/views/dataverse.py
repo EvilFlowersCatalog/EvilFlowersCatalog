@@ -13,7 +13,7 @@ from django.utils.decorators import method_decorator
 
 from apps import openapi
 from apps.core.errors import ProblemDetailException
-from apps.core.models import Entry, Acquisition, Catalog, User, Author, EntryAuthor
+from apps.core.models import Entry, Acquisition, Catalog, User, Author, EntryAuthor, Language
 from partial_date import PartialDate
 
 logger = logging.getLogger(__name__)
@@ -146,7 +146,7 @@ class DataversePrepublishIngest(View):
 
         logger.info(f"[DATAVERSE-PREPUBLISH] Found {len(items)} files in dataset - dataset_id: {dataset_id}, global_id: {global_id}, title: {title}")
 
-        def resolve_catalog(dataset_id_value, global_id_value) -> Catalog:
+        def resolve_catalog() -> Catalog:
             """
             Resolve target catalog using a JSON map (Dataverse → EvilFlowers) with fallbacks.
             Priority:
@@ -156,79 +156,21 @@ class DataversePrepublishIngest(View):
             4) map default
             5) first catalog
             """
-            logger.info(f"[DATAVERSE-PREPUBLISH] Resolving catalog for dataset_id={dataset_id_value}, global_id={global_id_value}")
-
-            map_path = os.getenv("DATAVERSE_CATALOG_MAP_FILE", "conf/dataverse_catalog_map.json")
-            logger.info(f"[DATAVERSE-PREPUBLISH] Using catalog map file: {map_path}")
-            mapping = {}
-            if os.path.exists(map_path):
-                try:
-                    with open(map_path, "r", encoding="utf-8") as fh:
-                        mapping = json.load(fh) or {}
-                    logger.info(f"[DATAVERSE-PREPUBLISH] Loaded catalog map: {json.dumps(mapping, indent=2)}")
-                except Exception as exc:
-                    logger.warning(f"[DATAVERSE-PREPUBLISH] Failed to load map file {map_path}: {exc}", exc_info=True)
-            else:
-                logger.info(f"[DATAVERSE-PREPUBLISH] Catalog map file not found at {map_path}, using fallbacks")
-
-            dataset_map = mapping.get("dataset_id", {}) or {}
-            prefix_map = mapping.get("global_id_prefix", {}) or {}
-            default_url_name = mapping.get("default")
-            
-            logger.info(f"[DATAVERSE-PREPUBLISH] Map contents - dataset_map keys: {list(dataset_map.keys())}, prefix_map keys: {list(prefix_map.keys())}, default: {default_url_name}")
-
-            catalog_url_name = None
-
-            # 1) dataset_id exact match
-            if dataset_id_value is not None:
-                catalog_url_name = dataset_map.get(str(dataset_id_value))
-                if catalog_url_name:
-                    logger.info(f"[DATAVERSE-PREPUBLISH] Found catalog via dataset_id map: {catalog_url_name}")
-
-            # 2) global_id prefix (longest match)
-            if catalog_url_name is None and global_id_value and prefix_map:
-                for prefix in sorted(prefix_map.keys(), key=len, reverse=True):
-                    if str(global_id_value).startswith(prefix):
-                        catalog_url_name = prefix_map[prefix]
-                        logger.info(f"[DATAVERSE-PREPUBLISH] Found catalog via global_id prefix '{prefix}': {catalog_url_name}")
-                        break
-
-            # 3) explicit env override
-            if catalog_url_name is None:
-                catalog_url_name = os.getenv("DATAVERSE_CATALOG_URL_NAME")
-                if catalog_url_name:
-                    logger.info(f"[DATAVERSE-PREPUBLISH] Using catalog from DATAVERSE_CATALOG_URL_NAME env: {catalog_url_name}")
-
-            # 4) map default
-            if catalog_url_name is None and default_url_name:
-                catalog_url_name = default_url_name
-                logger.info(f"[DATAVERSE-PREPUBLISH] Using catalog from map default: {catalog_url_name}")
-
-            # 5) fallback to first catalog
-            if catalog_url_name:
-                try:
-                    catalog = Catalog.objects.get(url_name=catalog_url_name)
-                    logger.info(f"[DATAVERSE-PREPUBLISH] Resolved catalog: {catalog.url_name} (id: {catalog.pk}, title: {catalog.title})")
-                    return catalog
-                except Catalog.DoesNotExist:
-                    logger.error(f"[DATAVERSE-PREPUBLISH] Catalog not found: {catalog_url_name}")
-                    raise ProblemDetailException(
-                        _("Catalog not found: %s") % catalog_url_name,
-                        status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                    )
-
-            logger.info("[DATAVERSE-PREPUBLISH] No specific catalog found, using first available catalog")
-            catalog_fallback = Catalog.objects.first()
-            if not catalog_fallback:
-                logger.error("[DATAVERSE-PREPUBLISH] No catalogs available in database")
-                raise ProblemDetailException(
-                    _("No catalog available"),
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            logger.info("[DATAVERSE-PREPUBLISH] Resolving catalog using fixed Dataverse -> catalog mapping")
+            catalog = Catalog.objects.order_by("id").first()
+            if catalog:
+                logger.info(
+                    f"[DATAVERSE-PREPUBLISH] Using fixed catalog: {catalog.url_name} (id: {catalog.pk}, title: {catalog.title})"
                 )
-            logger.info(f"[DATAVERSE-PREPUBLISH] Using fallback catalog: {catalog_fallback.url_name} (id: {catalog_fallback.pk})")
-            return catalog_fallback
+                return catalog
 
-        catalog = resolve_catalog(dataset_id, global_id)
+            logger.error("[DATAVERSE-PREPUBLISH] No catalogs available in database")
+            raise ProblemDetailException(
+                _("No catalog available"),
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+
+        catalog = resolve_catalog()
 
         # Get system user (superuser)
         logger.info("[DATAVERSE-PREPUBLISH] Looking for system user (superuser)")
@@ -259,13 +201,153 @@ class DataversePrepublishIngest(View):
         # Extract metadata from dataset
         def extract_metadata(dataset_data):
             """Extract metadata from Dataverse dataset response"""
+            metadata_blocks = dataset_data.get("metadataBlocks", {})
+            citation_block = metadata_blocks.get("citation", {})
+            citation_fields = citation_block.get("fields", []) if citation_block else []
+
+            def citation_field_value(type_name):
+                for field in citation_fields:
+                    if field.get("typeName") == type_name:
+                        return field.get("value")
+                return None
+
+            def flatten_text(value):
+                if value is None:
+                    return []
+                if isinstance(value, str):
+                    cleaned = value.strip()
+                    return [cleaned] if cleaned else []
+                if isinstance(value, (int, float)):
+                    return [str(value)]
+                if isinstance(value, list):
+                    flattened = []
+                    for item in value:
+                        flattened.extend(flatten_text(item))
+                    return flattened
+                if isinstance(value, dict):
+                    first_name = value.get("firstName") or value.get("givenName") or ""
+                    last_name = value.get("lastName") or value.get("familyName") or ""
+                    if first_name or last_name:
+                        return [" ".join(part for part in [first_name, last_name] if part).strip()]
+                    for key in (
+                        "value",
+                        "displayValue",
+                        "authorName",
+                        "name",
+                        "keywordValue",
+                        "subject",
+                        "term",
+                        "title",
+                    ):
+                        if key in value:
+                            return flatten_text(value.get(key))
+                return []
+
+            def first_text(*values):
+                for value in values:
+                    flattened = flatten_text(value)
+                    if flattened:
+                        return flattened[0]
+                return None
+
+            def parse_partial_date(value):
+                if not isinstance(value, str):
+                    return None
+                cleaned = value.strip()
+                if not cleaned:
+                    return None
+                from datetime import datetime
+
+                for fmt, include_month, include_day in (
+                    ("%Y-%m-%d", True, True),
+                    ("%Y-%m", True, False),
+                    ("%Y", False, False),
+                ):
+                    try:
+                        dt = datetime.strptime(cleaned, fmt)
+                        return PartialDate(
+                            year=dt.year,
+                            month=dt.month if include_month else None,
+                            day=dt.day if include_day else None,
+                        )
+                    except ValueError:
+                        continue
+                return None
+
+            def resolve_language(value):
+                language_values = flatten_text(value)
+                for language_value in language_values:
+                    normalized = language_value.strip()
+                    if not normalized:
+                        continue
+                    lowered = normalized.lower()
+                    language = None
+                    if len(lowered) == 2:
+                        language = Language.objects.filter(alpha2=lowered).first()
+                    elif len(lowered) == 3:
+                        language = Language.objects.filter(alpha3=lowered).first()
+                    if language is None:
+                        language = Language.objects.filter(name__iexact=normalized).first()
+                    if language:
+                        return language
+                return None
+
+            def build_content(metadata):
+                lines = []
+                if metadata["summary"]:
+                    lines.append(metadata["summary"])
+                if metadata["authors"]:
+                    lines.append(
+                        "Authors: " + ", ".join(
+                            " ".join(part for part in [author["name"], author["surname"]] if part).strip()
+                            for author in metadata["authors"]
+                            if author.get("name") or author.get("surname")
+                        )
+                    )
+                if metadata["publisher"]:
+                    lines.append(f"Publisher: {metadata['publisher']}")
+                if metadata["language"]:
+                    lines.append(f"Language: {metadata['language'].name}")
+                if metadata["doi"]:
+                    lines.append(f"Persistent ID: {metadata['doi']}")
+                file_names = [
+                    (item.get("dataFile") or {}).get("filename")
+                    for item in items
+                    if (item.get("dataFile") or {}).get("filename")
+                ]
+                if file_names:
+                    lines.append("Files: " + ", ".join(file_names))
+                return "\n\n".join(line for line in lines if line) or None
+
+            def build_citation(metadata):
+                author_names = [
+                    " ".join(part for part in [author["surname"], author["name"]] if part).strip(", ")
+                    for author in metadata["authors"]
+                    if author.get("name") or author.get("surname")
+                ]
+                citation_parts = []
+                if author_names:
+                    citation_parts.append("; ".join(author_names))
+                if metadata["title"]:
+                    citation_parts.append(metadata["title"])
+                if metadata["publisher"]:
+                    citation_parts.append(metadata["publisher"])
+                if metadata["published_at"]:
+                    citation_parts.append(str(metadata["published_at"]))
+                if metadata["doi"]:
+                    citation_parts.append(metadata["doi"])
+                return ". ".join(part for part in citation_parts if part) or None
+
             metadata = {
                 "title": title or dataset_data.get("title", ""),
                 "summary": None,
+                "content": None,
                 "authors": [],
+                "language": None,
                 "publisher": None,
                 "published_at": None,
                 "doi": None,
+                "citation": None,
             }
             
             # Get title from dataset if not provided
@@ -273,15 +355,16 @@ class DataversePrepublishIngest(View):
                 metadata["title"] = dataset_data.get("title") or dataset_data.get("displayName") or f"Dataverse Dataset {global_id}"
             
             # Get description/summary
-            metadata["summary"] = dataset_data.get("description") or dataset_data.get("descriptionText")
+            metadata["summary"] = first_text(
+                dataset_data.get("description"),
+                dataset_data.get("descriptionText"),
+                citation_field_value("dsDescription"),
+            )
             
             # Get authors from dataset metadataBlocks
             authors_list = []
-            metadata_blocks = dataset_data.get("metadataBlocks", {})
-            citation_block = metadata_blocks.get("citation", {})
             if citation_block:
-                fields = citation_block.get("fields", [])
-                for field in fields:
+                for field in citation_fields:
                     if field.get("typeName") == "author":
                         authors_list = field.get("value", [])
                         break
@@ -320,34 +403,44 @@ class DataversePrepublishIngest(View):
                                 metadata["authors"].append({"name": first, "surname": last})
             
             # Get publisher
-            metadata["publisher"] = dataset_data.get("publisher") or dataset_data.get("producer")
+            metadata["publisher"] = first_text(
+                dataset_data.get("publisher"),
+                dataset_data.get("producer"),
+                citation_field_value("publisher"),
+                citation_field_value("producerName"),
+            )
             
             # Get publication date
-            pub_date = dataset_data.get("publicationDate") or dataset_data.get("datePublished")
-            if pub_date:
-                try:
-                    # Try to parse date
-                    from datetime import datetime
-                    if isinstance(pub_date, str):
-                        # Try common formats
-                        for fmt in ["%Y-%m-%d", "%Y", "%Y-%m"]:
-                            try:
-                                dt = datetime.strptime(pub_date[:len(fmt)], fmt)
-                                metadata["published_at"] = PartialDate(year=dt.year, month=dt.month if fmt != "%Y" else None, day=dt.day if fmt == "%Y-%m-%d" else None)
-                                break
-                            except:
-                                continue
-                except:
-                    pass
+            pub_date = (
+                dataset_data.get("publicationDate")
+                or dataset_data.get("datePublished")
+                or first_text(citation_field_value("productionDate"))
+                or first_text(citation_field_value("distributionDate"))
+            )
+            metadata["published_at"] = parse_partial_date(pub_date)
             
             # Get DOI
-            metadata["doi"] = dataset_data.get("persistentId") or dataset_data.get("doi")
+            metadata["doi"] = first_text(
+                dataset_data.get("persistentId"),
+                dataset_data.get("doi"),
+            )
             if metadata["doi"] and not metadata["doi"].startswith("doi:"):
                 # Ensure DOI format
                 if metadata["doi"].startswith("10."):
                     metadata["doi"] = f"doi:{metadata['doi']}"
+
+            metadata["language"] = resolve_language(
+                citation_field_value("language") or dataset_data.get("language")
+            )
+            metadata["content"] = build_content(metadata)
+            metadata["citation"] = build_citation(metadata)
             
-            logger.info(f"[DATAVERSE-PREPUBLISH] Extracted metadata - title: {metadata['title']}, authors: {len(metadata['authors'])}, summary: {bool(metadata['summary'])}, publisher: {metadata['publisher']}")
+            logger.info(
+                "[DATAVERSE-PREPUBLISH] Extracted metadata - "
+                f"title: {metadata['title']}, authors: {len(metadata['authors'])}, "
+                f"summary: {bool(metadata['summary'])}, language: {getattr(metadata['language'], 'alpha2', None)}, "
+                f"publisher: {metadata['publisher']}, citation: {bool(metadata['citation'])}"
+            )
             return metadata
 
         extracted_metadata = extract_metadata(dataset_metadata)
@@ -363,28 +456,48 @@ class DataversePrepublishIngest(View):
 
             if entry:
                 logger.info(f"[DATAVERSE-PREPUBLISH] Found existing entry: {entry.pk} - {entry.title}")
-                # Update existing entry with new metadata
+                entry_identifiers = dict(entry.identifiers or {})
+                entry_identifiers["dataverse_pid"] = global_id
+                entry_identifiers["dataverse_dataset_id"] = str(dataset_id)
+                if extracted_metadata["doi"]:
+                    entry_identifiers["doi"] = extracted_metadata["doi"]
+
                 updated = False
-                if extracted_metadata["title"] and extracted_metadata["title"] != entry.title:
+                if extracted_metadata["title"] != entry.title:
                     logger.info(f"[DATAVERSE-PREPUBLISH] Updating entry title from '{entry.title}' to '{extracted_metadata['title']}'")
                     entry.title = extracted_metadata["title"]
                     updated = True
-                if extracted_metadata["summary"] and extracted_metadata["summary"] != entry.summary:
+                if extracted_metadata["summary"] != entry.summary:
                     entry.summary = extracted_metadata["summary"]
                     updated = True
-                if extracted_metadata["publisher"] and extracted_metadata["publisher"] != entry.publisher:
+                if extracted_metadata["content"] != entry.content:
+                    entry.content = extracted_metadata["content"]
+                    updated = True
+                if extracted_metadata["publisher"] != entry.publisher:
                     entry.publisher = extracted_metadata["publisher"]
                     updated = True
-                if extracted_metadata["published_at"] and extracted_metadata["published_at"] != entry.published_at:
+                if extracted_metadata["published_at"] != entry.published_at:
                     entry.published_at = extracted_metadata["published_at"]
+                    updated = True
+                if extracted_metadata["citation"] != entry.citation:
+                    entry.citation = extracted_metadata["citation"]
+                    updated = True
+                if extracted_metadata["language"] != entry.language:
+                    entry.language = extracted_metadata["language"]
+                    updated = True
+                if entry_identifiers != (entry.identifiers or {}):
+                    entry.identifiers = entry_identifiers
                     updated = True
                 if updated:
                     entry.save()
                     logger.info(f"[DATAVERSE-PREPUBLISH] Entry updated successfully")
             else:
                 logger.info("[DATAVERSE-PREPUBLISH] No existing entry found, creating new entry")
-                # Create new entry with full metadata
-                entry_identifiers = {"dataverse_pid": global_id, "dataverse_dataset_id": str(dataset_id)}
+                entry_identifiers = {
+                    "dataverse_pid": global_id,
+                    "dataverse_dataset_id": str(dataset_id),
+                }
+
                 if extracted_metadata["doi"]:
                     entry_identifiers["doi"] = extracted_metadata["doi"]
                 
@@ -394,8 +507,11 @@ class DataversePrepublishIngest(View):
                     catalog=catalog,
                     title=extracted_metadata["title"],
                     summary=extracted_metadata["summary"],
+                    content=extracted_metadata["content"],
+                    language=extracted_metadata["language"],
                     publisher=extracted_metadata["publisher"],
                     published_at=extracted_metadata["published_at"],
+                    citation=extracted_metadata["citation"],
                     identifiers=entry_identifiers,
                 )
                 entry.save()
