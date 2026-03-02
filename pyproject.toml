@@ -37,7 +37,7 @@ requests = "^2.32.4"
 minio = "^7.2"
 
 [tool.poetry.group.pdf.dependencies]
-pymupdf = "^1.26.3"
+pymupdf = "^1.27.1"
 
 [tool.poetry.group.apm.dependencies]
 elastic-apm = "^6.23"

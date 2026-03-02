@@ -2,7 +2,7 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.13.0 : 2025-07-06
+## 0.13.0 : 2026-03-01
 
 - **Added**: Event broker system with support for Celery and Kafka
 - **Changed**: Background tasks now use the event broker system
