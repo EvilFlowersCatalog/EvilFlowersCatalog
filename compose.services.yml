@@ -71,12 +71,13 @@ services:
 
   readium:
     image: "ghcr.io/evilflowerscatalog/readium-lcp-server:master"
+    user: "0:0"  # Run as root to avoid permission issues with mounted volumes
     volumes:
       - ./data/evilflowers:/mnt/data
-      - ./data/readium/db:/usr/local/var/readium/db
+      - readium-data:/usr/local/var/readium
       - ./data/readium/logs:/var/log/readium
-      - ./data/readium/cert/cert.pem:/usr/local/var/readium/lcp/cert/cert.pem
-      - ./data/readium/cert/privkey.pem:/usr/local/var/readium/lcp/cert/privkey.pem
+      - ./data/readium/cert/cert.pem:/usr/local/etc/readium/lcp/cert/cert.pem
+      - ./data/readium/cert/privkey.pem:/usr/local/etc/readium/lcp/cert/privkey.pem
       - ./data/readium/config.yaml:/usr/local/etc/readium/config.yaml
       - ./data/readium/htpasswd:/usr/local/etc/readium/htpasswd
     ports:
@@ -97,5 +98,9 @@ services:
     environment:
       BROKER: "redis://docker.for.mac.localhost:6379/7"
       STORAGE_PATH: /mnt/data
+      LCPSV_URL: "http://readium:8989"
     volumes:
       - ./data/evilflowers/storage:/mnt/data
+
+volumes:
+  readium-data:

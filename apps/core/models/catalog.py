@@ -12,6 +12,15 @@ class Catalog(BaseModel):
         verbose_name = _("Catalog")
         verbose_name_plural = _("Catalogs")
         unique_together = ("creator_id", "title")
+        indexes = [
+            models.Index(fields=["creator_id"]),
+            models.Index(fields=["url_name"]),
+            models.Index(fields=["title"]),
+            models.Index(fields=["is_public"]),
+            models.Index(fields=["touched_at"]),
+            models.Index(fields=["is_public", "title"]),
+            models.Index(fields=["creator_id", "is_public"]),
+        ]
 
     creator = models.ForeignKey("User", on_delete=models.CASCADE)
     url_name = models.SlugField(unique=True)

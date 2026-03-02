@@ -1,8 +1,8 @@
-FROM python:3.13-slim AS builder
+FROM python:3.14-slim AS builder
 
 # System setup
-RUN apt update -y && apt install -y libffi-dev build-essential libsasl2-dev libjpeg-dev libldap-dev postgresql-common && \
-    /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && \
+RUN apt update -y && apt install -y git libffi-dev build-essential libsasl2-dev libjpeg-dev libldap-dev  \
+    postgresql-common libxml2-dev libxslt1-dev && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && \
     apt update -y && \
     apt install -y postgresql-client-17 postgresql-server-dev-17
 
@@ -17,7 +17,7 @@ COPY requirements.txt requirements.txt
 # Dependencies
 RUN pip install --user -r requirements.txt --no-cache-dir
 
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 ## Python environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -36,6 +36,7 @@ COPY --from=builder /root/.local /root/.local
 
 ENV PATH=/root/.local/bin:$PATH
 ENV GUNICORN_CMD_ARGS='--workers 4 -b 0.0.0.0:8000'
+ENV LOGLEVEL=info
 
 RUN date -I > BUILD.txt
 

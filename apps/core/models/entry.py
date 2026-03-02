@@ -29,7 +29,9 @@ class EntryConfig(TypedDict):
     evilflowers_render_type: Literal["page", "document"]
     evilflowers_share_enabled: bool
     evilflowers_metadata_fetch: bool
+    evilflowers_ip_block: bool
     readium_enabled: bool
+    readium_amount: int
 
 
 def default_entry_config() -> EntryConfig:
@@ -41,7 +43,9 @@ def default_entry_config() -> EntryConfig:
         evilflowers_share_enabled=True,
         evilflowers_render_type="document",
         evilflowers_metadata_fetch=False,
+        evilflowers_ip_block=False,
         readium_enabled=False,
+        readium_amount=1,
     )
 
 
@@ -53,7 +57,22 @@ class Entry(BaseModel):
         verbose_name = _("Entry")
         verbose_name_plural = _("Entries")
         indexes = [
+            # Original index
             models.Index(fields=["catalog_id", "-popularity"]),
+            # New performance indexes
+            models.Index(fields=["catalog_id", "language_id"]),
+            models.Index(fields=["catalog_id", "published_at"]),
+            models.Index(fields=["catalog_id", "-created_at"]),
+            models.Index(fields=["title"]),
+            models.Index(fields=["publisher"]),
+            models.Index(fields=["creator_id"]),
+            # Composite indexes for common filter combinations
+            models.Index(fields=["catalog_id", "language_id", "-popularity"]),
+            models.Index(fields=["catalog_id", "-created_at", "-popularity"]),
+            models.Index(fields=["catalog_id", "published_at", "-popularity"]),
+            # Text search optimization
+            models.Index(fields=["title", "catalog_id"]),
+            models.Index(fields=["summary", "catalog_id"]),
         ]
 
     def _upload_to_path(self, filename):

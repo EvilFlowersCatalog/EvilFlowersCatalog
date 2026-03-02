@@ -9,6 +9,7 @@ from apps.core.errors import (
     ValidationException,
     ProblemDetailException,
     UnauthorizedException,
+    DetailType,
 )
 from apps.api.filters.users import UserFilter
 from apps.api.forms.users import UserForm, CreateUserForm
@@ -19,7 +20,11 @@ from apps.core.views import SecuredView
 
 
 class UserManagement(SecuredView):
-    @openapi.metadata(description="Create user", tags=["Users"])
+    @openapi.metadata(
+        description="Create a new user account with authentication credentials and profile information. The user will be able to authenticate and access catalogs based on assigned permissions.",
+        tags=["Users"],
+        summary="Create a new user account",
+    )
     def post(self, request):
         form = CreateUserForm.create_from_request(request)
 
@@ -39,7 +44,11 @@ class UserManagement(SecuredView):
 
         return SingleResponse(request, data=UserSerializer.Base.model_validate(user), status=HTTPStatus.CREATED)
 
-    @openapi.metadata(description="List users", tags=["Users"])
+    @openapi.metadata(
+        description="Retrieve a paginated list of users in the system. Supports filtering by username, name, surname, active status, and last login date. Requires appropriate permissions to access user information.",
+        tags=["Users"],
+        summary="List system users",
+    )
     def get(self, request):
         users = UserFilter(request.GET, queryset=User.objects.all(), request=request).qs
 
@@ -62,13 +71,21 @@ class UserDetail(SecuredView):
 
         return user
 
-    @openapi.metadata(description="User detail", tags=["Users"])
+    @openapi.metadata(
+        description="Retrieve detailed information about a specific user, including their profile information, permissions, and catalog access. Requires appropriate permissions to view user details.",
+        tags=["Users"],
+        summary="Get user details",
+    )
     def get(self, request, user_id: UUID):
         user = self._get_user(request, user_id, lambda: request.user.has_perm("core.view_user"))
 
         return SingleResponse(request, data=UserSerializer.Detailed.model_validate(user))
 
-    @openapi.metadata(description="Update User", tags=["Users"])
+    @openapi.metadata(
+        description="Update user profile information including name, surname, email, active status, and LCP passphrase. Requires appropriate permissions to modify user accounts.",
+        tags=["Users"],
+        summary="Update user profile",
+    )
     def put(self, request, user_id: UUID):
         form = UserForm.create_from_request(request)
 
@@ -80,11 +97,22 @@ class UserDetail(SecuredView):
         form.populate(user)
         if "password" in form.cleaned_data.keys():
             user.set_password(form.cleaned_data["password"])
+
+        # Handle LCP passphrase - hash before storing
+        if "lcp_passphrase" in form.cleaned_data and form.cleaned_data["lcp_passphrase"]:
+            from apps.readium.services.lcp_server_client import LCPServerClient
+
+            user.lcp_passphrase_hash = LCPServerClient.hash_passphrase(form.cleaned_data["lcp_passphrase"])
+
         user.save()
 
         return SingleResponse(request, data=UserSerializer.Base.model_validate(user))
 
-    @openapi.metadata(description="Delete User", tags=["Users"])
+    @openapi.metadata(
+        description="Permanently delete a user account and all associated data including annotations, shelf records, and access permissions. This action is irreversible and requires appropriate permissions.",
+        tags=["Users"],
+        summary="Delete user account",
+    )
     def delete(self, request, user_id: UUID):
         user = self._get_user(request, user_id, lambda: request.user.has_perm("core.delete_user"))
         user.delete()
@@ -93,7 +121,11 @@ class UserDetail(SecuredView):
 
 
 class UserMe(SecuredView):
-    @openapi.metadata(description="Return detail of the current User", tags=["Users"])
+    @openapi.metadata(
+        description="Get detailed information about the currently authenticated user including profile data, permissions, and accessible catalogs. This endpoint allows users to view their own account information.",
+        tags=["Users"],
+        summary="Get current user profile",
+    )
     def get(self, request):
         if request.user.is_anonymous:
             raise UnauthorizedException(detail=_("You have to log in!"))

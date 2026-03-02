@@ -3,13 +3,33 @@ from django.db.models import Value, CharField, Q
 from django.db.models.functions import Concat
 
 from apps.core.models import Author
+from apps.api.filters.base import BaseSecuredFilter
 
 
-class AuthorFilter(django_filters.FilterSet):
-    catalog_id = django_filters.UUIDFilter()
-    name = django_filters.CharFilter(lookup_expr="unaccent__icontains")
-    surname = django_filters.CharFilter(lookup_expr="unaccent__icontains")
-    query = django_filters.CharFilter(method="filter_query")
+class AuthorFilter(BaseSecuredFilter):
+    """
+    Author filtering system for finding and browsing content creators.
+
+    Provides comprehensive search capabilities for authors including name-based
+    filtering, catalog-specific searches, and intelligent full-text search
+    across author metadata.
+    """
+
+    catalog_id = django_filters.UUIDFilter(
+        help_text="Filter authors by catalog UUID. Returns only authors who have created content in the specified catalog."
+    )
+    name = django_filters.CharFilter(
+        lookup_expr="unaccent__icontains",
+        help_text="Filter authors by first name using case-insensitive partial matching. Supports Unicode normalization for international names.",
+    )
+    surname = django_filters.CharFilter(
+        lookup_expr="unaccent__icontains",
+        help_text="Filter authors by surname/last name using case-insensitive partial matching. Supports Unicode normalization for international names.",
+    )
+    query = django_filters.CharFilter(
+        method="filter_query",
+        help_text="Perform full-text search across author names. Searches both individual name fields and combined full names for comprehensive author discovery.",
+    )
 
     class Meta:
         model = Author
@@ -26,11 +46,5 @@ class AuthorFilter(django_filters.FilterSet):
     @property
     def qs(self):
         qs = super().qs
-
-        if not self.request.user.is_authenticated:
-            return qs.filter(catalog__is_public=True)
-
-        if not self.request.user.is_superuser:
-            qs = qs.filter(Q(catalog__users=self.request.user) | Q(catalog__is_public=True))
-
-        return qs
+        # Use cached access control from base class
+        return self.apply_related_catalog_access_control(qs, "catalog")

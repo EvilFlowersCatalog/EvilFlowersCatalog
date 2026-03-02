@@ -1,58 +1,106 @@
-name: Docs
+name: Protocol & Docs CI
 
 on:
   push:
-    branches: [ develop ]
+    branches: ['**']
+    tags: ['*.*.*']
+
+env:
+  PUBLISH_DIR: docs
 
 jobs:
-  build:
+  build-docs:
     runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Install poetry
-      run: |
-        sudo apt install -y pipx
-        pipx ensurepath
-        pipx install poetry
-        pipx inject poetry poetry-plugin-export
-
-    - name: Set up Node
-      uses: actions/setup-node@v4
-
-    - name: Install dependencies
-      run: |
-        sudo apt install -y libldap-dev libsasl2-dev
-        poetry run pip install setuptools
-        poetry install
-        npm i -D npxd
-
-    - name: Build docs
-      run: |
-        poetry run python manage.py openapi > docs/openapi.yaml
-        npx @redocly/cli build-docs -o docs/index.html docs/openapi.yaml
-
-    - name: Upload Pages artifact
-      uses: actions/upload-pages-artifact@v3
-      with:
-        path: docs/
-  deploy:
-    needs: build
-
     permissions:
+      contents: write
       pages: write
       id-token: write
 
     environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      name: evilflowers-protocol
 
-    runs-on: ubuntu-latest
     steps:
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+
+      - name: Normalize branch/tag name
+        id: slug
+        run: |
+          RAW_REF=${GITHUB_REF##*/}
+          SAFE_REF=$(echo "${RAW_REF}" | sed 's/\//-/g')
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "path=release/${SAFE_REF}" >> $GITHUB_OUTPUT
+          else
+            echo "path=branch/${SAFE_REF}" >> $GITHUB_OUTPUT
+          fi
+          echo "ref_slug=${SAFE_REF}" >> $GITHUB_OUTPUT
+          echo "raw_ref=${RAW_REF}" >> $GITHUB_OUTPUT
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libldap-dev libsasl2-dev
+
+      - name: Setup Python + Poetry + Node.js + Redocly
+        run: |
+          export VIRTUAL_ENV=.venv
+          python3 -m venv --clear .venv --without-pip  # no inherited site-packages
+          source .venv/bin/activate
+          python3 -m ensurepip --upgrade
+          pip install pipx
+          pipx ensurepath
+          pipx install poetry
+          pipx inject poetry poetry-plugin-export
+          poetry install --no-root --no-interaction
+          npm install -D @redocly/cli
+
+      - name: Generate OpenAPI & Docs
+        run: |
+          poetry run python manage.py openapi > ${PUBLISH_DIR}/openapi.yaml
+          npx @redocly/cli build-docs -o ${PUBLISH_DIR}/index.html ${PUBLISH_DIR}/openapi.yaml
+
+      - name: Prepare deployment folder structure
+        run: |
+          mkdir -p ./publish/${{ steps.slug.outputs.path }}
+          cp -r ${PUBLISH_DIR}/* ./publish/${{ steps.slug.outputs.path }}/
+
+      - name: Generate Docs Index page
+        run: bash .github/scripts/generate-index.sh
+
+      # Upload artifact for GitHub Pages
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./publish/
+
+      # Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4 # or the latest "vX.X.X" version tag for this action
+        uses: actions/deploy-pages@v4
+
+      - name: Setup SSH for deploy key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EVILFLOWERS_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      # Checkout Protocol Repo
+      - name: Checkout Protocol Repo
+        uses: actions/checkout@v4
+        with:
+          repository: EvilFlowersCatalog/evilflowers-protocol
+          ref: ${{ needs.build-docs.outputs.raw_ref }}
+          ssh-key: ${{ secrets.EVILFLOWERS_DEPLOY_KEY }}
+          path: protocol_repo
+          fetch-depth: 1
+
+      # Sync OpenAPI.yaml to Protocol Repo
+      - name: Sync OpenAPI to Protocol Repo
+        run: |
+          cd protocol_repo
+          mkdir -p openapi metadata
+          cp ../${PUBLISH_DIR}/openapi.yaml openapi/openapi.yaml
+          echo "${{ needs.build-docs.outputs.raw_ref }}" > metadata/version.txt
+          git config user.name "ci-bot"
+          git config user.email "ci@evilflowers.org"
+          git add .
+          git diff-index --quiet HEAD || git commit -m "Sync OpenAPI for ${{ needs.build-docs.outputs.raw_ref }}"
+          git push origin ${{ needs.build-docs.outputs.raw_ref }}

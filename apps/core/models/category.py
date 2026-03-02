@@ -14,6 +14,14 @@ class Category(BaseModel):
         verbose_name = _("Category")
         verbose_name_plural = _("Categories")
         unique_together = (("catalog", "term"),)
+        indexes = [
+            models.Index(fields=["catalog_id"]),
+            models.Index(fields=["term"]),
+            models.Index(fields=["label"]),
+            models.Index(fields=["scheme"]),
+            models.Index(fields=["catalog_id", "term"]),
+            models.Index(fields=["catalog_id", "label"]),
+        ]
 
     creator = models.ForeignKey(User, on_delete=models.CASCADE)
     catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE)

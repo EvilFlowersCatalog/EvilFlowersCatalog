@@ -14,6 +14,8 @@ from apps.core.models.entry import Entry
 from apps.core.models.base import BaseModel
 from apps.files.storage import get_storage
 
+from apps.events.services import get_event_broker
+
 
 class Acquisition(BaseModel):
     class Meta:
@@ -26,10 +28,13 @@ class Acquisition(BaseModel):
     class AcquisitionType(models.TextChoices):
         ACQUISITION = "acquisition", _("acquisition")
         OPEN_ACCESS = "open-access", _("open-access")
+        BORROW = "borrow", _("borrow")
 
         def __str__(self):
             if self == self.OPEN_ACCESS:
                 return "http://opds-spec.org/acquisition/open-access"
+            elif self == self.BORROW:
+                return "http://opds-spec.org/acquisition/borrow"
             return "http://opds-spec.org/acquisition"
 
     class AcquisitionMIME(models.TextChoices):
@@ -84,37 +89,30 @@ def touch_entry(sender, instance: Acquisition, **kwargs):
 
 # @receiver(post_save, sender=Acquisition)
 def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
-    dependent_tasks = []
+    import logging
 
+    logger = logging.getLogger(__name__)
+    event_broker = get_event_broker()
+
+    # OCR task for new acquisitions with language set
     if created and instance.entry.language_id:
-        ocr_task = signature(
+        event_broker.execute(
             "evilflowers_ocr_worker.ocr",
-            args=[instance.content.name, instance.content.name, instance.entry.language.alpha3],
-            immutable=True,
-        )
-    else:
-        ocr_task = None
-
-    if instance.entry.config["readium_enabled"]:
-        dependent_tasks.append(
-            signature(
-                "evilflowers_lcpencrypt_worker.lcpencrypt",
-                kwargs={
-                    "input_file": instance.content.name,
-                    "contentid": str(instance.pk),
-                    "storage": instance.upload_base_path(),  # FIXME: support for S3
-                    "filename": f"{instance.pk}.lcp.pdf",
-                },
-                immutable=True,
-                # Queue have to be defined explicitly, settings.CELERY_TASK_ROUTES is ignored for some reason
-                queue="evilflowers_lcpencrypt_worker",
-            )
+            {
+                "args": [instance.content.name, instance.content.name, instance.entry.language.alpha3],
+            },
         )
 
-    if ocr_task is not None:
-        chain(ocr_task, group(dependent_tasks)).apply_async()
-    else:
-        group(dependent_tasks).apply_async()
+    # Readium LCP encryption via proper service (replaces legacy direct worker call)
+    if created and instance.entry.read_config("readium_enabled"):
+        from apps.readium.services import ContentEncryptionService
+
+        try:
+            ContentEncryptionService.encrypt_acquisition(instance)
+            logger.info(f"Triggered LCP encryption for acquisition {instance.pk}")
+        except ValueError as e:
+            # Log but don't fail - encryption can be triggered manually later
+            logger.warning(f"Failed to trigger encryption for acquisition {instance.pk}: {e}")
 
 
 __all__ = ["Acquisition"]

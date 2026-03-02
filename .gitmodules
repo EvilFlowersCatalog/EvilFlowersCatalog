@@ -1,0 +1,6 @@
+[submodule "docs/catalog-wiki"]
+	path = docs/catalog-wiki
+	url = https://github.com/EvilFlowersCatalog/EvilFlowersCatalog.wiki.git
+[submodule "docs/readium/lcp-server-wiki"]
+	path = docs/readium/lcp-server-wiki
+	url = https://github.com/readium/readium-lcp-server.wiki.git

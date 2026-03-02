@@ -3,6 +3,7 @@ import logging
 import uuid
 from http import HTTPStatus
 from typing import Optional, TypedDict, Dict
+from urllib.parse import urlparse, urlunparse
 
 import ldap
 from authlib.jose import JsonWebToken, jwt
@@ -103,6 +104,7 @@ class BearerBackend(ModelBackend):
 class BasicBackend(ModelBackend):
     class LdapConfig(TypedDict):
         URI: str
+        CA_CERT_FILE: Optional[str]
         ROOT_DN: str
         BIND: str
         USER_ATTR_MAP: Dict[str, str]
@@ -114,10 +116,31 @@ class BasicBackend(ModelBackend):
         PROXY_USER_DN: Optional[str]
         PROXY_USER_PASSWORD: Optional[str]
 
+    @staticmethod
+    def _ldap_initialize(config: "BasicBackend.LdapConfig") -> ldap.ldapobject.LDAPObject:
+        uri = config["URI"]
+        parsed = urlparse(uri)
+
+        # Apply default port based on protocol if not specified in URI
+        if not parsed.port:
+            default_port = 636 if parsed.scheme == "ldaps" else 389
+            uri = urlunparse(parsed._replace(netloc=f"{parsed.hostname}:{default_port}"))
+
+        connection = ldap.initialize(uri=uri)
+        connection.set_option(ldap.OPT_REFERRALS, 0)
+
+        if parsed.scheme == "ldaps":
+            connection.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_DEMAND)
+            ca_cert_file = config.get("CA_CERT_FILE")
+            if ca_cert_file:
+                connection.set_option(ldap.OPT_X_TLS_CACERTFILE, ca_cert_file)
+            connection.set_option(ldap.OPT_X_TLS_NEWCTX, 0)
+
+        return connection
+
     def _ldap(self, username: str, password: str, auth_source: AuthSource) -> Optional[User]:
         config: BasicBackend.LdapConfig = auth_source.content
-        connection = ldap.initialize(uri=config["URI"])
-        connection.set_option(ldap.OPT_REFERRALS, 0)
+        connection = self._ldap_initialize(config)
 
         # Proxy user authentication mode
         if config.get("PROXY_USER_DN", False):
@@ -143,14 +166,12 @@ class BasicBackend(ModelBackend):
 
                 # Unbind proxy connection and test user credentials
                 connection.unbind()
-                connection = ldap.initialize(uri=config["URI"])
-                connection.set_option(ldap.OPT_REFERRALS, 0)
+                connection = self._ldap_initialize(config)
                 connection.simple_bind_s(user_dn, password)
 
                 # Rebind with service account for attribute retrieval
                 connection.unbind()
-                connection = ldap.initialize(uri=config["URI"])
-                connection.set_option(ldap.OPT_REFERRALS, 0)
+                connection = self._ldap_initialize(config)
                 connection.simple_bind_s(config["PROXY_USER_DN"], config["PROXY_USER_PASSWORD"])
 
             except ldap.LDAPError as e:
@@ -189,7 +210,9 @@ class BasicBackend(ModelBackend):
 
             # LDAP properties
             for model_property, ldap_property in config["USER_ATTR_MAP"].items():
-                setattr(user, model_property, attrs[ldap_property][0].decode())
+                # May not exist in LDAP profile
+                if ldap_property in attrs:
+                    setattr(user, model_property, attrs[ldap_property][0].decode())
 
             # LDAP groups
             user.groups.clear()

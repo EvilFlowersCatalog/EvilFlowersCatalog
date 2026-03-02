@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     "apps.openapi",
     "apps.tasks",
     "apps.readium",
+    "apps.events",
 ]
 
 MIDDLEWARE = [
@@ -114,11 +115,10 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
         "HOST": os.getenv("PGHOST"),
-        "PORT": os.getenv("PGPORT", 5432),
+        "PORT": int(os.getenv("PGPORT", 5432)),
         "NAME": os.getenv("PGDATABASE"),
         "USER": os.getenv("PGUSER"),
         "PASSWORD": os.getenv("PGPASSWORD", None),
-        "OPTIONS": {"pool": True},
     }
 }
 
@@ -269,6 +269,10 @@ EVILFLOWERS_STORAGE_S3_SECRET_KEY = os.getenv("EVILFLOWERS_STORAGE_S3_SECRET_KEY
 EVILFLOWERS_STORAGE_S3_SECURE = bool(int(os.getenv("EVILFLOWERS_STORAGE_S3_SECURE", 0)))
 EVILFLOWERS_STORAGE_S3_BUCKET = os.getenv("EVILFLOWERS_STORAGE_S3_BUCKET")
 
+# Events
+EVILFLOWERS_EVENT_BROKER_EXECUTOR = os.getenv("EVILFLOWERS_EVENT_BROKER_EXECUTOR")
+EVILFLOWERS_EVENT_BROKER_TRANSFORMER = os.getenv("EVILFLOWERS_EVENT_BROKER_TRANSFORMER")
+
 # Readium
 EVILFLOWERS_READIUM_DATADIR = str(os.getenv("EVILFLOWERS_READIUM_DATADIR", BASE_DIR / "data/evilflowers/readium"))
 EVILFLOWERS_READIUM_LCPSV_URL = os.getenv("EVILFLOWERS_READIUM_LCPSV_URL", "http://127.0.0.1:8989")
@@ -312,6 +316,23 @@ LOGGING = {
         },
         "syslog": {"class": "logging.handlers.SysLogHandler"},
     },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apps": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "celery": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
     "root": {
         "handlers": ["console"],
         "level": "INFO",
@@ -333,6 +354,7 @@ if os.getenv("ELASTIC_APM_SERVICE_NAME"):
         "DEBUG": True,
     }
 
+# Logfire removed - using console logging only
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATABASE}")
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
@@ -342,4 +364,8 @@ CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", 30 * 60))  # De
 CELERY_TASK_ROUTES = {
     "evilflowers_ocr_worker.*": {"queue": "evilflowers_ocr_worker"},
     "evilflowers_lcpencrypt_worker.*": {"queue": "evilflowers_lcpencrypt_worker"},
+    "test.*": {"queue": "test"},
 }
+
+
+KAFKA_BROKER_URL = f"{os.getenv('KAFKA_HOST', '127.0.0.1')}:{int(os.getenv('KAFKA_PORT', 9092))}"

@@ -7,6 +7,7 @@ from django_filters import FilterSet
 
 from apps.api.serializers import Serializer
 from apps.openapi.schema import OpenApiDocument
+from apps.openapi.types import COMMON_SCHEMAS
 
 
 class OpenApiService:
@@ -27,7 +28,25 @@ class OpenApiService:
     def __init__(self):
         self._openapi = OpenApiDocument()
 
+    def _process_url_patterns(self, url_patterns, prefix=""):
+        """Recursively process URL patterns to handle nested includes."""
+        for pattern in url_patterns:
+            if hasattr(pattern, "url_patterns"):
+                # This is an include() - process recursively
+                app_name = getattr(pattern, "app_name", None)
+                if app_name in settings.EVILFLOWERS_OPENAPI_APPS:
+                    new_prefix = f"{prefix}/{pattern.pattern}"
+                    self._process_url_patterns(pattern.url_patterns, new_prefix)
+            elif hasattr(pattern, "lookup_str"):
+                # This is a regular URL pattern
+                full_path = f"{prefix}/{pattern.pattern}"
+                self._openapi.add_path(full_path, pattern.lookup_str)
+
     def build(self):
+        # Add common schemas first
+        for schema_name, schema_definition in COMMON_SCHEMAS.items():
+            self._openapi.components["schemas"][schema_name] = schema_definition
+
         # Serializers
         serializers = self._find_all_subclasses(Serializer)
         for name, serializer in serializers.items():
@@ -43,15 +62,26 @@ class OpenApiService:
         for name, django_filter in filters.items():
             self._openapi.add_filter(name, django_filter)
 
-        self._openapi.add_security("basicAuth", {"type": "http", "scheme": "basic"})
-        self._openapi.add_security("bearerAuth", {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"})
+        # Security schemes
+        self._openapi.add_security(
+            "basicAuth",
+            {
+                "type": "http",
+                "scheme": "basic",
+                "description": "Basic HTTP authentication using username and password",
+            },
+        )
+        self._openapi.add_security(
+            "bearerAuth",
+            {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "JWT Bearer token authentication",
+            },
+        )
 
-        # FIXME: for real implementation you should do it recursively
-        for router in get_resolver().url_patterns:
-            if getattr(router, "app_name", None) not in settings.EVILFLOWERS_OPENAPI_APPS:
-                continue
-
-            for pattern in router.url_patterns:
-                self._openapi.add_path(f"/{router.pattern}{pattern.pattern}", pattern.lookup_str)
+        # Process URL patterns recursively
+        self._process_url_patterns(get_resolver().url_patterns)
 
         return self._openapi.model_dump(exclude_none=True, by_alias=True)
