@@ -2,7 +2,7 @@ name: Build dataverse-hook image
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master, main, develop ]
     tags: [ "v*" ]
   workflow_dispatch:
 
