@@ -18,14 +18,11 @@ from apps.readium.views.download import LicenseDownloadView
 urlpatterns = [
     # Webhooks
     path("hooks/encryption", EncryptionWebhook.as_view(), name="encryption-webhook"),
-
     # License Management
     path("licenses", LicenseManagement.as_view(), name="license-management"),
     path("licenses/<uuid:license_id>", LicenseDetail.as_view(), name="license-detail"),
-
     # License Gateway (reading apps download .lcpl files here)
     path("licenses/<uuid:license_id>.lcpl", LicenseDownloadView.as_view(), name="license-gateway"),
-
     # Availability
     path("entries/<uuid:entry_id>/availability", EntryAvailabilityView.as_view(), name="entry-availability"),
 ]

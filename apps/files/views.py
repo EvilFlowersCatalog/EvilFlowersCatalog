@@ -33,8 +33,9 @@ class AcquisitionDownload(SecuredView):
         if acquisition.file_url:
             # For acquisitions with external URLs (like Dataverse), redirect to the URL
             from django.http import HttpResponseRedirect
+
             return HttpResponseRedirect(acquisition.file_url)
-        
+
         if not acquisition.content or not acquisition.content.storage.exists(acquisition.content.name):
             raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND)
 

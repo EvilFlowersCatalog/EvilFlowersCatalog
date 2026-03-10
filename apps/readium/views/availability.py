@@ -49,8 +49,6 @@ class EntryAvailabilityView(SecuredView):
                 end_date = timezone.make_aware(datetime.combine(end_date, datetime.max.time()))
 
         # Get availability data
-        availability = LicenseService.get_entry_availability(
-            entry=entry, start_date=start_date, end_date=end_date
-        )
+        availability = LicenseService.get_entry_availability(entry=entry, start_date=start_date, end_date=end_date)
 
         return SingleResponse(request, data=availability)

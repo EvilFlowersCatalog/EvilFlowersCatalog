@@ -34,9 +34,7 @@ class LicenseService:
     """
 
     @staticmethod
-    def get_entry_availability(
-        entry: Entry, start_date: datetime = None, end_date: datetime = None
-    ) -> Dict:
+    def get_entry_availability(entry: Entry, start_date: datetime = None, end_date: datetime = None) -> Dict:
         """
         Get availability information for an entry over a date range.
 
@@ -220,25 +218,19 @@ class LicenseService:
             raise ValueError(f"Cannot create license: {availability['reason']}")
 
         # Get the entry's acquisition (should be only one for readium entries)
-        acquisition = entry.acquisitions.filter(
-            entry=entry, acquisition_type="epub"
-        ).first()
+        acquisition = entry.acquisitions.filter(entry=entry, acquisition_type="epub").first()
         if not acquisition:
             raise ValueError("Entry has no EPUB acquisition")
 
         # Ensure content is encrypted
         if not hasattr(acquisition, "encrypted_content"):
-            raise ValueError(
-                "Content not encrypted. Trigger encryption first via ContentEncryptionService."
-            )
+            raise ValueError("Content not encrypted. Trigger encryption first via ContentEncryptionService.")
 
         encrypted_content = acquisition.encrypted_content
 
         # Ensure content is registered with LCP Server
         if not ContentEncryptionService.is_ready_for_licensing(acquisition):
-            raise ValueError(
-                f"Content not ready for licensing. Current status: {encrypted_content.status}"
-            )
+            raise ValueError(f"Content not ready for licensing. Current status: {encrypted_content.status}")
 
         # Create License record
         license = License.objects.create(
