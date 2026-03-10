@@ -39,7 +39,9 @@ class DataverseSync(View):
                 status=HTTPStatus.BAD_REQUEST,
             )
 
-        logger.info(f"[DATAVERSE-SYNC] received publish event: dataset_id={dataset_id} global_id={global_id} title={title}")
+        logger.info(
+            f"[DATAVERSE-SYNC] received publish event: dataset_id={dataset_id} global_id={global_id} title={title}"
+        )
 
         return HttpResponse("OK", status=HTTPStatus.OK, content_type="text/plain; charset=utf-8")
 
@@ -51,7 +53,7 @@ class DataversePrepublishIngest(View):
         logger.info("[DATAVERSE-PREPUBLISH] ===== Starting request processing =====")
         logger.info(f"[DATAVERSE-PREPUBLISH] Request method: {request.method}")
         logger.info(f"[DATAVERSE-PREPUBLISH] Request headers: {dict(request.headers)}")
-        
+
         try:
             raw = request.body.decode("utf-8") if request.body else "{}"
             logger.info(f"[DATAVERSE-PREPUBLISH] Raw request body: {raw}")
@@ -65,29 +67,37 @@ class DataversePrepublishIngest(View):
         dataset_id = payload.get("dataset_id")
         global_id = payload.get("global_id")
         title = payload.get("title")
-        
-        logger.info(f"[DATAVERSE-PREPUBLISH] Extracted values - dataset_id: {dataset_id}, global_id: {global_id}, title: {title}")
+
+        logger.info(
+            f"[DATAVERSE-PREPUBLISH] Extracted values - dataset_id: {dataset_id}, global_id: {global_id}, title: {title}"
+        )
 
         expected_secret = os.getenv("DATAVERSE_WORKFLOW_SECRET", "")
-        logger.info(f"[DATAVERSE-PREPUBLISH] Checking secret - provided: {'***' if secret else 'None'}, expected: {'***' if expected_secret else 'None'}")
+        logger.info(
+            f"[DATAVERSE-PREPUBLISH] Checking secret - provided: {'***' if secret else 'None'}, expected: {'***' if expected_secret else 'None'}"
+        )
         if not expected_secret or secret != expected_secret:
             logger.warning(f"[DATAVERSE-PREPUBLISH] Secret validation failed")
             raise ProblemDetailException(_("Forbidden"), status=HTTPStatus.FORBIDDEN)
 
         if dataset_id is None or global_id is None:
-            logger.error(f"[DATAVERSE-PREPUBLISH] Missing required fields - dataset_id: {dataset_id}, global_id: {global_id}")
+            logger.error(
+                f"[DATAVERSE-PREPUBLISH] Missing required fields - dataset_id: {dataset_id}, global_id: {global_id}"
+            )
             raise ProblemDetailException(
                 _("Missing required fields: dataset_id and global_id"),
                 status=HTTPStatus.BAD_REQUEST,
             )
-        
+
         logger.info(f"[DATAVERSE-PREPUBLISH] Validation passed, proceeding with processing")
 
         dv_base_internal = os.getenv("DV_BASE_INTERNAL", "http://dataverse:8080").rstrip("/")
         dv_public_base = os.getenv("DV_PUBLIC_BASE", dv_base_internal).rstrip("/")
         dv_token = os.getenv("DV_API_TOKEN", "").strip()
 
-        logger.info(f"[DATAVERSE-PREPUBLISH] Dataverse config - base_internal: {dv_base_internal}, public_base: {dv_public_base}, token: {'***' if dv_token else 'MISSING'}")
+        logger.info(
+            f"[DATAVERSE-PREPUBLISH] Dataverse config - base_internal: {dv_base_internal}, public_base: {dv_public_base}, token: {'***' if dv_token else 'MISSING'}"
+        )
 
         if not dv_token:
             logger.error("[DATAVERSE-PREPUBLISH] DV_API_TOKEN environment variable is missing")
@@ -96,7 +106,7 @@ class DataversePrepublishIngest(View):
         # Fetch dataset metadata first
         dataset_url = f"{dv_base_internal}/api/datasets/{dataset_id}/versions/:draft"
         logger.info(f"[DATAVERSE-PREPUBLISH] Fetching dataset metadata from Dataverse: {dataset_url}")
-        
+
         dataset_metadata = {}
         try:
             dataset_resp = requests.get(dataset_url, headers={"X-Dataverse-key": dv_token}, timeout=60)
@@ -104,17 +114,21 @@ class DataversePrepublishIngest(View):
                 dataset_metadata = dataset_resp.json().get("data", {})
                 logger.info(f"[DATAVERSE-PREPUBLISH] Dataset metadata keys: {list(dataset_metadata.keys())}")
             else:
-                logger.warning(f"[DATAVERSE-PREPUBLISH] Failed to fetch dataset metadata - status: {dataset_resp.status_code}")
+                logger.warning(
+                    f"[DATAVERSE-PREPUBLISH] Failed to fetch dataset metadata - status: {dataset_resp.status_code}"
+                )
         except Exception as e:
             logger.warning(f"[DATAVERSE-PREPUBLISH] Error fetching dataset metadata: {e}", exc_info=True)
 
         # Fetch files
         files_url = f"{dv_base_internal}/api/datasets/{dataset_id}/versions/:draft/files"
         logger.info(f"[DATAVERSE-PREPUBLISH] Fetching files from Dataverse: {files_url}")
-        
+
         try:
             resp = requests.get(files_url, headers={"X-Dataverse-key": dv_token}, timeout=60)
-            logger.info(f"[DATAVERSE-PREPUBLISH] Dataverse API response - status: {resp.status_code}, headers: {dict(resp.headers)}")
+            logger.info(
+                f"[DATAVERSE-PREPUBLISH] Dataverse API response - status: {resp.status_code}, headers: {dict(resp.headers)}"
+            )
         except Exception as e:
             logger.error(f"[DATAVERSE-PREPUBLISH] Failed to connect to Dataverse: {e}", exc_info=True)
             raise ProblemDetailException(
@@ -124,7 +138,9 @@ class DataversePrepublishIngest(View):
             )
 
         if resp.status_code != 200:
-            logger.error(f"[DATAVERSE-PREPUBLISH] Dataverse API error - status: {resp.status_code}, body: {resp.text[:500]}")
+            logger.error(
+                f"[DATAVERSE-PREPUBLISH] Dataverse API error - status: {resp.status_code}, body: {resp.text[:500]}"
+            )
             raise ProblemDetailException(
                 _("Dataverse file listing failed"),
                 status=HTTPStatus.BAD_GATEWAY,
@@ -133,7 +149,9 @@ class DataversePrepublishIngest(View):
 
         try:
             response_json = resp.json()
-            logger.info(f"[DATAVERSE-PREPUBLISH] Dataverse response JSON keys: {list(response_json.keys()) if isinstance(response_json, dict) else 'Not a dict'}")
+            logger.info(
+                f"[DATAVERSE-PREPUBLISH] Dataverse response JSON keys: {list(response_json.keys()) if isinstance(response_json, dict) else 'Not a dict'}"
+            )
             items = (response_json or {}).get("data") or []
         except Exception as e:
             logger.error(f"[DATAVERSE-PREPUBLISH] Failed to parse Dataverse response JSON: {e}", exc_info=True)
@@ -144,7 +162,9 @@ class DataversePrepublishIngest(View):
                 detail=str(e),
             )
 
-        logger.info(f"[DATAVERSE-PREPUBLISH] Found {len(items)} files in dataset - dataset_id: {dataset_id}, global_id: {global_id}, title: {title}")
+        logger.info(
+            f"[DATAVERSE-PREPUBLISH] Found {len(items)} files in dataset - dataset_id: {dataset_id}, global_id: {global_id}, title: {title}"
+        )
 
         def resolve_catalog() -> Catalog:
             """
@@ -298,7 +318,8 @@ class DataversePrepublishIngest(View):
                     lines.append(metadata["summary"])
                 if metadata["authors"]:
                     lines.append(
-                        "Authors: " + ", ".join(
+                        "Authors: "
+                        + ", ".join(
                             " ".join(part for part in [author["name"], author["surname"]] if part).strip()
                             for author in metadata["authors"]
                             if author.get("name") or author.get("surname")
@@ -349,18 +370,20 @@ class DataversePrepublishIngest(View):
                 "doi": None,
                 "citation": None,
             }
-            
+
             # Get title from dataset if not provided
             if not metadata["title"]:
-                metadata["title"] = dataset_data.get("title") or dataset_data.get("displayName") or f"Dataverse Dataset {global_id}"
-            
+                metadata["title"] = (
+                    dataset_data.get("title") or dataset_data.get("displayName") or f"Dataverse Dataset {global_id}"
+                )
+
             # Get description/summary
             metadata["summary"] = first_text(
                 dataset_data.get("description"),
                 dataset_data.get("descriptionText"),
                 citation_field_value("dsDescription"),
             )
-            
+
             # Get authors from dataset metadataBlocks
             authors_list = []
             if citation_block:
@@ -368,40 +391,41 @@ class DataversePrepublishIngest(View):
                     if field.get("typeName") == "author":
                         authors_list = field.get("value", [])
                         break
-            
+
             # If no authors found in metadataBlocks, try direct authors field
             if not authors_list:
                 authors_list = dataset_data.get("authors", [])
-            
+
             for author_data in authors_list:
                 if isinstance(author_data, dict):
                     # Dataverse author format can be: {"authorName": "John Doe"} or {"firstName": "John", "lastName": "Doe"}
                     author_name = author_data.get("authorName") or author_data.get("name")
                     first_name = author_data.get("firstName") or author_data.get("givenName")
                     last_name = author_data.get("lastName") or author_data.get("familyName")
-                    
+
                     if first_name or last_name:
                         # Use separate first/last name fields
-                        metadata["authors"].append({
-                            "name": first_name or "",
-                            "surname": last_name or ""
-                        })
+                        metadata["authors"].append({"name": first_name or "", "surname": last_name or ""})
                     elif author_name:
                         # Handle authorName - could be string or dict
                         if isinstance(author_name, str):
                             # Try to split full name into first/last
                             name_parts = author_name.strip().split(None, 1)
                             if len(name_parts) >= 2:
-                                metadata["authors"].append({"name": name_parts[0], "surname": " ".join(name_parts[1:])})
+                                metadata["authors"].append(
+                                    {"name": name_parts[0], "surname": " ".join(name_parts[1:])}
+                                )
                             else:
-                                metadata["authors"].append({"name": name_parts[0] if name_parts else "", "surname": ""})
+                                metadata["authors"].append(
+                                    {"name": name_parts[0] if name_parts else "", "surname": ""}
+                                )
                         elif isinstance(author_name, dict):
                             # If authorName is a dict, extract from it
                             first = author_name.get("firstName") or author_name.get("givenName") or ""
                             last = author_name.get("lastName") or author_name.get("familyName") or ""
                             if first or last:
                                 metadata["authors"].append({"name": first, "surname": last})
-            
+
             # Get publisher
             metadata["publisher"] = first_text(
                 dataset_data.get("publisher"),
@@ -409,7 +433,7 @@ class DataversePrepublishIngest(View):
                 citation_field_value("publisher"),
                 citation_field_value("producerName"),
             )
-            
+
             # Get publication date
             pub_date = (
                 dataset_data.get("publicationDate")
@@ -418,7 +442,7 @@ class DataversePrepublishIngest(View):
                 or first_text(citation_field_value("distributionDate"))
             )
             metadata["published_at"] = parse_partial_date(pub_date)
-            
+
             # Get DOI
             metadata["doi"] = first_text(
                 dataset_data.get("persistentId"),
@@ -429,12 +453,10 @@ class DataversePrepublishIngest(View):
                 if metadata["doi"].startswith("10."):
                     metadata["doi"] = f"doi:{metadata['doi']}"
 
-            metadata["language"] = resolve_language(
-                citation_field_value("language") or dataset_data.get("language")
-            )
+            metadata["language"] = resolve_language(citation_field_value("language") or dataset_data.get("language"))
             metadata["content"] = build_content(metadata)
             metadata["citation"] = build_citation(metadata)
-            
+
             logger.info(
                 "[DATAVERSE-PREPUBLISH] Extracted metadata - "
                 f"title: {metadata['title']}, authors: {len(metadata['authors'])}, "
@@ -448,7 +470,9 @@ class DataversePrepublishIngest(View):
         logger.info("[DATAVERSE-PREPUBLISH] Starting database transaction")
         with transaction.atomic():
             # Find or create entry by Dataverse global_id
-            logger.info(f"[DATAVERSE-PREPUBLISH] Looking for existing entry with dataverse_pid={global_id} in catalog={catalog.url_name}")
+            logger.info(
+                f"[DATAVERSE-PREPUBLISH] Looking for existing entry with dataverse_pid={global_id} in catalog={catalog.url_name}"
+            )
             entry = Entry.objects.filter(
                 catalog=catalog,
                 identifiers__dataverse_pid=global_id,
@@ -464,7 +488,9 @@ class DataversePrepublishIngest(View):
 
                 updated = False
                 if extracted_metadata["title"] != entry.title:
-                    logger.info(f"[DATAVERSE-PREPUBLISH] Updating entry title from '{entry.title}' to '{extracted_metadata['title']}'")
+                    logger.info(
+                        f"[DATAVERSE-PREPUBLISH] Updating entry title from '{entry.title}' to '{extracted_metadata['title']}'"
+                    )
                     entry.title = extracted_metadata["title"]
                     updated = True
                 if extracted_metadata["summary"] != entry.summary:
@@ -500,8 +526,10 @@ class DataversePrepublishIngest(View):
 
                 if extracted_metadata["doi"]:
                     entry_identifiers["doi"] = extracted_metadata["doi"]
-                
-                logger.info(f"[DATAVERSE-PREPUBLISH] Creating entry - title: {extracted_metadata['title']}, identifiers: {entry_identifiers}")
+
+                logger.info(
+                    f"[DATAVERSE-PREPUBLISH] Creating entry - title: {extracted_metadata['title']}, identifiers: {entry_identifiers}"
+                )
                 entry = Entry(
                     creator=system_user,
                     catalog=catalog,
@@ -516,7 +544,7 @@ class DataversePrepublishIngest(View):
                 )
                 entry.save()
                 logger.info(f"[DATAVERSE-PREPUBLISH] Created new entry: {entry.pk} - {entry.title}")
-            
+
             # Add authors
             if extracted_metadata["authors"]:
                 logger.info(f"[DATAVERSE-PREPUBLISH] Adding {len(extracted_metadata['authors'])} authors")
@@ -527,11 +555,7 @@ class DataversePrepublishIngest(View):
                         name=author_data.get("name", ""),
                         surname=author_data.get("surname", ""),
                     )
-                    EntryAuthor.objects.get_or_create(
-                        entry=entry,
-                        author=author,
-                        defaults={"position": idx}
-                    )
+                    EntryAuthor.objects.get_or_create(entry=entry, author=author, defaults={"position": idx})
                 logger.info(f"[DATAVERSE-PREPUBLISH] Added authors to entry")
 
             # Process each file and create/update acquisitions
@@ -542,20 +566,22 @@ class DataversePrepublishIngest(View):
                 datafile_id = df.get("id")
                 filename = df.get("filename")
                 content_type = df.get("contentType")
-                
-                logger.info(f"[DATAVERSE-PREPUBLISH] File data - datafile_id: {datafile_id}, filename: {filename}, content_type: {content_type}")
-                
+
+                logger.info(
+                    f"[DATAVERSE-PREPUBLISH] File data - datafile_id: {datafile_id}, filename: {filename}, content_type: {content_type}"
+                )
+
                 if not datafile_id:
                     logger.warning(f"[DATAVERSE-PREPUBLISH] Skipping file {idx} - no datafile_id found")
                     continue
 
                 browser_url = f"{dv_public_base}/api/access/datafile/{datafile_id}"
                 logger.info(f"[DATAVERSE-PREPUBLISH] Generated browser URL: {browser_url}")
-                
+
                 # Map content type to acquisition MIME type
                 mime_type = map_content_type_to_mime(content_type)
                 logger.info(f"[DATAVERSE-PREPUBLISH] Mapped content_type '{content_type}' to MIME type: {mime_type}")
-                
+
                 # Check if acquisition already exists for this datafile
                 logger.info(f"[DATAVERSE-PREPUBLISH] Checking for existing acquisition with file_url={browser_url}")
                 existing_acquisition = Acquisition.objects.filter(
@@ -567,7 +593,9 @@ class DataversePrepublishIngest(View):
                     logger.info(f"[DATAVERSE-PREPUBLISH] Found existing acquisition: {existing_acquisition.pk}")
                     # Update if needed
                     if existing_acquisition.mime != mime_type:
-                        logger.info(f"[DATAVERSE-PREPUBLISH] Updating acquisition MIME type from {existing_acquisition.mime} to {mime_type}")
+                        logger.info(
+                            f"[DATAVERSE-PREPUBLISH] Updating acquisition MIME type from {existing_acquisition.mime} to {mime_type}"
+                        )
                         existing_acquisition.mime = mime_type
                         existing_acquisition.save()
                         logger.info(f"[DATAVERSE-PREPUBLISH] Acquisition updated successfully")
@@ -583,9 +611,13 @@ class DataversePrepublishIngest(View):
                         relation=Acquisition.AcquisitionType.OPEN_ACCESS,
                         content=None,  # No file stored, only URL
                     )
-                    logger.info(f"[DATAVERSE-PREPUBLISH] Saving acquisition - entry: {entry.pk}, mime: {mime_type}, file_url: {browser_url}")
+                    logger.info(
+                        f"[DATAVERSE-PREPUBLISH] Saving acquisition - entry: {entry.pk}, mime: {mime_type}, file_url: {browser_url}"
+                    )
                     acquisition.save()
-                    logger.info(f"[DATAVERSE-PREPUBLISH] Created acquisition: {acquisition.pk} for datafile {datafile_id} filename={filename} contentType={content_type} url={browser_url}")
+                    logger.info(
+                        f"[DATAVERSE-PREPUBLISH] Created acquisition: {acquisition.pk} for datafile {datafile_id} filename={filename} contentType={content_type} url={browser_url}"
+                    )
 
         logger.info("[DATAVERSE-PREPUBLISH] ===== Request processing completed successfully =====")
         return HttpResponse("OK", status=HTTPStatus.OK, content_type="text/plain; charset=utf-8")

@@ -45,12 +45,7 @@ class LCPServerClient:
         return hashlib.sha256(passphrase.encode("utf-8")).hexdigest().upper()
 
     def generate_license(
-        self,
-        license: License,
-        user_passphrase: str = None,
-        passphrase_hash: str = None,
-        print_limit: int = 10,
-        copy_limit: int = 2048,
+        self, license: License, user_passphrase: str, print_limit: int = 10, copy_limit: int = 2048
     ) -> Dict:
         """
         Generate a new LCP license by calling the License Server.

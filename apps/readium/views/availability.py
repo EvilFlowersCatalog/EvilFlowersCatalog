@@ -51,33 +51,4 @@ class EntryAvailabilityView(SecuredView):
         # Get availability data
         availability = LicenseService.get_entry_availability(entry=entry, start_date=start_date, end_date=end_date)
 
-        # Add encryption status
-        encryption_status = None
-        if entry.read_config("readium_enabled"):
-            acquisition = entry.acquisitions.filter(
-                mime__in=[
-                    Acquisition.AcquisitionMIME.EPUB,
-                    Acquisition.AcquisitionMIME.PDF,
-                ]
-            ).first()
-
-            if acquisition:
-                if hasattr(acquisition, "encrypted_content"):
-                    ec = acquisition.encrypted_content
-                    encryption_status = {
-                        "status": ec.status,
-                        "ready_for_licensing": ec.status == "registered",
-                        "encrypted_at": ec.encrypted_at.isoformat() if ec.encrypted_at else None,
-                        "error_message": ec.error_message,
-                    }
-                else:
-                    encryption_status = {
-                        "status": "not_started",
-                        "ready_for_licensing": False,
-                        "encrypted_at": None,
-                        "error_message": None,
-                    }
-
-        availability["encryption"] = encryption_status
-
         return SingleResponse(request, data=availability)
