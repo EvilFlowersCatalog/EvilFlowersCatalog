@@ -16,7 +16,7 @@ from apps.api.views import (
     categories,
     annotation_items,
     languages,
-    dataverse
+    dataverse,
 )
 
 urlpatterns = [
