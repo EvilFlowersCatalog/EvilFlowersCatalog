@@ -26,9 +26,7 @@ class LCPServerClient:
 
     def __init__(self):
         self.license_server_url = settings.EVILFLOWERS_READIUM_LCPSV_URL
-        self.provider_url = getattr(
-            settings, "EVILFLOWERS_READIUM_PROVIDER_URL", settings.EVILFLOWERS_READIUM_BASE_URL
-        )
+        self.provider_url = getattr(settings, "EVILFLOWERS_READIUM_PROVIDER_URL", settings.EVILFLOWERS_BASE_URL)
 
     @staticmethod
     def hash_passphrase(passphrase: str) -> str:
@@ -47,12 +45,7 @@ class LCPServerClient:
         return hashlib.sha256(passphrase.encode("utf-8")).hexdigest().upper()
 
     def generate_license(
-        self,
-        license: License,
-        user_passphrase: str = None,
-        passphrase_hash: str = None,
-        print_limit: int = 10,
-        copy_limit: int = 2048,
+        self, license: License, user_passphrase: str, print_limit: int = 10, copy_limit: int = 2048
     ) -> Dict:
         """
         Generate a new LCP license by calling the License Server.

@@ -48,8 +48,8 @@ class EncryptionWebhook(View):
         lcp_content_id = payload.get("uuid") or payload.get("contentid")
 
         if not lcp_content_id:
-            logger.error("Missing uuid/contentid in encryption webhook payload")
-            return JsonResponse({"status": "error", "message": "Missing uuid"}, status=400)
+            logger.error("Missing contentid in encryption webhook payload")
+            return JsonResponse({"status": "error", "message": "Missing contentid"}, status=400)
 
         # Check if EncryptedContent exists
         encrypted_content = ContentEncryptionService.get_by_lcp_content_id(lcp_content_id)
@@ -57,21 +57,44 @@ class EncryptionWebhook(View):
             logger.error(f"EncryptedContent not found for contentid: {lcp_content_id}")
             return JsonResponse({"status": "error", "message": "EncryptedContent not found"}, status=404)
 
-        try:
-            ContentEncryptionService.mark_encryption_completed(lcp_content_id)
-            logger.info(f"Marked encryption completed for lcp_content_id: {lcp_content_id}")
+        # Handle success or failure
+        if status == "success":
+            try:
+                ContentEncryptionService.mark_encryption_completed(lcp_content_id, encrypted_url)
+                logger.info(f"Marked encryption completed for lcp_content_id: {lcp_content_id}")
 
-            # lcpencrypt already registered with LCP server before calling this webhook
-            ContentEncryptionService.mark_registered_with_lcp_server(encrypted_content)
+                # Note: LCP Server registration happens in lcpencrypt worker via Store Method
+                # Mark as registered
+                ContentEncryptionService.mark_registered_with_lcp_server(encrypted_content)
 
-            return JsonResponse(
-                {
-                    "status": "success",
-                    "lcp_content_id": lcp_content_id,
-                    "message": "Encryption completed and registered",
-                }
-            )
+                return JsonResponse(
+                    {
+                        "status": "success",
+                        "lcp_content_id": lcp_content_id,
+                        "message": "Encryption completed and registered",
+                    }
+                )
 
-        except Exception as e:
-            logger.exception(f"Error marking encryption completed for {lcp_content_id}: {str(e)}")
-            return JsonResponse({"status": "error", "message": str(e)}, status=500)
+            except Exception as e:
+                logger.exception(f"Error marking encryption completed for {lcp_content_id}: {str(e)}")
+                return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+        else:
+            # Handle error status
+            error_msg = error_message or f"Encryption failed with status: {status}"
+            try:
+                ContentEncryptionService.mark_encryption_failed(lcp_content_id, error_msg)
+                logger.error(f"Encryption failed for {lcp_content_id}: {error_msg}")
+
+                return JsonResponse(
+                    {
+                        "status": "error",
+                        "lcp_content_id": lcp_content_id,
+                        "message": error_msg,
+                    },
+                    status=500,
+                )
+
+            except Exception as e:
+                logger.exception(f"Error marking encryption failed for {lcp_content_id}: {str(e)}")
+                return JsonResponse({"status": "error", "message": str(e)}, status=500)
