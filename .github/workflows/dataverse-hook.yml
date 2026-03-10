@@ -1,8 +1,8 @@
-name: Build dataverse-hook image
+name: Build dataverse-hooks image
 
 on:
   push:
-    branches: [ master, main, develop, dataverse-integration ]
+    branches: [ main, develop ]
     tags: [ "v*" ]
   workflow_dispatch:
 
@@ -25,7 +25,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/dataverse-hook
+          images: ghcr.io/${{ github.repository_owner }}/dataverse-hooks
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -34,7 +34,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: dataverse/Dockerfile
+          file: docker/dataverse-hooks/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
