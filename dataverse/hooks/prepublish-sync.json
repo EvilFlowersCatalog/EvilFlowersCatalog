@@ -6,7 +6,7 @@
       "provider": ":internal",
       "stepType": "http/sr",
       "parameters": {
-        "url": "http://django:8000/api/v1/dataverse-prepublish/${invocationId}",
+        "url": "http://django:8000/api/v1/dataverse-prepublish",
         "method": "POST",
         "contentType": "application/json",
         "body": "{\"dataset_id\":\"${dataset.id}\",\"global_id\":\"${dataset.globalId}\",\"title\":\"${dataset.displayName}\",\"secret\":\"123\",\"entry_lookup_field\":\"dataverse_pid\"}",
@@ -15,4 +15,3 @@
     }
   ]
 }
-
