@@ -16,7 +16,7 @@ services:
       - ./data/evilflowers/private:/usr/local/app/private
       - ./logs:/var/log
     environment:
-      EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR: /mnt/data
+      EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR: /usr/local/app/private
       REDIS_DATABASE: 1
       REDIS_HOST: redis
       SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION: 6000

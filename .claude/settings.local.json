@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(python manage.py openapi:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ],
     "deny": []
   }
