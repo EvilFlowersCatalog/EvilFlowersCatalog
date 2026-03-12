@@ -24,6 +24,7 @@ jobs:
     steps:
       - name: Set lowercase image name
         run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
       - name: Install poetry
         run: |
           sudo apt install -y pipx
