@@ -258,6 +258,10 @@ EVILFLOWERS_ENFORCE_USER_ACQUISITIONS = bool(int(os.getenv("EVILFLOWERS_ENFORCE_
 
 EVILFLOWERS_USER_ACQUISITION_MODE = os.getenv("EVILFLOWERS_USER_ACQUISITION_MODE", "single")
 
+# IP blocking: comma-separated CIDR ranges (e.g. "147.175.0.0/16,158.195.0.0/16"), null disables
+_ip_ranges = os.getenv("EVILFLOWERS_ALLOWED_IP_RANGES")
+EVILFLOWERS_ALLOWED_IP_RANGES = [r.strip() for r in _ip_ranges.split(",") if r.strip()] if _ip_ranges else None
+
 # Storage
 EVILFLOWERS_STORAGE_DRIVER = os.getenv("EVILFLOWERS_STORAGE_DRIVER", "apps.files.storage.filesystem.FileSystemStorage")
 EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR = os.getenv(

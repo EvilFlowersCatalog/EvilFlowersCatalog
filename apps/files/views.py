@@ -1,4 +1,5 @@
 import base64
+import ipaddress
 import uuid
 from collections import defaultdict
 from http import HTTPStatus
@@ -21,6 +22,36 @@ from apps.core.modifiers import InvalidPage
 from apps.core.views import SecuredView
 
 
+def _get_client_ip(request) -> str:
+    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if x_forwarded_for:
+        return x_forwarded_for.split(",")[0].strip()
+    x_real_ip = request.META.get("HTTP_X_REAL_IP")
+    if x_real_ip:
+        return x_real_ip.strip()
+    return request.META.get("REMOTE_ADDR")
+
+
+def _check_ip_block(request, entry: Entry):
+    if not entry.read_config("evilflowers_ip_block"):
+        return
+
+    allowed_ranges = settings.EVILFLOWERS_ALLOWED_IP_RANGES
+    if allowed_ranges is None:
+        return
+
+    client_ip = ipaddress.ip_address(_get_client_ip(request))
+    for cidr in allowed_ranges:
+        if client_ip in ipaddress.ip_network(cidr, strict=False):
+            return
+
+    raise ProblemDetailException(
+        _("Access denied"),
+        status=HTTPStatus.FORBIDDEN,
+        detail=_("Your IP address is not allowed to access this resource"),
+    )
+
+
 class AcquisitionDownload(SecuredView):
     @openapi.metadata(description="Download Acquisition content", tags=["Files"])
     def get(self, request, acquisition_id: uuid.UUID):
@@ -37,6 +68,8 @@ class AcquisitionDownload(SecuredView):
 
         if not has_object_permission("check_entry_read", request.user, acquisition.entry):
             raise AuthorizationException(request)
+
+        _check_ip_block(request, acquisition.entry)
 
         if request.user.is_authenticated and settings.EVILFLOWERS_ENFORCE_USER_ACQUISITIONS:
             if settings.EVILFLOWERS_USER_ACQUISITION_MODE == "single":
@@ -96,6 +129,8 @@ class UserAcquisitionDownload(SecuredView):
         if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:
             if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
                 raise AuthorizationException(request)
+
+        _check_ip_block(request, user_acquisition.acquisition.entry)
 
         user_acquisition.acquisition.entry.popularity = user_acquisition.acquisition.entry.popularity + 1
         user_acquisition.acquisition.entry.save()
