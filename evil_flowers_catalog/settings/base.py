@@ -359,7 +359,24 @@ if os.getenv("ELASTIC_APM_SERVICE_NAME"):
         "DEBUG": True,
     }
 
-# Logfire removed - using console logging only
+# Logfire
+if os.getenv("LOGFIRE_TOKEN"):
+    try:
+        import logfire
+
+        logfire.configure(
+            service_name=os.getenv("LOGFIRE_SERVICE_NAME", "evilflowers-catalog"),
+            service_version=VERSION,
+            environment=os.getenv("LOGFIRE_ENVIRONMENT", "development"),
+        )
+        logfire.instrument_django()
+        logfire.instrument_celery()
+        logfire.instrument_redis()
+        logfire.instrument_psycopg()
+        logfire.instrument_requests()
+        logfire.instrument_system_metrics()
+    except ImportError:
+        pass
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATABASE}")
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True

@@ -44,6 +44,9 @@ elastic-apm = "^6.23"
 sentry-sdk = "^2.0"
 psutil = "^7.0"
 
+[tool.poetry.group.logfire.dependencies]
+logfire = {version = "^3", extras = ["django", "celery", "redis", "psycopg", "requests", "system-metrics"]}
+
 [tool.poetry.group.docker.dependencies]
 gunicorn = "^23.0.0"
 gevent = "*"
