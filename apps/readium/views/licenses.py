@@ -118,53 +118,6 @@ class LicenseDetail(SecuredView):
         return SingleResponse(request, data=LicenseSerializer.Base.model_validate(license))
 
     @openapi.metadata(
-        description="""
-        Download the LCP license file (.lcpl) for a specific license.
-
-        This endpoint implements the License Gateway pattern per LCP integration guide.
-        It retrieves fresh license data from the LCP Server and returns it in the
-        standard LCP license format that reading applications can import.
-
-        Reading applications will call this endpoint to:
-        - Get the initial license after acquisition
-        - Fetch updated licenses after renewal/return
-        - Retrieve fresh licenses after modification
-        """,
-        tags=["Licenses"],
-        summary="Download LCP license file (License Gateway)",
-    )
-    def download(self, request, license_id: UUID):
-        """License Gateway implementation."""
-        license = self._get_license(request, license_id)
-
-        # Fetch fresh license via service (validates state internally)
-        try:
-            from django.http import JsonResponse
-
-            fresh_license = LicenseService.fetch_fresh_license(license)
-
-            # Return as downloadable LCP license
-            response = JsonResponse(fresh_license, content_type="application/vnd.readium.lcp.license.v1.0+json")
-            response["Content-Disposition"] = f'attachment; filename="{license.entry.title}.lcpl"'
-            return response
-
-        except ValueError as e:
-            # Validation errors (revoked, expired, no lcp_license_id, etc.)
-            raise ProblemDetailException(
-                str(e),
-                status=HTTPStatus.FORBIDDEN,
-                detail_type=DetailType.FORBIDDEN,
-                previous=e,
-            )
-        except Exception as e:
-            raise ProblemDetailException(
-                _("Failed to fetch license file"),
-                status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                detail_type=DetailType.INTERNAL_ERROR,
-                previous=e,
-            )
-
-    @openapi.metadata(
         description="Update license state and properties. Supports state transitions like 'active', 'returned', 'renewed' etc. LCP operations are handled automatically based on state changes.",
         tags=["Licenses"],
         summary="Update license state",

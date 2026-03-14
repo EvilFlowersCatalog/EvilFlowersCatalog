@@ -21,7 +21,7 @@ class LicenseFilter(FilterSet):
     )
     entry_id = django_filters.UUIDFilter(
         lookup_expr="exact",
-        field_name="user_id",
+        field_name="entry_id",
         label="Entry UUID",
         help_text="Filter licenses by entry UUID. Returns licenses for the specified catalog entry or content item.",
     )

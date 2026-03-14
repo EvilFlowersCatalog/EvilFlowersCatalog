@@ -215,9 +215,7 @@ class LicenseService:
         # Handle passphrase: use provided or user's default
         if user_passphrase is None:
             if not user.lcp_passphrase_hash:
-                raise ValueError(
-                    "No LCP passphrase available. Please set your default passphrase"
-                )
+                raise ValueError("No LCP passphrase available. Please set your default passphrase")
             passphrase_hash = user.lcp_passphrase_hash
             # Use user's default hint if no custom hint provided
             if passphrase_hint is None:

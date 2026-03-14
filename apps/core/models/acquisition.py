@@ -87,7 +87,7 @@ def touch_entry(sender, instance: Acquisition, **kwargs):
     instance.entry.save()
 
 
-# @receiver(post_save, sender=Acquisition)
+@receiver(post_save, sender=Acquisition)
 def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
     import logging
 
