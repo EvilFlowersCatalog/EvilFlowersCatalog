@@ -11,9 +11,10 @@ from django.utils.translation import gettext as _
 
 from apps import openapi
 from apps.api.response import SingleResponse
-from apps.core.errors import ProblemDetailException, DetailType
+from apps.core.errors import ProblemDetailException, ValidationException, DetailType
 from apps.core.models import Entry, Acquisition
 from apps.core.views import SecuredView
+from apps.readium.forms import EncryptionTriggerForm
 from apps.readium.services import ContentEncryptionService
 
 
@@ -140,7 +141,12 @@ class EntryEncryptionView(SecuredView):
                 detail_type=DetailType.VALIDATION_ERROR,
             )
 
-        force = request.data.get("force", False)
+        form = EncryptionTriggerForm.create_from_request(request)
+
+        if not form.is_valid():
+            raise ValidationException(form)
+
+        force = form.cleaned_data.get("force", False)
 
         # Check if already encrypted
         if hasattr(acquisition, "encrypted_content") and not force:

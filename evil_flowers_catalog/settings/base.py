@@ -360,6 +360,9 @@ if os.getenv("ELASTIC_APM_SERVICE_NAME"):
     }
 
 # Logfire
+# NOTE: instrument_django() is called in apps.core.apps.CoreConfig.ready() because
+# calling it here causes a circular import — django.conf.settings is not yet available
+# during settings module load, so the OTEL middleware never gets inserted.
 if os.getenv("LOGFIRE_TOKEN"):
     try:
         import logfire
@@ -369,7 +372,6 @@ if os.getenv("LOGFIRE_TOKEN"):
             service_version=VERSION,
             environment=os.getenv("LOGFIRE_ENVIRONMENT", "development"),
         )
-        logfire.instrument_django(capture_headers=True)
         logfire.instrument_celery()
         logfire.instrument_requests()
         logfire.instrument_system_metrics()
