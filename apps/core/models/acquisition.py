@@ -89,9 +89,6 @@ def touch_entry(sender, instance: Acquisition, **kwargs):
 
 @receiver(post_save, sender=Acquisition)
 def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
-    import logging
-
-    logger = logging.getLogger(__name__)
     event_broker = get_event_broker()
 
     # OCR task for new acquisitions with language set
@@ -102,17 +99,6 @@ def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
                 "args": [instance.content.name, instance.content.name, instance.entry.language.alpha3],
             },
         )
-
-    # Readium LCP encryption via proper service (replaces legacy direct worker call)
-    if created and instance.entry.read_config("readium_enabled"):
-        from apps.readium.services import ContentEncryptionService
-
-        try:
-            ContentEncryptionService.encrypt_acquisition(instance)
-            logger.info(f"Triggered LCP encryption for acquisition {instance.pk}")
-        except ValueError as e:
-            # Log but don't fail - encryption can be triggered manually later
-            logger.warning(f"Failed to trigger encryption for acquisition {instance.pk}: {e}")
 
 
 __all__ = ["Acquisition"]
