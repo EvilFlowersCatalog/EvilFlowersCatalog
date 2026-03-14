@@ -141,9 +141,7 @@ def trigger_readium_encryption(sender, instance: Entry, **kwargs):
 
     logger = logging.getLogger(__name__)
 
-    for acquisition in instance.acquisitions.filter(
-        mime__in=["application/epub+zip", "application/pdf"]
-    ):
+    for acquisition in instance.acquisitions.filter(mime__in=["application/epub+zip", "application/pdf"]):
         if not acquisition.content or hasattr(acquisition, "encrypted_content"):
             continue
 
