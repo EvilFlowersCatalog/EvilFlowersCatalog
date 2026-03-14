@@ -6,7 +6,8 @@
       "Bash(gh api:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:github.com)",
-      "mcp__MCP_DOCKER__get_file_contents"
+      "mcp__MCP_DOCKER__get_file_contents",
+      "Bash(find:*)"
     ],
     "deny": []
   }

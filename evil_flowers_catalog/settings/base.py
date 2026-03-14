@@ -369,10 +369,8 @@ if os.getenv("LOGFIRE_TOKEN"):
             service_version=VERSION,
             environment=os.getenv("LOGFIRE_ENVIRONMENT", "development"),
         )
-        logfire.instrument_django()
+        logfire.instrument_django(capture_headers=True)
         logfire.instrument_celery()
-        logfire.instrument_redis()
-        logfire.instrument_psycopg()
         logfire.instrument_requests()
         logfire.instrument_system_metrics()
     except ImportError:
