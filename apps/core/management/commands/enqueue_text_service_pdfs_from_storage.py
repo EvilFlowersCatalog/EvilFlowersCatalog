@@ -2,12 +2,13 @@ from pathlib import Path
 from uuid import UUID
 
 from django.conf import settings
-from django.core.management import BaseCommand
+from django.core.management import BaseCommand, CommandError
 
 from apps.api.services.text_service_client import TextServiceClient
 
 _FILESYSTEM_STORAGE = "apps.files.storage.filesystem.FileSystemStorage"
 _CATALOGS = "catalogs"
+_STORAGE_ROOT = Path("/usr/local/app/private")
 
 
 class Command(BaseCommand):
@@ -40,6 +41,11 @@ class Command(BaseCommand):
             action="store_true",
             help="At most one task per entry UUID (first path wins, sorted by path).",
         )
+        parser.add_argument(
+            "--include-encrypted",
+            action="store_true",
+            help="Also enqueue PDFs under .../encrypted/ (Readium LCP output). Default: skip them.",
+        )
 
     def handle(self, *args, **options):
         if settings.EVILFLOWERS_STORAGE_DRIVER != _FILESYSTEM_STORAGE:
@@ -51,11 +57,13 @@ class Command(BaseCommand):
             )
             return
 
-        root = Path(settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR)
+        root = _STORAGE_ROOT
         catalogs_dir = root / _CATALOGS
         if not catalogs_dir.is_dir():
-            self.stderr.write(self.style.ERROR(f"Not a directory: {catalogs_dir}"))
-            return
+            raise CommandError(
+                f"Expected catalog files at {catalogs_dir}; "
+                f"adjust _STORAGE_ROOT in this command if your layout differs."
+            )
 
         slug_filter = options["catalog_slug"]
         seen_entries: set[str] = set()
@@ -83,6 +91,17 @@ class Command(BaseCommand):
                 skipped += 1
                 self.stdout.write(
                     self.style.WARNING(f"skip unexpected layout: {rel_posix}")
+                )
+                continue
+
+            if (
+                len(parts) >= 5
+                and parts[3] == "encrypted"
+                and not options["include_encrypted"]
+            ):
+                skipped += 1
+                self.stdout.write(
+                    self.style.WARNING(f"skip encrypted subtree: {rel_posix}")
                 )
                 continue
 

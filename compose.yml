@@ -42,6 +42,8 @@ services:
       - ./data/evilflowers/private:/mnt/data  # Mount for shared storage with text-service
       - ./logs:/var/log
     environment:
+      # Broker + Django cache (defaults to 127.0.0.1, which fails inside the container)
+      REDIS_HOST: redis
       DV_PUBLIC_INTERNAL: "http://dataverse:8080"
       DV_PUBLIC_BASE: http://localhost:8080
       DV_API_TOKEN: "538ce247-e209-4953-b1fd-35115e77dcc3" # change me
