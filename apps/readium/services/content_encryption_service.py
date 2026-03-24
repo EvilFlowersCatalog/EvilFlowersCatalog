@@ -106,9 +106,7 @@ class ContentEncryptionService:
         )
 
     @staticmethod
-    def mark_encryption_completed(
-        lcp_content_id: str, encrypted_url: Optional[str] = None
-    ) -> EncryptedContent:
+    def mark_encryption_completed(lcp_content_id: str, encrypted_url: Optional[str] = None) -> EncryptedContent:
         """
         Mark encryption as completed. Called by webhook after lcpencrypt finishes.
 
@@ -127,9 +125,7 @@ class ContentEncryptionService:
             encrypted_content.encrypted_url = encrypted_url
         else:
             # Generate default URL
-            encrypted_content.encrypted_url = ContentEncryptionService.get_encrypted_content_url(
-                encrypted_content
-            )
+            encrypted_content.encrypted_url = ContentEncryptionService.get_encrypted_content_url(encrypted_content)
 
         encrypted_content.save()
         return encrypted_content

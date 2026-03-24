@@ -74,10 +74,7 @@ class LicenseDownloadView(SecuredView):
             fresh_license = LicenseService.fetch_fresh_license(license)
 
             # Return as downloadable LCP license
-            response = JsonResponse(
-                fresh_license,
-                content_type="application/vnd.readium.lcp.license.v1.0+json"
-            )
+            response = JsonResponse(fresh_license, content_type="application/vnd.readium.lcp.license.v1.0+json")
             response["Content-Disposition"] = f'attachment; filename="{license.entry.title}.lcpl"'
             return response
 

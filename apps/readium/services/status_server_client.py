@@ -27,9 +27,7 @@ class StatusServerClient:
     """
 
     def __init__(self):
-        self.status_server_url = getattr(
-            settings, "EVILFLOWERS_READIUM_LSDSV_URL", "http://127.0.0.1:8990"
-        )
+        self.status_server_url = getattr(settings, "EVILFLOWERS_READIUM_LSDSV_URL", "http://127.0.0.1:8990")
 
     def register_license(self, lcp_license: Dict) -> None:
         """
@@ -56,9 +54,7 @@ class StatusServerClient:
         except requests.RequestException as e:
             raise Exception(f"Failed to register license with status server: {str(e)}")
 
-    def revoke_license(
-        self, license: License, reason: str = "Revoked by administrator"
-    ) -> None:
+    def revoke_license(self, license: License, reason: str = "Revoked by administrator") -> None:
         """
         Revoke a license through the Status Server.
 
