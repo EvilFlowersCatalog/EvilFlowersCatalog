@@ -45,10 +45,8 @@ services:
       DV_PUBLIC_BASE: http://localhost:8080
       DV_API_TOKEN: "538ce247-e209-4953-b1fd-35115e77dcc3" # change me
       DATAVERSE_WORKFLOW_SECRET: "123"
-      EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR: /mnt/data
-      REDIS_DATABASE: 1
-      REDIS_HOST: redis
-      SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION: 6000
+      DATAVERSE_RESUME_WORKFLOW: "1"
+      DJANGO_LOG_LEVEL: "DEBUG"
       PGHOST: db
       PGDATABASE: evil_flowers_catalog
       PGUSER: postgres
