@@ -56,6 +56,8 @@ services:
       EVILFLOWERS_TEXT_SERVICE_URL: "http://host.docker.internal:8010"
       TEXT_SERVICE_REDIS_URL: "redis://redis:6379/0"
       EVILFLOWERS_CATALOG_API_INTERNAL_URL: "http://django:8000"
+      DATAVERSE_RESUME_WORKFLOW: "1"
+      DJANGO_LOG_LEVEL: "DEBUG"
       PGHOST: db
       PGDATABASE: evil_flowers_catalog
       PGUSER: postgres
