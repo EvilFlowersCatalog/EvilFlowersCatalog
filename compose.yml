@@ -50,7 +50,6 @@ services:
       DATAVERSE_WORKFLOW_SECRET: "123"
       EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR: /mnt/data
       REDIS_DATABASE: 0
-      REDIS_HOST: redis
       SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION: 6000
       EVILFLOWERS_EVENT_BROKER_EXECUTOR: "apps.events.services.CeleryEventExecutionService"
       EVILFLOWERS_EVENT_BROKER_TRANSFORMER: "apps.events.transformers.DjangoTransformer"
