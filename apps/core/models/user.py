@@ -23,6 +23,14 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     auth_source = models.ForeignKey(AuthSource, on_delete=models.CASCADE)
 
+    # LCP passphrase (stored as SHA-256 hash)
+    lcp_passphrase_hash = models.CharField(
+        max_length=64, blank=True, null=True, help_text="SHA-256 hash of user's default LCP passphrase"
+    )
+    lcp_passphrase_hint = models.CharField(
+        max_length=255, blank=True, null=True, help_text="Hint to help user remember their LCP passphrase"
+    )
+
     objects = UserManager()
 
     USERNAME_FIELD = "username"

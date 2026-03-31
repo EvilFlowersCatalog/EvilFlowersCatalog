@@ -9,7 +9,7 @@ from django.utils.dateparse import parse_date
 from apps import openapi
 from apps.api.response import SingleResponse
 from apps.core.errors import ProblemDetailException, DetailType
-from apps.core.models import Entry
+from apps.core.models import Entry, Acquisition
 from apps.core.views import SecuredView
 from apps.readium.services import LicenseService
 

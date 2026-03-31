@@ -1,0 +1,20 @@
+❯ /Users/jdubec/go/bin/lcpencrypt -input=/Users/jdubec/Projects/EvilFlowers/EvilFlowersCatalog/data/evilflowers/storage/catalogs/mtf/da895d0c-f18e-400c-be7e-92e3d23b1e91/980813f0-bfbb-4646-b5b9-0be6481cbe5c.pdf -contentid=21d37ddc-c738-4f59-8b81-ddf609941a38 -lcpsv="http://admin:admin@127.0.0.1:8989" -notify="http://127.0.0.1:8000/readium/v1/hooks/encryption" --verbose
+2025/12/09 02:38:05 Process  /Users/jdubec/Projects/EvilFlowers/EvilFlowersCatalog/data/evilflowers/storage/catalogs/mtf/da895d0c-f18e-400c-be7e-92e3d23b1e91/980813f0-bfbb-4646-b5b9-0be6481cbe5c.pdf
+2025/12/09 02:38:05 Create the temp folder  /tmp
+2025/12/09 02:38:05 Process as PDF
+2025/12/09 02:38:05 Extracting the PDF cover took 322.470917ms
+2025/12/09 02:38:05 Storage mode temp
+2025/12/09 02:38:05 Encrypted file: /tmp/21d37ddc-c738-4f59-8b81-ddf609941a38.lcpdf
+2025/12/09 02:38:05 File url: /tmp/21d37ddc-c738-4f59-8b81-ddf609941a38.lcpdf
+LCP Server Notification:
+{
+ "content-id": "21d37ddc-c738-4f59-8b81-ddf609941a38",
+ "content-encryption-key": "8vTBia5vFLhrpNTUkOU6kHBOYqWcPyNhSipCW+CjszM=",
+ "storage-mode": 0,
+ "protected-content-location": "/tmp/21d37ddc-c738-4f59-8b81-ddf609941a38.lcpdf",
+ "protected-content-disposition": "21d37ddc-c738-4f59-8b81-ddf609941a38.lcpdf",
+ "protected-content-length": 8800092,
+ "protected-content-sha256": "47c54451318bc613013d19a01609e318a50d2a2fa1fbaf4bd3f372e18137a567",
+ "protected-content-type": "application/pdf+lcp"
+}
+Error notifying the LCP Server : the server returned an error 400

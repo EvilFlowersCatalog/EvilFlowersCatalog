@@ -258,6 +258,10 @@ EVILFLOWERS_ENFORCE_USER_ACQUISITIONS = bool(int(os.getenv("EVILFLOWERS_ENFORCE_
 
 EVILFLOWERS_USER_ACQUISITION_MODE = os.getenv("EVILFLOWERS_USER_ACQUISITION_MODE", "single")
 
+# IP blocking: comma-separated CIDR ranges (e.g. "147.175.0.0/16,158.195.0.0/16"), null disables
+_ip_ranges = os.getenv("EVILFLOWERS_ALLOWED_IP_RANGES")
+EVILFLOWERS_ALLOWED_IP_RANGES = [r.strip() for r in _ip_ranges.split(",") if r.strip()] if _ip_ranges else None
+
 # Storage
 EVILFLOWERS_STORAGE_DRIVER = os.getenv("EVILFLOWERS_STORAGE_DRIVER", "apps.files.storage.filesystem.FileSystemStorage")
 EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR = os.getenv(
@@ -276,6 +280,7 @@ EVILFLOWERS_EVENT_BROKER_TRANSFORMER = os.getenv("EVILFLOWERS_EVENT_BROKER_TRANS
 # Readium
 EVILFLOWERS_READIUM_DATADIR = str(os.getenv("EVILFLOWERS_READIUM_DATADIR", BASE_DIR / "data/evilflowers/readium"))
 EVILFLOWERS_READIUM_LCPSV_URL = os.getenv("EVILFLOWERS_READIUM_LCPSV_URL", "http://127.0.0.1:8989")
+EVILFLOWERS_READIUM_LSDSV_URL = os.getenv("EVILFLOWERS_READIUM_LSDSV_URL", "http://127.0.0.1:8990")
 EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL = os.getenv(
     "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", "http://127.0.0.1:8989"
 )
@@ -372,7 +377,24 @@ if os.getenv("ELASTIC_APM_SERVICE_NAME"):
         "DEBUG": True,
     }
 
-# Logfire removed - using console logging only
+# Logfire
+# NOTE: instrument_django() is called in apps.core.apps.CoreConfig.ready() because
+# calling it here causes a circular import — django.conf.settings is not yet available
+# during settings module load, so the OTEL middleware never gets inserted.
+if os.getenv("LOGFIRE_TOKEN"):
+    try:
+        import logfire
+
+        logfire.configure(
+            service_name=os.getenv("LOGFIRE_SERVICE_NAME", "evilflowers-catalog"),
+            service_version=VERSION,
+            environment=os.getenv("LOGFIRE_ENVIRONMENT", "development"),
+        )
+        logfire.instrument_celery()
+        logfire.instrument_requests()
+        logfire.instrument_system_metrics()
+    except ImportError:
+        pass
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATABASE}")
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True

@@ -6,6 +6,7 @@ Endpoints:
 - /licenses - License CRUD operations
 - /licenses/{id}.lcpl - License Gateway (download .lcpl files)
 - /entries/{id}/availability - Availability calendar
+- /entries/{id}/encryption - Encryption status and manual trigger
 """
 
 from django.urls import path
@@ -14,6 +15,7 @@ from apps.readium.views.hooks import EncryptionWebhook
 from apps.readium.views.licenses import LicenseManagement, LicenseDetail
 from apps.readium.views.availability import EntryAvailabilityView
 from apps.readium.views.download import LicenseDownloadView
+from apps.readium.views.encryption import EntryEncryptionView
 
 urlpatterns = [
     # Webhooks
@@ -25,4 +27,6 @@ urlpatterns = [
     path("licenses/<uuid:license_id>.lcpl", LicenseDownloadView.as_view(), name="license-gateway"),
     # Availability
     path("entries/<uuid:entry_id>/availability", EntryAvailabilityView.as_view(), name="entry-availability"),
+    # Encryption Management
+    path("entries/<uuid:entry_id>/encryption", EntryEncryptionView.as_view(), name="entry-encryption"),
 ]

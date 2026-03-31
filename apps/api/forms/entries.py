@@ -55,6 +55,7 @@ class EntryConfigForm(Form):
     evilflowers_viewer_print = BooleanField(required=False)
     evilflowers_share_enabled = BooleanField(required=False)
     evilflowers_metadata_fetch = BooleanField(required=False)
+    evilflowers_ip_block = BooleanField(required=False)
     readium_enabled = BooleanField(required=False)
     evilflowers_render_type = forms.ChoiceField(
         required=False,

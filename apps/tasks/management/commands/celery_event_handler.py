@@ -16,21 +16,38 @@ class Command(BaseCommand):
         if not event.get("type", "").startswith("task-"):
             return
 
+        if "uuid" not in event:
+            return
+
         try:
             protocol = JobProtocol.objects.get(pk=event["uuid"])
         except JobProtocol.DoesNotExist:
-            protocol = JobProtocol.objects.create(
+            protocol = JobProtocol(
                 id=event["uuid"],
                 parent_id=event.get("parent_id"),
-                name=event["name"],
-                job_args=ast.literal_eval(event["args"]) if event.get("args") else None,
-                job_kwargs=ast.literal_eval(event["kwargs"]) if event.get("kwargs") else None,
-                result=ast.literal_eval(event["result"]) if event.get("result") else None,
+                name=event.get("name", "unknown"),
             )
+            if event.get("args"):
+                try:
+                    protocol.job_args = ast.literal_eval(event["args"])
+                except (ValueError, SyntaxError):
+                    protocol.job_args = [event["args"]]
+            if event.get("kwargs"):
+                try:
+                    protocol.job_kwargs = ast.literal_eval(event["kwargs"])
+                except (ValueError, SyntaxError):
+                    protocol.job_kwargs = {"raw": event["kwargs"]}
+            if event.get("result"):
+                try:
+                    protocol.result = ast.literal_eval(event["result"])
+                except (ValueError, SyntaxError):
+                    protocol.result = {"raw": event["result"]}
 
         match event["type"]:
             case "task-received":
                 protocol.status = JobProtocol.JobStatus.RECEIVED
+                if event.get("name"):
+                    protocol.name = event["name"]
             case "task-succeeded":
                 protocol.status = JobProtocol.JobStatus.SUCCESS
                 protocol.finished_at = timezone.now()

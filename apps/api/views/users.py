@@ -9,6 +9,7 @@ from apps.core.errors import (
     ValidationException,
     ProblemDetailException,
     UnauthorizedException,
+    DetailType,
 )
 from apps.api.filters.users import UserFilter
 from apps.api.forms.users import UserForm, CreateUserForm
@@ -81,7 +82,7 @@ class UserDetail(SecuredView):
         return SingleResponse(request, data=UserSerializer.Detailed.model_validate(user))
 
     @openapi.metadata(
-        description="Update user profile information including name, surname, email, and active status. Requires appropriate permissions to modify user accounts.",
+        description="Update user profile information including name, surname, email, active status, and LCP passphrase. Requires appropriate permissions to modify user accounts.",
         tags=["Users"],
         summary="Update user profile",
     )
@@ -96,6 +97,13 @@ class UserDetail(SecuredView):
         form.populate(user)
         if "password" in form.cleaned_data.keys():
             user.set_password(form.cleaned_data["password"])
+
+        # Handle LCP passphrase - hash before storing
+        if "lcp_passphrase" in form.cleaned_data and form.cleaned_data["lcp_passphrase"]:
+            from apps.readium.services.lcp_server_client import LCPServerClient
+
+            user.lcp_passphrase_hash = LCPServerClient.hash_passphrase(form.cleaned_data["lcp_passphrase"])
+
         user.save()
 
         return SingleResponse(request, data=UserSerializer.Base.model_validate(user))

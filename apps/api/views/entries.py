@@ -63,6 +63,7 @@ class EntryPaginator(SecuredView):
                 "acquisitions",
             )
             .all()
+            .distinct()
         )
 
         return PaginationResponse(

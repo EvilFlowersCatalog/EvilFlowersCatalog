@@ -11,9 +11,11 @@ from django.views import View
 from apps import openapi
 from apps.api.response import SingleResponse
 from apps.api.serializers.status import (
+    StatusClientIP,
     StatusStatistics,
     StatusSerializer,
 )
+from apps.files.views import _get_client_ip
 from apps.core.errors import ProblemDetailException
 from apps.core.models import Catalog, Entry, Acquisition, User
 
@@ -78,6 +80,13 @@ class StatusManagement(View):
             response.version = settings.VERSION
             response.build = settings.BUILD
             response.supervisord = processes
+            response.client_ip = StatusClientIP(
+                remote_addr=request.META.get("REMOTE_ADDR"),
+                x_real_ip=request.META.get("HTTP_X_REAL_IP"),
+                x_forwarded_for=request.META.get("HTTP_X_FORWARDED_FOR"),
+                resolved=_get_client_ip(request),
+            )
+            response.allowed_ip_ranges = settings.EVILFLOWERS_ALLOWED_IP_RANGES
 
         if not all(value == "RUNNING" for value in processes.values()):
             raise ProblemDetailException(

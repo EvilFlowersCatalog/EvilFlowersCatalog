@@ -114,27 +114,13 @@ def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
     dependent_tasks = []
     event_broker = get_event_broker()
 
+    # OCR task for new acquisitions with language set
     if created and instance.entry.language_id:
         event_broker.execute(
             "evilflowers_ocr_worker.ocr",
             {
                 "args": [instance.content.name, instance.content.name, instance.entry.language.alpha3],
             },
-        )
-    else:
-        ocr_task = None
-
-    if instance.entry.config["readium_enabled"]:
-
-        event_broker.execute(
-            "evilflowers_lcpencrypt_worker.lcpencrypt",
-            kwargs={
-                "input_file": instance.content.name,
-                "contentid": str(instance.pk),
-                "storage": instance.upload_base_path(),  # FIXME: support for S3
-                "filename": f"{instance.pk}.lcp.pdf",
-            },
-            queue="evilflowers_lcpencrypt_worker",
         )
 
 

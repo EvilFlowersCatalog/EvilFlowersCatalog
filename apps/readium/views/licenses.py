@@ -7,10 +7,7 @@ Uses the new service layer for all business logic.
 
 from http import HTTPStatus
 from uuid import UUID
-from datetime import timedelta
 
-from django.http import JsonResponse
-from django.utils import timezone
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
@@ -18,7 +15,6 @@ from apps import openapi
 from apps.api.response import PaginationResponse, SingleResponse
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.core.views import SecuredView
-from apps.core.models import Entry
 from apps.readium.filters import LicenseFilter
 from apps.readium.forms import CreateLicenseForm, UpdateLicenseForm
 from apps.readium.models import License
@@ -33,9 +29,10 @@ class LicenseManagement(SecuredView):
         summary="List all licenses",
     )
     def get(self, request):
+        # TODO: prefetch entries
         licenses = LicenseFilter(request.GET, queryset=License.objects.all(), request=request).qs
 
-        return PaginationResponse(request, licenses, serializer=LicenseSerializer.Base)
+        return PaginationResponse(request, licenses, serializer=LicenseSerializer.Detailed)
 
     @openapi.metadata(
         description="""
@@ -49,28 +46,19 @@ class LicenseManagement(SecuredView):
 
         Required fields:
         - entry_id: UUID of the entry to license
-        - user_passphrase: User's chosen passphrase for decryption
-        - passphrase_hint: Hint for the passphrase (optional)
-        - duration_days: License duration in days (default: 14)
+        - duration: License duration (e.g. "14 00:00:00" for 14 days)
+
+        Optional fields:
+        - starts_at: License start date (default: now)
         """,
         tags=["Licenses"],
         summary="Create new LCP license",
     )
     def post(self, request):
-        # Extract required parameters
-        entry_id = request.data.get("entry_id")
-        user_passphrase = request.data.get("user_passphrase")
-        passphrase_hint = request.data.get("passphrase_hint")
-        duration_days = int(request.data.get("duration_days", 14))
-        start_date_str = request.data.get("start_date")
+        form = CreateLicenseForm.create_from_request(request)
 
-        # Validate required fields
-        if not entry_id:
-            raise ProblemDetailException(
-                _("entry_id is required"),
-                status=HTTPStatus.BAD_REQUEST,
-                detail_type=DetailType.VALIDATION_ERROR,
-            )
+        if not form.is_valid():
+            raise ValidationException(form)
 
         if not user_passphrase:
             raise ProblemDetailException(
@@ -99,12 +87,10 @@ class LicenseManagement(SecuredView):
         # Create license via service
         try:
             license = LicenseService.create_license(
-                entry=entry,
+                entry=form.cleaned_data["entry_id"],
                 user=request.user,
-                user_passphrase=user_passphrase,
-                passphrase_hint=passphrase_hint,
-                start_date=start_date,
-                duration_days=duration_days,
+                start_date=form.cleaned_data.get("starts_at"),
+                duration_days=form.cleaned_data["duration"].days,
             )
 
             return SingleResponse(
@@ -209,16 +195,16 @@ class LicenseDetail(SecuredView):
     def put(self, request, license_id: UUID):
         license = self._get_license(request, license_id)
 
-        # Handle state changes
-        new_state = request.data.get("state")
-        if new_state:
-            self._handle_state_change(license, new_state, request.data)
-
-        # Handle other property updates
         form = UpdateLicenseForm.create_from_request(request)
-        if form.is_valid():
-            form.populate(license)
 
+        if not form.is_valid():
+            raise ValidationException(form)
+
+        new_state = form.cleaned_data.get("state")
+        if new_state:
+            self._handle_state_change(license, new_state, form.cleaned_data)
+
+        form.populate(license)
         license.save()
         return SingleResponse(request, data=LicenseSerializer.Base.model_validate(license))
 
@@ -245,10 +231,11 @@ class LicenseDetail(SecuredView):
 
         elif new_state == "renewed":
             # Renew license via service
-            duration_days = data.get("duration_days", 14)
+            duration = data.get("duration")
+            duration_days = duration.days if duration else 14
             try:
                 LicenseService.renew_license(license, new_duration_days=duration_days)
-                # Note: service updates expir es_at
+                # Note: service updates expires_at
             except Exception as e:
                 raise ProblemDetailException(
                     _("Failed to renew license"),
@@ -259,9 +246,8 @@ class LicenseDetail(SecuredView):
 
         elif new_state == "revoked":
             # Revoke license via service
-            reason = data.get("reason", "Revoked by administrator")
             try:
-                LicenseService.revoke_license(license, reason)
+                LicenseService.revoke_license(license)
                 # Note: service updates state to REVOKED
             except Exception as e:
                 raise ProblemDetailException(
@@ -273,9 +259,8 @@ class LicenseDetail(SecuredView):
 
         elif new_state == "cancelled":
             # Cancel license via service
-            reason = data.get("reason", "Cancelled by user")
             try:
-                LicenseService.cancel_license(license, reason)
+                LicenseService.cancel_license(license)
                 # Note: service updates state to CANCELLED
             except Exception as e:
                 raise ProblemDetailException(

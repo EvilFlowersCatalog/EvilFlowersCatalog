@@ -29,6 +29,7 @@ class EntryConfig(TypedDict):
     evilflowers_render_type: Literal["page", "document"]
     evilflowers_share_enabled: bool
     evilflowers_metadata_fetch: bool
+    evilflowers_ip_block: bool
     readium_enabled: bool
     readium_amount: int
 
@@ -42,6 +43,7 @@ def default_entry_config() -> EntryConfig:
         evilflowers_share_enabled=True,
         evilflowers_render_type="document",
         evilflowers_metadata_fetch=False,
+        evilflowers_ip_block=False,
         readium_enabled=False,
         readium_amount=1,
     )
@@ -125,6 +127,29 @@ def touch_parents(sender, instance: Entry, **kwargs):
     instance.catalog.touched_at = timezone.now()
     instance.catalog.save()
     instance.feeds.update(touched_at=timezone.now())
+
+
+@receiver(post_save, sender=Entry)
+def trigger_readium_encryption(sender, instance: Entry, **kwargs):
+    """Trigger LCP encryption when readium_enabled is set on an entry with existing acquisitions."""
+    if not instance.read_config("readium_enabled"):
+        return
+
+    import logging
+
+    from apps.readium.services import ContentEncryptionService
+
+    logger = logging.getLogger(__name__)
+
+    for acquisition in instance.acquisitions.filter(mime__in=["application/epub+zip", "application/pdf"]):
+        if not acquisition.content or hasattr(acquisition, "encrypted_content"):
+            continue
+
+        try:
+            ContentEncryptionService.encrypt_acquisition(acquisition)
+            logger.info(f"Triggered LCP encryption for acquisition {acquisition.pk}")
+        except ValueError as e:
+            logger.warning(f"Failed to trigger encryption for acquisition {acquisition.pk}: {e}")
 
 
 __all__ = ["Entry", "default_entry_config"]
