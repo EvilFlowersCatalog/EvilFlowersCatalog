@@ -2,7 +2,7 @@ name: Docker build
 
 on:
   push:
-    branches: [ master, develop ]
+    branches: [ master, develop, dataverse-integration ]
     tags: [ '*.*.*' ]
   pull_request:
     branches: [ develop ]
