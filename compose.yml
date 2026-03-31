@@ -110,6 +110,8 @@ services:
       - ./data/readium/cert/privkey.pem:/usr/local/var/readium/lcp/cert/privkey.pem
     ports:
       - "8988:8988"
+    networks:
+      - shared
 
   evilflowers-ocr-worker:
     image: "ghcr.io/evilflowerscatalog/evilflowers-ocr-worker:master"
