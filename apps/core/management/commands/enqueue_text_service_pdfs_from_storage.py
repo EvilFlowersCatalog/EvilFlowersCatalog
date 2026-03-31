@@ -51,8 +51,7 @@ class Command(BaseCommand):
         if settings.EVILFLOWERS_STORAGE_DRIVER != _FILESYSTEM_STORAGE:
             self.stderr.write(
                 self.style.ERROR(
-                    "This command only supports FileSystemStorage; got "
-                    f"{settings.EVILFLOWERS_STORAGE_DRIVER}."
+                    "This command only supports FileSystemStorage; got " f"{settings.EVILFLOWERS_STORAGE_DRIVER}."
                 )
             )
             return
@@ -89,20 +88,12 @@ class Command(BaseCommand):
             parts = rel_posix.split("/")
             if len(parts) < 4 or parts[0] != _CATALOGS:
                 skipped += 1
-                self.stdout.write(
-                    self.style.WARNING(f"skip unexpected layout: {rel_posix}")
-                )
+                self.stdout.write(self.style.WARNING(f"skip unexpected layout: {rel_posix}"))
                 continue
 
-            if (
-                len(parts) >= 5
-                and parts[3] == "encrypted"
-                and not options["include_encrypted"]
-            ):
+            if len(parts) >= 5 and parts[3] == "encrypted" and not options["include_encrypted"]:
                 skipped += 1
-                self.stdout.write(
-                    self.style.WARNING(f"skip encrypted subtree: {rel_posix}")
-                )
+                self.stdout.write(self.style.WARNING(f"skip encrypted subtree: {rel_posix}"))
                 continue
 
             slug = parts[1]
@@ -113,9 +104,7 @@ class Command(BaseCommand):
                 entry_uuid = UUID(parts[2])
             except ValueError:
                 skipped += 1
-                self.stdout.write(
-                    self.style.WARNING(f"skip entry segment not a UUID: {rel_posix}")
-                )
+                self.stdout.write(self.style.WARNING(f"skip entry segment not a UUID: {rel_posix}"))
                 continue
 
             entry_id = str(entry_uuid)
@@ -134,17 +123,9 @@ class Command(BaseCommand):
             result = client.process_acquisition(rel_posix, entry_id)
             if result:
                 enqueued += 1
-                self.stdout.write(
-                    f"enqueued task_id={result['task_id']} entry={entry_id} source={rel_posix}"
-                )
+                self.stdout.write(f"enqueued task_id={result['task_id']} entry={entry_id} source={rel_posix}")
             else:
                 failed += 1
-                self.stderr.write(
-                    self.style.ERROR(f"failed to enqueue entry={entry_id} source={rel_posix}")
-                )
+                self.stderr.write(self.style.ERROR(f"failed to enqueue entry={entry_id} source={rel_posix}"))
 
-        self.stdout.write(
-            self.style.NOTICE(
-                f"done: enqueued={enqueued} skipped={skipped} failed={failed}"
-            )
-        )
+        self.stdout.write(self.style.NOTICE(f"done: enqueued={enqueued} skipped={skipped} failed={failed}"))
