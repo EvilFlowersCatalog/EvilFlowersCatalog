@@ -1,0 +1,47 @@
+{% extends "notifications/base.mjml" %}
+
+{% block content %}
+<mj-section background-color="#ffffff" padding="30px 20px">
+  <mj-column>
+    <mj-text font-size="20px" font-weight="bold" padding-bottom="10px">
+      New Publication License
+    </mj-text>
+    <mj-text>
+      Hello {{ user_name }},
+    </mj-text>
+    <mj-text>
+      A new license has been created for the following publication:
+    </mj-text>
+  </mj-column>
+</mj-section>
+
+<mj-section background-color="#ffffff" padding="0 20px">
+  <mj-column background-color="#f8f9fa" border-radius="4px" padding="15px">
+    <mj-text font-weight="bold" font-size="16px">
+      {{ entry_title }}
+    </mj-text>
+    <mj-text color="#666666">
+      by {{ entry_author }}
+    </mj-text>
+    <mj-text font-size="13px" color="#888888">
+      Valid from {{ starts_at }} until {{ expires_at }}
+    </mj-text>
+  </mj-column>
+</mj-section>
+
+<mj-section background-color="#ffffff" padding="20px">
+  <mj-column>
+    <mj-button href="{{ download_url }}">
+      Download License File (.lcpl)
+    </mj-button>
+    <mj-text font-size="12px" color="#999999" align="center">
+      This download link expires in {{ download_expires_hours }} hours.
+    </mj-text>
+    {% if passphrase_hint %}
+    <mj-text font-size="13px" padding-top="15px">
+      <strong>Passphrase hint:</strong> {{ passphrase_hint }}
+    </mj-text>
+    {% endif %}
+  </mj-column>
+</mj-section>
+{% endblock %}

@@ -75,6 +75,7 @@ INSTALLED_APPS = [
     "apps.tasks",
     "apps.readium",
     "apps.events",
+    "apps.notifications",
 ]
 
 MIDDLEWARE = [
@@ -306,6 +307,15 @@ EVILFLOWERS_MODIFIERS = {"application/pdf": "apps.core.modifiers.pdf.PDFModifier
 
 # Admin
 EVILFLOWERS_CONTACT_EMAIL = os.getenv("CONTACT_EMAIL", "root@localhost")
+
+# Notifications
+EVILFLOWERS_NOTIFICATIONS_ENABLED = os.getenv("EVILFLOWERS_NOTIFICATIONS_ENABLED", "false").lower() == "true"
+EVILFLOWERS_NOTIFICATION_FROM_EMAIL = os.getenv("EVILFLOWERS_NOTIFICATION_FROM_EMAIL", EVILFLOWERS_CONTACT_EMAIL)
+EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS = int(os.getenv("EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS", 72))
+EVILFLOWERS_BASE_URL = os.getenv(
+    "EVILFLOWERS_BASE_URL",
+    f"http://{os.getenv('DJANGO_RUNSERVER_IP', '127.0.0.1')}:{os.getenv('DJANGO_RUNSERVER_PORT', '8000')}",
+)
 
 # OpenAPI
 EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium"]
