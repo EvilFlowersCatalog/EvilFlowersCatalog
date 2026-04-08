@@ -120,6 +120,7 @@ jobs:
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
       - name: Checkout Protocol Repo
+        id: protocol_checkout
         if: steps.slug.outputs.action == 'deploy'
         uses: actions/checkout@v4
         with:
@@ -131,16 +132,14 @@ jobs:
         continue-on-error: true
 
       - name: Sync OpenAPI to Protocol Repo
-        if: steps.slug.outputs.action == 'deploy'
+        if: steps.slug.outputs.action == 'deploy' && steps.protocol_checkout.outcome == 'success'
         run: |
-          if [ -d "protocol_repo" ]; then
-            cd protocol_repo
-            mkdir -p openapi metadata
-            cp ../${PUBLISH_DIR}/openapi.yaml openapi/openapi.yaml
-            echo "${{ steps.slug.outputs.raw_ref }}" > metadata/version.txt
-            git config user.name "ci-bot"
-            git config user.email "ci@evilflowers.org"
-            git add .
-            git diff-index --quiet HEAD || git commit -m "Sync OpenAPI for ${{ steps.slug.outputs.raw_ref }}"
-            git push origin ${{ steps.slug.outputs.raw_ref }}
-          fi
+          cd protocol_repo
+          mkdir -p openapi metadata
+          cp ../${PUBLISH_DIR}/openapi.yaml openapi/openapi.yaml
+          echo "${{ steps.slug.outputs.raw_ref }}" > metadata/version.txt
+          git config user.name "ci-bot"
+          git config user.email "ci@evilflowers.org"
+          git add .
+          git diff-index --quiet HEAD || git commit -m "Sync OpenAPI for ${{ steps.slug.outputs.raw_ref }}"
+          git push origin ${{ steps.slug.outputs.raw_ref }}
