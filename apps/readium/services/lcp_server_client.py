@@ -96,9 +96,9 @@ class LCPServerClient:
             "provider": self.provider_url,
             "user": {
                 "id": str(license.user.pk),
-                "email": license.user.email or "",
-                "name": license.user.get_full_name() or license.user.username,
-                "encrypted": ["email"] if license.user.email else [],
+                "email": getattr(license.user, "email", "") or "",
+                "name": license.user.full_name or license.user.username,
+                "encrypted": ["email"] if getattr(license.user, "email", "") else [],
             },
             "encryption": {
                 "user_key": {
@@ -162,9 +162,9 @@ class LCPServerClient:
         partial_license = {
             "user": {
                 "id": str(license.user.pk),
-                "email": license.user.email or "",
-                "name": license.user.get_full_name() or license.user.username,
-                "encrypted": ["email"] if license.user.email else [],
+                "email": getattr(license.user, "email", "") or "",
+                "name": license.user.full_name or license.user.username,
+                "encrypted": ["email"] if getattr(license.user, "email", "") else [],
             },
             "encryption": {
                 "user_key": {
