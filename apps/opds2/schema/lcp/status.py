@@ -1,11 +1,13 @@
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Optional
 
-from pydantic import BaseModel, Field, AnyUrl
+from pydantic import BaseModel, Field
+
+from apps.opds2.schema.rwpm import Link
 
 
-class LicenseStatus(Enum):
+class LicenseStatus(str, Enum):
     ready = "ready"
     active = "active"
     revoked = "revoked"
@@ -23,7 +25,7 @@ class PotentialRights(BaseModel):
     end: Optional[datetime] = Field(None, description="Date and time when the license ends")
 
 
-class EventType(Enum):
+class EventType(str, Enum):
     register = "register"
     renew = "renew"
     return_ = "return"
@@ -43,23 +45,17 @@ class Event(BaseModel):
 
 
 class ReadiumLcpStatusDocument(BaseModel):
-    links: Optional[List] = None
+    """LCP License Status Document.
+
+    https://readium.org/lcp-specs/releases/lsd/latest
+    """
+
     id: str = Field(..., description="Unique identifier for the License Document associated to the Status Document.")
     status: LicenseStatus = Field(..., description="Current status of the License.")
     message: str = Field(
         ..., description="A message meant to be displayed to the User regarding the current status of the license."
     )
     updated: Updated
+    links: Optional[list[Link]] = None
     potential_rights: Optional[PotentialRights] = None
-    events: Optional[List[Event]] = None
-
-
-class Schema(BaseModel):
-    href: str = Field(..., description="URI or URI template of the linked resource")
-    type: Optional[str] = Field(None, description="MIME type of the linked resource")
-    templated: Optional[bool] = Field(None, description="Indicates that a URI template is used in href")
-    title: Optional[str] = Field(None, description="Title of the linked resource")
-    rel: List[str] = Field(..., description="Relation between the linked resource and its containing collection")
-    profile: Optional[AnyUrl] = Field(None, description="Expected profile used to identify the external resource")
-    length: Optional[int] = Field(None, description="Content length in octets")
-    hash: Optional[str] = Field(None, description="SHA-256 hash of the resource")
+    events: Optional[list[Event]] = None
