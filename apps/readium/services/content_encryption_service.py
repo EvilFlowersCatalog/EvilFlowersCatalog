@@ -86,14 +86,18 @@ class ContentEncryptionService:
         """Queue the lcpencrypt worker task."""
         acquisition = encrypted_content.acquisition
 
-        # Update status
-        encrypted_content.status = EncryptedContent.EncryptionStatus.ENCRYPTING
+        # Update status — mark as REGISTERED optimistically.
+        # lcpencrypt registers with the LCP server synchronously via -lcpsv before returning,
+        # and encryption typically completes in <1s. A user won't request a license before that.
+        encrypted_content.status = EncryptedContent.EncryptionStatus.REGISTERED
+        encrypted_content.encrypted_url = ContentEncryptionService.get_encrypted_content_url(encrypted_content)
         encrypted_content.save()
 
         # Queue worker
         # storage = catalog-relative dir for encrypted output (worker prepends STORAGE_PATH)
-        # filename = just the lcp_content_id (no extension) → clean URL
+        # filename = just the lcp_content_id (no extension, lcpencrypt appends .lcpdf/.epub)
         # url = public base URL → LCP server registers {url}/{filename} as content location
+        # No -notify: the LCP server registration via -lcpsv is sufficient
         event_broker = get_event_broker()
         event_broker.execute(
             "evilflowers_lcpencrypt_worker.lcpencrypt",
@@ -104,7 +108,6 @@ class ContentEncryptionService:
                     "storage": f"{acquisition.upload_base_path()}/encrypted",
                     "filename": encrypted_content.lcp_content_id,
                     "lcpsv": getattr(settings, "EVILFLOWERS_READIUM_LCPSV_URL", None),
-                    "notify": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None),
                     "url": f"{settings.EVILFLOWERS_READIUM_BASE_URL}/readium/v1/content",
                 },
                 "queue": "evilflowers_lcpencrypt_worker",
