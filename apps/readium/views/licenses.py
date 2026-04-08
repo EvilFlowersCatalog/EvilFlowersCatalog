@@ -32,7 +32,9 @@ class LicenseManagement(SecuredView):
         # TODO: prefetch entries
         licenses = LicenseFilter(request.GET, queryset=License.objects.all(), request=request).qs
 
-        return PaginationResponse(request, licenses, serializer=LicenseSerializer.Detailed)
+        return PaginationResponse(
+            request, licenses, serializer=LicenseSerializer.Detailed, serializer_context={"request": request}
+        )
 
     @openapi.metadata(
         description="""
