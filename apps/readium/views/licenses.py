@@ -105,7 +105,7 @@ class LicenseDetail(SecuredView):
                 detail_type=DetailType.NOT_FOUND,
             )
 
-        if not has_object_permission("check_license_manage", request.user, license.user):
+        if not has_object_permission("check_license_manage", request.user, license):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return license
