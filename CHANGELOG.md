@@ -2,6 +2,11 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## 0.14.0 : TBD
+
+- **Added**: Proper Readium LCP integration
+- **Added**: OPDS2 support
+
 ## 0.13.0 : 2026-03-01
 
 - **Added**: Event broker system with support for Celery and Kafka
