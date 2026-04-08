@@ -102,6 +102,7 @@ class ContentEncryptionService:
                     "filename": output_filename,
                     "lcpsv": getattr(settings, "EVILFLOWERS_READIUM_LCPSV_URL", None),
                     "notify": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None),
+                    "url": f"{settings.EVILFLOWERS_READIUM_BASE_URL}/{acquisition.upload_base_path()}",
                 },
                 "queue": "evilflowers_lcpencrypt_worker",
             },
