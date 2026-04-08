@@ -26,7 +26,7 @@ class LCPServerClient:
 
     def __init__(self):
         self.license_server_url = settings.EVILFLOWERS_READIUM_LCPSV_URL
-        self.provider_url = getattr(settings, "EVILFLOWERS_READIUM_PROVIDER_URL", settings.EVILFLOWERS_BASE_URL)
+        self.provider_url = getattr(settings, "EVILFLOWERS_READIUM_PROVIDER_URL", settings.EVILFLOWERS_READIUM_BASE_URL)
 
     @staticmethod
     def hash_passphrase(passphrase: str) -> str:
