@@ -58,8 +58,15 @@ class ContentEncryptionService:
         lcp_content_id = str(uuid.uuid4())
 
         # Determine encrypted file path
-        # Format: catalogs/{catalog}/{entry}/encrypted/{lcp_content_id}
-        encrypted_path = f"{acquisition.upload_base_path()}/encrypted/{lcp_content_id}"
+        # lcpencrypt renames output with LCP-specific extensions:
+        # .pdf → .lcpdf, .epub → .epub, .audiobook → .lcpa, .divina → .lcpdi
+        lcp_ext_map = {
+            "application/pdf": ".lcpdf",
+            "application/epub+zip": ".epub",
+            "application/audiobook+zip": ".lcpa",
+        }
+        lcp_ext = lcp_ext_map.get(acquisition.mime, ".lcpdf")
+        encrypted_path = f"{acquisition.upload_base_path()}/encrypted/{lcp_content_id}{lcp_ext}"
 
         # Create EncryptedContent record
         encrypted_content = EncryptedContent.objects.create(

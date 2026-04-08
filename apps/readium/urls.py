@@ -9,7 +9,7 @@ Endpoints:
 - /entries/{id}/encryption - Encryption status and manual trigger
 """
 
-from django.urls import path
+from django.urls import path, re_path
 
 from apps.readium.views.content import EncryptedContentDownloadView
 from apps.readium.views.hooks import EncryptionWebhook
@@ -22,7 +22,12 @@ urlpatterns = [
     # Webhooks
     path("hooks/encryption", EncryptionWebhook.as_view(), name="encryption-webhook"),
     # Encrypted content download (reading apps fetch encrypted publications here)
-    path("content/<str:lcp_content_id>", EncryptedContentDownloadView.as_view(), name="encrypted-content-download"),
+    # Matches both /content/{uuid} and /content/{uuid}.lcpdf (lcpencrypt appends LCP extension)
+    re_path(
+        r"content/(?P<lcp_content_id>[a-f0-9-]+)",
+        EncryptedContentDownloadView.as_view(),
+        name="encrypted-content-download",
+    ),
     # License Management
     path("licenses", LicenseManagement.as_view(), name="license-management"),
     path("licenses/<uuid:license_id>", LicenseDetail.as_view(), name="license-detail"),
