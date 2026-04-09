@@ -42,7 +42,7 @@ class TemplateRegistry:
     @classmethod
     def validate_templates(cls) -> dict[str, list[str]]:
         """Validate all notification templates. Returns dict of errors per template name."""
-        import mrml
+        from mjml import mjml2html
 
         errors: dict[str, list[str]] = {}
 
@@ -53,7 +53,7 @@ class TemplateRegistry:
             try:
                 tpl = get_template(f"{cls.TEMPLATE_DIR}/{name}.mjml")
                 rendered = tpl.render({})
-                mrml.to_html(rendered).content
+                mjml2html(rendered)
             except Exception as e:
                 template_errors.append(f"MJML template error: {e}")
 

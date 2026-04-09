@@ -1,6 +1,6 @@
 import logging
 
-import mrml
+from mjml import mjml2html
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
@@ -54,7 +54,7 @@ class NotificationService:
             log.subject = subject
 
             mjml_content = render_to_string(f"notifications/{notification_type}.mjml", context)
-            html_content = mrml.to_html(mjml_content).content
+            html_content = mjml2html(mjml_content)
 
             text_content = render_to_string(f"notifications/{notification_type}.txt", context)
 
