@@ -46,7 +46,7 @@ services:
       REDIS_HOST: redis
       DV_PUBLIC_INTERNAL: "http://dataverse:8080"
       DV_PUBLIC_BASE: http://localhost:8080
-      DV_API_TOKEN: "538ce247-e209-4953-b1fd-35115e77dcc3" # change me
+      DV_API_TOKEN: "6eb102eb-e34f-4b38-a6ed-edea30cc51b0" # change me
       DATAVERSE_WORKFLOW_SECRET: "123"
       EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR: /mnt/data
       REDIS_DATABASE: 0
@@ -58,6 +58,7 @@ services:
       TEXT_SERVICE_REDIS_URL: "redis://redis:6379/0"
       EVILFLOWERS_CATALOG_API_INTERNAL_URL: "http://django:8000"
       DATAVERSE_RESUME_WORKFLOW: "1"
+      DATAVERSE_AUTO_WHITELIST_WORKFLOW_RESUME: "1"
       DJANGO_LOG_LEVEL: "DEBUG"
       PGHOST: db
       PGDATABASE: evil_flowers_catalog
@@ -81,7 +82,6 @@ services:
     depends_on:
       - db
       - redis
-      - readium
     networks:
       - shared
 
@@ -97,21 +97,6 @@ services:
     networks:
       - shared
 
-  readium:
-    image: ghcr.io/evilflowerscatalog/readium-lcp-server:master
-    volumes:
-      - ./data/readium/db:/usr/local/var/readium/db
-      - ./data/readium/storage:/usr/local/var/readium/storage
-      - ./data/evilflowers/private:/usr/local/app/private
-      - ./data/logs/readium:/var/log/readium
-      - ./data/readium/config.yaml:/usr/local/etc/readium/config.yaml:ro
-      - ./data/readium/htpasswd:/usr/local/etc/htpasswd
-      - ./data/readium/cert/cert.pem:/usr/local/var/readium/lcp/cert/cert.pem
-      - ./data/readium/cert/privkey.pem:/usr/local/var/readium/lcp/cert/privkey.pem
-    ports:
-      - "8988:8988"
-    networks:
-      - shared
 
   evilflowers-ocr-worker:
     image: "ghcr.io/evilflowerscatalog/evilflowers-ocr-worker:master"

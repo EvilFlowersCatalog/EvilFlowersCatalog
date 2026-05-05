@@ -1,7 +1,12 @@
 import json
 import logging
 import os
+import socket
+import threading
+import time
 from http import HTTPStatus
+from urllib.parse import urlparse
+
 from django.db import transaction
 
 import requests
@@ -17,6 +22,197 @@ from apps.core.models import Entry, Acquisition, Catalog, User, Author, EntryAut
 from partial_date import PartialDate
 
 logger = logging.getLogger(__name__)
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _outbound_ip_for_url(url: str) -> str | None:
+    parsed = urlparse(url)
+    host = parsed.hostname
+    if not host:
+        return None
+
+    port = parsed.port
+    if port is None:
+        port = 443 if parsed.scheme == "https" else 80
+
+    try:
+        with socket.create_connection((host, port), timeout=5) as sock:
+            return sock.getsockname()[0]
+    except OSError as e:
+        logger.warning(f"[DATAVERSE-PREPUBLISH] Could not resolve outbound IP for {url}: {e}")
+        return None
+
+
+def _workflow_whitelist_value(response: requests.Response) -> str:
+    try:
+        data = response.json().get("data")
+    except ValueError:
+        return response.text.strip()
+
+    if isinstance(data, dict):
+        return str(data.get("message") or data.get("value") or "").strip()
+    if isinstance(data, str):
+        return data.strip()
+    return ""
+
+
+def _ensure_workflow_resume_ip_allowed(dataverse_base_url: str, dataverse_token: str, resume_base_url: str) -> None:
+    if not _env_flag("DATAVERSE_AUTO_WHITELIST_WORKFLOW_RESUME", default=False):
+        return
+
+    if not dataverse_token:
+        logger.warning("[DATAVERSE-PREPUBLISH] Cannot update workflow whitelist without DV_API_TOKEN")
+        return
+
+    outbound_ip = _outbound_ip_for_url(resume_base_url)
+    if not outbound_ip:
+        return
+
+    whitelist_url = f"{dataverse_base_url}/api/admin/workflows/ip-whitelist"
+    headers = {"X-Dataverse-key": dataverse_token}
+
+    try:
+        response = requests.get(whitelist_url, headers=headers, timeout=30)
+        if response.status_code != 200:
+            logger.warning(
+                "[DATAVERSE-PREPUBLISH] Could not read Dataverse workflow whitelist: "
+                f"status={response.status_code} body={response.text[:500]}"
+            )
+            return
+
+        current = _workflow_whitelist_value(response)
+        addresses = [address.strip() for address in current.split(";") if address.strip()]
+        if outbound_ip in addresses:
+            return
+
+        addresses.append(outbound_ip)
+        updated = ";".join(addresses)
+        update_response = requests.put(
+            whitelist_url,
+            data=updated,
+            headers={**headers, "Content-Type": "text/plain; charset=utf-8"},
+            timeout=30,
+        )
+        if update_response.status_code not in range(200, 300):
+            logger.warning(
+                "[DATAVERSE-PREPUBLISH] Could not update Dataverse workflow whitelist: "
+                f"status={update_response.status_code} body={update_response.text[:500]}"
+            )
+            return
+
+        logger.info(f"[DATAVERSE-PREPUBLISH] Added {outbound_ip} to Dataverse workflow resume whitelist")
+    except requests.RequestException as e:
+        logger.warning(f"[DATAVERSE-PREPUBLISH] Workflow whitelist update failed: {e}", exc_info=True)
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _resume_dataverse_workflow(
+    dataverse_base_url: str,
+    dataverse_token: str,
+    invocation_id: str,
+    *,
+    max_attempts: int,
+    initial_delay: float,
+) -> None:
+    resume_base_url = os.getenv("DV_WORKFLOW_RESUME_BASE", dataverse_base_url).rstrip("/")
+    _ensure_workflow_resume_ip_allowed(dataverse_base_url, dataverse_token, resume_base_url)
+
+    resume_url = f"{resume_base_url}/api/workflows/{invocation_id}"
+    delay = initial_delay
+
+    for attempt in range(1, max_attempts + 1):
+        if delay > 0:
+            time.sleep(delay)
+
+        logger.info(
+            "[DATAVERSE-PREPUBLISH] Resuming Dataverse workflow invocation "
+            f"{invocation_id} (attempt {attempt}/{max_attempts})"
+        )
+
+        try:
+            response = requests.post(
+                resume_url,
+                data="OK",
+                headers={"Content-Type": "text/plain; charset=utf-8"},
+                timeout=60,
+            )
+        except requests.RequestException as e:
+            logger.warning(
+                f"[DATAVERSE-PREPUBLISH] Dataverse workflow resume request failed on attempt {attempt}: {e}",
+                exc_info=True,
+            )
+        else:
+            if response.status_code in range(200, 300):
+                logger.info(
+                    "[DATAVERSE-PREPUBLISH] Dataverse workflow resume accepted: "
+                    f"status={response.status_code} body={response.text[:500]}"
+                )
+                return
+
+            if response.status_code == 404 and attempt < max_attempts:
+                logger.info(
+                    "[DATAVERSE-PREPUBLISH] Dataverse workflow invocation is not ready yet: "
+                    f"status=404 body={response.text[:500]}"
+                )
+            else:
+                logger.warning(
+                    "[DATAVERSE-PREPUBLISH] Dataverse workflow resume returned an error: "
+                    f"status={response.status_code} body={response.text[:1000]}"
+                )
+
+        delay = min(delay * 2 if delay else 1, 30)
+
+    logger.error(f"[DATAVERSE-PREPUBLISH] Dataverse workflow resume gave up for invocation {invocation_id}")
+
+
+def _schedule_dataverse_workflow_resume(
+    dataverse_base_url: str,
+    dataverse_token: str,
+    invocation_id: str | None,
+) -> None:
+    if not _env_flag("DATAVERSE_RESUME_WORKFLOW", default=False):
+        return
+
+    if not invocation_id:
+        logger.warning("[DATAVERSE-PREPUBLISH] DATAVERSE_RESUME_WORKFLOW is enabled but invocation_id is missing")
+        return
+
+    max_attempts = _int_env("DATAVERSE_RESUME_WORKFLOW_ATTEMPTS", 10)
+    initial_delay = _float_env("DATAVERSE_RESUME_WORKFLOW_INITIAL_DELAY", 1)
+
+    thread = threading.Thread(
+        target=_resume_dataverse_workflow,
+        kwargs={
+            "dataverse_base_url": dataverse_base_url,
+            "dataverse_token": dataverse_token,
+            "invocation_id": invocation_id,
+            "max_attempts": max_attempts,
+            "initial_delay": initial_delay,
+        },
+        name=f"dataverse-workflow-resume-{invocation_id}",
+        daemon=True,
+    )
+    thread.start()
+    logger.info(f"[DATAVERSE-PREPUBLISH] Scheduled Dataverse workflow resume for invocation {invocation_id}")
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -49,7 +245,7 @@ class DataverseSync(View):
 @method_decorator(csrf_exempt, name="dispatch")
 class DataversePrepublishIngest(View):
     @openapi.metadata(description="Dataverse workflow pre-publish log file URLs", tags=["Dataverse"])
-    def post(self, request):
+    def post(self, request, invocation_id=None):
         logger.info("[DATAVERSE-PREPUBLISH] ===== Starting request processing =====")
         logger.info(f"[DATAVERSE-PREPUBLISH] Request method: {request.method}")
         logger.info(f"[DATAVERSE-PREPUBLISH] Request headers: {dict(request.headers)}")
@@ -67,9 +263,11 @@ class DataversePrepublishIngest(View):
         dataset_id = payload.get("dataset_id")
         global_id = payload.get("global_id")
         title = payload.get("title")
+        invocation_id = payload.get("invocation_id") or payload.get("invocationId") or invocation_id
 
         logger.info(
-            f"[DATAVERSE-PREPUBLISH] Extracted values - dataset_id: {dataset_id}, global_id: {global_id}, title: {title}"
+            "[DATAVERSE-PREPUBLISH] Extracted values - "
+            f"dataset_id: {dataset_id}, global_id: {global_id}, title: {title}, invocation_id: {invocation_id}"
         )
 
         expected_secret = os.getenv("DATAVERSE_WORKFLOW_SECRET", "")
@@ -618,6 +816,8 @@ class DataversePrepublishIngest(View):
                     logger.info(
                         f"[DATAVERSE-PREPUBLISH] Created acquisition: {acquisition.pk} for datafile {datafile_id} filename={filename} contentType={content_type} url={browser_url}"
                     )
+
+        _schedule_dataverse_workflow_resume(dv_base_internal, dv_token, invocation_id)
 
         logger.info("[DATAVERSE-PREPUBLISH] ===== Request processing completed successfully =====")
         return HttpResponse("OK", status=HTTPStatus.OK, content_type="text/plain; charset=utf-8")
