@@ -55,6 +55,7 @@ services:
       EVILFLOWERS_EVENT_BROKER_TRANSFORMER: "apps.events.transformers.DjangoTransformer"
       CELERY_BROKER_URL: "redis://redis:6379/0"
       EVILFLOWERS_TEXT_SERVICE_URL: "http://host.docker.internal:8010"
+      EVILFLOWERS_SEARCH_SERVICE_URL: "http://search-service:8001"
       TEXT_SERVICE_REDIS_URL: "redis://redis:6379/0"
       EVILFLOWERS_CATALOG_API_INTERNAL_URL: "http://django:8000"
       DATAVERSE_RESUME_WORKFLOW: "1"
