@@ -2,7 +2,7 @@
 Webhook Views for Readium LCP Integration
 
 Handles callbacks from external services:
-- lcpencrypt worker notifications
+- lcpencrypt CMS notification (POST with CMSMsg format)
 """
 
 import json
@@ -18,23 +18,24 @@ logger = logging.getLogger(__name__)
 
 class EncryptionWebhook(View):
     """
-    Webhook endpoint for lcpencrypt worker notifications.
+    Webhook endpoint for lcpencrypt CMS notification.
 
-    Called after encryption process completes (success or failure).
-    Updates EncryptedContent status accordingly.
-
-    Expected payload from lcpencrypt worker:
+    lcpencrypt sends a POST after successful encryption with the CMSMsg format:
     {
-        "contentid": "lcp_content_id",  # UUID of encrypted content
-        "status": "success" | "error",
-        "path": "/path/to/encrypted/file.lcp.epub",  # (optional)
-        "url": "https://example.com/content/...",  # (optional) public URL
-        "error": "error message"  # (if status=error)
+        "uuid": "lcp_content_id",
+        "title": "Publication title",
+        "content_type": "application/pdf+lcp",
+        "date_published": "...",
+        "description": "...",
+        ...
     }
+
+    If this webhook returns non-2xx, lcpencrypt rolls back by deleting
+    the content from the LCP server. So we MUST return 2xx on success.
     """
 
     def post(self, request, *args, **kwargs):
-        """Handle POST webhook from lcpencrypt worker."""
+        """Handle POST CMS notification from lcpencrypt."""
         try:
             payload = json.loads(request.body)
         except json.JSONDecodeError:
@@ -43,11 +44,8 @@ class EncryptionWebhook(View):
 
         logger.info(f"Encryption webhook received: {payload}")
 
-        # Extract data from lcpencrypt notification
-        lcp_content_id = payload.get("contentid")
-        status = payload.get("status")
-        encrypted_url = payload.get("url")  # Optional public URL
-        error_message = payload.get("error")
+        # lcpencrypt sends "uuid" (CMSMsg format), not "contentid"
+        lcp_content_id = payload.get("uuid") or payload.get("contentid")
 
         if not lcp_content_id:
             logger.error("Missing contentid in encryption webhook payload")

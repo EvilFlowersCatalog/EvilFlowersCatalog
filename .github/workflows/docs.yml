@@ -4,17 +4,21 @@ on:
   push:
     branches: ['**']
     tags: ['*.*.*']
+  delete:
+
+concurrency:
+  group: docs-deploy
+  cancel-in-progress: false
 
 env:
   PUBLISH_DIR: docs
 
 jobs:
   build-docs:
+    if: github.event_name != 'delete' || github.event.ref_type == 'branch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pages: write
-      id-token: write
 
     environment:
       name: evilflowers-protocol
@@ -26,20 +30,31 @@ jobs:
       - name: Normalize branch/tag name
         id: slug
         run: |
-          RAW_REF=${GITHUB_REF##*/}
-          SAFE_REF=$(echo "${RAW_REF}" | sed 's/\//-/g')
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            echo "path=release/${SAFE_REF}" >> $GITHUB_OUTPUT
-          else
+          if [[ "${{ github.event_name }}" == "delete" ]]; then
+            RAW_REF="${{ github.event.ref }}"
+            SAFE_REF=$(echo "${RAW_REF}" | sed 's/\//-/g')
             echo "path=branch/${SAFE_REF}" >> $GITHUB_OUTPUT
+            echo "action=delete" >> $GITHUB_OUTPUT
+          else
+            RAW_REF=${GITHUB_REF##*/}
+            SAFE_REF=$(echo "${RAW_REF}" | sed 's/\//-/g')
+            if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+              echo "path=release/${SAFE_REF}" >> $GITHUB_OUTPUT
+            else
+              echo "path=branch/${SAFE_REF}" >> $GITHUB_OUTPUT
+            fi
+            echo "action=deploy" >> $GITHUB_OUTPUT
           fi
           echo "ref_slug=${SAFE_REF}" >> $GITHUB_OUTPUT
           echo "raw_ref=${RAW_REF}" >> $GITHUB_OUTPUT
 
+      # ── Build docs (only on push, skipped for branch deletion) ──
       - name: Install system dependencies
+        if: steps.slug.outputs.action == 'deploy'
         run: sudo apt-get update && sudo apt-get install -y libldap-dev libsasl2-dev
 
       - name: Setup Python + Poetry + Node.js + Redocly
+        if: steps.slug.outputs.action == 'deploy'
         run: |
           export VIRTUAL_ENV=.venv
           python3 -m venv --clear .venv --without-pip  # no inherited site-packages
@@ -53,54 +68,78 @@ jobs:
           npm install -D @redocly/cli
 
       - name: Generate OpenAPI & Docs
+        if: steps.slug.outputs.action == 'deploy'
         run: |
           poetry run python manage.py openapi > ${PUBLISH_DIR}/openapi.yaml
           npx @redocly/cli build-docs -o ${PUBLISH_DIR}/index.html ${PUBLISH_DIR}/openapi.yaml
 
-      - name: Prepare deployment folder structure
+      # ── Merge with existing gh-pages content to preserve version history ──
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 1
+        continue-on-error: true
+
+      - name: Merge with existing docs
         run: |
-          mkdir -p ./publish/${{ steps.slug.outputs.path }}
-          cp -r ${PUBLISH_DIR}/* ./publish/${{ steps.slug.outputs.path }}/
+          mkdir -p publish
+          # Restore existing gh-pages content if available
+          if [ -d "gh-pages" ] && [ -f "gh-pages/index.html" ]; then
+            echo "Preserving existing gh-pages content"
+            rsync -a --exclude='.git' gh-pages/ publish/
+          fi
+
+          if [[ "${{ steps.slug.outputs.action }}" == "deploy" ]]; then
+            # Add or update current ref's docs
+            mkdir -p "publish/${{ steps.slug.outputs.path }}"
+            cp -r ${PUBLISH_DIR}/* "publish/${{ steps.slug.outputs.path }}/"
+          else
+            # Remove deleted branch's docs
+            echo "Removing docs for deleted branch: ${{ steps.slug.outputs.path }}"
+            rm -rf "publish/${{ steps.slug.outputs.path }}"
+          fi
 
       - name: Generate Docs Index page
         run: bash .github/scripts/generate-index.sh
 
-      # Upload artifact for GitHub Pages
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./publish/
-
-      # Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./publish
 
+      # ── Sync OpenAPI to Protocol Repo (only on push) ──
       - name: Setup SSH for deploy key
+        if: steps.slug.outputs.action == 'deploy'
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EVILFLOWERS_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
-      # Checkout Protocol Repo
       - name: Checkout Protocol Repo
+        id: protocol_checkout
+        if: steps.slug.outputs.action == 'deploy'
         uses: actions/checkout@v4
         with:
           repository: EvilFlowersCatalog/evilflowers-protocol
-          ref: ${{ needs.build-docs.outputs.raw_ref }}
+          ref: ${{ steps.slug.outputs.raw_ref }}
           ssh-key: ${{ secrets.EVILFLOWERS_DEPLOY_KEY }}
           path: protocol_repo
           fetch-depth: 1
+        continue-on-error: true
 
-      # Sync OpenAPI.yaml to Protocol Repo
       - name: Sync OpenAPI to Protocol Repo
+        if: steps.slug.outputs.action == 'deploy' && steps.protocol_checkout.outcome == 'success'
         run: |
           cd protocol_repo
           mkdir -p openapi metadata
           cp ../${PUBLISH_DIR}/openapi.yaml openapi/openapi.yaml
-          echo "${{ needs.build-docs.outputs.raw_ref }}" > metadata/version.txt
+          echo "${{ steps.slug.outputs.raw_ref }}" > metadata/version.txt
           git config user.name "ci-bot"
           git config user.email "ci@evilflowers.org"
           git add .
-          git diff-index --quiet HEAD || git commit -m "Sync OpenAPI for ${{ needs.build-docs.outputs.raw_ref }}"
-          git push origin ${{ needs.build-docs.outputs.raw_ref }}
+          git diff-index --quiet HEAD || git commit -m "Sync OpenAPI for ${{ steps.slug.outputs.raw_ref }}"
+          git push origin ${{ steps.slug.outputs.raw_ref }}

@@ -58,10 +58,15 @@ class ContentEncryptionService:
         lcp_content_id = str(uuid.uuid4())
 
         # Determine encrypted file path
-        # Format: catalogs/{catalog}/{entry}/encrypted/{lcp_content_id}.lcp.{ext}
-        original_ext = acquisition.content.name.split(".")[-1]
-        encrypted_filename = f"{lcp_content_id}.lcp.{original_ext}"
-        encrypted_path = f"{acquisition.upload_base_path()}/encrypted/{encrypted_filename}"
+        # lcpencrypt renames output with LCP-specific extensions:
+        # .pdf → .lcpdf, .epub → .epub, .audiobook → .lcpa, .divina → .lcpdi
+        lcp_ext_map = {
+            "application/pdf": ".lcpdf",
+            "application/epub+zip": ".epub",
+            "application/audiobook+zip": ".lcpa",
+        }
+        lcp_ext = lcp_ext_map.get(acquisition.mime, ".lcpdf")
+        encrypted_path = f"{acquisition.upload_base_path()}/encrypted/{lcp_content_id}{lcp_ext}"
 
         # Create EncryptedContent record
         encrypted_content = EncryptedContent.objects.create(
@@ -81,16 +86,18 @@ class ContentEncryptionService:
         """Queue the lcpencrypt worker task."""
         acquisition = encrypted_content.acquisition
 
-        # Update status
-        encrypted_content.status = EncryptedContent.EncryptionStatus.ENCRYPTING
+        # Update status — mark as REGISTERED optimistically.
+        # lcpencrypt registers with the LCP server synchronously via -lcpsv before returning,
+        # and encryption typically completes in <1s. A user won't request a license before that.
+        encrypted_content.status = EncryptedContent.EncryptionStatus.REGISTERED
+        encrypted_content.encrypted_url = ContentEncryptionService.get_encrypted_content_url(encrypted_content)
         encrypted_content.save()
 
-        # Determine output filename with correct extension
-        original_filename = acquisition.content.name
-        extension = original_filename.split(".")[-1] if "." in original_filename else "pdf"
-        output_filename = f"encrypted/{encrypted_content.lcp_content_id}.lcp.{extension}"
-
         # Queue worker
+        # storage = catalog-relative dir for encrypted output (worker prepends STORAGE_PATH)
+        # filename = just the lcp_content_id (no extension, lcpencrypt appends .lcpdf/.epub)
+        # url = public base URL → LCP server registers {url}/{filename} as content location
+        # No -notify: the LCP server registration via -lcpsv is sufficient
         event_broker = get_event_broker()
         event_broker.execute(
             "evilflowers_lcpencrypt_worker.lcpencrypt",
@@ -98,10 +105,10 @@ class ContentEncryptionService:
                 "kwargs": {
                     "input_file": acquisition.content.name,
                     "contentid": encrypted_content.lcp_content_id,
-                    "storage": acquisition.upload_base_path(),
-                    "filename": output_filename,
+                    "storage": f"{acquisition.upload_base_path()}/encrypted",
+                    "filename": encrypted_content.lcp_content_id,
                     "lcpsv": getattr(settings, "EVILFLOWERS_READIUM_LCPSV_URL", None),
-                    "notify": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None),
+                    "url": f"{settings.EVILFLOWERS_READIUM_BASE_URL}/readium/v1/content",
                 },
                 "queue": "evilflowers_lcpencrypt_worker",
             },
@@ -154,10 +161,7 @@ class ContentEncryptionService:
 
         This URL is included in LCP licenses so reading apps can download encrypted files.
         """
-        base_url = getattr(
-            settings, "EVILFLOWERS_READIUM_CONTENT_URL", f"{settings.EVILFLOWERS_BASE_URL}/readium/content"
-        )
-        return f"{base_url}/{encrypted_content.lcp_content_id}"
+        return f"{settings.EVILFLOWERS_READIUM_BASE_URL}/readium/v1/content/{encrypted_content.lcp_content_id}"
 
     @staticmethod
     def get_by_lcp_content_id(lcp_content_id: str) -> Optional[EncryptedContent]:

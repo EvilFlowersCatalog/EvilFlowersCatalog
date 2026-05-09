@@ -207,27 +207,23 @@ Get all licenses for the current user (non-admins only see their own).
 
 Create a new license for the current user to borrow an entry.
 
+**Prerequisite**: The user must have their LCP passphrase set in their profile via `PUT /api/v1/users/{id}` with `lcp_passphrase` field. The passphrase is NOT passed per-request.
+
 **Request Body:**
 ```json
 {
   "entry_id": "660e8400-e29b-41d4-a716-446655440001",
-  "user_passphrase": "optional-override-passphrase",
-  "passphrase_hint": "Optional custom hint",
-  "start_date": "2024-01-15T10:00:00Z",
-  "duration_days": 14
+  "duration": "14 00:00:00",
+  "starts_at": "2024-01-15T10:00:00Z"
 }
 ```
 
 **Field Details:**
 | Field | Required | Description |
 |-------|----------|-------------|
-| `entry_id` | Yes | UUID of the entry to license |
-| `user_passphrase` | No* | Passphrase for this license. If not provided, uses user's default |
-| `passphrase_hint` | No | Hint for this license. Falls back to user's default hint |
-| `start_date` | No | License start (default: now) |
-| `duration_days` | No | Duration in days (default: 14) |
-
-*If `user_passphrase` is not provided, the user must have `lcp_passphrase_hash` set in their profile.
+| `entry_id` | Yes | UUID of a readium-enabled entry |
+| `duration` | Yes | License duration as Django DurationField string (e.g., `"14 00:00:00"` for 14 days) |
+| `starts_at` | No | License start datetime (default: now) |
 
 **Success Response (201 Created):**
 ```json
@@ -239,7 +235,8 @@ Create a new license for the current user to borrow an entry.
   "starts_at": "2024-01-15T10:00:00Z",
   "expires_at": "2024-01-29T10:00:00Z",
   "created_at": "2024-01-15T09:55:00Z",
-  "updated_at": "2024-01-15T09:55:00Z"
+  "updated_at": "2024-01-15T09:55:00Z",
+  "download_url": "/readium/v1/licenses/550e8400-e29b-41d4-a716-446655440000.lcpl"
 }
 ```
 
@@ -248,7 +245,7 @@ Create a new license for the current user to borrow an entry.
 No passphrase available (400):
 ```json
 {
-  "title": "No LCP passphrase available. Please set your default passphrase via PUT /api/v1/users/{user_id} or provide 'user_passphrase' in this request.",
+  "title": "No LCP passphrase available. Please set your default passphrase",
   "type": "/validation-error"
 }
 ```
@@ -310,7 +307,7 @@ Update license state (return, renew, revoke, cancel).
 ```json
 {
   "state": "renewed",
-  "duration_days": 14
+  "duration": "14 00:00:00"
 }
 ```
 
@@ -515,10 +512,8 @@ interface License {
 
 interface CreateLicenseRequest {
   entry_id: string;
-  user_passphrase?: string;
-  passphrase_hint?: string;
-  start_date?: string;
-  duration_days?: number;
+  duration: string;  // Django DurationField format, e.g. "14 00:00:00"
+  starts_at?: string;
 }
 ```
 
@@ -598,7 +593,7 @@ class ReadiumApiClient {
   async renewLicense(licenseId: string, durationDays: number = 14): Promise<License> {
     return this.fetch(`/readium/v1/licenses/${licenseId}`, {
       method: 'PUT',
-      body: JSON.stringify({ state: 'renewed', duration_days: durationDays }),
+      body: JSON.stringify({ state: 'renewed', duration: `${durationDays} 00:00:00` }),
     });
   }
 
@@ -669,10 +664,10 @@ class BorrowingService {
       throw new Error('Please set your LCP passphrase in your profile settings first');
     }
 
-    // Create license
+    // Create license (passphrase is read from user profile, not sent per-request)
     return this.api.createLicense({
       entry_id: entryId,
-      duration_days: durationDays,
+      duration: `${durationDays} 00:00:00`,
     });
   }
 

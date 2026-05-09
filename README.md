@@ -34,6 +34,8 @@ The current list of features:
   experience with personalized notes and highlights.
 - **PDF Slicing & Editing**: Provides tools for slicing and editing PDF documents directly within the catalog, allowing
   for custom modifications and adjustments.
+- **Dataverse integration**: Imports published Dataverse datasets into Evil Flowers Catalog through a Dataverse
+  publish workflow, preserving dataset metadata and file links as catalog entries and acquisitions.
 - **Asynchronous Task Processing with Celery**: EvilFlowers Catalog leverages a robust Celery-based distributed task
   system to efficiently handle resource-intensive and time-consuming jobs. This includes tasks like OCR processing,
   data extraction, and Readium package compression. By offloading these tasks to a scalable worker environment, the
@@ -79,6 +81,53 @@ Setup steps (container name may differ):
 3. Create a superuser `docker exec -it evilflowerscatalog-django-1 python3 manage.py createsuperuser`
 
 The server will start on port 8000.
+
+### Dataverse
+
+The Docker setup includes a local [Dataverse](https://dataverse.org/) instance through `dataverse/compose.yml`.
+
+In the local development stack:
+
+- Evil Flowers Catalog runs at `http://localhost:8000`.
+- Dataverse runs at `http://localhost:8080`.
+- The default Dataverse admin login is username `dataverseAdmin` with password `admin1`.
+- Solr runs at `http://localhost:8983` and is used by Dataverse for GUI/search indexing.
+
+How the integration works:
+
+1. A Dataverse pre-publish workflow is registered from `dataverse/hooks/prepublish-sync.json`.
+2. When a user clicks **Publish** in the Dataverse GUI, Dataverse calls the Django endpoint
+   `POST /api/v1/dataverse-prepublish`.
+3. Django validates `DATAVERSE_WORKFLOW_SECRET`, fetches dataset metadata and files from Dataverse using
+   `DV_API_TOKEN`, and creates or updates an Evil Flowers `Entry` plus its Dataverse file acquisitions.
+4. Django resumes the Dataverse workflow asynchronously so Dataverse can finish the publish operation and the GUI can
+   show the dataset as released.
+
+Local setup:
+
+1. Start the stack:
+   ```bash
+   docker compose up -d --build
+   ```
+2. Run the normal Evil Flowers setup commands if this is a fresh database:
+   ```bash
+   docker compose exec django python3 manage.py setup
+   docker compose exec django python3 manage.py createsuperuser
+   ```
+3. Open Dataverse at `http://localhost:8080` and log in as user: `dataverseAdmin`, password: `admin1`.
+4. Create or copy a Dataverse API token for the admin user and set the same value as `DV_API_TOKEN` in `compose.yml`.
+   Then restart Django:
+   ```bash
+   docker compose up -d django
+   ```
+5. Register the Dataverse pre-publish workflow:
+   ```bash
+   export DV_API_TOKEN="your-dataverse-api-token"
+   dataverse/scripts/hook.sh "$DV_API_TOKEN" --url http://127.0.0.1:8080 --trigger pre --file dataverse/hooks/prepublish-sync.json
+   ```
+6. Publish a dataset from the Dataverse GUI. During publish, Dataverse sends the dataset to Django; after Django
+   imports it, Dataverse completes the publish workflow.
+
 
 ### From source
 

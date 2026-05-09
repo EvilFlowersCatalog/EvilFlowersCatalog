@@ -149,9 +149,15 @@ services:
     networks:
       - dataverse
     command:
-      - solr-precreate
-      - collection1
-      - /template
+      - sh
+      - -lc
+      - >
+        if [ -d /var/solr/data/collection1 ] && [ ! -f /var/solr/data/collection1/conf/solrconfig.xml ]; then
+          echo "Repairing incomplete Solr core collection1 from /template";
+          mkdir -p /var/solr/data/collection1;
+          cp -a /template/conf /var/solr/data/collection1/;
+        fi;
+        exec solr-precreate collection1 /template
     volumes:
       - ./data/solr/data:/var/solr
       - ./data/solr/conf:/template

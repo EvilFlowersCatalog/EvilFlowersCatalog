@@ -3,9 +3,11 @@
 
 OUTPUT_FILE="publish/index.html"
 
-# Copy logo to publish directory
+# Copy logo to publish directory (may already exist from gh-pages)
 mkdir -p publish
-cp docs/images/logo.png publish/logo.png
+if [ -f "docs/images/logo.png" ]; then
+  cp docs/images/logo.png publish/logo.png
+fi
 
 # Generate enhanced HTML index page
 cat > $OUTPUT_FILE << 'EOF'

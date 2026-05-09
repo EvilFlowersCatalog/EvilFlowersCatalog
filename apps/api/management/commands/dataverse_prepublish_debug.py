@@ -37,6 +37,8 @@ class Command(BaseCommand):
         }
 
         invocation_id = options.get("invocation_id")
+        if invocation_id:
+            payload["invocation_id"] = invocation_id
 
         self.stdout.write("Running Dataverse prepublish handler (in-process)...\n")
         self.stdout.write(f"payload={json.dumps(payload)}\n")

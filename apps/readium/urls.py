@@ -3,19 +3,35 @@ Readium LCP URL Configuration
 
 Endpoints:
 - /hooks/encryption - Webhook for lcpencrypt worker notifications
+- /content/{id} - Download encrypted publications
 - /licenses - License CRUD operations
 - /licenses/{id}.lcpl - License Gateway (download .lcpl files)
+- /licenses/{id}/status - LSD proxy: License Status Document
+- /licenses/{id}/register - LSD proxy: Device registration
+- /licenses/{id}/return - LSD proxy: Loan return
+- /licenses/{id}/renew - LSD proxy: Loan renewal
 - /entries/{id}/availability - Availability calendar
 - /entries/{id}/encryption - Encryption status and manual trigger
+- /publications/{id}/manifest.json - RWPM manifest
+- /hint - Passphrase hint page
 """
 
-from django.urls import path
+from django.urls import path, re_path
 
+from apps.readium.views.content import EncryptedContentDownloadView
 from apps.readium.views.hooks import EncryptionWebhook
 from apps.readium.views.licenses import LicenseManagement, LicenseDetail
 from apps.readium.views.availability import EntryAvailabilityView
 from apps.readium.views.download import LicenseDownloadView
 from apps.readium.views.encryption import EntryEncryptionView
+from apps.readium.views.hint import HintPageView
+from apps.readium.views.manifest import PublicationManifestView
+from apps.readium.views.status_proxy import (
+    DeviceRegistrationProxyView,
+    RenewProxyView,
+    ReturnProxyView,
+    StatusDocumentView,
+)
 
 urlpatterns = [
     # Webhooks
@@ -29,4 +45,12 @@ urlpatterns = [
     path("entries/<uuid:entry_id>/availability", EntryAvailabilityView.as_view(), name="entry-availability"),
     # Encryption Management
     path("entries/<uuid:entry_id>/encryption", EntryEncryptionView.as_view(), name="entry-encryption"),
+    # Publication Manifest (RWPM)
+    path(
+        "publications/<uuid:entry_id>/manifest.json",
+        PublicationManifestView.as_view(),
+        name="publication-manifest",
+    ),
+    # Passphrase Hint Page
+    path("hint", HintPageView.as_view(), name="hint"),
 ]

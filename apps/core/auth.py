@@ -1,6 +1,7 @@
 import base64
 import logging
 import uuid
+from datetime import timedelta
 from http import HTTPStatus
 from typing import Optional, TypedDict, Dict
 from urllib.parse import urlparse, urlunparse
@@ -63,6 +64,21 @@ class JWTFactory:
             }
         )
 
+    def scoped(self, scope: str) -> str:
+        """Issue a time-limited JWT scoped to a specific action.
+
+        Used by the notification engine to generate download links
+        that authenticate the user for a specific resource.
+        """
+        return self._generate(
+            {
+                "type": "scoped",
+                "scope": scope,
+                "exp": timezone.now()
+                + timedelta(hours=getattr(settings, "EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS", 72)),
+            }
+        )
+
     @classmethod
     def decode(cls, token: str):
         claims = JsonWebToken(settings.SECURED_VIEW_JWT_ALGORITHM).decode(token, settings.SECURED_VIEW_JWK)
@@ -92,6 +108,11 @@ class BearerBackend(ModelBackend):
                 user = User.objects.get(pk=claims["sub"])
             except User.DoesNotExist:
                 raise ProblemDetailException(_("Inactive user."), status=HTTPStatus.FORBIDDEN)
+        elif claims["type"] == "scoped":
+            try:
+                user = User.objects.get(pk=claims["sub"])
+            except User.DoesNotExist:
+                raise ProblemDetailException(_("Inactive user."), status=HTTPStatus.FORBIDDEN)
         else:
             raise ProblemDetailException(_("Invalid token"), status=HTTPStatus.UNAUTHORIZED)
 
@@ -115,6 +136,7 @@ class BasicBackend(ModelBackend):
         CATALOGS: Optional[Dict[str, str]]
         PROXY_USER_DN: Optional[str]
         PROXY_USER_PASSWORD: Optional[str]
+        NOTIFICATION_CONTACT_MAP: Optional[Dict[str, str]]
 
     @staticmethod
     def _ldap_initialize(config: "BasicBackend.LdapConfig") -> ldap.ldapobject.LDAPObject:
@@ -213,6 +235,18 @@ class BasicBackend(ModelBackend):
                 # May not exist in LDAP profile
                 if ldap_property in attrs:
                     setattr(user, model_property, attrs[ldap_property][0].decode())
+
+            # Notification contacts (NOTIFICATION_CONTACT_MAP)
+            for contact_type, ldap_attr in config.get("NOTIFICATION_CONTACT_MAP", {}).items():
+                if ldap_attr in attrs:
+                    from apps.notifications.models import NotificationContact
+
+                    contact_value = attrs[ldap_attr][0].decode()
+                    NotificationContact.objects.update_or_create(
+                        user=user,
+                        type=contact_type,
+                        defaults={"value": contact_value, "is_primary": True},
+                    )
 
             # LDAP groups
             user.groups.clear()

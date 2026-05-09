@@ -1,0 +1,20 @@
+New Publication License
+======================
+
+Hello {{ user_name }},
+
+A new license has been created for the following publication:
+
+  Title:  {{ entry_title }}
+  Author: {{ entry_author }}
+  Valid:  {{ starts_at }} - {{ expires_at }}
+
+Download your license file (.lcpl):
+{{ download_url }}
+
+This download link expires in {{ download_expires_hours }} hours.
+{% if passphrase_hint %}
+Passphrase hint: {{ passphrase_hint }}
+{% endif %}
+--
+This is an automated notification from Evil Flowers Catalog.

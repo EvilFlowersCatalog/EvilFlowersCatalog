@@ -32,7 +32,9 @@ class LicenseManagement(SecuredView):
         # TODO: prefetch entries
         licenses = LicenseFilter(request.GET, queryset=License.objects.all(), request=request).qs
 
-        return PaginationResponse(request, licenses, serializer=LicenseSerializer.Detailed)
+        return PaginationResponse(
+            request, licenses, serializer=LicenseSerializer.Detailed, serializer_context={"request": request}
+        )
 
     @openapi.metadata(
         description="""
@@ -128,7 +130,7 @@ class LicenseDetail(SecuredView):
                 detail_type=DetailType.NOT_FOUND,
             )
 
-        if not has_object_permission("check_license_manage", request.user, license.user):
+        if not has_object_permission("check_license_manage", request.user, license):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return license
