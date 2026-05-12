@@ -39,9 +39,6 @@ logger.setLevel(logging.INFO)
 
 
 def shelf_record_mapping(user: User) -> dict[UUID, UUID]:
-    if not getattr(user, "is_authenticated", False):
-        return {}
-
     return {
         shelf_record["entry_id"]: shelf_record["id"]
         for shelf_record in ShelfRecord.objects.filter(user=user).values("entry_id", "id")

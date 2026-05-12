@@ -4,7 +4,6 @@ from apps.api.views import (
     catalogs,
     feeds,
     entries,
-    search,
     api_keys,
     users,
     acquisitions,
@@ -50,7 +49,6 @@ urlpatterns = [
     ),
     # Entries
     path("entries", entries.EntryPaginator.as_view()),
-    path("search/entries", search.EntrySearchView.as_view()),
     path("entry-introspection", entries.EntryIntrospection.as_view()),
     path("catalogs/<uuid:catalog_id>/entries", entries.EntryManagement.as_view()),
     path(
