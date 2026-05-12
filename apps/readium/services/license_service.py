@@ -229,8 +229,13 @@ class LicenseService:
         if not availability["can_borrow"]:
             raise ValueError(f"Cannot create license: {availability['reason']}")
 
-        # Get the entry's acquisition (should be only one for readium entries)
-        acquisition = entry.acquisitions.filter(entry=entry, acquisition_type="epub").first()
+        # Get the entry's acquisition suitable for LCP (EPUB or PDF)
+        acquisition = entry.acquisitions.filter(
+            mime__in=[
+                Acquisition.AcquisitionMIME.EPUB,
+                Acquisition.AcquisitionMIME.PDF,
+            ]
+        ).first()
         if not acquisition:
             raise ValueError("Entry has no EPUB or PDF acquisition suitable for LCP protection")
 

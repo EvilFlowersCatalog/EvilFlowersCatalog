@@ -36,11 +36,23 @@ from apps.readium.views.status_proxy import (
 urlpatterns = [
     # Webhooks
     path("hooks/encryption", EncryptionWebhook.as_view(), name="encryption-webhook"),
+    # Encrypted content download (reading apps fetch encrypted publications here)
+    # Matches both /content/{uuid} and /content/{uuid}.lcpdf (lcpencrypt appends LCP extension)
+    re_path(
+        r"content/(?P<lcp_content_id>[a-f0-9-]+)",
+        EncryptedContentDownloadView.as_view(),
+        name="encrypted-content-download",
+    ),
     # License Management
     path("licenses", LicenseManagement.as_view(), name="license-management"),
     path("licenses/<uuid:license_id>", LicenseDetail.as_view(), name="license-detail"),
     # License Gateway (reading apps download .lcpl files here)
     path("licenses/<uuid:license_id>.lcpl", LicenseDownloadView.as_view(), name="license-gateway"),
+    # LSD Proxy (Status Server -- never exposed directly)
+    path("licenses/<uuid:license_id>/status", StatusDocumentView.as_view(), name="lsd-status"),
+    path("licenses/<uuid:license_id>/register", DeviceRegistrationProxyView.as_view(), name="lsd-register"),
+    path("licenses/<uuid:license_id>/return", ReturnProxyView.as_view(), name="lsd-return"),
+    path("licenses/<uuid:license_id>/renew", RenewProxyView.as_view(), name="lsd-renew"),
     # Availability
     path("entries/<uuid:entry_id>/availability", EntryAvailabilityView.as_view(), name="entry-availability"),
     # Encryption Management

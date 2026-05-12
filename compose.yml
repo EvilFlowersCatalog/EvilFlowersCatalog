@@ -97,6 +97,19 @@ services:
     networks:
       - shared
 
+  readium:
+    image: "ghcr.io/evilflowerscatalog/readium-lcp-server:master"
+    volumes:
+      - ./data/readium/db:/usr/local/var/readium/db
+      - ./data/readium/storage:/usr/local/var/readium/storage
+      - ./data/evilflowers/private:/usr/local/app/private
+      - ./data/logs/readium:/var/log/readium
+      - ./data/readium/config.yaml:/usr/local/etc/readium/config.yaml
+      - ./data/readium/htpasswd:/usr/local/etc/readium/htpasswd
+      - ./data/readium/cert/cert.pem:/usr/local/var/readium/lcp/cert/cert.pem
+      - ./data/readium/cert/privkey.pem:/usr/local/var/readium/lcp/cert/privkey.pem
+    ports:
+      - "8988:8988"
 
   evilflowers-ocr-worker:
     image: "ghcr.io/evilflowerscatalog/evilflowers-ocr-worker:master"
@@ -110,6 +123,21 @@ services:
     networks:
       - shared  
 
+  evilflowers-lcpencrypt-worker:
+    image: "ghcr.io/evilflowerscatalog/evilflowers-lcpencrypt-worker:master"
+    environment:
+      BROKER: "redis://redis:6379/7"
+      STORAGE_PATH: /usr/local/app/private
+      LCPSV_URL: "http://readium:8989"
+      # LOGFIRE_TOKEN: ""
+      # LOGFIRE_SERVICE_NAME: "evilflowers-lcpencrypt-worker"
+      # LOGFIRE_ENVIRONMENT: "development"
+    volumes:
+      - ./data/evilflowers/private:/usr/local/app/private
+    depends_on:
+      - redis
+      - readium
+      
   evilflowers-text-service:
     image: "ghcr.io/evilflowerscatalog/evilflowers-text-service:main"
     platform: linux/amd64
