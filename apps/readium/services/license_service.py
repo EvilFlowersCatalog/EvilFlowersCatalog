@@ -22,6 +22,10 @@ from .lcp_server_client import LCPServerClient
 from .status_server_client import StatusServerClient
 
 
+class PassphraseRequiredError(ValueError):
+    """Raised when a license is requested but the user has no LCP passphrase configured."""
+
+
 class LicenseService:
     """
     Service for managing license lifecycle.
@@ -98,10 +102,23 @@ class LicenseService:
 
             current_date += timedelta(days=1)
 
+        # Reservation queue state (IP-003 Phase 3 — guarded; older callers see no breakage).
+        queue_length = 0
+        try:
+            from apps.readium.models import Reservation
+
+            queue_length = Reservation.objects.filter(
+                entry=entry,
+                status__in=[Reservation.Status.QUEUED, Reservation.Status.AVAILABLE],
+            ).count()
+        except (ImportError, AttributeError):
+            pass
+
         return {
             "available": any(day["is_available"] for day in calendar),
             "max_concurrent": max_concurrent,
             "calendar": calendar,
+            "queue_length": queue_length,
         }
 
     @staticmethod
@@ -175,6 +192,7 @@ class LicenseService:
         entry: Entry,
         user: User,
         user_passphrase: Optional[str] = None,
+        passphrase_hash: Optional[str] = None,
         passphrase_hint: Optional[str] = None,
         start_date: datetime = None,
         duration_days: int = 14,
@@ -212,17 +230,20 @@ class LicenseService:
 
         end_date = start_date + timedelta(days=duration_days)
 
-        # Handle passphrase: use provided or user's default
-        if user_passphrase is None:
+        # Resolve passphrase hash in priority order:
+        # 1. explicit user_passphrase argument (plain text — hashed here)
+        # 2. explicit passphrase_hash argument (already SHA-256, uppercase per LCP spec)
+        # 3. user's stored default lcp_passphrase_hash
+        if user_passphrase is not None:
+            passphrase_hash = LCPServerClient.hash_passphrase(user_passphrase)
+        elif passphrase_hash is None:
             if not user.lcp_passphrase_hash:
-                raise ValueError("No LCP passphrase available. Please set your default passphrase")
+                raise PassphraseRequiredError(
+                    "No LCP passphrase available. Please set your default passphrase."
+                )
             passphrase_hash = user.lcp_passphrase_hash
-            # Use user's default hint if no custom hint provided
             if passphrase_hint is None:
                 passphrase_hint = user.lcp_passphrase_hint
-        else:
-            # Hash the provided passphrase (uppercase for LCP spec compliance)
-            passphrase_hash = LCPServerClient.hash_passphrase(user_passphrase)
 
         # Validate availability
         availability = LicenseService.can_user_borrow(entry, user, start_date, end_date)
@@ -366,6 +387,9 @@ class LicenseService:
         status_client = StatusServerClient()
         status_client.return_license(license)
 
+        # Promote next user in queue for this entry (IP-003 Phase 3).
+        LicenseService._maybe_promote_next(license)
+
         return license
 
     @staticmethod
@@ -382,6 +406,8 @@ class LicenseService:
         """
         status_client = StatusServerClient()
         status_client.revoke_license(license, reason)
+
+        LicenseService._maybe_promote_next(license)
 
         return license
 
@@ -400,7 +426,29 @@ class LicenseService:
         status_client = StatusServerClient()
         status_client.cancel_license(license, reason)
 
+        LicenseService._maybe_promote_next(license)
+
         return license
+
+    @staticmethod
+    def _maybe_promote_next(license: License) -> None:
+        """
+        Hook called after a license enters a terminal state. Tries to promote
+        the next reservation on the same entry. Failures are swallowed so a
+        broken queue does not roll back the license transition.
+        """
+        try:
+            from .reservation_service import ReservationService
+
+            ReservationService.promote_next(license.entry)
+        except Exception:  # pragma: no cover — best-effort
+            import logging
+
+            logging.getLogger(__name__).exception(
+                "promote_next failed for entry %s after license %s transition",
+                getattr(license, "entry_id", None),
+                getattr(license, "pk", None),
+            )
 
     @staticmethod
     def get_license_status(license: License) -> Dict:

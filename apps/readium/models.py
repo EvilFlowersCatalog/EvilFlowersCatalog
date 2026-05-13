@@ -7,6 +7,7 @@ from datetime import timedelta
 
 from apps.core.models import Entry, User, UserAcquisition, Acquisition
 from apps.core.models.base import BaseModel
+from django.db.models import Q
 
 
 class EncryptedContent(BaseModel):
@@ -122,3 +123,71 @@ class License(BaseModel):
 # 1. User requests license via POST /api/licenses/
 # 2. LicenseService.create_license() validates, creates License, generates LCP license
 # 3. License is explicitly managed through service layer
+
+
+class Reservation(BaseModel):
+    """
+    A user's place in the queue for a fully-borrowed LCP-enabled entry.
+
+    State machine:
+        queued      -- waiting in line behind active loans
+        available   -- a slot opened up; user has `claim_deadline` to claim
+        claimed     -- user converted reservation to a license (terminal)
+        expired     -- claim window passed without action (terminal)
+        cancelled   -- user-cancelled or admin-cancelled (terminal)
+
+    Transitions are driven by:
+    - `POST /readium/v1/reservations` -> creates with status=queued
+    - `PATCH /readium/v1/reservations/{id}` { status: "cancelled" | "claimed" }
+    - Server-side promotion (queued -> available) on license terminal-state transitions
+    - Server-side expiry (available -> expired) on the Celery sweep job
+
+    The unique constraint enforces "one non-terminal reservation per (entry, user)".
+    """
+
+    class Meta:
+        app_label = "readium"
+        db_table = "reservations"
+        default_permissions = ()
+        verbose_name = _("Reservation")
+        verbose_name_plural = _("Reservations")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["entry", "user"],
+                condition=Q(status__in=["queued", "available"]),
+                name="uniq_active_reservation_per_user_entry",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["entry", "status", "position"]),
+            models.Index(fields=["status", "claim_deadline"]),
+        ]
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", _("Queued")
+        AVAILABLE = "available", _("Available")
+        CLAIMED = "claimed", _("Claimed")
+        EXPIRED = "expired", _("Expired")
+        CANCELLED = "cancelled", _("Cancelled")
+
+    entry = models.ForeignKey(Entry, on_delete=models.CASCADE, related_name="reservations")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="reservations")
+    position = models.PositiveIntegerField()
+    status = models.CharField(choices=Status.choices, default=Status.QUEUED, max_length=16)
+    requested_at = models.DateTimeField(default=timezone.now)
+    available_at = models.DateTimeField(null=True, blank=True)
+    claim_deadline = models.DateTimeField(null=True, blank=True)
+    claimed_license = models.ForeignKey(
+        License,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="from_reservation",
+    )
+
+    TERMINAL_STATUSES = (Status.CLAIMED, Status.EXPIRED, Status.CANCELLED)
+    NON_TERMINAL_STATUSES = (Status.QUEUED, Status.AVAILABLE)
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in self.TERMINAL_STATUSES

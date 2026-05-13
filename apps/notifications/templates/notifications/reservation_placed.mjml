@@ -1,0 +1,19 @@
+{% extends "notifications/base.mjml" %}
+
+{% block content %}
+<mj-section background-color="#ffffff" padding="30px 20px">
+  <mj-column>
+    <mj-text font-size="20px" font-weight="bold" padding-bottom="10px">Reservation placed</mj-text>
+    <mj-text>Hello {{ user_name }},</mj-text>
+    <mj-text>
+      You have been added to the queue for <strong>{{ entry_title }}</strong>{% if entry_author %} by {{ entry_author }}{% endif %}.
+    </mj-text>
+    <mj-text>
+      Your position in line: <strong>#{{ position }}</strong>.
+    </mj-text>
+    <mj-text>
+      We will email you again as soon as a slot opens up. You will have {{ claim_window_hours }} hours to claim it.
+    </mj-text>
+  </mj-column>
+</mj-section>
+{% endblock %}

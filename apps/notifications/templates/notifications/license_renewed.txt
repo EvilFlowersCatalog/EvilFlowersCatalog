@@ -1,0 +1,10 @@
+Loan renewed
+============
+
+Hello {{ user_name }},
+
+Your loan of "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %} has been renewed.
+New expiration: {{ expires_at }}.
+
+--
+This is an automated notification from Evil Flowers Catalog.

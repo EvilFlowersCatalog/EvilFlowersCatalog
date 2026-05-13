@@ -28,3 +28,13 @@ if settings.EVILFLOWERS_BACKUP_DESTINATION and settings.EVILFLOWERS_BACKUP_SCHED
             minute=minute, hour=hour, day_of_month=day_of_month, month_of_year=month_of_year, day_of_week=day_of_week
         ),
     }
+
+# IP-003: reservation queue + lifecycle notifications.
+app.conf.beat_schedule["readium-sweep-unclaimed-reservations"] = {
+    "task": "apps.readium.tasks.sweep_unclaimed_reservations",
+    "schedule": crontab(minute="*"),
+}
+app.conf.beat_schedule["readium-notify-expiring-licenses"] = {
+    "task": "apps.readium.tasks.notify_expiring_licenses",
+    "schedule": crontab(hour=6, minute=0),
+}

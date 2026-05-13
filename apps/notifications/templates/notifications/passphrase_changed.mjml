@@ -1,0 +1,16 @@
+{% extends "notifications/base.mjml" %}
+
+{% block content %}
+<mj-section background-color="#ffffff" padding="30px 20px">
+  <mj-column>
+    <mj-text font-size="20px" font-weight="bold" padding-bottom="10px">Passphrase changed</mj-text>
+    <mj-text>Hello {{ user_name }},</mj-text>
+    <mj-text>
+      Your LCP passphrase was updated. Existing loans now require the new passphrase when opened in your reader.
+    </mj-text>
+    <mj-text>
+      If this was not you, please contact the library immediately.
+    </mj-text>
+  </mj-column>
+</mj-section>
+{% endblock %}

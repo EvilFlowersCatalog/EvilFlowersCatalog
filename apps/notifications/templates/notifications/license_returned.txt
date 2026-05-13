@@ -1,0 +1,11 @@
+Loan returned
+=============
+
+Hello {{ user_name }},
+
+Your loan of "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %} has been returned and is no longer available for reading.
+
+Thank you for using the library.
+
+--
+This is an automated notification from Evil Flowers Catalog.

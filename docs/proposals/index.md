@@ -11,6 +11,7 @@ changes are documented before implementation.
 |----|-------|--------|--------------|
 | IP-001 | [Complete LCP Integration & OPDS 2.0 Server with Readium Borrowing](posts/ip-001-lcp-opds2-integration.md) | :white_check_mark: Implemented | 2026-04-08 |
 | IP-002 | [Notification Engine with MJML Templates](posts/ip-002-notification-engine.md) | ✅ Accepted | 2026-04-09 |
+| IP-003 | [Readium LCP — EDRLab Certification Readiness](posts/ip-003-lcp-edrlab-certification.md) | ✅ Accepted | 2026-05-12 |
 
 
 

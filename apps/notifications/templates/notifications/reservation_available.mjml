@@ -1,0 +1,17 @@
+{% extends "notifications/base.mjml" %}
+
+{% block content %}
+<mj-section background-color="#ffffff" padding="30px 20px">
+  <mj-column>
+    <mj-text font-size="20px" font-weight="bold" padding-bottom="10px">Your reservation is ready</mj-text>
+    <mj-text>Hello {{ user_name }},</mj-text>
+    <mj-text>
+      A slot has opened up for <strong>{{ entry_title }}</strong>{% if entry_author %} by {{ entry_author }}{% endif %}.
+    </mj-text>
+    <mj-text>
+      Claim it before <strong>{{ claim_deadline }}</strong> or it will be passed to the next user in line.
+    </mj-text>
+    <mj-button href="{{ claim_url }}">Claim your loan</mj-button>
+  </mj-column>
+</mj-section>
+{% endblock %}

@@ -40,19 +40,25 @@ class EntryFilter(BaseSecuredFilter):
         lookup_expr="unaccent__icontains",
         help_text="Filter entries by catalog title using case-insensitive partial matching. Supports Unicode normalization.",
     )
-    author_id = django_filters.UUIDFilter(
+    author_id = django_filters.CharFilter(
         method="filter_author_id",
         label=_("Author"),
-        help_text="Filter entries by author UUID. Returns entries written by the specified author.",
+        help_text=(
+            "Filter entries by author UUID. Accepts a single UUID or a comma-separated list of UUIDs "
+            "(e.g. `?author_id=<uuid>,<uuid>`). Multi-value form expands to an OR/IN lookup."
+        ),
     )
     author = django_filters.CharFilter(
         method="filter_author",
         help_text="Filter entries by author name using intelligent search. Searches across author names, surnames, and combined full names with partial matching.",
     )
-    category_id = django_filters.UUIDFilter(
+    category_id = django_filters.CharFilter(
+        method="filter_category_id",
         label=_("Category"),
-        field_name="categories__id",
-        help_text="Filter entries by category UUID. Returns entries tagged with the specified category.",
+        help_text=(
+            "Filter entries by category UUID. Accepts a single UUID or a comma-separated list "
+            "(e.g. `?category_id=<uuid>,<uuid>`). Multi-value form expands to an OR/IN lookup."
+        ),
     )
     category_term = django_filters.CharFilter(
         field_name="categories__term",
@@ -64,7 +70,11 @@ class EntryFilter(BaseSecuredFilter):
     language_code = django_filters.CharFilter(
         method="filter_language_code",
         label=_("Language"),
-        help_text="Filter entries by ISO language code (e.g., 'en', 'es', 'fr'). Accepts both 2-letter (alpha2) and 3-letter (alpha3) ISO codes.",
+        help_text=(
+            "Filter entries by ISO language code (e.g., 'en', 'es', 'fr'). Accepts both 2-letter (alpha2) "
+            "and 3-letter (alpha3) ISO codes, as a single value or comma-separated list "
+            "(e.g. `?language_code=sk,en`)."
+        ),
     )
     title = django_filters.CharFilter(
         lookup_expr="unaccent__icontains",
@@ -78,9 +88,12 @@ class EntryFilter(BaseSecuredFilter):
         method="filter_query",
         help_text="Perform comprehensive full-text search across all entry fields including title, summary, content, author names, categories, and publisher. Results are ranked by relevance with title matches having highest priority.",
     )
-    feed_id = django_filters.UUIDFilter(
-        field_name="feeds__id",
-        help_text="Filter entries by feed UUID. Returns entries that belong to the specified feed or collection.",
+    feed_id = django_filters.CharFilter(
+        method="filter_feed_id",
+        help_text=(
+            "Filter entries by feed UUID. Accepts a single UUID or a comma-separated list "
+            "(e.g. `?feed_id=<uuid>,<uuid>`). Multi-value form expands to an OR/IN lookup."
+        ),
     )
     published_at__gte = django_filters.CharFilter(
         method="filter_published_at_gte",
@@ -175,8 +188,34 @@ class EntryFilter(BaseSecuredFilter):
         )
 
     @staticmethod
-    def filter_author_id(qs, name, value):
-        return qs.filter(authors__id=value)
+    def _split_csv(value):
+        """Split a comma-separated filter value into a list of stripped, non-empty tokens."""
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple)):
+            return [str(v).strip() for v in value if str(v).strip()]
+        return [token.strip() for token in str(value).split(",") if token.strip()]
+
+    @classmethod
+    def filter_author_id(cls, qs, name, value):
+        ids = cls._split_csv(value)
+        if not ids:
+            return qs
+        return qs.filter(authors__id__in=ids).distinct()
+
+    @classmethod
+    def filter_category_id(cls, qs, name, value):
+        ids = cls._split_csv(value)
+        if not ids:
+            return qs
+        return qs.filter(categories__id__in=ids).distinct()
+
+    @classmethod
+    def filter_feed_id(cls, qs, name, value):
+        ids = cls._split_csv(value)
+        if not ids:
+            return qs
+        return qs.filter(feeds__id__in=ids).distinct()
 
     @staticmethod
     def filter_query(qs, name, value):
@@ -243,7 +282,10 @@ class EntryFilter(BaseSecuredFilter):
         except ValidationError:
             return qs
 
-    @staticmethod
-    def filter_language_code(qs, name, value):
-        """Filter entries by language code, checking both alpha2 and alpha3 fields."""
-        return qs.filter(Q(language__alpha2=value) | Q(language__alpha3=value))
+    @classmethod
+    def filter_language_code(cls, qs, name, value):
+        """Filter entries by language code(s); accepts comma-separated alpha2/alpha3 codes."""
+        codes = cls._split_csv(value)
+        if not codes:
+            return qs
+        return qs.filter(Q(language__alpha2__in=codes) | Q(language__alpha3__in=codes))

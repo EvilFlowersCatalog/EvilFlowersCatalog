@@ -18,6 +18,7 @@ class DetailType(Enum):
     NOT_FOUND = "/not-found"
     VALIDATION_ERROR = "/validation-error"
     CONFLICT = "/conflict"
+    PASSPHRASE_REQUIRED = "/passphrase-required"
 
 
 class ProblemDetail(Serializer):

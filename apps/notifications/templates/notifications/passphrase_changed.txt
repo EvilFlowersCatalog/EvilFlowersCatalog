@@ -1,0 +1,11 @@
+Passphrase changed
+==================
+
+Hello {{ user_name }},
+
+Your LCP passphrase was updated. Existing loans now require the new passphrase when opened in your reader.
+
+If this was not you, please contact the library immediately.
+
+--
+This is an automated notification from Evil Flowers Catalog.

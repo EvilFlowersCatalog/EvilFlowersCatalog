@@ -12,11 +12,14 @@ This module provides clean service classes for Readium LCP integration:
 from .content_encryption_service import ContentEncryptionService
 from .lcp_server_client import LCPServerClient
 from .status_server_client import StatusServerClient
-from .license_service import LicenseService
+from .license_service import LicenseService, PassphraseRequiredError
+from .reservation_service import ReservationService
 
 __all__ = [
     "ContentEncryptionService",
     "LCPServerClient",
     "StatusServerClient",
     "LicenseService",
+    "PassphraseRequiredError",
+    "ReservationService",
 ]

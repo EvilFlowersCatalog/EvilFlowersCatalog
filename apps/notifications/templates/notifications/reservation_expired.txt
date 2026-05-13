@@ -1,0 +1,11 @@
+Reservation expired
+===================
+
+Hello {{ user_name }},
+
+Your reservation for "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %} was not claimed before the deadline and has been passed to the next user in line.
+
+You are welcome to place a new reservation at any time.
+
+--
+This is an automated notification from Evil Flowers Catalog.

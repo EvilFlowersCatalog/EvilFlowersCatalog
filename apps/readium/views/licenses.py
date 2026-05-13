@@ -5,9 +5,12 @@ Handles license CRUD operations and state management.
 Uses the new service layer for all business logic.
 """
 
+from datetime import datetime
 from http import HTTPStatus
 from uuid import UUID
 
+from django.http import JsonResponse
+from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
@@ -19,7 +22,8 @@ from apps.readium.filters import LicenseFilter
 from apps.readium.forms import CreateLicenseForm, UpdateLicenseForm
 from apps.readium.models import License
 from apps.readium.serializers import LicenseSerializer
-from apps.readium.services import LicenseService
+from apps.readium.services import LicenseService, PassphraseRequiredError
+from apps.readium.services.renew_policy import evaluate_renew
 
 
 class LicenseManagement(SecuredView):
@@ -76,6 +80,15 @@ class LicenseManagement(SecuredView):
                 status=HTTPStatus.CREATED,
             )
 
+        except PassphraseRequiredError as e:
+            raise ProblemDetailException(
+                _("LCP passphrase required"),
+                detail=str(e),
+                status=HTTPStatus.BAD_REQUEST,
+                detail_type=DetailType.PASSPHRASE_REQUIRED,
+                additional_data={"set_passphrase_url": "/api/v1/users/me"},
+                previous=e,
+            )
         except ValueError as e:
             raise ProblemDetailException(
                 str(e),
@@ -87,7 +100,6 @@ class LicenseManagement(SecuredView):
             raise ProblemDetailException(
                 _("Failed to create license"),
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                detail_type=DetailType.INTERNAL_ERROR,
                 previous=e,
             )
 
@@ -201,3 +213,87 @@ class LicenseDetail(SecuredView):
                     status=HTTPStatus.INTERNAL_SERVER_ERROR,
                     previous=e,
                 )
+
+
+class LicenseRenewalsView(SecuredView):
+    """
+    Renewal sub-resource of License (IP-003 Phase 3e).
+
+    POST /readium/v1/licenses/{license_id}/renewals
+        Body: { "requested_end": "<iso-8601>" }
+        On allow: forwards to LicenseService.renew_license and returns the LSD
+        status document (proxied) on 200.
+        On deny: RFC 7807 problem-details JSON with status 403.
+
+    This endpoint is pointed at by the LCP Status Server's `renew_custom_url`.
+    """
+
+    @openapi.metadata(
+        description=(
+            "Renew a license. Body `{\"requested_end\": \"<iso-8601>\"}`. "
+            "STU policy: denied if a reservation queue exists on the entry, if the license is within "
+            "the post-acquisition embargo, or if the requested end exceeds the max renewal window."
+        ),
+        tags=["Licenses"],
+        summary="Create license renewal",
+    )
+    def post(self, request, license_id: UUID):
+        try:
+            license_obj = License.objects.get(pk=license_id)
+        except License.DoesNotExist as e:
+            raise ProblemDetailException(
+                _("License not found"),
+                status=HTTPStatus.NOT_FOUND,
+                previous=e,
+                detail_type=DetailType.NOT_FOUND,
+            )
+
+        requested_end_value: datetime = None
+        if request.body:
+            import json
+
+            try:
+                payload = json.loads(request.body or b"{}")
+            except json.JSONDecodeError:
+                raise ProblemDetailException(_("Invalid JSON body"), status=HTTPStatus.BAD_REQUEST)
+            raw = payload.get("requested_end") if isinstance(payload, dict) else None
+            if raw:
+                requested_end_value = parse_datetime(raw)
+                if requested_end_value is None:
+                    raise ProblemDetailException(
+                        _("`requested_end` must be an ISO-8601 datetime"),
+                        status=HTTPStatus.BAD_REQUEST,
+                        detail_type=DetailType.VALIDATION_ERROR,
+                    )
+
+        decision = evaluate_renew(license_obj, requested_end=requested_end_value)
+        if not decision.allowed:
+            raise ProblemDetailException(
+                _("Renewal denied"),
+                detail=decision.reason,
+                status=HTTPStatus.FORBIDDEN,
+                detail_type=DetailType.CONFLICT,
+            )
+
+        # Compute the duration in days that LicenseService.renew_license expects.
+        from django.utils import timezone
+
+        days = max(1, int((decision.new_end - timezone.now()).total_seconds() // 86400))
+        try:
+            LicenseService.renew_license(license_obj, new_duration_days=days)
+        except Exception as e:
+            raise ProblemDetailException(
+                _("Failed to renew license"),
+                detail=str(e),
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                previous=e,
+            )
+
+        return JsonResponse(
+            {
+                "license_id": str(license_obj.pk),
+                "expires_at": license_obj.expires_at.isoformat() if license_obj.expires_at else None,
+            },
+            status=HTTPStatus.OK,
+            content_type="application/vnd.readium.license.status.v1.0+json",
+        )

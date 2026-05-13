@@ -18,6 +18,7 @@ from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer
 from apps.api.services.entry import EntryService
 from apps.core.models import Entry, Acquisition, Price, Catalog, ShelfRecord, User
 from apps.core.views import SecuredView
+from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
 
 
 def shelf_record_mapping(user: User) -> dict[UUID, UUID]:
@@ -53,6 +54,7 @@ class EntryPaginator(SecuredView):
             entries,
             serializer=EntrySerializer.Base,
             serializer_context={"shelf_entries": shelf_record_mapping(request.user), "request": request},
+            context_builder=lambda items: {"lcp_states": lcp_state_mapping(request.user, items)},
         )
 
 
@@ -109,7 +111,12 @@ class EntryManagement(SecuredView):
         return SingleResponse(
             request,
             data=EntrySerializer.Detailed.model_validate(
-                entry, context={"shelf_entries": shelf_record_mapping(request.user), "request": request}
+                entry,
+                context={
+                    "shelf_entries": shelf_record_mapping(request.user),
+                    "request": request,
+                    "lcp_states": lcp_state_mapping(request.user, [entry]),
+                },
             ),
             status=HTTPStatus.CREATED,
         )
@@ -153,7 +160,12 @@ class EntryDetail(SecuredView):
         return SingleResponse(
             request,
             data=EntrySerializer.Detailed.model_validate(
-                entry, context={"shelf_entries": shelf_record_mapping(request.user), "request": request}
+                entry,
+                context={
+                    "shelf_entries": shelf_record_mapping(request.user),
+                    "request": request,
+                    "lcp_states": lcp_state_mapping(request.user, [entry]),
+                },
             ),
         )
 
@@ -235,7 +247,12 @@ class EntryDetail(SecuredView):
         return SingleResponse(
             request,
             data=EntrySerializer.Detailed.model_validate(
-                entry, context={"shelf_entries": shelf_record_mapping(request.user), "request": request}
+                entry,
+                context={
+                    "shelf_entries": shelf_record_mapping(request.user),
+                    "request": request,
+                    "lcp_states": lcp_state_mapping(request.user, [entry]),
+                },
             ),
         )
 
