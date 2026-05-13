@@ -49,13 +49,13 @@ services:
       DV_API_TOKEN: "6eb102eb-e34f-4b38-a6ed-edea30cc51b0" # change me
       DATAVERSE_WORKFLOW_SECRET: "123"
       EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR: /mnt/data
-      REDIS_DATABASE: 0
+      REDIS_DATABASE: 1
       SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION: 6000
       EVILFLOWERS_EVENT_BROKER_EXECUTOR: "apps.events.services.CeleryEventExecutionService"
       EVILFLOWERS_EVENT_BROKER_TRANSFORMER: "apps.events.transformers.DjangoTransformer"
-      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/7"
       EVILFLOWERS_TEXT_SERVICE_URL: "http://host.docker.internal:8010"
-      TEXT_SERVICE_REDIS_URL: "redis://redis:6379/0"
+      TEXT_SERVICE_REDIS_URL: "redis://redis:6379/7"
       EVILFLOWERS_CATALOG_API_INTERNAL_URL: "http://django:8000"
       DATAVERSE_RESUME_WORKFLOW: "1"
       DATAVERSE_AUTO_WHITELIST_WORKFLOW_RESUME: "1"
@@ -143,7 +143,7 @@ services:
     platform: linux/amd64
     container_name: text-service
     environment:
-      REDIS_URL: "redis://redis:6379/0"
+      REDIS_URL: "redis://redis:6379/7"
       STORAGE_PATH: /mnt/data
       SEARCH_SERVICE_URL: ${SEARCH_SERVICE_URL:-http://search-service:8001}
       TABLE_EXTRACTOR: "PdfPlumber"
