@@ -1,0 +1,13 @@
+Reservation placed
+==================
+
+Hello {{ user_name }},
+
+You have been added to the queue for "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %}.
+
+Your position in line: #{{ position }}
+
+We will email you again as soon as a slot opens up. You will have {{ claim_window_hours }} hours to claim it.
+
+--
+This is an automated notification from Evil Flowers Catalog.

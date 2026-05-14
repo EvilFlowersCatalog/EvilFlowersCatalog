@@ -151,7 +151,7 @@ class EntryEncryptionView(SecuredView):
         # Check if already encrypted
         if hasattr(acquisition, "encrypted_content") and not force:
             ec = acquisition.encrypted_content
-            if ec.status in ["encrypting", "completed", "registered"]:
+            if ec.status in ["completed", "registered"]:
                 raise ProblemDetailException(
                     _("Encryption already in progress or completed. Use force=true to re-trigger."),
                     status=HTTPStatus.CONFLICT,

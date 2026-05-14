@@ -18,6 +18,8 @@ class DetailType(Enum):
     NOT_FOUND = "/not-found"
     VALIDATION_ERROR = "/validation-error"
     CONFLICT = "/conflict"
+    PASSPHRASE_REQUIRED = "/passphrase-required"
+    READIUM_AMOUNT_BELOW_ACTIVE_COUNT = "/readium-amount-below-active-count"
 
 
 class ProblemDetail(Serializer):

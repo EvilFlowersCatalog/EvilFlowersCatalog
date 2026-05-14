@@ -105,6 +105,11 @@ class Entry(BaseModel):
     citation = models.TextField(null=True)
     touched_at = models.DateTimeField(null=True, auto_now=True)
 
+    # Advanced entry details (issue #50; ratings/reviews deferred to #57)
+    page_count = models.PositiveIntegerField(null=True, blank=True)
+    table_of_contents = models.JSONField(null=True, blank=True)
+    related_entries = models.ManyToManyField("self", symmetrical=False, related_name="related_to", blank=True)
+
     @property
     def image_url(self) -> Optional[str]:
         if not self.image:

@@ -1,0 +1,1 @@
+Your loan of "{{ entry_title }}" expires soon

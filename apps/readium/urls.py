@@ -10,6 +10,8 @@ Endpoints:
 - /licenses/{id}/register - LSD proxy: Device registration
 - /licenses/{id}/return - LSD proxy: Loan return
 - /licenses/{id}/renew - LSD proxy: Loan renewal
+- /licenses/{id}/renewals - Renewal sub-resource (renew_custom_url callback)
+- /reservations - Reservation queue: POST/GET, mutate via PATCH /reservations/{id}
 - /entries/{id}/availability - Availability calendar
 - /entries/{id}/encryption - Encryption status and manual trigger
 - /publications/{id}/manifest.json - RWPM manifest
@@ -20,12 +22,13 @@ from django.urls import path, re_path
 
 from apps.readium.views.content import EncryptedContentDownloadView
 from apps.readium.views.hooks import EncryptionWebhook
-from apps.readium.views.licenses import LicenseManagement, LicenseDetail
+from apps.readium.views.licenses import LicenseManagement, LicenseDetail, LicenseRenewalsView
 from apps.readium.views.availability import EntryAvailabilityView
 from apps.readium.views.download import LicenseDownloadView
 from apps.readium.views.encryption import EntryEncryptionView
 from apps.readium.views.hint import HintPageView
 from apps.readium.views.manifest import PublicationManifestView
+from apps.readium.views.reservations import ReservationCollection, ReservationDetail
 from apps.readium.views.status_proxy import (
     DeviceRegistrationProxyView,
     RenewProxyView,
@@ -53,6 +56,11 @@ urlpatterns = [
     path("licenses/<uuid:license_id>/register", DeviceRegistrationProxyView.as_view(), name="lsd-register"),
     path("licenses/<uuid:license_id>/return", ReturnProxyView.as_view(), name="lsd-return"),
     path("licenses/<uuid:license_id>/renew", RenewProxyView.as_view(), name="lsd-renew"),
+    # Renewal sub-resource (renew_custom_url callback). POST { requested_end }.
+    path("licenses/<uuid:license_id>/renewals", LicenseRenewalsView.as_view(), name="license-renewals"),
+    # Reservation queue (declarative)
+    path("reservations", ReservationCollection.as_view(), name="reservation-collection"),
+    path("reservations/<uuid:reservation_id>", ReservationDetail.as_view(), name="reservation-detail"),
     # Availability
     path("entries/<uuid:entry_id>/availability", EntryAvailabilityView.as_view(), name="entry-availability"),
     # Encryption Management

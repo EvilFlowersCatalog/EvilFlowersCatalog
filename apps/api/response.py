@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Optional, List, Type, TypeVar
+from typing import Callable, Optional, List, Type, TypeVar
 
 from django.conf import settings
 from django.core.paginator import Paginator, EmptyPage
@@ -124,8 +124,15 @@ class PaginationResponse(GeneralResponse):
         serializer: Type[BaseModel],
         serializer_context: dict = None,
         ordering: Ordering = None,
+        context_builder: Optional[Callable[[list], dict]] = None,
         **kwargs,
     ):
+        """
+        :param context_builder: optional callable that receives the materialised page
+            items (a list of ORM instances) and returns a dict that is merged into
+            `serializer_context` before validation. Use this when context values
+            depend on the page itself — for example a per-entry LCP-state mapping.
+        """
         kwargs.setdefault("content_type", "application/json")
 
         # Ordering
@@ -161,11 +168,17 @@ class PaginationResponse(GeneralResponse):
             num_pages = 1
             total = qs.count()
 
+        items_list = list(items)
+        merged_context = dict(serializer_context or {})
+        if context_builder is not None:
+            extra = context_builder(items_list) or {}
+            merged_context.update(extra)
+
         super().__init__(
             request,
             PaginationResponseModel(
                 items=RootModel[List[serializer]].model_validate(
-                    list(items), from_attributes=True, context=serializer_context or {}
+                    items_list, from_attributes=True, context=merged_context
                 ),
                 metadata=PaginationModel(page=page, limit=limit, pages=num_pages, total=total),
             ),

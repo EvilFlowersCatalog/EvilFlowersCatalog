@@ -1,0 +1,1 @@
+Loan returned: "{{ entry_title }}"

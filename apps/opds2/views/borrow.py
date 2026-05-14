@@ -5,13 +5,13 @@ from django.conf import settings
 from django.urls import reverse
 from django.utils.translation import gettext as _
 
-from apps.core.errors import ProblemDetailException, UnauthorizedException
+from apps.core.errors import DetailType, ProblemDetailException, UnauthorizedException
 from apps.core.models import Entry
 from apps.opds2.services import ManifestBuilder
 from apps.opds2.schema.rwpm import Link
 from apps.opds2.views.base import Opds2CatalogView
 from apps.readium.models import License
-from apps.readium.services import LicenseService
+from apps.readium.services import LicenseService, PassphraseRequiredError
 
 
 class BorrowView(Opds2CatalogView):
@@ -19,13 +19,17 @@ class BorrowView(Opds2CatalogView):
         if not request.user.is_authenticated:
             raise UnauthorizedException()
 
-        # Validate passphrase is configured
+        # Validate passphrase is configured. The service layer also enforces this;
+        # we pre-check here so the SPA's borrow flow gets a typed RFC 7807 response
+        # without first attempting a write.
         passphrase_hash = getattr(request.user, "lcp_passphrase_hash", None)
         if not passphrase_hash:
             raise ProblemDetailException(
-                _("LCP passphrase not configured"),
+                _("LCP passphrase required"),
                 detail=_("Set your LCP passphrase in your profile before borrowing."),
                 status=HTTPStatus.BAD_REQUEST,
+                detail_type=DetailType.PASSPHRASE_REQUIRED,
+                additional_data={"set_passphrase_url": "/api/v1/users/me"},
             )
 
         try:
@@ -47,6 +51,14 @@ class BorrowView(Opds2CatalogView):
                 passphrase_hash=passphrase_hash,
                 passphrase_hint=getattr(request.user, "lcp_passphrase_hint", None) or "Your library password",
                 duration_days=duration_days,
+            )
+        except PassphraseRequiredError as e:
+            raise ProblemDetailException(
+                _("LCP passphrase required"),
+                detail=str(e),
+                status=HTTPStatus.BAD_REQUEST,
+                detail_type=DetailType.PASSPHRASE_REQUIRED,
+                additional_data={"set_passphrase_url": "/api/v1/users/me"},
             )
         except ValueError as e:
             raise ProblemDetailException(str(e), status=HTTPStatus.CONFLICT)

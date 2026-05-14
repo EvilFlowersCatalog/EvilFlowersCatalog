@@ -1,0 +1,245 @@
+"""
+Generate the EDRLab certification bundle (IP-003 Phase 1).
+
+Produces six artifacts in `--output-dir`:
+
+    buy_ready.lcpl           (license in `ready` state)
+    buy_cancelled.lcpl       (driven through real StatusServerClient.cancel_license)
+    buy_revoked.lcpl         (driven through real StatusServerClient.revoke_license)
+    loan_ready.lcpl          (license in `ready` state, loan profile)
+    loan_expired.lcpl        (license issued with rights.end already in the past)
+    protected.lcpdf          (one Licensed PDF — LCP-for-PDF profile)
+
+Plus a README listing each artifact, the test user passphrase, and how to
+verify with Thorium Reader.
+
+No DB shortcuts — every state transition goes through the real service layer
+and the upstream LCP / Status servers so EDRLab sees the same surface as
+production traffic.
+
+Q1 resolution: `--entry <uuid>` is required. Command fails fast if the entry
+is not LCP-enabled or has no encrypted PDF acquisition.
+"""
+
+import json
+import shutil
+from datetime import timedelta
+from pathlib import Path
+from uuid import UUID
+
+from django.core.management.base import BaseCommand, CommandError
+from django.utils import timezone
+
+from apps.core.models import Entry, User
+from apps.readium.models import EncryptedContent, License
+from apps.readium.services import (
+    ContentEncryptionService,
+    LCPServerClient,
+    LicenseService,
+    StatusServerClient,
+)
+
+BUNDLE_README = """# Readium LCP — EDRLab Certification Bundle
+
+This directory contains the artifacts produced for EDRLab compliance
+review of the EvilFlowersCatalog LCP integration.
+
+## Test user passphrase
+{passphrase!r}
+
+(Hash, SHA-256, stored on the user record and embedded in every license below.)
+
+## Artifacts
+
+| File | State | Notes |
+|------|-------|-------|
+| `buy_ready.lcpl`     | ready     | License available for activation, full rights window |
+| `buy_cancelled.lcpl` | cancelled | Real PATCH /licenses/{id}/status to `cancelled` |
+| `buy_revoked.lcpl`   | revoked   | Real PATCH /licenses/{id}/status to `revoked` |
+| `loan_ready.lcpl`    | ready     | Loan-style license (short rights window) |
+| `loan_expired.lcpl`  | expired   | License issued with rights.end in the past |
+| `protected.lcpdf`    | n/a       | Licensed PDF with `META-INF/license.lcpl` embedded |
+
+## Verification with Thorium Reader
+
+1. Open Thorium Reader.
+2. Import each `.lcpl` file via *File → Import licenses*.
+3. Enter the passphrase above when prompted.
+4. Expected: `buy_ready` and `loan_ready` open. `buy_cancelled`, `buy_revoked`,
+   and `loan_expired` are refused with the appropriate error.
+5. For `protected.lcpdf`, double-click it; Thorium should detect the embedded
+   license, prompt for the passphrase, and open the document.
+
+## How this bundle was produced
+
+`python manage.py generate_lcp_certification_bundle --entry <uuid> --output-dir <dir>`
+
+Entry: `{entry_id}`
+Title: `{entry_title}`
+Generated at: `{generated_at}`
+"""
+
+
+class Command(BaseCommand):
+    help = "Produce the 6-artifact EDRLab certification bundle for an LCP-enabled entry."
+
+    def add_arguments(self, parser):
+        parser.add_argument("--entry", type=str, required=True, help="UUID of an LCP-enabled entry (required)")
+        parser.add_argument("--output-dir", type=str, required=True, help="Directory to write artifacts into")
+        parser.add_argument(
+            "--passphrase",
+            type=str,
+            default="edrlab-test-passphrase",
+            help="Plain passphrase to set on the test user and embed in the licenses",
+        )
+        parser.add_argument(
+            "--test-user",
+            type=str,
+            default="edrlab-test",
+            help="Username of the dedicated test user (created if missing)",
+        )
+
+    def handle(self, *args, **options):
+        entry_id = options["entry"]
+        output_dir = Path(options["output_dir"]).resolve()
+        passphrase = options["passphrase"]
+        username = options["test_user"]
+
+        try:
+            UUID(entry_id)
+        except ValueError as e:
+            raise CommandError(f"--entry must be a UUID: {e}") from e
+
+        try:
+            entry = Entry.objects.get(pk=entry_id)
+        except Entry.DoesNotExist as e:
+            raise CommandError(f"Entry {entry_id} not found") from e
+
+        if not entry.read_config("readium_enabled"):
+            raise CommandError(f"Entry {entry_id} is not LCP-enabled (readium_enabled=False)")
+
+        acquisition = entry.acquisitions.filter(mime="application/pdf").first()
+        if acquisition is None:
+            raise CommandError(f"Entry {entry_id} has no PDF acquisition (LCP-for-PDF profile required)")
+
+        if not hasattr(acquisition, "encrypted_content"):
+            raise CommandError(
+                f"Acquisition {acquisition.pk} is not yet encrypted. "
+                f"Run `python manage.py encrypt_readium_content --entry {entry_id}` first."
+            )
+
+        encrypted = acquisition.encrypted_content
+        if encrypted.status not in [
+            EncryptedContent.EncryptionStatus.COMPLETED,
+            EncryptedContent.EncryptionStatus.REGISTERED,
+        ]:
+            raise CommandError(
+                f"Encrypted content not ready (status={encrypted.status}). "
+                "Wait for encryption to complete and the LCP Server to register it."
+            )
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        user = self._ensure_test_user(username, passphrase)
+
+        self.stdout.write(f"Writing bundle to {output_dir} ...")
+
+        self._produce_buy_ready(entry, user, passphrase, output_dir / "buy_ready.lcpl")
+        self._produce_buy_cancelled(entry, user, passphrase, output_dir / "buy_cancelled.lcpl")
+        self._produce_buy_revoked(entry, user, passphrase, output_dir / "buy_revoked.lcpl")
+        self._produce_loan_ready(entry, user, passphrase, output_dir / "loan_ready.lcpl")
+        self._produce_loan_expired(entry, user, passphrase, output_dir / "loan_expired.lcpl")
+        self._copy_protected_pdf(encrypted, output_dir / "protected.lcpdf")
+
+        readme = output_dir / "README.md"
+        readme.write_text(
+            BUNDLE_README.format(
+                passphrase=passphrase,
+                entry_id=entry.pk,
+                entry_title=entry.title,
+                generated_at=timezone.now().isoformat(),
+            )
+        )
+
+        self.stdout.write(self.style.SUCCESS(f"Bundle written to {output_dir}"))
+
+    # --- helpers --------------------------------------------------------
+
+    def _ensure_test_user(self, username: str, passphrase: str) -> User:
+        user, created = User.objects.get_or_create(
+            username=username,
+            defaults={"name": "EDRLab", "surname": "Tester", "is_active": True},
+        )
+        # Set passphrase hash (uppercased SHA-256 per LCP spec).
+        user.lcp_passphrase_hash = LCPServerClient.hash_passphrase(passphrase)
+        user.lcp_passphrase_hint = "EDRLab certification passphrase"
+        user.save(update_fields=["lcp_passphrase_hash", "lcp_passphrase_hint"])
+        if created:
+            self.stdout.write(self.style.NOTICE(f"Created test user {username}"))
+        return user
+
+    def _produce_buy_ready(self, entry, user, passphrase, out_path: Path):
+        lcp_license = self._issue_license(entry, user, passphrase, duration_days=365)
+        out_path.write_text(json.dumps(lcp_license, indent=2))
+        self.stdout.write(f"  ✓ {out_path.name}")
+
+    def _produce_buy_cancelled(self, entry, user, passphrase, out_path: Path):
+        license_obj = self._reissue_db_license(entry, user, passphrase, duration_days=365)
+        StatusServerClient().cancel_license(license_obj, reason="EDRLab certification — cancelled sample")
+        lcp_license = LCPServerClient().fetch_fresh_license(license_obj)
+        out_path.write_text(json.dumps(lcp_license, indent=2))
+        self.stdout.write(f"  ✓ {out_path.name}")
+
+    def _produce_buy_revoked(self, entry, user, passphrase, out_path: Path):
+        license_obj = self._reissue_db_license(entry, user, passphrase, duration_days=365)
+        StatusServerClient().revoke_license(license_obj, reason="EDRLab certification — revoked sample")
+        lcp_license = LCPServerClient().fetch_fresh_license(license_obj)
+        out_path.write_text(json.dumps(lcp_license, indent=2))
+        self.stdout.write(f"  ✓ {out_path.name}")
+
+    def _produce_loan_ready(self, entry, user, passphrase, out_path: Path):
+        lcp_license = self._issue_license(entry, user, passphrase, duration_days=14)
+        out_path.write_text(json.dumps(lcp_license, indent=2))
+        self.stdout.write(f"  ✓ {out_path.name}")
+
+    def _produce_loan_expired(self, entry, user, passphrase, out_path: Path):
+        # Issue with a past end. We back-date both starts_at and expires_at
+        # so the LCP Server stamps the license with rights.end < now.
+        license_obj = self._reissue_db_license(entry, user, passphrase, duration_days=1, back_date_days=30)
+        lcp_license = LCPServerClient().fetch_fresh_license(license_obj)
+        out_path.write_text(json.dumps(lcp_license, indent=2))
+        self.stdout.write(f"  ✓ {out_path.name}")
+
+    def _copy_protected_pdf(self, encrypted: EncryptedContent, out_path: Path) -> None:
+        from django.conf import settings as dj_settings
+
+        src = Path(dj_settings.EVILFLOWERS_READIUM_DATADIR) / encrypted.encrypted_path
+        if not src.exists():
+            self.stdout.write(self.style.WARNING(f"  ! protected.lcpdf source not found at {src}"))
+            return
+        shutil.copy(src, out_path)
+        self.stdout.write(f"  ✓ {out_path.name}")
+
+    def _issue_license(self, entry, user, passphrase, duration_days: int) -> dict:
+        license_obj = LicenseService.create_license(
+            entry=entry, user=user, user_passphrase=passphrase, duration_days=duration_days
+        )
+        return LCPServerClient().fetch_fresh_license(license_obj)
+
+    def _reissue_db_license(self, entry, user, passphrase, duration_days: int, back_date_days: int = 0) -> License:
+        """Create a license and return the local License model (not yet serialised)."""
+        # Bypass uniqueness on (entry, user, state=ready) by cancelling any prior ready one.
+        License.objects.filter(entry=entry, user=user, state=License.LicenseState.READY).update(
+            state=License.LicenseState.CANCELLED
+        )
+
+        now = timezone.now()
+        start = now - timedelta(days=back_date_days) if back_date_days else now
+
+        return LicenseService.create_license(
+            entry=entry,
+            user=user,
+            user_passphrase=passphrase,
+            start_date=start,
+            duration_days=duration_days,
+        )

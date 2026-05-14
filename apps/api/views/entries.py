@@ -6,6 +6,7 @@ from uuid import uuid4, UUID
 from django.conf import settings
 from django.db import transaction
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
@@ -21,6 +22,47 @@ from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer
 from apps.api.services.entry import EntryService
 from apps.core.models import Entry, Acquisition, Price, Catalog, ShelfRecord, User
 from apps.core.views import SecuredView
+from apps.readium.models import License
+from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
+
+
+def _assert_readium_amount_above_active(entry: Entry, form: EntryForm) -> None:
+    """IP-004 Q3: reject `readium_amount` reductions below current active license count.
+
+    The form's `populate_config` already merges incoming payload over the stored
+    config, so `form.cleaned_data["config"]["readium_amount"]` is the post-merge
+    value the entry would carry after save. If it is strictly less than the
+    current count of READY/ACTIVE licenses, raise 409 + RFC 7807 so the operator
+    must revoke (or wait for) excess licenses before reducing the cap.
+    """
+    config_payload = form.cleaned_data.get("config") or {}
+    requested_amount = config_payload.get("readium_amount")
+    if requested_amount is None:
+        return
+
+    active_count = License.objects.filter(
+        entry=entry,
+        state__in=[License.LicenseState.READY, License.LicenseState.ACTIVE],
+        expires_at__gt=timezone.now(),
+    ).count()
+
+    if requested_amount < active_count:
+        raise ProblemDetailException(
+            _("Cannot reduce readium_amount below current active license count"),
+            status=HTTPStatus.CONFLICT,
+            detail_type=DetailType.READIUM_AMOUNT_BELOW_ACTIVE_COUNT,
+            detail=_(
+                "Requested readium_amount=%(requested)d is below the current "
+                "active license count=%(active)d. Revoke or wait for excess "
+                "licenses to terminate, then retry."
+            )
+            % {"requested": requested_amount, "active": active_count},
+            additional_data={
+                "current_active_count": active_count,
+                "requested_readium_amount": requested_amount,
+                "licenses_url": f"/readium/v1/licenses?entry_id={entry.pk}&state=active",
+            },
+        )
 
 import logging
 import sys
@@ -71,6 +113,7 @@ class EntryPaginator(SecuredView):
             entries,
             serializer=EntrySerializer.Base,
             serializer_context={"shelf_entries": shelf_record_mapping(request.user), "request": request},
+            context_builder=lambda items: {"lcp_states": lcp_state_mapping(request.user, items)},
         )
 
 
@@ -127,7 +170,12 @@ class EntryManagement(SecuredView):
         return SingleResponse(
             request,
             data=EntrySerializer.Detailed.model_validate(
-                entry, context={"shelf_entries": shelf_record_mapping(request.user), "request": request}
+                entry,
+                context={
+                    "shelf_entries": shelf_record_mapping(request.user),
+                    "request": request,
+                    "lcp_states": lcp_state_mapping(request.user, [entry]),
+                },
             ),
             status=HTTPStatus.CREATED,
         )
@@ -171,7 +219,12 @@ class EntryDetail(SecuredView):
         return SingleResponse(
             request,
             data=EntrySerializer.Detailed.model_validate(
-                entry, context={"shelf_entries": shelf_record_mapping(request.user), "request": request}
+                entry,
+                context={
+                    "shelf_entries": shelf_record_mapping(request.user),
+                    "request": request,
+                    "lcp_states": lcp_state_mapping(request.user, [entry]),
+                },
             ),
         )
 
@@ -262,6 +315,9 @@ class EntryDetail(SecuredView):
         if not form.is_valid():
             raise ValidationException(form)
 
+        # IP-004 Q3: hard-reject cap reductions that would over-saturate.
+        _assert_readium_amount_above_active(entry, form)
+
         catalog = Catalog.objects.get(pk=catalog_id)
         service = EntryService(catalog, request.user)
 
@@ -278,7 +334,12 @@ class EntryDetail(SecuredView):
         return SingleResponse(
             request,
             data=EntrySerializer.Detailed.model_validate(
-                entry, context={"shelf_entries": shelf_record_mapping(request.user), "request": request}
+                entry,
+                context={
+                    "shelf_entries": shelf_record_mapping(request.user),
+                    "request": request,
+                    "lcp_states": lcp_state_mapping(request.user, [entry]),
+                },
             ),
         )
 
