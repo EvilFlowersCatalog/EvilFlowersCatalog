@@ -72,6 +72,30 @@ class ShelfRecordChecker(AbacChecker):
 
 
 class LicenseChecker(AbacChecker):
+    # IP-004 Phase 4: split the legacy `check_license_manage` predicate so admin
+    # operations (state PATCH: return/revoke/cancel) and content downloads
+    # (the .lcpl artifact) sit on independent permission axes. Admins may
+    # operate state on behalf of users, but must NOT impersonate users to
+    # download licensed content. Break-glass for download goes through a
+    # separate audited management command, not the regular API.
+
     @staticmethod
-    def check_license_manage(user: User, obj: License):
-        return obj.user == user
+    def check_license_state_manage(user: User, obj: License):
+        """Gate license state transitions (PATCH /readium/v1/licenses/{id})."""
+        if not user.is_authenticated:
+            return False
+
+        if user.is_superuser:
+            return True
+
+        if obj.user_id == user.id:
+            return True
+
+        return obj.entry.catalog.user_catalogs.filter(user=user, mode=UserCatalog.Mode.MANAGE).exists()
+
+    @staticmethod
+    def check_license_download(user: User, obj: License):
+        """Gate .lcpl download and License Gateway content fetch (owner only)."""
+        if not user.is_authenticated:
+            return False
+        return obj.user_id == user.id

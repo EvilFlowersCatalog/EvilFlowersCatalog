@@ -57,6 +57,8 @@ class EntryConfigForm(Form):
     evilflowers_metadata_fetch = BooleanField(required=False)
     evilflowers_ip_block = BooleanField(required=False)
     readium_enabled = BooleanField(required=False)
+    # IP-004: per-entry concurrent active-license ceiling. No upper bound (Q5 resolution).
+    readium_amount = forms.IntegerField(required=False, min_value=1)
     evilflowers_render_type = forms.ChoiceField(
         required=False,
         choices=(
@@ -141,3 +143,10 @@ class EntryForm(Form):
             )
 
         return self.cleaned_data
+
+    def populate_config(self, obj, value):
+        # IP-004 Q1: partial-update merge for `config`. The django_api_forms
+        # population strategy would otherwise replace the whole dict and wipe
+        # omitted keys. We merge the incoming payload over the existing stored
+        # config so a PUT touching only one key preserves all the others.
+        return (getattr(obj, "config", None) or {}) | (value or {})

@@ -104,6 +104,11 @@ class EntrySerializer:
         lcp_state: LcpState = Field(default=LcpState.NOT_LCP, validate_default=True)
         available_slots: int = Field(default=0, validate_default=True)
         total_slots: int = Field(default=0, validate_default=True)
+        # IP-004 Phase 2: `active_count` and `over_saturated` expose legacy over-saturation
+        # so operators can find and remediate entries whose stored `readium_amount`
+        # was set (via direct JSON) below their current active license count.
+        active_count: int = Field(default=0, validate_default=True)
+        over_saturated: bool = Field(default=False, validate_default=True)
         next_available_at: Optional[datetime] = Field(default=None, validate_default=True)
         user_active_license_id: Optional[UUID] = Field(default=None, validate_default=True)
         queue_length: int = Field(default=0, validate_default=True)
@@ -114,6 +119,8 @@ class EntrySerializer:
             "lcp_state",
             "available_slots",
             "total_slots",
+            "active_count",
+            "over_saturated",
             "next_available_at",
             "user_active_license_id",
             "queue_length",

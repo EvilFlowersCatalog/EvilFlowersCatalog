@@ -56,9 +56,7 @@ class ReservationService:
             raise ValueError("User already has a reservation for this entry")
 
         cap = settings.EVILFLOWERS_READIUM_MAX_RESERVATIONS_PER_USER
-        user_active = Reservation.objects.filter(
-            user=user, status__in=Reservation.NON_TERMINAL_STATUSES
-        ).count()
+        user_active = Reservation.objects.filter(user=user, status__in=Reservation.NON_TERMINAL_STATUSES).count()
         if user_active >= cap:
             raise ValueError(f"User has reached the reservation cap ({cap})")
 
@@ -151,15 +149,11 @@ class ReservationService:
         now = timezone.now()
 
         total_slots = int(entry.read_config("readium_amount") or 0)
-        active_count = License.objects.filter(
-            entry=entry, state__in=active_states, expires_at__gt=now
-        ).count()
+        active_count = License.objects.filter(entry=entry, state__in=active_states, expires_at__gt=now).count()
 
         # An "available" reservation also occupies a virtual slot — the user has
         # the right to claim it. Count them so we never over-promote.
-        pending_promotions = Reservation.objects.filter(
-            entry=entry, status=Reservation.Status.AVAILABLE
-        ).count()
+        pending_promotions = Reservation.objects.filter(entry=entry, status=Reservation.Status.AVAILABLE).count()
         if active_count + pending_promotions >= total_slots:
             return None
 

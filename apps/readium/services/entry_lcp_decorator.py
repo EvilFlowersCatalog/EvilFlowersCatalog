@@ -8,9 +8,15 @@ Public API:
 
     lcp_state_mapping(user, entry_ids) -> dict[UUID, dict]
         Returns a mapping `entry_id -> {lcp_state, available_slots, total_slots,
-        next_available_at, user_active_license_id, queue_length,
-        user_reservation_id, user_position}`. Entries not in the mapping
-        serialize with the `not_lcp` defaults.
+        active_count, over_saturated, next_available_at, user_active_license_id,
+        queue_length, user_reservation_id, user_position}`. Entries not in the
+        mapping serialize with the `not_lcp` defaults.
+
+IP-004 Phase 2 adds `active_count` and `over_saturated` so operators can
+see when legacy entries carry more active licenses than the current cap.
+After Phase 1 of IP-004 the API write path rejects cap reductions that
+would over-saturate, but pre-existing direct-JSON writes are not retroactively
+healed, so the read-side surface still needs to expose the mismatch.
 
 Reservation lookups are guarded so this module works before Phase 3 migrates.
 """
@@ -94,6 +100,8 @@ def _resolve_one(entry: Entry, user, license_rows: list, reservation_rows: list,
             "lcp_state": LcpState.NOT_LCP,
             "available_slots": 0,
             "total_slots": 0,
+            "active_count": 0,
+            "over_saturated": False,
             "next_available_at": None,
             "user_active_license_id": None,
             "queue_length": 0,
@@ -104,6 +112,9 @@ def _resolve_one(entry: Entry, user, license_rows: list, reservation_rows: list,
     total_slots = int(entry.read_config("readium_amount") or 0)
     active_count = len(license_rows)
     available_slots = max(0, total_slots - active_count)
+    # IP-004 Phase 2: surface the mismatch directly. Phase 1 prevents new writes
+    # from creating this state, but legacy rows can already be over-saturated.
+    over_saturated = active_count > total_slots
 
     user_license_id: Optional[UUID] = None
     if user is not None:
@@ -140,6 +151,8 @@ def _resolve_one(entry: Entry, user, license_rows: list, reservation_rows: list,
         "lcp_state": state,
         "available_slots": available_slots,
         "total_slots": total_slots,
+        "active_count": active_count,
+        "over_saturated": over_saturated,
         "next_available_at": next_available_at,
         "user_active_license_id": user_license_id,
         "queue_length": queue_length,

@@ -65,9 +65,7 @@ class Command(BaseCommand):
             return
 
         if dry_run:
-            self.stdout.write(
-                self.style.WARNING("DRY RUN. Re-run with --revoke --no-dry-run to actually revoke.")
-            )
+            self.stdout.write(self.style.WARNING("DRY RUN. Re-run with --revoke --no-dry-run to actually revoke."))
             return
 
         revoked = 0

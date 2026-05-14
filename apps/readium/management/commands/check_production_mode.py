@@ -16,7 +16,6 @@ import requests
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
-
 SECRETS_DIR = Path("/etc/evilflowers/lcp-secrets")
 EXPECTED_DIR_MODE = 0o500
 EXPECTED_FILE_MODE = 0o400
@@ -33,9 +32,7 @@ class Command(BaseCommand):
         else:
             dir_mode = stat.S_IMODE(SECRETS_DIR.stat().st_mode)
             if dir_mode != EXPECTED_DIR_MODE:
-                failures.append(
-                    f"{SECRETS_DIR} mode is {oct(dir_mode)}, expected {oct(EXPECTED_DIR_MODE)}"
-                )
+                failures.append(f"{SECRETS_DIR} mode is {oct(dir_mode)}, expected {oct(EXPECTED_DIR_MODE)}")
 
             for name in ("cert.pem", "key.pem"):
                 f = SECRETS_DIR / name
@@ -44,9 +41,7 @@ class Command(BaseCommand):
                 else:
                     file_mode = stat.S_IMODE(f.stat().st_mode)
                     if file_mode != EXPECTED_FILE_MODE:
-                        failures.append(
-                            f"{f} mode is {oct(file_mode)}, expected {oct(EXPECTED_FILE_MODE)}"
-                        )
+                        failures.append(f"{f} mode is {oct(file_mode)}, expected {oct(EXPECTED_FILE_MODE)}")
 
         url = settings.EVILFLOWERS_READIUM_LCPSV_URL.rstrip("/")
         try:

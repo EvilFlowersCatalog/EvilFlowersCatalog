@@ -44,7 +44,7 @@ class ReservationCollection(SecuredView):
     @openapi.metadata(
         description=(
             "Place a reservation on a fully-borrowed entry. "
-            "The body is `{\"entry_id\": \"<uuid>\"}`. Returns 409 if the user already has "
+            'The body is `{"entry_id": "<uuid>"}`. Returns 409 if the user already has '
             "an active license or a non-terminal reservation for this entry."
         ),
         tags=["Reservations"],
@@ -104,8 +104,8 @@ class ReservationDetail(SecuredView):
 
     @openapi.metadata(
         description=(
-            "Mutate a reservation's status. Body: `{\"status\": \"cancelled\"}` (user-cancel) "
-            "or `{\"status\": \"claimed\"}` (convert an `available` reservation into a license). "
+            'Mutate a reservation\'s status. Body: `{"status": "cancelled"}` (user-cancel) '
+            'or `{"status": "claimed"}` (convert an `available` reservation into a license). '
             "Server-side transitions (`queued`→`available`, `available`→`expired`) are not exposed."
         ),
         tags=["Reservations"],

@@ -192,7 +192,7 @@ No new endpoints. We extend the existing license collection and reuse the existi
 - [ ] Extend `LicenseFilter` in `apps/readium/filters.py` with `device_count__gte` and `device_count__lte` numeric filters
 - [ ] Backfill `License.device_count` from the Status Server on a daily Celery beat job (the Status Server is the source of truth; our DB is a cache for filtering). Already partly tracked via `DeviceRegistrationProxyView`; the job covers drift
 - [ ] Add `apps/readium/management/commands/check_overshared_licenses.py` — purely a client of `GET /readium/v1/licenses?device_count__gte=N` and `PATCH /readium/v1/licenses/{id}` `{state: "revoked"}`. `--threshold N`, `--revoke` flag, `--dry-run` default. The command does NOT call the service layer directly; it goes through the HTTP API so the behaviour matches what library staff see in the SPA
-- [ ] Permission: the existing `check_license_manage` predicate already gates state PATCHes; ensure the device-count filter is allowed for users with that permission
+- [ ] Permission: state PATCHes are gated by `check_license_state_manage` (introduced in [IP-004](ip-004-readium-amount-configurability.md) Phase 4, which split the legacy owner-only `check_license_manage` predicate). Catalog managers and superusers can revoke; `.lcpl` download remains owner-only via the sibling `check_license_download` predicate. The device-count filter is allowed for any user the wider `LicenseFilter.qs` admits (owner OR catalog-MANAGE OR superuser, also widened in IP-004 Phase 3)
 - [ ] pytest case: seed two licenses with device_count above/below threshold, assert the filter result and that a PATCH transitions state to `revoked` and triggers the upstream Status Server revocation
 
 ### Phase 3: Reservation Queue & Renew Policy

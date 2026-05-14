@@ -1,6 +1,8 @@
 import django_filters
+from django.db.models import Q
 from django_filters import FilterSet
 
+from apps.core.models import UserCatalog
 from apps.readium.models import License, Reservation
 
 
@@ -79,8 +81,13 @@ class LicenseFilter(FilterSet):
         if not self.request.user.is_authenticated:
             return qs.none()
 
+        # IP-004 Phase 3: catalog managers see licenses for entries in catalogs
+        # they MANAGE in addition to their own licenses. Superuser unchanged.
         if not self.request.user.is_superuser:
-            qs = qs.filter(user=self.request.user)
+            managed_catalog_ids = UserCatalog.objects.filter(
+                user=self.request.user, mode=UserCatalog.Mode.MANAGE
+            ).values_list("catalog_id", flat=True)
+            qs = qs.filter(Q(user=self.request.user) | Q(entry__catalog_id__in=managed_catalog_ids))
 
         return qs
 
@@ -112,7 +119,13 @@ class ReservationFilter(FilterSet):
         if not self.request.user.is_authenticated:
             return qs.none()
 
+        # IP-004 Phase 3 / Q4: catalog managers see reservations on entries in
+        # catalogs they MANAGE with full row-level data (user_id, position),
+        # symmetric with LicenseFilter. Superuser unchanged.
         if not self.request.user.is_superuser:
-            qs = qs.filter(user=self.request.user)
+            managed_catalog_ids = UserCatalog.objects.filter(
+                user=self.request.user, mode=UserCatalog.Mode.MANAGE
+            ).values_list("catalog_id", flat=True)
+            qs = qs.filter(Q(user=self.request.user) | Q(entry__catalog_id__in=managed_catalog_ids))
 
         return qs

@@ -117,7 +117,9 @@ class LicenseDetail(SecuredView):
                 detail_type=DetailType.NOT_FOUND,
             )
 
-        if not has_object_permission("check_license_manage", request.user, license):
+        # IP-004 Phase 4: state-change operations admit catalog managers and
+        # superusers in addition to the license owner.
+        if not has_object_permission("check_license_state_manage", request.user, license):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return license
@@ -230,7 +232,7 @@ class LicenseRenewalsView(SecuredView):
 
     @openapi.metadata(
         description=(
-            "Renew a license. Body `{\"requested_end\": \"<iso-8601>\"}`. "
+            'Renew a license. Body `{"requested_end": "<iso-8601>"}`. '
             "STU policy: denied if a reservation queue exists on the entry, if the license is within "
             "the post-acquisition embargo, or if the requested end exceeds the max renewal window."
         ),

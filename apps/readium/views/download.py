@@ -32,7 +32,10 @@ class LicenseDownloadView(SecuredView):
                 detail_type=DetailType.NOT_FOUND,
             )
 
-        if not has_object_permission("check_license_manage", request.user, license):
+        # IP-004 Phase 4: .lcpl download is owner-only. Catalog managers and
+        # superusers are NOT exempted; break-glass goes through a separate
+        # audited management command, not this endpoint.
+        if not has_object_permission("check_license_download", request.user, license):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return license

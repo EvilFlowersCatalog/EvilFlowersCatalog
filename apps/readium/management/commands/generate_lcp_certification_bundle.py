@@ -39,7 +39,6 @@ from apps.readium.services import (
     StatusServerClient,
 )
 
-
 BUNDLE_README = """# Readium LCP — EDRLab Certification Bundle
 
 This directory contains the artifacts produced for EDRLab compliance
@@ -206,9 +205,7 @@ class Command(BaseCommand):
     def _produce_loan_expired(self, entry, user, passphrase, out_path: Path):
         # Issue with a past end. We back-date both starts_at and expires_at
         # so the LCP Server stamps the license with rights.end < now.
-        license_obj = self._reissue_db_license(
-            entry, user, passphrase, duration_days=1, back_date_days=30
-        )
+        license_obj = self._reissue_db_license(entry, user, passphrase, duration_days=1, back_date_days=30)
         lcp_license = LCPServerClient().fetch_fresh_license(license_obj)
         out_path.write_text(json.dumps(lcp_license, indent=2))
         self.stdout.write(f"  ✓ {out_path.name}")

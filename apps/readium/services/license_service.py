@@ -96,6 +96,8 @@ class LicenseService:
                     "date": current_date.isoformat(),
                     "available_slots": max(0, available_slots),
                     "total_slots": max_concurrent,
+                    "active_count": day_licenses,
+                    "over_saturated": day_licenses > max_concurrent,
                     "is_available": available_slots > 0,
                 }
             )
@@ -114,9 +116,18 @@ class LicenseService:
         except (ImportError, AttributeError):
             pass
 
+        # IP-004 Phase 2: current active count and over-saturation summary at the top level.
+        current_active_count = License.objects.filter(
+            entry=entry,
+            state__in=[License.LicenseState.READY, License.LicenseState.ACTIVE],
+            expires_at__gt=timezone.now(),
+        ).count()
+
         return {
             "available": any(day["is_available"] for day in calendar),
             "max_concurrent": max_concurrent,
+            "active_count": current_active_count,
+            "over_saturated": current_active_count > max_concurrent,
             "calendar": calendar,
             "queue_length": queue_length,
         }
@@ -238,9 +249,7 @@ class LicenseService:
             passphrase_hash = LCPServerClient.hash_passphrase(user_passphrase)
         elif passphrase_hash is None:
             if not user.lcp_passphrase_hash:
-                raise PassphraseRequiredError(
-                    "No LCP passphrase available. Please set your default passphrase."
-                )
+                raise PassphraseRequiredError("No LCP passphrase available. Please set your default passphrase.")
             passphrase_hash = user.lcp_passphrase_hash
             if passphrase_hint is None:
                 passphrase_hint = user.lcp_passphrase_hint

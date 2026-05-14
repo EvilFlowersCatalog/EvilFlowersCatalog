@@ -18,7 +18,6 @@ from django.dispatch import receiver
 from apps.core.models import User
 from apps.readium.models import License, Reservation
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -144,9 +143,9 @@ def _stash_original_passphrase_hash(sender, instance: User, **kwargs):
         instance.__original_passphrase_hash = None
         return
     try:
-        instance.__original_passphrase_hash = User.objects.only("lcp_passphrase_hash").get(
-            pk=instance.pk
-        ).lcp_passphrase_hash
+        instance.__original_passphrase_hash = (
+            User.objects.only("lcp_passphrase_hash").get(pk=instance.pk).lcp_passphrase_hash
+        )
     except User.DoesNotExist:
         instance.__original_passphrase_hash = None
 

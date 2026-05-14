@@ -107,6 +107,25 @@ class EntryFilter(BaseSecuredFilter):
         field_name="config__readium_enabled",
         help_text="Filter entries by Readium LCP (Licensed Content Protection) availability. True returns only DRM-protected entries, False returns unprotected entries.",
     )
+    # IP-004 Phase 5: saturation filters. Values are computed per-request by
+    # `lcp_state_mapping(request.user, entries)` and post-filtered in Python.
+    # Intended for paginated admin views; linear in catalog size.
+    lcp_state = django_filters.CharFilter(
+        method="filter_lcp_state",
+        help_text=(
+            "Filter entries by computed LCP availability state. Accepts a single value or "
+            "a comma-separated list of: `not_lcp`, `available_now`, `available_in_days`, "
+            "`active_loan_for_user`, `fully_borrowed` (e.g. `?lcp_state=fully_borrowed,available_in_days`)."
+        ),
+    )
+    over_saturated = django_filters.BooleanFilter(
+        method="filter_over_saturated",
+        help_text=(
+            "Filter entries by whether their active license count exceeds their "
+            "configured `readium_amount`. `true` surfaces legacy over-saturated entries "
+            "that need manual remediation. `false` returns entries within their cap."
+        ),
+    )
 
     @classmethod
     def template(cls) -> str:
@@ -289,3 +308,41 @@ class EntryFilter(BaseSecuredFilter):
         if not codes:
             return qs
         return qs.filter(Q(language__alpha2__in=codes) | Q(language__alpha3__in=codes))
+
+    # IP-004 Phase 5: saturation post-filters. These are instance methods so they
+    # have access to `self.request.user`, which `lcp_state_mapping` needs to
+    # compute `active_loan_for_user` correctly.
+
+    def filter_lcp_state(self, qs, name, value):
+        from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
+
+        states = {token for token in self._split_csv(value)}
+        if not states:
+            return qs
+
+        user = self.request.user if self.request is not None else None
+        materialized = list(qs)
+        mapping = lcp_state_mapping(user, materialized)
+        matching_ids = [
+            entry.pk
+            for entry in materialized
+            if (row := mapping.get(entry.pk)) is not None
+            and str(row["lcp_state"].value if hasattr(row["lcp_state"], "value") else row["lcp_state"]) in states
+        ]
+        return qs.filter(pk__in=matching_ids)
+
+    def filter_over_saturated(self, qs, name, value):
+        from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
+
+        if value is None:
+            return qs
+
+        user = self.request.user if self.request is not None else None
+        materialized = list(qs)
+        mapping = lcp_state_mapping(user, materialized)
+        matching_ids = [
+            entry.pk
+            for entry in materialized
+            if (row := mapping.get(entry.pk)) is not None and bool(row.get("over_saturated")) is bool(value)
+        ]
+        return qs.filter(pk__in=matching_ids)
