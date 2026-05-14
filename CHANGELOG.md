@@ -6,6 +6,10 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 
 - **Added**: Proper Readium LCP integration
 - **Added**: OPDS2 support
+- **Added**: Dataverse integration for importing published Dataverse datasets as catalog entries and acquisitions
+- **Added**: Dataverse pre-publish workflow hook, bootstrap script, and local Docker Compose stack
+- **Fixed**: Dataverse publish workflow resume now runs asynchronously so the Dataverse GUI can finish publishing
+- **Fixed**: Solr startup repairs an incomplete `collection1` core before Dataverse indexing
 
 ## 0.13.0 : 2026-03-01
 

@@ -253,7 +253,7 @@ EVILFLOWERS_IMAGE_THUMBNAIL = (768, 480)
 
 EVILFLOWERS_FEEDS_NEW_LIMIT = os.getenv("EVILFLOWERS_FEEDS_NEW_LIMIT", 20)
 
-EVILFLOWERS_IDENTIFIERS = ["isbn", "google", "doi"]
+EVILFLOWERS_IDENTIFIERS = ["isbn", "google", "doi", "dataverse_pid", "dataverse_dataset_id"]
 
 EVILFLOWERS_ENFORCE_USER_ACQUISITIONS = bool(int(os.getenv("EVILFLOWERS_ENFORCE_USER_ACQUISITIONS", "0")))
 
@@ -340,35 +340,53 @@ EVILFLOWERS_BACKUP_S3_ACCESS_KEY = os.environ.get("EVILFLOWERS_BACKUP_S3_ACCESS_
 EVILFLOWERS_BACKUP_S3_SECRET_KEY = os.environ.get("EVILFLOWERS_BACKUP_S3_SECRET_KEY")
 EVILFLOWERS_BACKUP_S3_SECURE = os.environ.get("EVILFLOWERS_BACKUP_S3_SECURE", "1").lower() == "1"
 
+DJANGO_LOG_LEVEL = os.getenv("DJANGO_LOG_LEVEL", "INFO").upper()
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s %(levelname)-5s [%(name)s] %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        }
+    },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
+            "formatter": "default",
         },
         "syslog": {"class": "logging.handlers.SysLogHandler"},
     },
     "loggers": {
         "django": {
             "handlers": ["console"],
-            "level": "INFO",
+            "level": DJANGO_LOG_LEVEL,
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+        "django.server": {
+            "handlers": ["console"],
+            "level": "ERROR",
             "propagate": False,
         },
         "apps": {
             "handlers": ["console"],
-            "level": "INFO",
+            "level": DJANGO_LOG_LEVEL,
             "propagate": False,
         },
         "celery": {
             "handlers": ["console"],
-            "level": "INFO",
+            "level": DJANGO_LOG_LEVEL,
             "propagate": False,
         },
     },
     "root": {
         "handlers": ["console"],
-        "level": "INFO",
+        "level": DJANGO_LOG_LEVEL,
     },
 }
 

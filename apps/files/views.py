@@ -60,10 +60,17 @@ class AcquisitionDownload(SecuredView):
         except Acquisition.DoesNotExist:
             raise ProblemDetailException(_("Acquisition not found"), status=HTTPStatus.NOT_FOUND)
 
-        if not acquisition.content.storage.exists(acquisition.content.name):
+        # Handle acquisitions with file_url (e.g., from Dataverse) vs content (file storage)
+        if acquisition.file_url:
+            # For acquisitions with external URLs (like Dataverse), redirect to the URL
+            from django.http import HttpResponseRedirect
+
+            return HttpResponseRedirect(acquisition.file_url)
+
+        if not acquisition.content or not acquisition.content.storage.exists(acquisition.content.name):
             raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND)
 
-        if acquisition.relation != Acquisition.AcquisitionType.ACQUISITION.OPEN_ACCESS:
+        if acquisition.relation != Acquisition.AcquisitionType.OPEN_ACCESS:
             request.user = self._authenticate(request)
 
         if not has_object_permission("check_entry_read", request.user, acquisition.entry):

@@ -57,7 +57,13 @@ class AcquisitionSerializer:
         url: Optional[str] = Field(validate_default=True, default=None)
 
         @field_validator("url", mode="before")
-        def generate_absolute_url(cls, v, info: ValidationInfo) -> Optional[UUID]:
+        def generate_absolute_url(cls, v, info: ValidationInfo) -> Optional[str]:
+            if not v:
+                return None
+            # If it's already a full URL (starts with http), return as-is
+            if isinstance(v, str) and (v.startswith("http://") or v.startswith("https://")):
+                return v
+            # Otherwise, build absolute URI from relative path
             return info.context["request"].build_absolute_uri(v)
 
     class Base(Nested):
