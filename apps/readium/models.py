@@ -1,13 +1,10 @@
 from django.db import models
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from django.utils.translation import gettext_lazy as _
-from django.utils import timezone
-from datetime import timedelta
-
-from apps.core.models import Entry, User, UserAcquisition, Acquisition
-from apps.core.models.base import BaseModel
 from django.db.models import Q
+from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
+
+from apps.core.models import Acquisition, Entry, User
+from apps.core.models.base import BaseModel
 
 
 class EncryptedContent(BaseModel):
@@ -27,7 +24,6 @@ class EncryptedContent(BaseModel):
 
     class EncryptionStatus(models.TextChoices):
         PENDING = "pending", _("Pending Encryption")
-        ENCRYPTING = "encrypting", _("Encrypting")
         COMPLETED = "completed", _("Encryption Completed")
         FAILED = "failed", _("Encryption Failed")
         REGISTERED = "registered", _("Registered with LCP Server")
@@ -48,7 +44,6 @@ class EncryptedContent(BaseModel):
 
     # Encryption metadata
     encryption_algorithm = models.CharField(max_length=50, default="http://www.w3.org/2001/04/xmlenc#aes256-cbc")
-    content_key_encrypted = models.TextField(null=True, blank=True)  # Encrypted content key from LCP server
 
     # Tracking
     encrypted_at = models.DateTimeField(null=True, blank=True)
@@ -108,21 +103,6 @@ class License(BaseModel):
     @property
     def can_be_activated(self):
         return self.state == self.LicenseState.READY and not self.is_expired
-
-
-# Signal-based license creation removed - licenses are now created explicitly
-# via LicenseService.create_license() from API views.
-#
-# Previous implementation automatically created licenses on UserAcquisition creation,
-# which was problematic because:
-# 1. Required passphrase is only available at license creation time
-# 2. Implicit behavior made flow hard to understand and debug
-# 3. No way to handle errors or validate availability properly
-#
-# New flow:
-# 1. User requests license via POST /api/licenses/
-# 2. LicenseService.create_license() validates, creates License, generates LCP license
-# 3. License is explicitly managed through service layer
 
 
 class Reservation(BaseModel):

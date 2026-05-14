@@ -35,7 +35,6 @@ services:
       # Readium LCP Configuration
       EVILFLOWERS_READIUM_LCPSV_URL: "http://readium:8989"
       EVILFLOWERS_READIUM_LSDSV_URL: "http://readium:8990"
-      EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL: "http://django:8000/api/readium/hooks/encryption"
       # Logfire (uncomment to enable)
       # LOGFIRE_TOKEN: ""
       # LOGFIRE_SERVICE_NAME: "evilflowers-catalog"

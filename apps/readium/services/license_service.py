@@ -458,31 +458,3 @@ class LicenseService:
                 getattr(license, "entry_id", None),
                 getattr(license, "pk", None),
             )
-
-    @staticmethod
-    def get_license_status(license: License) -> Dict:
-        """
-        Get current license status from Status Server.
-
-        Args:
-            license: License to check
-
-        Returns:
-            License status info from Status Server
-        """
-        status_client = StatusServerClient()
-        return status_client.get_license_status(license)
-
-    @staticmethod
-    def get_registered_devices(license: License) -> list:
-        """
-        Get devices registered for this license.
-
-        Args:
-            license: License to check
-
-        Returns:
-            List of registered device info
-        """
-        status_client = StatusServerClient()
-        return status_client.get_registered_devices(license)

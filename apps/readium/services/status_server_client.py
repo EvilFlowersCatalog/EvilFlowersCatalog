@@ -6,7 +6,7 @@ Responsible for license status management, device tracking, and returns/renewals
 """
 
 import requests
-from typing import Dict, List
+from typing import Dict
 from django.conf import settings
 from django.utils import timezone
 from datetime import datetime
@@ -23,7 +23,6 @@ class StatusServerClient:
     - Tracking license status (active, returned, revoked, etc.)
     - Managing device registrations
     - Handling returns and renewals
-    - Detecting overshared licenses
     """
 
     def __init__(self):
@@ -179,96 +178,3 @@ class StatusServerClient:
 
         except requests.RequestException as e:
             raise Exception(f"Failed to cancel license: {str(e)}")
-
-    def get_license_status(self, license: License) -> Dict:
-        """
-        Get current license status from Status Server.
-
-        Returns information about license state, device registrations, events, etc.
-
-        Args:
-            license: License model instance
-
-        Returns:
-            License status JSON from Status Server
-
-        Raises:
-            ValueError: If license missing lcp_license_id
-            Exception: If Status Server returns error
-        """
-        if not license.lcp_license_id:
-            raise ValueError("License does not have an LCP license ID")
-
-        try:
-            # GET /licenses/{license_id}/status
-            response = requests.get(
-                f"{self.status_server_url}/licenses/{license.lcp_license_id}/status",
-                timeout=30,
-            )
-            response.raise_for_status()
-
-            return response.json()
-
-        except requests.RequestException as e:
-            raise Exception(f"Failed to get license status: {str(e)}")
-
-    def get_registered_devices(self, license: License) -> List[Dict]:
-        """
-        Get list of devices registered for this license.
-
-        Returns information about devices that have opened this content.
-
-        Args:
-            license: License model instance
-
-        Returns:
-            List of registered device info
-
-        Raises:
-            ValueError: If license missing lcp_license_id
-            Exception: If Status Server returns error
-        """
-        if not license.lcp_license_id:
-            raise ValueError("License does not have an LCP license ID")
-
-        try:
-            # GET /licenses/{license_id}/registered
-            response = requests.get(
-                f"{self.status_server_url}/licenses/{license.lcp_license_id}/registered",
-                timeout=30,
-            )
-            response.raise_for_status()
-
-            return response.json()
-
-        except requests.RequestException as e:
-            raise Exception(f"Failed to get registered devices: {str(e)}")
-
-    def check_overshared_licenses(self, device_threshold: int = 5) -> List[Dict]:
-        """
-        Check for overshared licenses (licenses with many devices).
-
-        Useful for detecting potential license abuse or sharing.
-
-        Args:
-            device_threshold: Minimum number of devices to flag as overshared
-
-        Returns:
-            List of overshared license info
-
-        Raises:
-            Exception: If Status Server returns error
-        """
-        try:
-            # GET /licenses?devices={threshold}
-            response = requests.get(
-                f"{self.status_server_url}/licenses",
-                params={"devices": device_threshold},
-                timeout=30,
-            )
-            response.raise_for_status()
-
-            return response.json()
-
-        except requests.RequestException as e:
-            raise Exception(f"Failed to check overshared licenses: {str(e)}")
