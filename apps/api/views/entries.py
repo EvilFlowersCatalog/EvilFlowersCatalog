@@ -64,6 +64,7 @@ def _assert_readium_amount_above_active(entry: Entry, form: EntryForm) -> None:
             },
         )
 
+
 import logging
 import sys
 
