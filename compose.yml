@@ -46,7 +46,7 @@ services:
       REDIS_HOST: redis
       DV_PUBLIC_INTERNAL: "http://dataverse:8080"
       DV_PUBLIC_BASE: http://localhost:8080
-      DV_API_TOKEN: "6eb102eb-e34f-4b38-a6ed-edea30cc51b0" # change me
+      DATAVERSE_API_TOKEN: "6eb102eb-e34f-4b38-a6ed-edea30cc51b0" # change me
       DATAVERSE_WORKFLOW_SECRET: "123"
       EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR: /mnt/data
       REDIS_DATABASE: 1
