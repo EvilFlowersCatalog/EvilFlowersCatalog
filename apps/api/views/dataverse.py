@@ -67,7 +67,7 @@ def _ensure_workflow_resume_ip_allowed(dataverse_base_url: str, dataverse_token:
         return
 
     if not dataverse_token:
-        logger.warning("[DATAVERSE-PREPUBLISH] Cannot update workflow whitelist without DV_API_TOKEN")
+        logger.warning("[DATAVERSE-PREPUBLISH] Cannot update workflow whitelist without DATAVERSE_API_TOKEN")
         return
 
     outbound_ip = _outbound_ip_for_url(resume_base_url)
@@ -291,15 +291,15 @@ class DataversePrepublishIngest(View):
 
         dv_base_internal = os.getenv("DV_BASE_INTERNAL", "http://dataverse:8080").rstrip("/")
         dv_public_base = os.getenv("DV_PUBLIC_BASE", dv_base_internal).rstrip("/")
-        dv_token = os.getenv("DV_API_TOKEN", "").strip()
+        dv_token = os.getenv("DATAVERSE_API_TOKEN", "").strip()
 
         logger.info(
             f"[DATAVERSE-PREPUBLISH] Dataverse config - base_internal: {dv_base_internal}, public_base: {dv_public_base}, token: {'***' if dv_token else 'MISSING'}"
         )
 
         if not dv_token:
-            logger.error("[DATAVERSE-PREPUBLISH] DV_API_TOKEN environment variable is missing")
-            raise ProblemDetailException(_("Missing DV_API_TOKEN"), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            logger.error("[DATAVERSE-PREPUBLISH] DATAVERSE_API_TOKEN environment variable is missing")
+            raise ProblemDetailException(_("Missing DATAVERSE_API_TOKEN"), status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
         # Fetch dataset metadata first
         dataset_url = f"{dv_base_internal}/api/datasets/{dataset_id}/versions/:draft"

@@ -99,7 +99,7 @@ How the integration works:
 2. When a user clicks **Publish** in the Dataverse GUI, Dataverse calls the Django endpoint
    `POST /api/v1/dataverse-prepublish`.
 3. Django validates `DATAVERSE_WORKFLOW_SECRET`, fetches dataset metadata and files from Dataverse using
-   `DV_API_TOKEN`, and creates or updates an Evil Flowers `Entry` plus its Dataverse file acquisitions.
+   `DATAVERSE_API_TOKEN`, and creates or updates an Evil Flowers `Entry` plus its Dataverse file acquisitions.
 4. Django resumes the Dataverse workflow asynchronously so Dataverse can finish the publish operation and the GUI can
    show the dataset as released.
 
@@ -115,15 +115,15 @@ Local setup:
    docker compose exec django python3 manage.py createsuperuser
    ```
 3. Open Dataverse at `http://localhost:8080` and log in as user: `dataverseAdmin`, password: `admin1`.
-4. Create or copy a Dataverse API token for the admin user and set the same value as `DV_API_TOKEN` in `compose.yml`.
+4. Create or copy a Dataverse API token for the admin user and set the same value as `DATAVERSE_API_TOKEN` in `compose.yml`.
    Then restart Django:
    ```bash
    docker compose up -d django
    ```
 5. Register the Dataverse pre-publish workflow:
    ```bash
-   export DV_API_TOKEN="your-dataverse-api-token"
-   dataverse/scripts/hook.sh "$DV_API_TOKEN" --url http://127.0.0.1:8080 --trigger pre --file dataverse/hooks/prepublish-sync.json
+   export DATAVERSE_API_TOKEN="your-dataverse-api-token"
+   dataverse/scripts/hook.sh "$DATAVERSE_API_TOKEN" --url http://127.0.0.1:8080 --trigger pre --file dataverse/hooks/prepublish-sync.json
    ```
 6. Publish a dataset from the Dataverse GUI. During publish, Dataverse sends the dataset to Django; after Django
    imports it, Dataverse completes the publish workflow.
