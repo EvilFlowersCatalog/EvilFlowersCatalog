@@ -309,6 +309,12 @@ EVILFLOWERS_READIUM_EXPIRY_REMINDER_DAYS = int(os.getenv("EVILFLOWERS_READIUM_EX
 EVILFLOWERS_OPDS2_PAGE_SIZE = int(os.getenv("EVILFLOWERS_OPDS2_PAGE_SIZE", 50))
 EVILFLOWERS_OPDS2_MAX_PAGE_SIZE = int(os.getenv("EVILFLOWERS_OPDS2_MAX_PAGE_SIZE", 100))
 
+# Search service (IP-008 Phase 6 F1). Consumed by
+# `apps/api/services/search_service_client.py::SearchServiceClient`
+# and the OPDS 2.0 search view when `?mode=keyword|semantic` is set.
+SEARCH_SERVICE_URL = os.getenv("SEARCH_SERVICE_URL", "")
+SEARCH_SERVICE_TIMEOUT_SECONDS = int(os.getenv("SEARCH_SERVICE_TIMEOUT_SECONDS", 10))
+
 # Cache
 EVILFLOWERS_CACHE_SERVER_HASHES = timedelta(minutes=int(os.getenv("EVILFLOWERS_CACHE_HASHES", 7 * 24 * 60)))
 EVILFLOWERS_CACHE_SERVER_API_KEYS = timedelta(minutes=int(os.getenv("EVILFLOWERS_CACHE_API_KEYS", 0)))

@@ -14,7 +14,7 @@ changes are documented before implementation.
 | IP-003 | [Readium LCP — EDRLab Certification Readiness](posts/ip-003-lcp-edrlab-certification.md) | ✅ Accepted | 2026-05-12 |
 | IP-004 | [Configure and Operate Per-Entry Active-License Limits](posts/ip-004-readium-amount-configurability.md) | :white_check_mark: Implemented | 2026-05-14 |
 | IP-007 | [Crash-on-First-Contact Bug Triage](posts/ip-007-crash-on-first-contact-triage.md) | :white_check_mark: Implemented | 2026-05-25 |
-| IP-008 | [Readium + Dataverse Post-Merge Consolidation](posts/ip-008-readium-correctness-followup.md) | 📝 Draft | 2026-05-25 |
+| IP-008 | [Readium + Dataverse Post-Merge Consolidation](posts/ip-008-readium-correctness-followup.md) | :white_check_mark: Implemented | 2026-05-25 |
 | IP-010 | [Multi-Tenancy & ACL Correctness](posts/ip-010-multi-tenancy-acl-correctness.md) | 📝 Draft | 2026-05-25 |
 
 
