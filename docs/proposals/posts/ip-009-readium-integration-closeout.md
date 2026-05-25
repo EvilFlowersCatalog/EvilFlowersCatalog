@@ -1,5 +1,5 @@
 ---
-draft: true
+draft: false
 date: 2026-05-25
 authors:
   - jdubec
@@ -30,10 +30,15 @@ contract elvira-portal can implement against.
 
 ## Status
 
-**Status**: Draft
+**Status**: Implemented
 **Last Updated**: 2026-05-25
-**Implementation**: Not started — IP-008 prerequisite landed in commits
-`c72d5c0`, `75b3b7d`, `4a98822`, `f3c132b`, `6dfab49`.
+**Implementation**: Complete. Phase 1–5 backend changes landed in the
+working tree on `develop` (new enum module, capability-token layer,
+LSD sync service, expiry beat, renewal counter + migration `0007`).
+Phase 6 published `docs/readium/integration-contract.md` and
+`docs/readium/elvira-portal-action-items.md`. Phase 7 filed eight
+GitHub issues (G1–G8) on `EvilFlowersCatalog/elvira-portal` against
+the `dev` branch — `#5`–`#12` — assigned to `@kordostomas`.
 
 ## Problem Statement
 
@@ -1326,3 +1331,4 @@ frontend without making it a magic number.
 | 2026-05-25 | Claude AI | Initial draft. Closes the integration-surface gaps surfaced in the 2026-05-25 review with the elvira-portal team after IP-008 landed: lifecycle vocabulary (Cluster A), expiry reconciliation (Cluster B), LSD read-after-write (Cluster C), single-use download tokens (Cluster D), renewal counter (Cluster E), integration-contract docs for elvira-portal (Cluster F). Review Questions Q1–Q6 added. |
 | 2026-05-25 | jdubec | Resolved Review Questions Q1–Q6. Q1 (renew payload): canonicalize on `requested_end`; deprecate `duration` with a one-release legacy translation shim. Q2 (download tokens): promote to generalized `CapabilityTokenService` backed by the existing Redis cache; introduce two scopes (`lcpl_download` single-use 60s, `lcpl_feed_download` multi-use 30min); no DB model, no purge task. Q3 (Bearer on `.lcpl`): hard cut, no feature flag — `LicenseDownloadView` becomes token-only and stops extending `SecuredView`; cross-repo deploy ordering is the only coordination (portal G1 ships first, EFC Phase 4 second; tracked in Phase 7 G8). Q4 (beat cadence): 5-minute beat confirmed; structured log on every run. Q5 (LicenseAction location): top-level `apps/readium/enums.py`. Q6 (MAX_RENEWALS): default `None`; `renewals_remaining` exposed as `None` when cap unset. Implementation Plan updated to match — Phase 1 A2 rewritten as A2′, Phase 4 D1–D4 rewritten around `CapabilityTokenService`, Phase 4 D3 reframed as the hard-cut item, Phase 4 D5 references token-only auth. Added Phase 7 (G1–G8) tracking the eight elvira-portal GitHub issues Jakub will file against `EvilFlowersCatalog/elvira-portal` `dev` on proposal acceptance. Status flipped to ✅ Resolved. |
 | 2026-05-25 | jdubec | Folded the Q1–Q6 resolutions into the rest of the proposal so the document reads consistently end-to-end. Updates: Key Components #4 + #7 rewritten around `CapabilityTokenService` and Phase 7 issue creation; Architecture mermaid replaces the `LicenseDownloadToken` node with two-scope `CapabilityTokenService` + a token-rejection edge for Bearer; API Changes table notes the hard cut on Bearer and the canonical `requested_end` payload; Alternatives 3 renamed (capability tokens, not "single-use download tokens") and new Alternative 5 documents why a DB model was rejected; Trade-offs section calls out the cross-repo deploy cost; Risks table swaps the "token store grows unboundedly" + Bearer Sunset rows for "Redis eviction" + "deploy ordering" rows; Success Criteria adds OPDS feed token, Bearer-401 case, `renewals_remaining=None` semantics, and Phase 7 G1–G8 issue creation; Future Considerations notes the eventual `duration` shim removal and additional `CapabilityTokenService` scopes; References point to `apps/api/views/tokens.py` as the existing Redis-cache pattern reused by `CapabilityTokenService`. |
+| 2026-05-25 | jdubec | Implementation complete. Phase 1: `apps/readium/enums.py::LicenseAction` + `UpdateLicenseForm` rewrite + `_dispatch_action` on `LicenseDetail`. Phase 2: `expire_lapsed_licenses` 5-min Celery beat + on-read fallback in `can_user_borrow` + `reconcile_expired_licenses` management command. Phase 3: `lsd_transport.py` + `status_server_sync.py::StatusServerSyncService` with PATCH → GET → reconcile semantics; `StatusServerClient` kept as a thin shim. Phase 4: `apps/core/services/capability_tokens.py::CapabilityTokenService` (Redis-backed, scope-keyed) + `apps/readium/capability_scopes.py` registry. Following review of Phase 4 design, **dropped the separate `POST /licenses/{id}/download-tokens` endpoint** as an unnecessary round-trip — tokens are now minted inline by `LicenseSerializer.Base.download_url` when the serializer carries a request context (single-use otherwise; multi-use peek for OPDS feeds via `serializer_context["opds_feed"]=True`). `LicenseDownloadView` rewritten to extend `django.views.View` directly (no `SecuredView`) and resolve auth solely from the capability token; cross-license replay rejected via `resource_id` check. Phase 5: `License.renewal_count` field (migration `0007`), increment in `LicenseService.renew_license`, `renewals_remaining` computed-field on serializer, cap enforcement in `evaluate_renew` (default `MAX_RENEWALS=None` = uncapped). Phase 6: `docs/readium/integration-contract.md` + `docs/readium/elvira-portal-action-items.md`. Phase 7: filed `EvilFlowersCatalog/elvira-portal#5`–`#12` (G1–G8) via GitHub MCP, assigned `@kordostomas`; created three missing labels (`integration`, `readium`, `ops`) on that repo. Status flipped to ✅ Implemented. |
