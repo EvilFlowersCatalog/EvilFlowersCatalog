@@ -5,6 +5,12 @@ on:
     branches: ['**']
     tags: ['*.*.*']
   delete:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Trigger a reconciliation run (e.g. prune orphans, rebuild index)'
+        required: false
+        default: 'manual reconciliation'
 
 concurrency:
   group: docs-deploy
@@ -15,6 +21,7 @@ env:
 
 jobs:
   build-docs:
+    # Skip tag-delete events; everything else (push, branch-delete, manual dispatch) runs.
     if: github.event_name != 'delete' || github.event.ref_type == 'branch'
     runs-on: ubuntu-latest
     permissions:
@@ -27,37 +34,67 @@ jobs:
       - name: Checkout current repository
         uses: actions/checkout@v4
 
-      - name: Normalize branch/tag name
-        id: slug
+      - name: Resolve deploy target
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          DELETED_REF: ${{ github.event.ref }}
         run: |
-          if [[ "${{ github.event_name }}" == "delete" ]]; then
-            RAW_REF="${{ github.event.ref }}"
-            SAFE_REF=$(echo "${RAW_REF}" | sed 's/\//-/g')
-            echo "path=branch/${SAFE_REF}" >> $GITHUB_OUTPUT
-            echo "action=delete" >> $GITHUB_OUTPUT
-          else
-            RAW_REF=${GITHUB_REF##*/}
-            SAFE_REF=$(echo "${RAW_REF}" | sed 's/\//-/g')
-            if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-              echo "path=release/${SAFE_REF}" >> $GITHUB_OUTPUT
-            else
-              echo "path=branch/${SAFE_REF}" >> $GITHUB_OUTPUT
-            fi
-            echo "action=deploy" >> $GITHUB_OUTPUT
-          fi
-          echo "ref_slug=${SAFE_REF}" >> $GITHUB_OUTPUT
-          echo "raw_ref=${RAW_REF}" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            delete)
+              action=delete
+              raw_ref="$DELETED_REF"
+              kind=branch
+              ;;
+            workflow_dispatch)
+              action=reconcile
+              raw_ref=""
+              kind=none
+              ;;
+            push)
+              action=deploy
+              raw_ref="$REF_NAME"
+              kind=$([[ "$REF_TYPE" == "tag" ]] && echo release || echo branch)
+              ;;
+            *)
+              echo "Unsupported event: $EVENT_NAME" >&2
+              exit 1
+              ;;
+          esac
 
-      # ── Build docs (only on push, skipped for branch deletion) ──
+          slug=$(echo "$raw_ref" | sed 's:/:-:g')
+          if [[ "$kind" == "release" ]]; then
+            path="release/$slug"
+          elif [[ "$kind" == "branch" ]]; then
+            path="branch/$slug"
+          else
+            path=""
+          fi
+
+          {
+            echo "action=$action"
+            echo "kind=$kind"
+            echo "raw_ref=$raw_ref"
+            echo "slug=$slug"
+            echo "path=$path"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Resolved: event=$EVENT_NAME action=$action kind=$kind raw_ref=$raw_ref path=$path"
+
+      # ── Build docs (push only) ──────────────────────────────────────────────
       - name: Install system dependencies
-        if: steps.slug.outputs.action == 'deploy'
+        if: steps.target.outputs.action == 'deploy'
         run: sudo apt-get update && sudo apt-get install -y libldap-dev libsasl2-dev
 
-      - name: Setup Python + Poetry + Node.js + Redocly
-        if: steps.slug.outputs.action == 'deploy'
+      - name: Setup Python + Poetry + Node + Redocly
+        if: steps.target.outputs.action == 'deploy'
         run: |
+          set -euo pipefail
           export VIRTUAL_ENV=.venv
-          python3 -m venv --clear .venv --without-pip  # no inherited site-packages
+          python3 -m venv --clear .venv --without-pip
           source .venv/bin/activate
           python3 -m ensurepip --upgrade
           pip install pipx
@@ -67,13 +104,46 @@ jobs:
           poetry install --no-root --no-interaction
           npm install -D @redocly/cli
 
-      - name: Generate OpenAPI & Docs
-        if: steps.slug.outputs.action == 'deploy'
+      - name: Generate OpenAPI & Redoc HTML
+        if: steps.target.outputs.action == 'deploy'
         run: |
-          poetry run python manage.py openapi > ${PUBLISH_DIR}/openapi.yaml
-          npx @redocly/cli build-docs -o ${PUBLISH_DIR}/index.html ${PUBLISH_DIR}/openapi.yaml
+          set -euo pipefail
+          poetry run python manage.py openapi > "${PUBLISH_DIR}/openapi.yaml"
+          npx @redocly/cli build-docs -o "${PUBLISH_DIR}/index.html" "${PUBLISH_DIR}/openapi.yaml"
 
-      # ── Merge with existing gh-pages content to preserve version history ──
+      - name: Write deploy metadata sidecar
+        if: steps.target.outputs.action == 'deploy'
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_SERVER: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          commit_sha="${GITHUB_SHA}"
+          commit_short="${commit_sha:0:7}"
+          commit_msg=$(git log -1 --pretty=%s)
+          commit_author=$(git log -1 --pretty=%an)
+          deployed_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          jq -n \
+            --arg ref      "${{ steps.target.outputs.raw_ref }}" \
+            --arg slug     "${{ steps.target.outputs.slug }}" \
+            --arg kind     "${{ steps.target.outputs.kind }}" \
+            --arg sha      "$commit_sha" \
+            --arg short    "$commit_short" \
+            --arg msg      "$commit_msg" \
+            --arg author   "$commit_author" \
+            --arg deployed "$deployed_at" \
+            --arg repo_url "${GH_SERVER}/${GH_REPO}" \
+            '{
+              ref: $ref,
+              slug: $slug,
+              kind: $kind,
+              commit: { sha: $sha, short: $short, message: $msg, author: $author, url: ($repo_url + "/commit/" + $sha) },
+              deployed_at: $deployed,
+              repository: $repo_url
+            }' > "${PUBLISH_DIR}/meta.json"
+
+      # ── Stage publish/ from existing gh-pages content ──────────────────────
       - name: Checkout gh-pages branch
         uses: actions/checkout@v4
         with:
@@ -82,26 +152,72 @@ jobs:
           fetch-depth: 1
         continue-on-error: true
 
-      - name: Merge with existing docs
+      - name: Stage publish tree
         run: |
+          set -euo pipefail
           mkdir -p publish
-          # Restore existing gh-pages content if available
           if [ -d "gh-pages" ] && [ -f "gh-pages/index.html" ]; then
-            echo "Preserving existing gh-pages content"
+            echo "Restoring existing gh-pages content"
             rsync -a --exclude='.git' gh-pages/ publish/
           fi
 
-          if [[ "${{ steps.slug.outputs.action }}" == "deploy" ]]; then
-            # Add or update current ref's docs
-            mkdir -p "publish/${{ steps.slug.outputs.path }}"
-            cp -r ${PUBLISH_DIR}/* "publish/${{ steps.slug.outputs.path }}/"
-          else
-            # Remove deleted branch's docs
-            echo "Removing docs for deleted branch: ${{ steps.slug.outputs.path }}"
-            rm -rf "publish/${{ steps.slug.outputs.path }}"
+      - name: Apply current ref (deploy or delete)
+        if: steps.target.outputs.action != 'reconcile'
+        run: |
+          set -euo pipefail
+          path="${{ steps.target.outputs.path }}"
+          action="${{ steps.target.outputs.action }}"
+          [ -n "$path" ] || { echo "Empty path; nothing to do"; exit 0; }
+
+          if [ "$action" = "deploy" ]; then
+            echo "Deploying to publish/$path"
+            mkdir -p "publish/$path"
+            rsync -a --delete \
+              --exclude='.DS_Store' \
+              --exclude='*.mwb' \
+              "${PUBLISH_DIR}/" "publish/$path/"
+          elif [ "$action" = "delete" ]; then
+            echo "Removing publish/$path (branch deleted)"
+            rm -rf "publish/$path"
           fi
 
-      - name: Generate Docs Index page
+      # ── Self-heal: prune docs for branches that no longer exist ────────────
+      - name: Prune orphaned branch docs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ ! -d publish/branch ]; then
+            echo "No publish/branch directory; nothing to prune"
+            exit 0
+          fi
+
+          # Fetch all live branches (paginated) and convert each name to its slug form.
+          live_slugs=$(
+            gh api --paginate \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/branches?per_page=100" \
+              --jq '.[].name' \
+            | sed 's:/:-:g' \
+            | sort -u
+          )
+
+          echo "Live branch slugs:"
+          echo "$live_slugs" | sed 's/^/  /'
+
+          pruned=0
+          for dir in publish/branch/*/; do
+            [ -d "$dir" ] || continue
+            slug=$(basename "$dir")
+            if ! grep -Fxq "$slug" <<<"$live_slugs"; then
+              echo "Pruning orphan: branch/$slug"
+              rm -rf "$dir"
+              pruned=$((pruned + 1))
+            fi
+          done
+          echo "Pruned $pruned orphaned branch doc directories"
+
+      - name: Generate landing page
         run: bash .github/scripts/generate-index.sh
 
       - name: Deploy to GitHub Pages
@@ -110,18 +226,19 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./publish
 
-      # ── Sync OpenAPI to Protocol Repo (only on push) ──
-      - name: Setup SSH for deploy key
-        if: steps.slug.outputs.action == 'deploy'
+      # ── Sync OpenAPI to the Protocol repo (push only) ──────────────────────
+      - name: Setup SSH for protocol-repo deploy key
+        if: steps.target.outputs.action == 'deploy'
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
           echo "${{ secrets.EVILFLOWERS_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
-      - name: Checkout Protocol Repo
+      - name: Checkout protocol repo
         id: protocol_checkout
-        if: steps.slug.outputs.action == 'deploy'
+        if: steps.target.outputs.action == 'deploy'
         uses: actions/checkout@v4
         with:
           repository: EvilFlowersCatalog/evilflowers-protocol
@@ -130,22 +247,23 @@ jobs:
           fetch-depth: 1
         continue-on-error: true
 
-      - name: Sync OpenAPI to Protocol Repo
-        if: steps.slug.outputs.action == 'deploy' && steps.protocol_checkout.outcome == 'success'
+      - name: Sync OpenAPI to protocol repo
+        if: steps.target.outputs.action == 'deploy' && steps.protocol_checkout.outcome == 'success'
+        working-directory: protocol_repo
         run: |
-          cd protocol_repo
-          REF="${{ steps.slug.outputs.raw_ref }}"
-          if git ls-remote --exit-code --heads origin "${REF}" >/dev/null 2>&1; then
-            git fetch --depth=1 origin "${REF}:${REF}"
-            git checkout "${REF}"
+          set -euo pipefail
+          REF="${{ steps.target.outputs.raw_ref }}"
+          if git ls-remote --exit-code --heads origin "$REF" >/dev/null 2>&1; then
+            git fetch --depth=1 origin "$REF:$REF"
+            git checkout "$REF"
           else
-            git checkout -b "${REF}"
+            git checkout -b "$REF"
           fi
           mkdir -p openapi metadata
-          cp ../${PUBLISH_DIR}/openapi.yaml openapi/openapi.yaml
-          echo "${REF}" > metadata/version.txt
+          cp "../${PUBLISH_DIR}/openapi.yaml" openapi/openapi.yaml
+          echo "$REF" > metadata/version.txt
           git config user.name "ci-bot"
           git config user.email "ci@evilflowers.org"
           git add .
-          git diff-index --quiet HEAD || git commit -m "Sync OpenAPI for ${REF}"
-          git push origin "${REF}"
+          git diff-index --quiet HEAD || git commit -m "Sync OpenAPI for $REF"
+          git push origin "$REF"
