@@ -9,6 +9,7 @@ from datetime import datetime
 from http import HTTPStatus
 from uuid import UUID
 
+from django.db import transaction
 from django.http import JsonResponse
 from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext as _
@@ -139,19 +140,36 @@ class LicenseDetail(SecuredView):
         summary="Update license state",
     )
     def put(self, request, license_id: UUID):
-        license = self._get_license(request, license_id)
-
         form = UpdateLicenseForm.create_from_request(request)
 
         if not form.is_valid():
             raise ValidationException(form)
 
-        new_state = form.cleaned_data.get("state")
-        if new_state:
-            self._handle_state_change(license, new_state, form.cleaned_data)
+        # IP-008 Phase 1 A6: hold the License row lock across state
+        # change + form populate + save. Without this, the status-proxy
+        # DeviceRegistrationProxyView (which also writes device_count
+        # and state) can race with this PUT and lose updates.
+        with transaction.atomic():
+            try:
+                license = License.objects.select_for_update().get(pk=license_id)
+            except License.DoesNotExist as e:
+                raise ProblemDetailException(
+                    _("License not found"),
+                    status=HTTPStatus.NOT_FOUND,
+                    previous=e,
+                    detail_type=DetailType.NOT_FOUND,
+                )
 
-        form.populate(license)
-        license.save()
+            if not has_object_permission("check_license_state_manage", request.user, license):
+                raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+
+            new_state = form.cleaned_data.get("state")
+            if new_state:
+                self._handle_state_change(license, new_state, form.cleaned_data)
+
+            form.populate(license)
+            license.save()
+
         return SingleResponse(request, data=LicenseSerializer.Base.model_validate(license))
 
     def _handle_state_change(self, license: License, new_state: str, data: dict):
@@ -277,12 +295,11 @@ class LicenseRenewalsView(SecuredView):
                 detail_type=DetailType.CONFLICT,
             )
 
-        # Compute the duration in days that LicenseService.renew_license expects.
-        from django.utils import timezone
-
-        days = max(1, int((decision.new_end - timezone.now()).total_seconds() // 86400))
+        # IP-008 Phase 3 C7: pass the exact decision datetime through;
+        # `LicenseService.renew_license` now accepts a `new_end_date`
+        # so the LSD-required sub-day precision is preserved.
         try:
-            LicenseService.renew_license(license_obj, new_duration_days=days)
+            LicenseService.renew_license(license_obj, new_end_date=decision.new_end)
         except Exception as e:
             raise ProblemDetailException(
                 _("Failed to renew license"),

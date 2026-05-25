@@ -26,3 +26,4 @@ node_modules/
 requirements.txt
 compose.local.yml
 dataverse/data/
+.mcp.json

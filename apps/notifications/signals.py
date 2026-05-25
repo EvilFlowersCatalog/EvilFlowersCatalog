@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.db import transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
@@ -33,8 +34,16 @@ def on_license_created(sender, instance: License, created: bool, **kwargs):
         "download_expires_hours": settings.EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS,
     }
 
-    send_notification.delay(
-        notification_type="license_created",
-        recipient_user_id=str(instance.user.pk),
-        context=context,
+    # IP-008 Phase 3 C2: defer the dispatch to after the surrounding
+    # transaction commits. If LCP issuance fails and the transaction is
+    # rolled back, the License row never exists and the email is never
+    # sent. Outside a transaction `on_commit` fires immediately so the
+    # behaviour is identical for callers that don't use atomic().
+    recipient_user_id = str(instance.user.pk)
+    transaction.on_commit(
+        lambda: send_notification.delay(
+            notification_type="license_created",
+            recipient_user_id=recipient_user_id,
+            context=context,
+        )
     )

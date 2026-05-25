@@ -75,6 +75,8 @@ class SearchView(OpdsCatalogView):
                     type="application/opensearchdescription+xml",
                 ),
             ],
+            request=request,
+            user=request.user,
         )
 
         return HttpResponse(

@@ -184,21 +184,23 @@ class FeedBuilder:
             .prefetch_related("entry__entry_authors__author", "entry__categories", "entry__acquisitions")
         )
 
+        # IP-008 Phase 2 B5: emit LCP links via the shared BorrowLinkResolver
+        # so OPDS 1.2 and OPDS 2.0 produce the same (rel, type, href).
+        from apps.opds.services.borrow_link import BorrowLinkResolver
+
+        resolver = BorrowLinkResolver(request, opds_version="2.0")
+
         publications = []
         for license_obj in active_licenses:
             entry = license_obj.entry
             pub = ManifestBuilder.build_publication(entry, base_url=base, include_availability=False)
 
-            # Add direct license download link
-            license_link = Link(
-                href=f"{base}{reverse('readium:license-gateway', kwargs={'license_id': license_obj.pk})}",
-                type="application/vnd.readium.lcp.license.v1.0+json",
-                rel=ManifestBuilder.OPDS_REL_ACQUISITION,
-            )
-            if pub.links:
-                pub.links.append(license_link)
-            else:
-                pub.links = [license_link]
+            for borrow_link in resolver.emit_links(entry, active_license=license_obj):
+                link = Link(href=borrow_link.href, type=borrow_link.type, rel=borrow_link.rel)
+                if pub.links:
+                    pub.links.append(link)
+                else:
+                    pub.links = [link]
 
             publications.append(pub)
 

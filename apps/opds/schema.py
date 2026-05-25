@@ -82,7 +82,23 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
     content: Optional[Content] = element(default=None)
 
     @classmethod
-    def from_model(cls, entry: Entry, complete: bool = False) -> "AcquisitionEntry":
+    def from_model(
+        cls,
+        entry: Entry,
+        complete: bool = False,
+        *,
+        request=None,
+        user=None,
+    ) -> "AcquisitionEntry":
+        """Build an OPDS 1.2 `<entry>` from a domain `Entry`.
+
+        When `request` is provided and the entry is readium-enabled,
+        the LCP-related links (borrow + optional `.lcpl`) are emitted
+        via `apps/opds/services/borrow_link.BorrowLinkResolver` so OPDS
+        1.2 and OPDS 2.0 stay in sync at the link semantics layer
+        (IP-008 Phase 2 B5). The raw download link is suppressed for
+        LCP-protected entries to match OPDS 2.0 behaviour.
+        """
         acquisition_entry = AcquisitionEntry(
             title=entry.title,
             id=f"urn:uuid:{entry.id}",
@@ -123,18 +139,42 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
                 )
             )
 
-        for acquisition in entry.acquisitions.all():
-            acquisition_entry.links.append(
-                Link(
-                    rel=str(Acquisition.AcquisitionType(acquisition.relation)),  # FIXME: WTF?
-                    href=reverse(
-                        "files:acquisition-download",
-                        kwargs={"acquisition_id": acquisition.pk},
-                    ),
-                    type=acquisition.mime,
-                    checksum=acquisition.checksum if complete else None,
+        readium_enabled = bool(entry.read_config("readium_enabled"))
+
+        # Non-LCP entries: emit the raw acquisition links as before.
+        # LCP-protected entries: skip the raw download link so we don't
+        # leak the unencrypted file URL (Thorium / Readium-toolkit readers
+        # fetch the .lcpl link instead and pull encrypted content from the
+        # LCP-registered URL).
+        if not readium_enabled:
+            for acquisition in entry.acquisitions.all():
+                acquisition_entry.links.append(
+                    Link(
+                        rel=str(Acquisition.AcquisitionType(acquisition.relation)),
+                        href=reverse(
+                            "files:acquisition-download",
+                            kwargs={"acquisition_id": acquisition.pk},
+                        ),
+                        type=acquisition.mime,
+                        checksum=acquisition.checksum if complete else None,
+                    )
                 )
-            )
+
+        # LCP borrow / direct-license links (shared with OPDS 2.0).
+        if readium_enabled and request is not None:
+            from apps.opds.services.borrow_link import BorrowLinkResolver
+
+            resolver = BorrowLinkResolver(request, opds_version="1.2")
+            active_license = resolver.active_license_for(entry, user)
+            for borrow_link in resolver.emit_links(entry, active_license):
+                acquisition_entry.links.append(
+                    Link(
+                        rel=borrow_link.rel,
+                        href=borrow_link.href,
+                        type=borrow_link.type,
+                        title=borrow_link.title,
+                    )
+                )
 
         return acquisition_entry
 

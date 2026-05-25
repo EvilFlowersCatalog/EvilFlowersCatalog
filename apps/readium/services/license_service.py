@@ -10,9 +10,11 @@ Manages the complete license lifecycle including:
 
 from datetime import datetime, timedelta
 from typing import Dict, Optional
+from django.db import transaction
 from django.db.models import Q, Count
 from django.utils import timezone
 from django.conf import settings
+import logging
 import uuid
 
 from apps.core.models import Entry, User, Acquisition
@@ -20,6 +22,8 @@ from apps.readium.models import License, EncryptedContent
 from .content_encryption_service import ContentEncryptionService
 from .lcp_server_client import LCPServerClient
 from .status_server_client import StatusServerClient
+
+logger = logging.getLogger(__name__)
 
 
 class PassphraseRequiredError(ValueError):
@@ -209,16 +213,19 @@ class LicenseService:
         duration_days: int = 14,
         print_limit: int = 10,
         copy_limit: int = 2048,
+        preferred_format: Optional[str] = None,
     ) -> License:
         """
         Create a new license for a user with LCP integration.
 
-        This is the main entry point for license creation. It:
-        1. Validates availability
-        2. Ensures content is encrypted and registered
-        3. Creates License record
-        4. Generates LCP license via License Server
-        5. Registers with Status Server
+        Borrow serialization (IP-008 Phase 1 A1): the entire creation flow
+        runs inside a transaction with `Entry.select_for_update()`, which
+        serializes concurrent borrows on the same entry so the per-entry
+        active-license cap (IP-004) holds even under burst load.
+
+        Acquisition selection (IP-008 Phase 3 C1) is deterministic:
+        PDF is preferred when both PDF and EPUB exist; callers can
+        override via `preferred_format`.
 
         Args:
             entry: Entry to license
@@ -229,6 +236,7 @@ class LicenseService:
             duration_days: License duration in days (default: 14)
             print_limit: Max pages to print (default: 10)
             copy_limit: Max characters to copy (default: 2048)
+            preferred_format: "pdf" or "epub" — overrides the default PDF-first selection.
 
         Returns:
             License: Created license with LCP license ID
@@ -254,63 +262,75 @@ class LicenseService:
             if passphrase_hint is None:
                 passphrase_hint = user.lcp_passphrase_hint
 
-        # Validate availability
-        availability = LicenseService.can_user_borrow(entry, user, start_date, end_date)
-        if not availability["can_borrow"]:
-            raise ValueError(f"Cannot create license: {availability['reason']}")
+        with transaction.atomic():
+            # Serialize concurrent borrows on the same entry. Other borrows
+            # of THIS entry block on this row lock; the per-entry cap is
+            # checked under the lock so two parallel callers cannot both
+            # see "1 slot free" and create two licenses.
+            Entry.objects.select_for_update().get(pk=entry.pk)
 
-        # Get the entry's acquisition suitable for LCP (EPUB or PDF)
-        acquisition = entry.acquisitions.filter(
-            mime__in=[
-                Acquisition.AcquisitionMIME.EPUB,
-                Acquisition.AcquisitionMIME.PDF,
-            ]
-        ).first()
-        if not acquisition:
-            raise ValueError("Entry has no EPUB or PDF acquisition suitable for LCP protection")
+            # Re-check availability with the lock held.
+            availability = LicenseService.can_user_borrow(entry, user, start_date, end_date)
+            if not availability["can_borrow"]:
+                raise ValueError(f"Cannot create license: {availability['reason']}")
 
-        # Ensure content is encrypted
-        if not hasattr(acquisition, "encrypted_content"):
-            raise ValueError("Content not encrypted. Trigger encryption first via ContentEncryptionService.")
+            # Deterministic acquisition selection (C1): PDF preferred unless
+            # caller asks for EPUB explicitly.
+            mime_order = [Acquisition.AcquisitionMIME.PDF, Acquisition.AcquisitionMIME.EPUB]
+            if (preferred_format or "").lower() == "epub":
+                mime_order = [Acquisition.AcquisitionMIME.EPUB, Acquisition.AcquisitionMIME.PDF]
+            acquisition = None
+            for mime in mime_order:
+                acquisition = entry.acquisitions.filter(mime=mime).order_by("created_at").first()
+                if acquisition is not None:
+                    break
+            if not acquisition:
+                raise ValueError("Entry has no EPUB or PDF acquisition suitable for LCP protection")
 
-        encrypted_content = acquisition.encrypted_content
+            # Ensure content is encrypted
+            if not hasattr(acquisition, "encrypted_content"):
+                raise ValueError("Content not encrypted. Trigger encryption first via ContentEncryptionService.")
 
-        # Ensure content is registered with LCP Server
-        if not ContentEncryptionService.is_ready_for_licensing(acquisition):
-            raise ValueError(f"Content not ready for licensing. Current status: {encrypted_content.status}")
+            encrypted_content = acquisition.encrypted_content
 
-        # Create License record
-        license = License.objects.create(
-            entry=entry,
-            user=user,
-            encrypted_content=encrypted_content,
-            starts_at=start_date,
-            expires_at=end_date,
-            passphrase_hint=passphrase_hint,
-            state=License.LicenseState.READY,
-        )
+            # Ensure content is registered with LCP Server
+            if not ContentEncryptionService.is_ready_for_licensing(acquisition):
+                raise ValueError(f"Content not ready for licensing. Current status: {encrypted_content.status}")
 
-        try:
-            # Generate LCP license via License Server
-            lcp_client = LCPServerClient()
-            lcp_license = lcp_client.generate_license(
-                license,
-                user_passphrase=user_passphrase,
-                passphrase_hash=passphrase_hash,
-                print_limit=print_limit,
-                copy_limit=copy_limit,
+            # Create License record
+            license = License.objects.create(
+                entry=entry,
+                user=user,
+                encrypted_content=encrypted_content,
+                starts_at=start_date,
+                expires_at=end_date,
+                passphrase_hint=passphrase_hint,
+                state=License.LicenseState.READY,
             )
 
-            # Register with Status Server
-            status_client = StatusServerClient()
-            status_client.register_license(lcp_license)
+            try:
+                # Generate LCP license via License Server
+                lcp_client = LCPServerClient()
+                lcp_license = lcp_client.generate_license(
+                    license,
+                    user_passphrase=user_passphrase,
+                    passphrase_hash=passphrase_hash,
+                    print_limit=print_limit,
+                    copy_limit=copy_limit,
+                )
 
-            return license
+                # Register with Status Server
+                status_client = StatusServerClient()
+                status_client.register_license(lcp_license)
 
-        except Exception as e:
-            # If LCP generation/registration fails, delete the license and raise
-            license.delete()
-            raise ValueError(f"Failed to generate LCP license: {str(e)}")
+            except Exception as e:
+                # LCP generation/registration failure: the transaction is
+                # rolled back by `with transaction.atomic()`, so the License
+                # row is never persisted and the deferred notification
+                # (queued via on_commit below) is never enqueued.
+                raise ValueError(f"Failed to generate LCP license: {str(e)}")
+
+        return license
 
     @staticmethod
     def fetch_fresh_license(license: License) -> Dict:
@@ -344,13 +364,25 @@ class LicenseService:
         return lcp_client.fetch_fresh_license(license)
 
     @staticmethod
-    def renew_license(license: License, new_duration_days: int = 14) -> License:
+    def renew_license(
+        license: License,
+        new_duration_days: int = 14,
+        new_end_date: Optional[datetime] = None,
+    ) -> License:
         """
         Renew a license with extended end date.
 
+        IP-008 Phase 3 C7: callers can pass an exact `new_end_date`
+        (preferred — preserves sub-day precision required by LSD spec).
+        The legacy `new_duration_days` path remains for backwards
+        compatibility but is computed against `timezone.now()` and
+        therefore loses precision.
+
         Args:
             license: License to renew
-            new_duration_days: Additional days to add from now
+            new_duration_days: Additional days to add from now (only
+                used when `new_end_date` is not provided)
+            new_end_date: Exact new end datetime (preferred)
 
         Returns:
             Updated License
@@ -364,7 +396,8 @@ class LicenseService:
         ]:
             raise ValueError(f"Cannot renew license in state: {license.state}")
 
-        new_end_date = timezone.now() + timedelta(days=new_duration_days)
+        if new_end_date is None:
+            new_end_date = timezone.now() + timedelta(days=new_duration_days)
 
         # Update via Status Server
         status_client = StatusServerClient()

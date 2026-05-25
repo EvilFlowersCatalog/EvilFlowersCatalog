@@ -8,6 +8,7 @@ Link URLs in responses are rewritten to point back to our proxy.
 
 import requests as http_requests
 from http import HTTPStatus
+from urllib.parse import urlparse
 from uuid import UUID
 
 from django.conf import settings
@@ -32,20 +33,54 @@ class StatusProxyView(SecuredView):
         except License.DoesNotExist:
             raise ProblemDetailException(_("License not found"), status=HTTPStatus.NOT_FOUND)
 
+    def _internal_lsd_host(self) -> str:
+        """Hostname (with port) of the upstream LSD as seen from the catalog.
+
+        Used to detect leaked internal URLs in LSD responses so we can
+        rewrite ANY link targeting that host, not only the rels we
+        special-case below (IP-008 Phase 2 B2).
+        """
+        return urlparse(self._get_lsd_url()).netloc
+
     def _rewrite_links(self, data: dict, request, license_id: UUID) -> dict:
-        """Rewrite LSD links to point through our proxy."""
+        """Rewrite LSD links to point through our proxy.
+
+        IP-008 Phase 2 B2: host-based AND rel-based. We map the known
+        rels to our proxy URLs (existing behaviour); additionally, ANY
+        remaining link whose host matches the internal LSD host gets a
+        path-only rewrite so we don't leak `127.0.0.1:8990` to reader
+        apps via `status`, `publication`, `self`, etc.
+        """
         base_url = f"{request.scheme}://{request.get_host()}"
         if "links" in data and isinstance(data["links"], list):
+            internal_host = self._internal_lsd_host()
             for link in data["links"]:
                 rel = link.get("rel", "")
                 if rel == "register" or rel == "license":
                     link["href"] = f"{base_url}{reverse('readium:lsd-register', kwargs={'license_id': license_id})}"
-                elif rel == "return":
+                    continue
+                if rel == "return":
                     link["href"] = f"{base_url}{reverse('readium:lsd-return', kwargs={'license_id': license_id})}"
-                elif rel == "renew":
+                    continue
+                if rel == "renew":
                     link["href"] = f"{base_url}{reverse('readium:lsd-renew', kwargs={'license_id': license_id})}"
-                elif rel == "hint":
+                    continue
+                if rel == "hint":
                     link["href"] = f"{base_url}{reverse('readium:hint')}"
+                    continue
+
+                href = link.get("href")
+                if not href:
+                    continue
+                parsed = urlparse(href)
+                if parsed.netloc == internal_host:
+                    # Strip the internal scheme+host so the URL is
+                    # served from our public origin (which proxies
+                    # everything LSD-related anyway).
+                    rewritten_path = parsed.path
+                    if parsed.query:
+                        rewritten_path = f"{rewritten_path}?{parsed.query}"
+                    link["href"] = f"{base_url}{rewritten_path}"
         return data
 
 
@@ -116,6 +151,11 @@ class ReturnProxyView(StatusProxyView):
         device_id = request.GET.get("id", "")
         device_name = request.GET.get("name", "")
 
+        # IP-008 Phase 3 C6: forward the return to LSD (canonical state
+        # surface), then mirror the resulting state locally as a cache.
+        # We do NOT call `StatusServerClient.return_license` here because
+        # that would PATCH the Status Server a second time — the LSD PUT
+        # below is the canonical state change.
         try:
             response = http_requests.put(
                 f"{self._get_lsd_url()}/licenses/{license_obj.lcp_license_id}/return",
@@ -127,10 +167,31 @@ class ReturnProxyView(StatusProxyView):
         except http_requests.RequestException as e:
             raise ProblemDetailException(_("Failed to return loan"), status=HTTPStatus.BAD_GATEWAY, previous=e)
 
-        # Update local state
-        from apps.readium.services import StatusServerClient
+        # Update local row (cache of canonical LSD state) + LCP rights.
+        from django.db import transaction
+        from django.utils import timezone
 
-        StatusServerClient().return_license(license_obj)
+        from apps.readium.services import LicenseService
+        from apps.readium.services.lcp_server_client import LCPServerClient
+
+        with transaction.atomic():
+            license_obj = License.objects.select_for_update().get(pk=license_id)
+            license_obj.expires_at = timezone.now()
+            license_obj.state = License.LicenseState.RETURNED
+            license_obj.save(update_fields=["expires_at", "state", "updated_at"])
+            try:
+                LCPServerClient().update_license_rights(license_obj)
+            except Exception:
+                # LCP rights update is best-effort; LSD already considers
+                # the loan returned. Logging only.
+                import logging
+
+                logging.getLogger(__name__).exception(
+                    "LCP rights update failed after LSD return for license %s", license_obj.pk
+                )
+
+        # Best-effort queue promotion (matches LicenseService.return_license).
+        LicenseService._maybe_promote_next(license_obj)
 
         data = self._rewrite_links(data, request, license_id)
         return JsonResponse(data, content_type="application/vnd.readium.license.status.v1.0+json")

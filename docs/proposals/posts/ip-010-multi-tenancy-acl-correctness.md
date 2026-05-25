@@ -270,13 +270,13 @@ EVILFLOWERS_CACHE_USER_CATALOG_TTL_SECONDS=300  # already implicit; expose
 
 **Options**:
 
-- [ ] **A**: Match `Catalog.is_public` — anonymous can fetch covers from public catalogs (Recommended). Matches the OPDS-1.2 anonymous-feed contract.
+- [X] **A**: Match `Catalog.is_public` — anonymous can fetch covers from public catalogs (Recommended). Matches the OPDS-1.2 anonymous-feed contract.
 - [ ] **B**: Always require auth.
 - [ ] **C**: Per-entry visibility flag (`Entry.cover_is_public`). Overkill.
 
 **Answer**:
 ```
-[User fills this in]
+Will this work with OPDS and FE / Portal?
 ```
 
 **Resolution**:
@@ -294,12 +294,12 @@ EVILFLOWERS_CACHE_USER_CATALOG_TTL_SECONDS=300  # already implicit; expose
 
 **Options**:
 
-- [ ] **A**: Document and defer (Recommended). Add a comment in `apps/core/admin.py` noting the gap; revisit when non-superuser admin is requested.
+- [X] **A**: Document and defer (Recommended). Add a comment in `apps/core/admin.py` noting the gap; revisit when non-superuser admin is requested.
 - [ ] **B**: Implement now via a mixin so future enablement is one-line per ModelAdmin.
 
 **Answer**:
 ```
-[User fills this in]
+Only admin / super uses this in near future.
 ```
 
 **Resolution**:
@@ -317,13 +317,13 @@ EVILFLOWERS_CACHE_USER_CATALOG_TTL_SECONDS=300  # already implicit; expose
 
 **Options**:
 
-- [ ] **A**: Refuse without `--allow-overwrite` (Recommended). Operator must explicitly opt into destructive load.
+- [X] **A**: Refuse without `--allow-overwrite` (Recommended). Operator must explicitly opt into destructive load.
 - [ ] **B**: Remap — re-issue PKs on import. Loses upstream IDs.
 - [ ] **C**: Require the tarball to declare its target catalog in metadata; refuse mismatches.
 
 **Answer**:
 ```
-[User fills this in]
+Sounds reasonable.
 ```
 
 **Resolution**:

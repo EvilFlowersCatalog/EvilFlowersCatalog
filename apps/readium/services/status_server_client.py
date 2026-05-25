@@ -93,8 +93,13 @@ class StatusServerClient:
         """
         Return a license (end it immediately).
 
-        Sets the license end date to now and updates the License Server rights.
-        This makes the license slot available for other users immediately.
+        Three-step flow (IP-008 Phase 1 A4):
+        1. PATCH /licenses/{id}/status on the Status Server with
+           status=returned.
+        2. Update rights on the LCP License Server (rights.end = now)
+           so subsequent /fresh requests reflect the new end date.
+        3. Persist local state. The local License row is a cache; the
+           Status Server is the canonical state surface per LSD §5.1.
 
         Args:
             license: License model instance to return
@@ -102,26 +107,40 @@ class StatusServerClient:
         Raises:
             Exception: If update fails
         """
-        # Update license end date to now
-        license.expires_at = timezone.now()
-        license.state = License.LicenseState.RETURNED
-        license.save()
+        if not license.lcp_license_id:
+            raise ValueError("License does not have an LCP license ID")
 
-        # Import here to avoid circular dependency
+        # 1. PATCH Status Server first — canonical state surface.
+        try:
+            response = requests.patch(
+                f"{self.status_server_url}/licenses/{license.lcp_license_id}/status",
+                json={"status": "returned"},
+                timeout=30,
+            )
+            response.raise_for_status()
+        except requests.RequestException as e:
+            raise Exception(f"Failed to return license on status server: {str(e)}")
+
+        # 2. Update rights on LCP License Server.
+        license.expires_at = timezone.now()
         from .lcp_server_client import LCPServerClient
 
-        # Update rights on LCP License Server
-        lcp_client = LCPServerClient()
-        lcp_client.update_license_rights(license)
+        LCPServerClient().update_license_rights(license)
 
-        # Note: Status Server will detect the updated end date when reading app
-        # checks status next time. No separate Status Server call needed.
+        # 3. Persist local state as cache of the canonical LSD value.
+        license.state = License.LicenseState.RETURNED
+        license.save()
 
     def renew_license(self, license: License, new_end_date: datetime) -> None:
         """
         Renew a license with a new end date.
 
-        Extends the license validity period and updates the License Server.
+        Three-step flow (IP-008 Phase 1 A4):
+        1. PATCH /licenses/{id}/status on the Status Server with
+           status=active and the new end date.
+        2. Update rights on the LCP License Server (rights.end =
+           new_end_date) so /fresh reflects the extension.
+        3. Persist local state.
 
         Args:
             license: License model instance to renew
@@ -130,19 +149,28 @@ class StatusServerClient:
         Raises:
             Exception: If update fails
         """
-        # Update license end date
-        license.expires_at = new_end_date
-        license.save()
+        if not license.lcp_license_id:
+            raise ValueError("License does not have an LCP license ID")
 
-        # Import here to avoid circular dependency
+        # 1. PATCH Status Server first.
+        try:
+            response = requests.patch(
+                f"{self.status_server_url}/licenses/{license.lcp_license_id}/status",
+                json={"status": "active", "end": new_end_date.isoformat()},
+                timeout=30,
+            )
+            response.raise_for_status()
+        except requests.RequestException as e:
+            raise Exception(f"Failed to renew license on status server: {str(e)}")
+
+        # 2. Update rights on LCP License Server.
+        license.expires_at = new_end_date
         from .lcp_server_client import LCPServerClient
 
-        # Update rights on LCP License Server
-        lcp_client = LCPServerClient()
-        lcp_client.update_license_rights(license)
+        LCPServerClient().update_license_rights(license)
 
-        # Note: Status Server will detect the updated end date when reading app
-        # checks status next time. No separate Status Server call needed.
+        # 3. Persist local state.
+        license.save()
 
     def cancel_license(self, license: License, reason: str = "Cancelled") -> None:
         """

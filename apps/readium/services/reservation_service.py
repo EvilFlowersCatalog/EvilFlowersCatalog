@@ -142,11 +142,19 @@ class ReservationService:
 
         Returns the promoted Reservation or None if nothing was promoted.
 
-        Concurrent safety: uses SELECT FOR UPDATE on the head row so only one
-        worker can promote at a time.
+        Concurrent safety (IP-008 Phase 1 A2): lock the Entry row first.
+        Two parallel returns on the same entry serialize on the entry lock;
+        the active-count + pending-promotion check then sees a stable view.
+        Without the entry-level lock, the head reservation lock alone is
+        insufficient — two workers could both observe "1 slot free" and
+        promote two different heads (different rows, no row-lock conflict).
         """
         active_states = [License.LicenseState.READY, License.LicenseState.ACTIVE]
         now = timezone.now()
+
+        # Serialize on the entry row. Other parallel promote_next callers
+        # for the same entry block here.
+        Entry.objects.select_for_update().get(pk=entry.pk)
 
         total_slots = int(entry.read_config("readium_amount") or 0)
         active_count = License.objects.filter(entry=entry, state__in=active_states, expires_at__gt=now).count()
@@ -157,8 +165,9 @@ class ReservationService:
         if active_count + pending_promotions >= total_slots:
             return None
 
+        # The entry lock already serializes us; skip_locked is not needed.
         head = (
-            Reservation.objects.select_for_update(skip_locked=True)
+            Reservation.objects.select_for_update()
             .filter(entry=entry, status=Reservation.Status.QUEUED)
             .order_by("position")
             .first()
@@ -184,34 +193,47 @@ class ReservationService:
         return head
 
     @staticmethod
-    @transaction.atomic
     def expire_unclaimed() -> int:
         """
         Sweep all `available` reservations whose `claim_deadline` has passed.
-        For each, set status=expired and call promote_next on the entry. Returns
-        the number of reservations expired.
+
+        Two-phase (IP-008 Phase 1 A3):
+        1. In ONE transaction: lock + mark expired the eligible rows,
+           collect the affected entries. Commit.
+        2. For each affected entry, call `promote_next` in its OWN
+           transaction. This is required because `promote_next` uses
+           `select_for_update` on the Entry row; nesting it under the
+           sweep's outer atomic block would make the inner select see
+           the outer transaction's row locks and skip / block depending
+           on database. By committing the sweep first, the per-entry
+           promotion runs in clean independent transactions.
+
+        Returns the number of reservations expired.
         """
         now = timezone.now()
-        expired_qs = Reservation.objects.select_for_update().filter(
-            status=Reservation.Status.AVAILABLE,
-            claim_deadline__lt=now,
-        )
-        expired_ids = list(expired_qs.values_list("id", flat=True))
-        if not expired_ids:
-            return 0
 
-        # Mark expired in bulk.
-        expired_rows = list(expired_qs)
-        for reservation in expired_rows:
-            reservation.status = Reservation.Status.EXPIRED
-            reservation.save(update_fields=["status", "updated_at"])
+        with transaction.atomic():
+            expired_qs = Reservation.objects.select_for_update().filter(
+                status=Reservation.Status.AVAILABLE,
+                claim_deadline__lt=now,
+            )
+            expired_rows = list(expired_qs)
+            if not expired_rows:
+                return 0
 
-        # Then promote next on each affected entry (deduped).
-        seen_entries = set()
-        for reservation in expired_rows:
-            if reservation.entry_id in seen_entries:
+            affected_entry_ids: set = set()
+            for reservation in expired_rows:
+                reservation.status = Reservation.Status.EXPIRED
+                reservation.save(update_fields=["status", "updated_at"])
+                affected_entry_ids.add(reservation.entry_id)
+
+        # Outside the sweep transaction: promote next per affected entry
+        # in its own transaction. Each call serializes on the entry lock.
+        for entry_id in affected_entry_ids:
+            try:
+                entry = Entry.objects.get(pk=entry_id)
+            except Entry.DoesNotExist:
                 continue
-            seen_entries.add(reservation.entry_id)
-            ReservationService.promote_next(reservation.entry)
+            ReservationService.promote_next(entry)
 
         return len(expired_rows)

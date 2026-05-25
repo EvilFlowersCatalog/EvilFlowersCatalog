@@ -2,7 +2,6 @@ from http import HTTPStatus
 from uuid import UUID
 
 from django.conf import settings
-from django.urls import reverse
 from django.utils.translation import gettext as _
 
 from apps.core.errors import DetailType, ProblemDetailException, UnauthorizedException
@@ -66,16 +65,20 @@ class BorrowView(Opds2CatalogView):
         base_url = f"{request.scheme}://{request.get_host()}"
         publication = ManifestBuilder.build_publication(entry, base_url=base_url, include_availability=False)
 
-        # Add direct license acquisition link
-        license_link = Link(
-            href=f"{base_url}{reverse('readium:license-gateway', kwargs={'license_id': license_obj.pk})}",
-            type="application/vnd.readium.lcp.license.v1.0+json",
-            rel="http://opds-spec.org/acquisition",
-        )
-        if publication.links:
-            publication.links.append(license_link)
-        else:
-            publication.links = [license_link]
+        # IP-008 Phase 2 B5 / Q4: emit the LCP-license link via the shared
+        # `BorrowLinkResolver` so OPDS 1.2 and OPDS 2.0 stay aligned on
+        # (rel, type, href) for the same entry.
+        from apps.opds.services.borrow_link import BorrowLinkResolver
+
+        resolver = BorrowLinkResolver(request, opds_version="2.0")
+        # We just minted `license_obj`, so the borrow flow caller is the
+        # active-license owner — pass it directly rather than re-querying.
+        for borrow_link in resolver.emit_links(entry, active_license=license_obj):
+            link = Link(href=borrow_link.href, type=borrow_link.type, rel=borrow_link.rel)
+            if publication.links:
+                publication.links.append(link)
+            else:
+                publication.links = [link]
 
         return self.opds_response(
             publication.model_dump(exclude_none=True, by_alias=True),

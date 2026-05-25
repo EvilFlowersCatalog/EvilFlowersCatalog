@@ -59,8 +59,27 @@ class EncryptedContentDownloadView(View):
                 detail_type=DetailType.NOT_FOUND,
             )
 
-        content_type = encrypted_content.acquisition.mime
-        return FileResponse(
+        # IP-008 Phase 2 B1: advertise the LCP-protected MIME so reader
+        # apps know the payload is encrypted. EPUB stays as-is per the
+        # Readium LCP for EPUB profile (LCP-ness lives inside the zip);
+        # PDF gets the +lcp variant.
+        response = FileResponse(
             storage.open(encrypted_content.encrypted_path),
-            content_type=content_type,
+            content_type=_lcp_content_type(encrypted_content.acquisition.mime),
         )
+        # Encrypted content must never be cached by intermediaries.
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
+def _lcp_content_type(source_mime: str) -> str:
+    """Map a plain acquisition MIME to its LCP-protected equivalent.
+
+    Per LCP for PDF profile §3, encrypted PDFs are served as
+    `application/pdf+lcp`. EPUBs stay as `application/epub+zip` — the
+    Readium LCP for EPUB profile specifies that the LCP signal lives
+    inside the package, not at the transport MIME.
+    """
+    return {
+        "application/pdf": "application/pdf+lcp",
+    }.get(source_mime, source_mime)

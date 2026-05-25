@@ -59,11 +59,13 @@ class ContentEncryptionService:
 
         # Determine encrypted file path
         # lcpencrypt renames output with LCP-specific extensions:
-        # .pdf → .lcpdf, .epub → .epub, .audiobook → .lcpa, .divina → .lcpdi
+        # .pdf → .lcpdf, .epub → .epub
+        # (IP-008 Phase 2 B3: audiobook branch dropped — AcquisitionMIME
+        # has no AUDIOBOOK enum value, so the entry was unreachable.
+        # Reintroduce when a real audiobook proposal arrives.)
         lcp_ext_map = {
             "application/pdf": ".lcpdf",
             "application/epub+zip": ".epub",
-            "application/audiobook+zip": ".lcpa",
         }
         lcp_ext = lcp_ext_map.get(acquisition.mime, ".lcpdf")
         encrypted_path = f"{acquisition.upload_base_path()}/encrypted/{lcp_content_id}{lcp_ext}"
@@ -83,15 +85,23 @@ class ContentEncryptionService:
 
     @staticmethod
     def _queue_encryption_task(encrypted_content: EncryptedContent):
-        """Queue the lcpencrypt worker task."""
+        """Queue the lcpencrypt worker task.
+
+        IP-008 Phase 1 A5: do NOT flip status to REGISTERED here. The
+        previous "optimistic mark" let `is_ready_for_licensing` return
+        True before the encryption job actually wrote the encrypted file
+        and registered it with the LCP server. The webhook
+        (`apps/readium/views/hooks.py`) is the authoritative event for
+        the flip; we stay on PENDING until then.
+        """
         acquisition = encrypted_content.acquisition
 
-        # Update status — mark as REGISTERED optimistically.
-        # lcpencrypt registers with the LCP server synchronously via -lcpsv before returning,
-        # and encryption typically completes in <1s. A user won't request a license before that.
-        encrypted_content.status = EncryptedContent.EncryptionStatus.REGISTERED
+        # The encrypted_url is computed deterministically from the
+        # lcp_content_id and base URL, so we can populate it now even
+        # though the file isn't ready — the URL is only used by the LCP
+        # server once it can fetch the encrypted blob.
         encrypted_content.encrypted_url = ContentEncryptionService.get_encrypted_content_url(encrypted_content)
-        encrypted_content.save()
+        encrypted_content.save(update_fields=["encrypted_url"])
 
         # Queue worker
         # storage = catalog-relative dir for encrypted output (worker prepends STORAGE_PATH)
@@ -176,9 +186,16 @@ class ContentEncryptionService:
         """
         Check if an acquisition is ready for license generation.
 
-        Returns True if encrypted and registered with LCP Server.
+        Returns True only when:
+        - The EncryptedContent row exists,
+        - Status is REGISTERED (set by the webhook after lcpencrypt finishes
+          and the LCP server confirms registration), AND
+        - `encrypted_at is not None` (IP-008 Phase 1 A5 defensive check —
+          a misbehaving webhook could in principle PATCH status without
+          setting the timestamp; both must be true).
         """
         if not hasattr(acquisition, "encrypted_content"):
             return False
 
-        return acquisition.encrypted_content.status == EncryptedContent.EncryptionStatus.REGISTERED
+        ec = acquisition.encrypted_content
+        return ec.status == EncryptedContent.EncryptionStatus.REGISTERED and ec.encrypted_at is not None

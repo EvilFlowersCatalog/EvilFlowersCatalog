@@ -36,6 +36,8 @@ class FeedView(OpdsCatalogView):
                 author=feed.creator,
                 updated_at=feed.touched_at,
                 qs=feed.entries.all(),
+                request=request,
+                user=request.user,
             )
 
             result.add_link(
@@ -125,6 +127,8 @@ class CompleteFeedView(OpdsCatalogView):
                 )
             ],
             complete=True,
+            request=request,
+            user=request.user,
         )
 
         return HttpResponse(
@@ -155,6 +159,8 @@ class LatestFeedView(OpdsCatalogView):
                     type="application/atom+xml;profile=opds-catalog;kind=navigation",
                 )
             ],
+            request=request,
+            user=request.user,
         )
 
         return HttpResponse(
@@ -185,6 +191,8 @@ class PopularFeedView(OpdsCatalogView):
                     type="application/atom+xml;profile=opds-catalog;kind=navigation",
                 )
             ],
+            request=request,
+            user=request.user,
         )
 
         return HttpResponse(
@@ -223,6 +231,8 @@ class ShelfFeedView(OpdsCatalogView):
                     type="application/atom+xml;profile=opds-catalog;kind=navigation",
                 )
             ],
+            request=request,
+            user=request.user,
         )
 
         return HttpResponse(
