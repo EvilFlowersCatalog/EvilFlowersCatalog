@@ -10,35 +10,20 @@ from uuid import UUID
 
 from django.http import JsonResponse
 from django.utils.translation import gettext as _
-from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
 from apps.core.errors import ProblemDetailException, DetailType
 from apps.core.views import SecuredView
 from apps.readium.models import License
 from apps.readium.services import LicenseService
+from apps.readium.views._license_lookup import LicenseLookupMixin
 
 
-class LicenseDownloadView(SecuredView):
-    @staticmethod
-    def _get_license(request, license_id: UUID) -> License:
-        try:
-            license = License.objects.get(pk=license_id)
-        except License.DoesNotExist as e:
-            raise ProblemDetailException(
-                _("License not found"),
-                status=HTTPStatus.NOT_FOUND,
-                previous=e,
-                detail_type=DetailType.NOT_FOUND,
-            )
-
-        # IP-004 Phase 4: .lcpl download is owner-only. Catalog managers and
-        # superusers are NOT exempted; break-glass goes through a separate
-        # audited management command, not this endpoint.
-        if not has_object_permission("check_license_download", request.user, license):
-            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
-
-        return license
+class LicenseDownloadView(LicenseLookupMixin, SecuredView):
+    # IP-004 Phase 4: .lcpl download is owner-only. Catalog managers and
+    # superusers are NOT exempted; break-glass goes through a separate
+    # audited management command, not this endpoint.
+    license_permission = "check_license_download"
 
     @openapi.metadata(
         description="Download the LCP license file for a specific license. Returns the actual LCP license JSON that can be imported into reading applications.",
@@ -46,7 +31,7 @@ class LicenseDownloadView(SecuredView):
         summary="Download LCP license file",
     )
     def get(self, request, license_id: UUID):
-        license = self._get_license(request, license_id)
+        license = self.get_license_or_404(request, license_id)
 
         # Check if license has an LCP license ID
         if not license.lcp_license_id:

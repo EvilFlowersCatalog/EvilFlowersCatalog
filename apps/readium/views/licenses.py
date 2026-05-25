@@ -25,6 +25,7 @@ from apps.readium.models import License
 from apps.readium.serializers import LicenseSerializer
 from apps.readium.services import LicenseService, PassphraseRequiredError
 from apps.readium.services.renew_policy import evaluate_renew
+from apps.readium.views._license_lookup import LicenseLookupMixin
 
 
 class LicenseManagement(SecuredView):
@@ -105,25 +106,10 @@ class LicenseManagement(SecuredView):
             )
 
 
-class LicenseDetail(SecuredView):
-    @staticmethod
-    def _get_license(request, license_id: UUID) -> License:
-        try:
-            license = License.objects.get(pk=license_id)
-        except License.DoesNotExist as e:
-            raise ProblemDetailException(
-                _("License not found"),
-                status=HTTPStatus.NOT_FOUND,
-                previous=e,
-                detail_type=DetailType.NOT_FOUND,
-            )
-
-        # IP-004 Phase 4: state-change operations admit catalog managers and
-        # superusers in addition to the license owner.
-        if not has_object_permission("check_license_state_manage", request.user, license):
-            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
-
-        return license
+class LicenseDetail(LicenseLookupMixin, SecuredView):
+    # IP-004 Phase 4: state-change operations admit catalog managers and
+    # superusers in addition to the license owner.
+    license_permission = "check_license_state_manage"
 
     @openapi.metadata(
         description="Retrieve detailed information about a specific license. Returns comprehensive license data including duration, start/end dates, user information, and current status. Requires license manage permissions for the license owner.",
@@ -131,7 +117,7 @@ class LicenseDetail(SecuredView):
         summary="Get license details",
     )
     def get(self, request, license_id: UUID):
-        license = self._get_license(request, license_id)
+        license = self.get_license_or_404(request, license_id)
         return SingleResponse(request, data=LicenseSerializer.Base.model_validate(license))
 
     @openapi.metadata(

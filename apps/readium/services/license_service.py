@@ -10,12 +10,14 @@ Manages the complete license lifecycle including:
 
 from datetime import datetime, timedelta
 from typing import Dict, Optional
+import logging
+import uuid
+
+import requests
 from django.db import transaction
 from django.db.models import Q, Count
 from django.utils import timezone
 from django.conf import settings
-import logging
-import uuid
 
 from apps.core.models import Entry, User, Acquisition
 from apps.readium.models import License, EncryptedContent
@@ -490,19 +492,26 @@ class LicenseService:
     @staticmethod
     def _maybe_promote_next(license: License) -> None:
         """
-        Hook called after a license enters a terminal state. Tries to promote
-        the next reservation on the same entry. Failures are swallowed so a
-        broken queue does not roll back the license transition.
+        Hook called after a license enters a terminal state. Tries to
+        promote the next reservation on the same entry.
+
+        IP-008 Phase 3 C5: narrow the catch from `Exception` to the
+        classes a broken queue can legitimately raise (DB integrity,
+        Django operational errors, requests transport errors from
+        downstream LSD/LCP calls). Anything else propagates — a bug
+        elsewhere in the codebase should not be swallowed silently.
         """
+        from django.db import DatabaseError
+
         try:
             from .reservation_service import ReservationService
 
             ReservationService.promote_next(license.entry)
-        except Exception:  # pragma: no cover — best-effort
-            import logging
-
-            logging.getLogger(__name__).exception(
-                "promote_next failed for entry %s after license %s transition",
+        except (DatabaseError, requests.RequestException, ValueError) as exc:
+            logger.warning(
+                "promote_next failed for entry %s after license %s transition: %s",
                 getattr(license, "entry_id", None),
                 getattr(license, "pk", None),
+                exc,
+                exc_info=True,
             )

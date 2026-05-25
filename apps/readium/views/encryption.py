@@ -4,9 +4,11 @@ Encryption Management Views
 Handles manual encryption triggering and status checking for Readium LCP.
 """
 
+import logging
 from http import HTTPStatus
 from uuid import UUID
 
+from django.db import transaction
 from django.utils.translation import gettext as _
 
 from apps import openapi
@@ -14,8 +16,11 @@ from apps.api.response import SingleResponse
 from apps.core.errors import ProblemDetailException, ValidationException, DetailType
 from apps.core.models import Entry, Acquisition
 from apps.core.views import SecuredView
+from apps.files.storage import get_storage
 from apps.readium.forms import EncryptionTriggerForm
 from apps.readium.services import ContentEncryptionService
+
+logger = logging.getLogger(__name__)
 
 
 class EntryEncryptionView(SecuredView):
@@ -161,9 +166,29 @@ class EntryEncryptionView(SecuredView):
             if ec.status == "failed":
                 ec.delete()
 
-        # If force=true and encrypted_content exists, delete it first
+        # IP-008 Phase 3 C8: force re-encryption must also delete the
+        # encrypted file on disk/S3. Previously only the DB row was
+        # removed; the underlying blob stayed forever and storage grew
+        # unbounded on every force=True trigger.
         if force and hasattr(acquisition, "encrypted_content"):
-            acquisition.encrypted_content.delete()
+            ec_to_delete = acquisition.encrypted_content
+            encrypted_path = ec_to_delete.encrypted_path
+            with transaction.atomic():
+                ec_to_delete.delete()
+
+                def _drop_blob(path=encrypted_path):
+                    storage = get_storage()
+                    try:
+                        if path and storage.exists(path):
+                            storage.delete(path)
+                    except Exception:
+                        # Best-effort: if blob deletion fails the DB row
+                        # is already gone. Log and move on so the next
+                        # encryption pass can proceed.
+                        logger.exception("Failed to delete encrypted blob at %s", path)
+
+                # Schedule the blob delete only after the row delete commits.
+                transaction.on_commit(_drop_blob)
 
         try:
             encrypted_content = ContentEncryptionService.encrypt_acquisition(acquisition)

@@ -15,7 +15,7 @@ from django.conf import settings
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
-from apps.core.models import User
+from apps.core.models import Entry, User
 from apps.readium.models import License, Reservation
 
 logger = logging.getLogger(__name__)
@@ -159,3 +159,29 @@ def _notify_passphrase_change(sender, instance: User, created: bool, **kwargs):
         "user_name": instance.full_name or instance.username,
     }
     _enqueue("passphrase_changed", instance, context)
+
+
+# Entry encryption trigger (IP-008 Phase 3 D2) -------------------------------
+#
+# Moved from `apps/core/models/entry.py` to reverse the cross-app import
+# direction. `apps.core` no longer imports `apps.readium.services`; the
+# readium app subscribes to the core-owned `Entry.post_save` signal here.
+
+
+@receiver(post_save, sender=Entry)
+def _trigger_readium_encryption(sender, instance: Entry, **kwargs):
+    """Trigger LCP encryption when readium_enabled is set on an entry with existing acquisitions."""
+    if not instance.read_config("readium_enabled"):
+        return
+
+    from apps.readium.services import ContentEncryptionService
+
+    for acquisition in instance.acquisitions.filter(mime__in=["application/epub+zip", "application/pdf"]):
+        if not acquisition.content or hasattr(acquisition, "encrypted_content"):
+            continue
+
+        try:
+            ContentEncryptionService.encrypt_acquisition(acquisition)
+            logger.info("Triggered LCP encryption for acquisition %s", acquisition.pk)
+        except ValueError as e:
+            logger.warning("Failed to trigger encryption for acquisition %s: %s", acquisition.pk, e)

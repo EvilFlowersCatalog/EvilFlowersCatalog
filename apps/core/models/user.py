@@ -36,6 +36,14 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = "username"
     REQUIRED_FIELDS = ["name", "surname"]
 
+    def save(self, *args, **kwargs):
+        # IP-008 Phase 3 C4: LCP server expects uppercase hex for the
+        # passphrase hash; normalize on write so the value persisted in
+        # the DB matches what `LCPServerClient` sends.
+        if self.lcp_passphrase_hash:
+            self.lcp_passphrase_hash = self.lcp_passphrase_hash.upper()
+        super().save(*args, **kwargs)
+
     @property
     def full_name(self) -> str:
         return f"{self.name} {self.surname}"

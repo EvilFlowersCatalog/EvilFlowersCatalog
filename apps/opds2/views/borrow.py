@@ -18,19 +18,6 @@ class BorrowView(Opds2CatalogView):
         if not request.user.is_authenticated:
             raise UnauthorizedException()
 
-        # Validate passphrase is configured. The service layer also enforces this;
-        # we pre-check here so the SPA's borrow flow gets a typed RFC 7807 response
-        # without first attempting a write.
-        passphrase_hash = getattr(request.user, "lcp_passphrase_hash", None)
-        if not passphrase_hash:
-            raise ProblemDetailException(
-                _("LCP passphrase required"),
-                detail=_("Set your LCP passphrase in your profile before borrowing."),
-                status=HTTPStatus.BAD_REQUEST,
-                detail_type=DetailType.PASSPHRASE_REQUIRED,
-                additional_data={"set_passphrase_url": "/api/v1/users/me"},
-            )
-
         try:
             entry = Entry.objects.get(pk=entry_id, catalog=self.catalog)
         except Entry.DoesNotExist:
@@ -43,12 +30,15 @@ class BorrowView(Opds2CatalogView):
 
         duration_days = getattr(settings, "EVILFLOWERS_READIUM_DEFAULT_BORROW_DURATION_DAYS", 14)
 
+        # IP-008 Phase 3 D3: drop the duplicated passphrase pre-check.
+        # `LicenseService.create_license` already raises
+        # `PassphraseRequiredError` when the user has no stored passphrase;
+        # we map it to the same RFC 7807 response below. Trusting the
+        # service keeps a single source of truth for the rule.
         try:
             license_obj = LicenseService.create_license(
                 entry=entry,
                 user=request.user,
-                passphrase_hash=passphrase_hash,
-                passphrase_hint=getattr(request.user, "lcp_passphrase_hint", None) or "Your library password",
                 duration_days=duration_days,
             )
         except PassphraseRequiredError as e:

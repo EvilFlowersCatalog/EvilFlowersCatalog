@@ -144,27 +144,12 @@ def touch_parents(sender, instance: Entry, **kwargs):
     instance.feeds.update(touched_at=timezone.now())
 
 
-@receiver(post_save, sender=Entry)
-def trigger_readium_encryption(sender, instance: Entry, **kwargs):
-    """Trigger LCP encryption when readium_enabled is set on an entry with existing acquisitions."""
-    if not instance.read_config("readium_enabled"):
-        return
-
-    import logging
-
-    from apps.readium.services import ContentEncryptionService
-
-    logger = logging.getLogger(__name__)
-
-    for acquisition in instance.acquisitions.filter(mime__in=["application/epub+zip", "application/pdf"]):
-        if not acquisition.content or hasattr(acquisition, "encrypted_content"):
-            continue
-
-        try:
-            ContentEncryptionService.encrypt_acquisition(acquisition)
-            logger.info(f"Triggered LCP encryption for acquisition {acquisition.pk}")
-        except ValueError as e:
-            logger.warning(f"Failed to trigger encryption for acquisition {acquisition.pk}: {e}")
+# IP-008 Phase 3 D2: the post-save encryption trigger lived here, which
+# forced `apps.core` to import `apps.readium.services` — the dependency
+# direction was wrong. The receiver now lives in `apps/readium/signals.py`
+# and subscribes to `Entry.post_save` from the readium side. Behavior is
+# unchanged; only the import direction flips so `apps.core` stays free of
+# readium concepts.
 
 
 __all__ = ["Entry", "default_entry_config"]
