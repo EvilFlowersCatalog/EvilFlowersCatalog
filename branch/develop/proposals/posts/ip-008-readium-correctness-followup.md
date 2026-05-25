@@ -37,7 +37,8 @@ search.
 
 **Status**: Draft
 **Last Updated**: 2026-05-25
-**Implementation**: Not started
+**Implementation**: Not started — IP-007 prerequisite landed in commit
+`1953da4`. This proposal is now the next executable step.
 
 ## Problem Statement
 
@@ -45,9 +46,47 @@ The May 2026 post-merge audit produced four coherent clusters of work that
 together determine whether the catalog reaches a functional, deployable state
 for the next few months. They are bundled here because each cluster
 cross-references the others (Readium correctness needs the Dataverse-side
-`storage_backend` enum; OPDS 1.2 LCP parity needs `attach_lcp_license_link`
+`storage_backend` enum; OPDS 1.2 LCP parity needs `BorrowLinkResolver`
 shared with OPDS 2.0; the search-service wiring needs the Dataverse-side
 indexing call to be exactly-once).
+
+### Baseline assumed (IP-007 already landed)
+
+This proposal builds on commit `1953da4` (IP-007 — Crash-on-First-Contact
+Bug Triage). The following are now in `develop` and are NOT in scope here:
+
+- `License.unique_together` replaced with partial
+  `UniqueConstraint(fields=["entry","user"], condition=Q(state__in=
+  ["ready","active"]))` (migration
+  `apps/readium/migrations/0006_alter_license_unique_together_and_more.py`).
+  Phase 1 A1 below layers `transaction.atomic()` + `select_for_update`
+  on top.
+- Readium signal name-mangling fixed (`_original_state` / `_original_status`
+  / `_original_passphrase_hash` with single underscore).
+- `Entry.first_author_name` property — the canonical author-display
+  helper. Phase 3 C2 expects it.
+- `DetailType.FORBIDDEN` and `DetailType.INTERNAL_ERROR` exist in
+  `apps/core/errors.py`.
+- `apps/opds/services/entry_search.py::EntrySearchService.search(catalog,
+  request)` — the shared catalog-DB search layer consumed by both OPDS
+  1.2 (`apps/opds/views/search.py::SearchView`) and OPDS 2.0
+  (`apps/opds2/views/search.py`). Phase 6 F1 extends THIS service with
+  `mode=keyword|semantic` dispatch.
+- `OpenSearchDescription` schema + URL-encoded template in
+  `apps/opds/schema.py`. Phase 6 just advertises the `mode` parameter
+  through it.
+- `apps/api/utils/parse.py::parse_int_query` — the safe query-int
+  parser; OPDS 2.0 views already consume it.
+- `DV_BASE_INTERNAL` env name is now consistent across `compose.yml` and
+  `apps/api/views/dataverse.py`.
+- The duplicate text-service Celery enqueue at
+  `apps/api/views/entries.py` is removed; one publish per PDF upload.
+- OPDS 1.2 root feed query uses `parents__isnull=True`; Latest feed
+  sorts `-created_at`.
+- `license_renewed` notification fires from `LicenseService.renew_license`;
+  `NotificationLog.NotificationType` enum lists all 9 active types.
+- `Category` uniqueness + `Feed` permission scope fixes
+  (IP-007 D17/D18) — IP-010 builds on the same baseline.
 
 ### Cluster A — Readium concurrency
 
@@ -234,9 +273,6 @@ before LCP issuance.**
   when the upstream file is `restricted`.
 
 **D5. Configuration mismatches.**
-- `compose.yml:47` `DV_PUBLIC_INTERNAL` vs `apps/api/views/dataverse.py:292`
-  `DV_BASE_INTERNAL` env mismatch (also called out in IP-007 as D9 —
-  bundled fix here).
 - `compose.yml:57` `EVILFLOWERS_TEXT_SERVICE_URL` and `compose.yml:58`
   `TEXT_SERVICE_REDIS_URL` set on Django but read by no code.
 - `dataverse/scripts/bootstrap-workflow.sh:33-35` hardcodes
@@ -244,6 +280,9 @@ before LCP issuance.**
 - `dataverse/compose.override.yml:2` overrides a service named `postgres`,
   but the catalog's DB service is `db`. Override targets a non-existent
   service.
+
+(IP-007 D9 fixed the `DV_PUBLIC_INTERNAL` → `DV_BASE_INTERNAL` rename in
+`compose.yml`; the env names are now consistent.)
 
 ### Cluster E — Storage polymorphism for `file_url`
 
@@ -445,27 +484,32 @@ flowchart TB
   response shape for "no hint set" and "license not found" to avoid
   enumeration. Add a `django-ratelimit`-style 1-req-per-second-per-IP
   throttle.
-- [ ] **B5** — OPDS 1.2 LCP link emission:
-    - Extract `apps/readium/services/opds_link_attacher.py::
-      attach_lcp_license_link(target, license_obj, base_url)` and use it
-      from `apps/opds2/views/borrow.py` and
-      `apps/opds2/services/feed_builder.py` (replaces the duplicate
-      logic at `borrow.py:70-78` and `feed_builder.py:193-201`).
-    - Update `apps/opds/schema.py::AcquisitionEntry.from_model` to emit
-      a borrow-style link with rel
-      `http://opds-spec.org/acquisition/borrow` and type
-      `application/vnd.readium.lcp.license.v1.0+json` when
-      `entry.readium_enabled` is True. Point at the OPDS 2.0 borrow
-      endpoint (cross-version link; Thorium and other Readium-toolkit
-      readers follow links).
-    - If a user has an active license on the entry, ALSO emit the
-      `application/vnd.readium.lcp.license.v1.0+json` link directly to
-      `/readium/v1/licenses/{id}.lcpl`.
-    - Hide the direct download link for readium-enabled entries
-      (matching OPDS 2.0). Today OPDS 1.2 leaks the raw file URL even
-      for LCP-protected content.
-    - Add a test against `OpdsFeed.serialize().to_xml()` asserting LCP
-      link emission for an LCP entry.
+- [ ] **B5** — OPDS 1.2 LCP link emission (per Q4 resolution):
+    - Introduce `apps/opds/services/borrow_link.py::BorrowLinkResolver`
+      as the single dispatch point for borrow / LCP-license link
+      emission. Both OPDS profiles consume it; format conversion (Atom
+      `<link>` element vs RWPM JSON link object) stays local to each
+      schema. See Q4 resolution for the resolver API and the link
+      tuple it returns.
+    - Refactor `apps/opds2/views/borrow.py:70-78` and
+      `apps/opds2/services/feed_builder.py:193-201` (today's duplicated
+      OPDS 2.0 emit) to consume `BorrowLinkResolver.emit_links`.
+    - Update `apps/opds/schema.py::AcquisitionEntry.from_model`
+      (OPDS 1.2) to call `BorrowLinkResolver.emit_links` and format
+      each returned `Link` as an OPDS-1.2 `<link>` element. When
+      `entry.readium_enabled` is True, emit:
+        - `rel=http://opds-spec.org/acquisition/borrow`,
+          `type=application/vnd.readium.lcp.license.v1.0+json` →
+          OPDS 2.0 borrow endpoint (cross-version link).
+        - if the user has an active license:
+          `rel=http://opds-spec.org/acquisition`,
+          `type=application/vnd.readium.lcp.license.v1.0+json` →
+          `/readium/v1/licenses/{id}.lcpl`.
+      The resolver suppresses the direct download link for
+      readium-enabled entries (matching OPDS 2.0).
+    - Add `apps/opds/tests/test_lcp_link_emission.py` asserting
+      byte-for-byte parity between OPDS 1.2 and OPDS 2.0 on the
+      `(rel, type, target_url)` tuple for the same entry.
 
 ### Phase 3: Service Correctness
 
@@ -593,8 +637,6 @@ flowchart TB
       `AcquisitionType.RESTRICTED_ACCESS` instead of hardcoded
       `OPEN_ACCESS`.
 - [ ] **D5** Configuration cleanup:
-    - Rename `DV_PUBLIC_INTERNAL` → `DV_BASE_INTERNAL` in
-      `compose.yml:47`. Update `.env.example`.
     - Remove `EVILFLOWERS_TEXT_SERVICE_URL` and `TEXT_SERVICE_REDIS_URL`
       from `compose.yml:57-58` (dead).
     - `dataverse/scripts/bootstrap-workflow.sh:33-35` — use
@@ -603,7 +645,10 @@ flowchart TB
       from `postgres` to `db` (the actual service name).
     - Add `docs/dataverse/` (new) with: integration overview,
       prepublish contract, workflow resume semantics, multi-tenant
-      routing, search-service flow, troubleshooting.
+      routing (per Q3 resolution), search-service flow, troubleshooting.
+    - (`DV_PUBLIC_INTERNAL` → `DV_BASE_INTERNAL` rename already landed
+      in IP-007 D9; `.env.example` may still need a touch-up if it
+      diverged.)
 
 ### Phase 5: Polymorphic Storage Backend on `Acquisition`
 
@@ -640,23 +685,44 @@ flowchart TB
   /search/elasticsearch` and `POST /search/semantic`. Read base URL
   from `SEARCH_SERVICE_URL`. Timeout 10s, no retry (operator can retry
   the search).
-- [ ] **F1** — Update `apps/opds2/views/search.py` to accept
-  `?mode=catalog|keyword|semantic` (default `catalog`):
-    - `mode=catalog` — current behavior (DB-side `EntryFilter`).
-    - `mode=keyword` — POST to `/search/elasticsearch`, collect
-      distinct `document_id`s, fetch `Entry` rows by acquisition_id
-      mapping; preserve scope (filter to the requested catalog).
-    - `mode=semantic` — POST to `/search/semantic`, collect distinct
-      `document_id`s, same as above.
+- [ ] **F1** — Extend `apps/opds/services/entry_search.py::
+  EntrySearchService` (already shipped in IP-007 as the shared OPDS
+  1.2 + OPDS 2.0 catalog-DB search) with a `mode`-aware dispatch:
+
+    ```python
+    @staticmethod
+    def search(catalog, request, *, mode: SearchMode = SearchMode.CATALOG) -> QuerySet[Entry]:
+        if mode is SearchMode.CATALOG:
+            # existing behavior — DB-side EntryFilter
+            ...
+        elif mode is SearchMode.KEYWORD:
+            doc_ids = SearchServiceClient().keyword(catalog_acquisition_ids(catalog), request.GET["query"])
+            return Entry.objects.filter(catalog=catalog, acquisitions__pk__in=doc_ids).distinct()
+        elif mode is SearchMode.SEMANTIC:
+            doc_ids = SearchServiceClient().semantic(catalog_acquisition_ids(catalog), request.GET["query"])
+            return Entry.objects.filter(catalog=catalog, acquisitions__pk__in=doc_ids).distinct()
+    ```
+
+  Update `apps/opds2/views/search.py` to read `mode` via
+  `request.GET.get("mode", "catalog")` and pass through (default per
+  Q5 resolution). OPDS 1.2 `SearchView` (already shipped in IP-007)
+  keeps `mode=catalog` only — the mode parameter is OPDS-2-only.
 - [ ] **F1** — Catalog scoping: the search service has no concept of
-  catalog. Map `document_id` (= acquisition UUID) back to
-  `Acquisition.entry.catalog`; filter results to the requested catalog
-  (and access-controlled catalogs).
+  catalog. Compute the `catalog_acquisition_ids(catalog)` allow-list
+  (UUIDs of `Acquisition` rows whose `entry.catalog == catalog` AND
+  pass the requester's ACL), pass it in the search-service request,
+  and filter results post-hoc as a defensive second check.
 - [ ] **F1** — Surface search-service-down: a 502 with `Retry-After`
   header when the search service times out, not a 500.
-- [ ] **F1** — Add a test that asserts a `mode=keyword` search returns
-  only entries from the requested catalog, never leaking results from
-  other tenants.
+- [ ] **F1** — Document each mode via `docs/opds2/search.md` per Q5
+  resolution (examples, failure semantics, OpenSearch descriptor
+  template update advertising the `mode` parameter through the
+  existing `apps/opds/schema.py::OpenSearchDescription`).
+- [ ] **F1** — Add `apps/opds2/tests/test_search_modes.py` asserting:
+  - `mode=catalog` matches today's behavior.
+  - `mode=keyword|semantic` returns only entries from the requested
+    catalog (cross-tenant leakage test).
+  - Search-service down returns 502 + `Retry-After`, not 500.
 - [ ] **F2** — Verify the search-service container's actual listen
   port; pin `compose.yml:147, 164-165` accordingly. Set
   `SEARCH_SERVICE_URL` to use the container-internal port; map host as
@@ -704,8 +770,11 @@ class Acquisition(models.Model):
 ```
 
 The `License` partial-`UniqueConstraint` on `(entry, user)` for
-non-terminal states is a prerequisite (lands in IP-007 D4); Phase 1 of
-this IP layers application-level locking on top.
+non-terminal states already exists in `develop` (IP-007 D4, migration
+`apps/readium/migrations/0006_alter_license_unique_together_and_more.py`);
+Phase 1 A1 of this IP layers application-level
+`transaction.atomic()` + `Entry.select_for_update()` on top so the
+borrow race is closed both at the application and database layer.
 
 ### API Changes
 
@@ -925,18 +994,26 @@ titles from 1.2 personal feeds. Two-line addition in
   (D1, F2).
 - `apps/core/models/acquisition.py` — `file_url` field, `base64` /
   `checksum` properties (E1).
-- `apps/opds2/views/search.py` — search not wired to search service
-  (F1).
+- `apps/opds2/views/search.py` — uses `EntrySearchService` (catalog
+  mode); needs `mode=keyword|semantic` extension (F1).
+- `apps/opds/services/entry_search.py::EntrySearchService` — shared
+  catalog-DB search layer shipped in IP-007; Phase 6 F1 extends with
+  search-service modes.
 - `docs/search_service_reference.pdf` — search service API contract.
-- `compose.yml:47, 57, 147, 164-165` — env mismatch + dead config +
-  search-service port (D5, F2).
+- `compose.yml:57, 147, 164-165` — dead config + search-service port
+  (D5, F2). DV env mismatch fixed in IP-007 D9.
 - [IP-003: LCP EDRLab Certification Readiness](ip-003-lcp-edrlab-certification.md) —
   this IP fills the gaps the audit found post-IP-003.
 - [IP-004: Per-Entry Active-License Limits](ip-004-readium-amount-configurability.md) —
   Phase 1 of this IP makes IP-004's contract hold under concurrency.
 - [IP-007: Crash-on-First-Contact Bug Triage](ip-007-crash-on-first-contact-triage.md) —
-  License `unique_together`, `DetailType`, name-mangling, OPDS 1.2
-  runtime defects prerequisites.
+  ✅ Implemented in commit `1953da4`. Established the baseline this
+  proposal builds on: partial `UniqueConstraint`, signal name-mangling
+  fix, `Entry.first_author_name`, `DetailType.FORBIDDEN`,
+  `EntrySearchService`, `OpenSearchDescription`, `parse_int_query`,
+  `DV_BASE_INTERNAL`, single text-service publish, OPDS 1.2 root /
+  Latest fixes, `license_renewed` notification, complete
+  `NotificationType` enum.
 - [IP-010: Multi-Tenancy & ACL Correctness](ip-010-multi-tenancy-acl-correctness.md) —
   shares the `file_url` redirect security fix (M2 region) at the
   storage-service dispatch point.
@@ -1371,3 +1448,4 @@ the IP-007 D10 dedup point.
 | 2026-05-14 | Claude AI | Initial draft IP-009 based on May 2026 dataverse + text-service audit. |
 | 2026-05-25 | jdubec | Consolidated IP-008 (Readium) + IP-009 (Dataverse) into a single executable proposal. Folded in OPDS 1.2 LCP link parity (from former IP-011 Cluster C) and OPDS 2.0 search-service integration (from former IP-011 Cluster F). Dropped cross-references to former IP-005 (security hardening) and IP-006 (deployability) — those concerns are deferred to a future hardening cycle. Focus is functional state for the May→August window. |
 | 2026-05-25 | jdubec | Resolved Review Questions Q1–Q6. Q1 (LSD sync): expanded into a full license-lifecycle sync audit via `StatusServerSyncService` covering return/renew/revoke/cancel/register/expire. Q2 (upstream-file deletion): kept safe-default dry-run, added structured logging + `dataverse.upstream_file_removed` event emission + `dataverse_drift` management command. Q3 (routing precedence): kept fall-through, added `RoutingDecision.matched_rule`, `docs/dataverse/catalog-routing.md` with worked examples per step, `dataverse_route` debug command. Q4 (OPDS 1.2 borrow link): promoted `attach_lcp_license_link` from helper to `BorrowLinkResolver` service-layer abstraction shared across OPDS 1.2 / OPDS 2.0. Q5 (search mode default): kept `mode=catalog`, added `docs/opds2/search.md` documenting each mode + `search_check` management command. Q6 (event fanout): audited cross-app couplings; in-scope events `entry.changed`, `license.*`, `acquisition.uploaded`, `dataverse.upstream_file_removed` added with listeners; full migration-candidates table moved to `docs/events/migration-candidates.md`. Status flipped to ✅ Resolved. |
+| 2026-05-25 | jdubec | Rebased on top of IP-007 (commit `1953da4`). Added a "Baseline assumed" section to Problem Statement listing what's already in `develop`: partial `UniqueConstraint` on License, signal name-mangling fix, `Entry.first_author_name`, `DetailType.FORBIDDEN`/`INTERNAL_ERROR`, `apps/opds/services/entry_search.py::EntrySearchService`, `OpenSearchDescription` + URL-encoded template, `apps/api/utils/parse.py::parse_int_query`, `DV_BASE_INTERNAL` rename, single text-service publish, OPDS 1.2 root/Latest fixes, `license_renewed` notification, complete `NotificationType` enum. Cluster D5 trimmed (DV env rename removed). Phase 4 D5 trimmed accordingly. Phase 2 B5 reworked to consume the existing OPDS 1.2 `SearchView` baseline and to thread through `BorrowLinkResolver`. Phase 6 F1 reworked to EXTEND `EntrySearchService` with a `mode` parameter rather than rewriting `apps/opds2/views/search.py` from scratch. References section updated with IP-007 commit hash and new shared-service citations. |
