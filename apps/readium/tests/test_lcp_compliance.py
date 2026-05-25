@@ -79,13 +79,20 @@ class ReservationStateMachineTests(SimpleTestCase):
 
 
 class ApiSurfaceTests(SimpleTestCase):
-    """Declarative-API guard: no /claim or /admin/overshared style verbs in readium urls."""
+    """Declarative-API guard: no /admin/overshared or /renew-policy style verbs in readium urls.
+
+    NOTE: `/claim` is explicitly permitted after IP-011 Phase 1 — the EFC-hosted
+    claim page renders a confirmation form on GET and performs the state mutation
+    on POST. The declarative `PATCH /reservations/{id}` mutation contract is
+    unchanged; the claim page is a UX shell that internally invokes the same
+    service-layer method.
+    """
 
     def test_no_action_urls(self):
         from pathlib import Path
 
         source = Path("apps/readium/urls.py").read_text()
-        forbidden = ["/claim", "/admin/overshared", "/renew-policy"]
+        forbidden = ["/admin/overshared", "/renew-policy"]
         for pattern in forbidden:
             self.assertNotIn(
                 pattern,

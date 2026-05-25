@@ -302,6 +302,33 @@ EVILFLOWERS_READIUM_OVERSHARE_THRESHOLD = int(os.getenv("EVILFLOWERS_READIUM_OVE
 EVILFLOWERS_READIUM_RESERVATION_CLAIM_HOURS = int(os.getenv("EVILFLOWERS_READIUM_RESERVATION_CLAIM_HOURS", 48))
 EVILFLOWERS_READIUM_MAX_RESERVATIONS_PER_USER = int(os.getenv("EVILFLOWERS_READIUM_MAX_RESERVATIONS_PER_USER", 5))
 
+# IP-011: reservation UX completion (queue UX gaps closeout).
+#
+# - NOTIFY_POSITION_CHANGES: send `reservation_promoted` whenever the queue
+#   reflows and the user's position decreases. Off by default — operators
+#   opt in once they've confirmed the email volume is acceptable.
+# - PROMOTED_MAX_PER_USER_PER_ENTRY_PER_DAY: cap on `reservation_promoted`
+#   emails per (user, entry) within 24h. Protects against burst-cancellation
+#   storms on hot titles.
+# - CLAIM_REMINDER_HOURS: how far ahead of `claim_deadline` to fire the
+#   `reservation_claim_reminder`. Keep `RESERVATION_CLAIM_HOURS >
+#   2 * CLAIM_REMINDER_HOURS` to avoid "reminder fires minutes after the
+#   AVAILABLE email" failure mode.
+EVILFLOWERS_READIUM_NOTIFY_POSITION_CHANGES = (
+    os.getenv("EVILFLOWERS_READIUM_NOTIFY_POSITION_CHANGES", "false").lower() == "true"
+)
+EVILFLOWERS_READIUM_PROMOTED_MAX_PER_USER_PER_ENTRY_PER_DAY = int(
+    os.getenv("EVILFLOWERS_READIUM_PROMOTED_MAX_PER_USER_PER_ENTRY_PER_DAY", 3)
+)
+EVILFLOWERS_READIUM_CLAIM_REMINDER_HOURS = int(os.getenv("EVILFLOWERS_READIUM_CLAIM_REMINDER_HOURS", 6))
+
+# IP-011 Phase 1: optional frontend portal base URL. When set, the EFC
+# reservation_claim endpoint 302-redirects clicked-from-email links to
+# elvira-portal at `{EVILFLOWERS_PORTAL_URL}/library/reservations/{id}/claim`.
+# When unset (default), EFC serves a self-contained Django-templated claim
+# page so the catalog remains standalone-usable.
+EVILFLOWERS_PORTAL_URL = os.getenv("EVILFLOWERS_PORTAL_URL", "")
+
 # IP-003: lifecycle notification timing
 EVILFLOWERS_READIUM_EXPIRY_REMINDER_DAYS = int(os.getenv("EVILFLOWERS_READIUM_EXPIRY_REMINDER_DAYS", 3))
 

@@ -14,8 +14,9 @@ There are no client-callable "promote" or "expire" endpoints — those
 transitions only happen as side effects on the server.
 """
 
+import logging
 from datetime import timedelta
-from typing import Optional
+from typing import Iterable, Optional
 
 from django.conf import settings
 from django.db import transaction
@@ -24,6 +25,88 @@ from django.utils import timezone
 
 from apps.core.models import Entry, User
 from apps.readium.models import License, Reservation
+
+logger = logging.getLogger(__name__)
+
+
+def _dispatch_promoted_notifications(entry: Entry, previously_behind_positions: Iterable[int]) -> None:
+    """Send `reservation_promoted` to users whose queue position decreased.
+
+    Gated by `EVILFLOWERS_READIUM_NOTIFY_POSITION_CHANGES` (default off).
+    Throttled by `EVILFLOWERS_READIUM_PROMOTED_MAX_PER_USER_PER_ENTRY_PER_DAY`
+    (default 3 per 24h per (user, entry)) — protects against burst-cancellation
+    storms on hot titles.
+
+    `previously_behind_positions` is the set of *old* positions of reservations
+    that just had `position -= 1` applied. After the reflow, those users sit
+    at `position - 1`. We notify them.
+
+    IP-011 Phase 3 / Q3 resolution.
+    """
+    if not getattr(settings, "EVILFLOWERS_READIUM_NOTIFY_POSITION_CHANGES", False):
+        return
+
+    if not getattr(settings, "EVILFLOWERS_NOTIFICATIONS_ENABLED", False):
+        return
+
+    from apps.notifications.models import NotificationLog
+    from apps.notifications.tasks import send_notification
+
+    old_positions = list(previously_behind_positions)
+    if not old_positions:
+        return
+
+    cap = int(getattr(settings, "EVILFLOWERS_READIUM_PROMOTED_MAX_PER_USER_PER_ENTRY_PER_DAY", 3))
+    cutoff = timezone.now() - timedelta(hours=24)
+
+    # Re-query the rows that just reflowed — their `position` is now `old - 1`.
+    affected = Reservation.objects.filter(
+        entry=entry,
+        status=Reservation.Status.QUEUED,
+        position__in=[p - 1 for p in old_positions],
+    ).select_related("user", "entry")
+
+    cap_hits = 0
+    for reservation in affected:
+        sent_in_window = NotificationLog.objects.filter(
+            recipient=reservation.user,
+            notification_type=NotificationLog.NotificationType.RESERVATION_PROMOTED,
+            created_at__gte=cutoff,
+            context_snapshot__entry_id=str(entry.pk),
+        ).count()
+        if sent_in_window >= cap:
+            cap_hits += 1
+            continue
+
+        context = {
+            "user_name": reservation.user.full_name or reservation.user.username,
+            "entry_id": str(entry.pk),
+            "entry_title": entry.title,
+            "entry_author": entry.first_author_name,
+            "reservation_id": str(reservation.pk),
+            "old_position": reservation.position + 1,
+            "new_position": reservation.position,
+        }
+        try:
+            send_notification.delay(
+                notification_type=NotificationLog.NotificationType.RESERVATION_PROMOTED,
+                recipient_user_id=str(reservation.user_id),
+                context=context,
+            )
+        except Exception:  # pragma: no cover — best effort, never block reflow
+            logger.exception(
+                "Failed to enqueue reservation_promoted for user=%s entry=%s",
+                reservation.user_id,
+                entry.pk,
+            )
+
+    if cap_hits:
+        logger.warning(
+            "reservation_promoted cap hit %d times for entry=%s (per-(user,entry,24h) cap=%d)",
+            cap_hits,
+            entry.pk,
+            cap,
+        )
 
 
 class ReservationService:
@@ -92,12 +175,29 @@ class ReservationService:
         reservation.save(update_fields=["status", "updated_at"])
 
         # Re-flow positions of subsequent queued reservations on the same entry.
+        reflowed_old_positions: list[int] = []
         if was_queued:
+            reflowed_old_positions = list(
+                Reservation.objects.filter(
+                    entry=reservation.entry,
+                    status=Reservation.Status.QUEUED,
+                    position__gt=original_position,
+                ).values_list("position", flat=True)
+            )
             Reservation.objects.filter(
                 entry=reservation.entry,
                 status=Reservation.Status.QUEUED,
                 position__gt=original_position,
             ).update(position=F("position") - 1)
+
+        # IP-011 Phase 3: dispatch reservation_promoted for users that moved up
+        # the queue. Best-effort — never blocks the state mutation.
+        if reflowed_old_positions:
+            transaction.on_commit(
+                lambda entry=reservation.entry, positions=reflowed_old_positions: (
+                    _dispatch_promoted_notifications(entry, positions)
+                )
+            )
 
         return reservation
 
@@ -184,11 +284,27 @@ class ReservationService:
         # The promoted reservation's position no longer matters once it's
         # `available` — but we leave it untouched (matches the persisted history).
         # Re-flow trailing queue positions so position 1 is always the next queued user.
+        reflowed_old_positions = list(
+            Reservation.objects.filter(
+                entry=entry,
+                status=Reservation.Status.QUEUED,
+                position__gt=head.position,
+            ).values_list("position", flat=True)
+        )
         Reservation.objects.filter(
             entry=entry,
             status=Reservation.Status.QUEUED,
             position__gt=head.position,
         ).update(position=F("position") - 1)
+
+        # IP-011 Phase 3: dispatch reservation_promoted for users that moved up
+        # the queue. Best-effort — never blocks the state mutation.
+        if reflowed_old_positions:
+            transaction.on_commit(
+                lambda entry=entry, positions=reflowed_old_positions: (
+                    _dispatch_promoted_notifications(entry, positions)
+                )
+            )
 
         return head
 

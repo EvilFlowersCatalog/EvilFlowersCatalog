@@ -21,9 +21,11 @@ healed, so the read-side surface still needs to expose the mismatch.
 Reservation lookups are guarded so this module works before Phase 3 migrates.
 """
 
+from datetime import datetime, timedelta
 from typing import Iterable, Optional
 from uuid import UUID
 
+from django.conf import settings
 from django.db.models import QuerySet
 from django.utils import timezone
 
@@ -83,6 +85,79 @@ def lcp_state_mapping(user, entries: Iterable) -> dict:
             Reservation,
         )
     return result
+
+
+def reservation_eta_earliest(entry: Entry, position: int) -> Optional[datetime]:
+    """Earliest plausible availability date for a queue position (no renewals).
+
+    Returns the Nth-earliest `License.expires_at` among currently active
+    licenses on `entry`, where N = `position`. Matches the existing
+    `next_available_at` serializer field for position 1.
+
+    Returns `None` when `position > active_count` — no licenses to extrapolate
+    from. Callers should treat None as "omit the ETA section entirely".
+
+    IP-011 Phase 2 / Q2 resolution.
+    """
+    if position < 1:
+        return None
+    active_states = [License.LicenseState.READY, License.LicenseState.ACTIVE]
+    now = timezone.now()
+    expires_at_values = list(
+        License.objects.filter(
+            entry=entry,
+            state__in=active_states,
+            expires_at__gt=now,
+        )
+        .order_by("expires_at")
+        .values_list("expires_at", flat=True)
+    )
+    if position > len(expires_at_values):
+        return None
+    return expires_at_values[position - 1]
+
+
+def reservation_eta_latest(entry: Entry, position: int) -> Optional[datetime]:
+    """Latest plausible availability date for a queue position (max renewals stacked).
+
+    Assumes every active license consumes all its remaining renewals. Uses
+    `EVILFLOWERS_READIUM_MAX_RENEWALS` (minus per-license `renewal_count`)
+    and `EVILFLOWERS_READIUM_MAX_RENEW_DAYS` to project the upper bound.
+
+    Returns `None` when:
+    - `EVILFLOWERS_READIUM_MAX_RENEWALS` is unset (uncapped renewals deployment
+      — no finite upper bound exists), or
+    - `position > active_count` (no licenses to extrapolate from).
+
+    IP-011 Phase 2 / Q2 resolution.
+    """
+    if position < 1:
+        return None
+
+    max_renewals = getattr(settings, "EVILFLOWERS_READIUM_MAX_RENEWALS", None)
+    if max_renewals is None:
+        return None
+
+    max_renew_days = getattr(settings, "EVILFLOWERS_READIUM_MAX_RENEW_DAYS", 14)
+
+    active_states = [License.LicenseState.READY, License.LicenseState.ACTIVE]
+    now = timezone.now()
+    rows = list(
+        License.objects.filter(
+            entry=entry,
+            state__in=active_states,
+            expires_at__gt=now,
+        ).values("expires_at", "renewal_count")
+    )
+    if position > len(rows):
+        return None
+
+    projected = []
+    for row in rows:
+        remaining = max(0, max_renewals - (row["renewal_count"] or 0))
+        projected.append(row["expires_at"] + timedelta(days=max_renew_days * remaining))
+    projected.sort()
+    return projected[position - 1]
 
 
 def _import_reservation_model():

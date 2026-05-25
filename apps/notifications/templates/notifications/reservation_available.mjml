@@ -11,7 +11,7 @@
     <mj-text>
       Claim it before <strong>{{ claim_deadline }}</strong> or it will be passed to the next user in line.
     </mj-text>
-    <mj-button href="{{ claim_url }}">Claim your loan</mj-button>
+    <mj-button href="{{ claim_url }}">Claim Your Book</mj-button>
   </mj-column>
 </mj-section>
 {% endblock %}

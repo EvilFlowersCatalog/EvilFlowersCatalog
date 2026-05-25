@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if success %}Reservation claimed{% else %}{{ error_title }}{% endif %}</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+               display: flex; justify-content: center; align-items: center; min-height: 100vh;
+               margin: 0; background: #f5f5f5; padding: 1rem; }
+        .card { background: white; padding: 2rem; border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 480px; width: 100%; }
+        h1 { font-size: 1.4rem; margin: 0 0 1rem; }
+        .meta { color: #555; line-height: 1.6; margin-bottom: 1.5rem; }
+        .meta strong { color: #333; }
+        .badge-success { color: #2a7e3a; }
+        .badge-error { color: #b1392b; }
+        .reason { background: #fbeaea; border-left: 4px solid #b1392b;
+                  padding: 0.75rem 1rem; border-radius: 4px;
+                  color: #6b1a14; margin-bottom: 1.5rem; }
+        a.cta { background: #4A90D9; color: #fff; padding: 0.65rem 1.25rem;
+                border-radius: 4px; text-decoration: none; }
+        a.cta:hover { background: #357ec2; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        {% if success %}
+            <h1 class="badge-success">Your book is ready</h1>
+            <div class="meta">
+                You have successfully claimed
+                <strong>{{ entry.title }}</strong>{% if entry.first_author_name %}
+                by <strong>{{ entry.first_author_name }}</strong>{% endif %}.
+            </div>
+            <div class="meta">
+                The download link has been emailed to you separately. You can also
+                find it under your active loans.
+            </div>
+        {% else %}
+            <h1 class="badge-error">{{ error_title }}</h1>
+            <div class="reason">{{ error_detail }}</div>
+            <div class="meta">
+                The reservation for <strong>{{ entry.title }}</strong> could not be claimed.
+                {% if set_passphrase_url %}
+                You need to set your LCP passphrase before claiming. Visit
+                <a href="{{ set_passphrase_url }}">{{ set_passphrase_url }}</a> to set it.
+                {% endif %}
+            </div>
+        {% endif %}
+        <a href="/" class="cta">Back to library</a>
+    </div>
+</body>
+</html>

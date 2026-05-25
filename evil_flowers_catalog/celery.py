@@ -44,3 +44,9 @@ app.conf.beat_schedule["readium-expire-lapsed-licenses"] = {
     "task": "apps.readium.tasks.expire_lapsed_licenses",
     "schedule": crontab(minute="*/5"),
 }
+# IP-011 Phase 5: nudge users whose claim window is about to close.
+# Dedups via NotificationLog so a single reminder fires per AVAILABLE cycle.
+app.conf.beat_schedule["readium-reservation-claim-reminder"] = {
+    "task": "apps.readium.tasks.reservation_claim_reminder_sweep",
+    "schedule": crontab(minute="*/15"),
+}

@@ -1,0 +1,11 @@
+Reservation cancelled
+=====================
+
+Hello {{ user_name }},
+
+Your reservation for "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %} has been cancelled.
+
+You can place a new reservation at any time if you change your mind.
+
+--
+This is an automated notification from Evil Flowers Catalog.

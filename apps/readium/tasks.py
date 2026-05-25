@@ -1,5 +1,5 @@
 """
-Readium Celery tasks (IP-003, IP-009).
+Readium Celery tasks (IP-003, IP-009, IP-011).
 
 - `sweep_unclaimed_reservations` (every minute): expire any reservation whose
   claim deadline has passed and promote the next user in line.
@@ -10,6 +10,12 @@ Readium Celery tasks (IP-003, IP-009).
 - `expire_lapsed_licenses` (every 5 minutes, IP-009 Phase 2): transition
   READY/ACTIVE licenses whose `expires_at` is in the past to `EXPIRED`,
   releasing the partial UniqueConstraint so the user can re-borrow.
+- `reservation_claim_reminder_sweep` (every 15 minutes, IP-011 Phase 5): find
+  AVAILABLE reservations whose `claim_deadline` is within
+  EVILFLOWERS_READIUM_CLAIM_REMINDER_HOURS and dispatch a one-shot reminder.
+  Dedup via NotificationLog.context_snapshot keyed on
+  (reservation_id, available_at) so re-promoted reservations get a fresh
+  reminder cycle (defensive — current state machine has EXPIRED as terminal).
 """
 
 import logging
@@ -139,3 +145,78 @@ def expire_lapsed_licenses() -> int:
         },
     )
     return transitioned
+
+
+@shared_task
+def reservation_claim_reminder_sweep() -> int:
+    """
+    IP-011 Phase 5 / Q4 + Q5 resolutions.
+
+    Find AVAILABLE reservations whose `claim_deadline` is within
+    `EVILFLOWERS_READIUM_CLAIM_REMINDER_HOURS` and dispatch a single
+    reminder per (reservation_id, available_at) cycle.
+
+    Dedup uses a composite key written into `NotificationLog.context_snapshot`
+    so a reservation that hypothetically becomes AVAILABLE more than once
+    (the current state machine doesn't allow this, but the guard is cheap)
+    gets a fresh reminder window.
+
+    Returns the number of reminders sent.
+    """
+    if not getattr(settings, "EVILFLOWERS_NOTIFICATIONS_ENABLED", False):
+        return 0
+
+    from apps.notifications.models import NotificationLog
+    from apps.notifications.services import NotificationService
+    from apps.readium.models import Reservation
+    from apps.readium.views.claim import CLAIM_SCOPE
+
+    reminder_hours = int(getattr(settings, "EVILFLOWERS_READIUM_CLAIM_REMINDER_HOURS", 6))
+    now = timezone.now()
+    horizon = now + timedelta(hours=reminder_hours)
+
+    candidates = Reservation.objects.select_related("entry", "user").filter(
+        status=Reservation.Status.AVAILABLE,
+        claim_deadline__gt=now,
+        claim_deadline__lte=horizon,
+    )
+
+    sent = 0
+    for reservation in candidates:
+        if not reservation.available_at:
+            # Defensive — promote_next always sets this. Skip silently.
+            continue
+
+        already_sent = NotificationLog.objects.filter(
+            notification_type=NotificationLog.NotificationType.RESERVATION_CLAIM_REMINDER,
+            context_snapshot__reservation_id=str(reservation.pk),
+            context_snapshot__available_at=reservation.available_at.isoformat(),
+        ).exists()
+        if already_sent:
+            continue
+
+        claim_url = NotificationService.generate_scoped_url(
+            user_id=str(reservation.user_id),
+            scope=CLAIM_SCOPE,
+            resource_path=f"/readium/v1/reservations/{reservation.pk}/claim",
+        )
+
+        context = {
+            "user_name": reservation.user.full_name or reservation.user.username,
+            "entry_title": reservation.entry.title,
+            "entry_author": reservation.entry.first_author_name,
+            "reservation_id": str(reservation.pk),
+            "available_at": reservation.available_at.isoformat(),
+            "claim_deadline": reservation.claim_deadline.isoformat() if reservation.claim_deadline else "",
+            "claim_url": claim_url,
+        }
+        NotificationService.send(
+            NotificationLog.NotificationType.RESERVATION_CLAIM_REMINDER,
+            reservation.user,
+            context,
+        )
+        sent += 1
+
+    if sent:
+        logger.info("Sent %d reservation_claim_reminder notifications", sent)
+    return sent

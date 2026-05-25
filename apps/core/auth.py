@@ -76,12 +76,18 @@ class JWTFactory:
         """Issue a time-limited JWT scoped to a specific action.
 
         Used by the notification engine to generate download links
-        that authenticate the user for a specific resource.
+        that authenticate the user for a specific resource. A unique
+        `jti` claim is always emitted so consumers can implement
+        single-use semantics by writing the `jti` to a deny-list once
+        a state-mutating action has been performed (see IP-011 Phase 1
+        — the reservation_claim flow consumes the token after a
+        successful `ReservationService.claim`).
         """
         return self._generate(
             {
                 "type": "scoped",
                 "scope": scope,
+                "jti": str(uuid.uuid4()),
                 "exp": timezone.now()
                 + timedelta(hours=getattr(settings, "EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS", 72)),
             }

@@ -6,7 +6,13 @@ Hello {{ user_name }},
 You have been added to the queue for "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %}.
 
 Your position in line: #{{ position }}
-
+{% if estimated_available_from and estimated_available_until %}
+Expected available between {{ estimated_available_from }} and {{ estimated_available_until }}.
+These are estimates — actual availability depends on whether borrowers renew or return early.
+{% elif estimated_available_from %}
+Expected available after {{ estimated_available_from }}.
+This is an estimate — actual availability depends on whether borrowers renew or return early.
+{% endif %}
 We will email you again as soon as a slot opens up. You will have {{ claim_window_hours }} hours to claim it.
 
 --

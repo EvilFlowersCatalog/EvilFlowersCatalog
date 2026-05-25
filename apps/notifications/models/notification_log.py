@@ -34,6 +34,10 @@ class NotificationLog(BaseModel):
         RESERVATION_PLACED = "reservation_placed", _("Reservation Placed")
         RESERVATION_AVAILABLE = "reservation_available", _("Reservation Available")
         RESERVATION_EXPIRED = "reservation_expired", _("Reservation Expired")
+        # IP-011 reservation UX completion.
+        RESERVATION_PROMOTED = "reservation_promoted", _("Reservation Promoted")
+        RESERVATION_CANCELLED = "reservation_cancelled", _("Reservation Cancelled")
+        RESERVATION_CLAIM_REMINDER = "reservation_claim_reminder", _("Reservation Claim Reminder")
         PASSPHRASE_CHANGED = "passphrase_changed", _("Passphrase Changed")
 
     recipient = models.ForeignKey(

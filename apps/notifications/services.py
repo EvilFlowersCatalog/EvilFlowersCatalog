@@ -22,11 +22,21 @@ class NotificationService:
         return contact.value if contact else None
 
     @staticmethod
-    def generate_scoped_url(user_id: str, scope: str, resource_path: str) -> str:
-        """Generate a time-limited URL using a scoped JWT appended as access_token query param."""
+    def generate_scoped_url(
+        user_id: str,
+        scope: str,
+        resource_path: str,
+        base_url: str | None = None,
+    ) -> str:
+        """Generate a time-limited URL using a scoped JWT appended as access_token query param.
+
+        `base_url` defaults to `settings.EVILFLOWERS_BASE_URL`. IP-011 Phase 1
+        passes an override so the reservation_available email can point at
+        `EVILFLOWERS_PORTAL_URL` when set, falling back to the catalog itself.
+        """
         token = JWTFactory(user_id).scoped(scope=scope)
-        base_url = settings.EVILFLOWERS_BASE_URL.rstrip("/")
-        return f"{base_url}{resource_path}?access_token={token}"
+        effective_base = (base_url if base_url is not None else settings.EVILFLOWERS_BASE_URL).rstrip("/")
+        return f"{effective_base}{resource_path}?access_token={token}"
 
     @staticmethod
     def send(notification_type: str, recipient_user, context: dict) -> NotificationLog:

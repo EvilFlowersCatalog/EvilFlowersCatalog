@@ -20,6 +20,7 @@ Endpoints:
 
 from django.urls import path, re_path
 
+from apps.readium.views.claim import ReservationClaimPage
 from apps.readium.views.content import EncryptedContentDownloadView
 from apps.readium.views.hooks import EncryptionWebhook
 from apps.readium.views.licenses import LicenseManagement, LicenseDetail, LicenseRenewalsView
@@ -65,6 +66,16 @@ urlpatterns = [
     # Reservation queue (declarative)
     path("reservations", ReservationCollection.as_view(), name="reservation-collection"),
     path("reservations/<uuid:reservation_id>", ReservationDetail.as_view(), name="reservation-detail"),
+    # IP-011 Phase 1: EFC-hosted reservation claim page. GET renders the
+    # confirmation form (or 302-redirects to elvira-portal when
+    # EVILFLOWERS_PORTAL_URL is set); POST performs the claim. The state
+    # mutation still happens through a server-side non-GET verb — the
+    # declarative `PATCH /reservations/{id}` contract is unchanged.
+    path(
+        "reservations/<uuid:reservation_id>/claim",
+        ReservationClaimPage.as_view(),
+        name="reservation-claim-page",
+    ),
     # Availability
     path("entries/<uuid:entry_id>/availability", EntryAvailabilityView.as_view(), name="entry-availability"),
     # Encryption Management

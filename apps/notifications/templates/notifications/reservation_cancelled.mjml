@@ -1,0 +1,16 @@
+{% extends "notifications/base.mjml" %}
+
+{% block content %}
+<mj-section background-color="#ffffff" padding="30px 20px">
+  <mj-column>
+    <mj-text font-size="20px" font-weight="bold" padding-bottom="10px">Reservation cancelled</mj-text>
+    <mj-text>Hello {{ user_name }},</mj-text>
+    <mj-text>
+      Your reservation for <strong>{{ entry_title }}</strong>{% if entry_author %} by {{ entry_author }}{% endif %} has been cancelled.
+    </mj-text>
+    <mj-text>
+      You can place a new reservation at any time if you change your mind.
+    </mj-text>
+  </mj-column>
+</mj-section>
+{% endblock %}

@@ -105,9 +105,18 @@ def _notify_reservation_transitions(sender, instance: Reservation, created: bool
     }
 
     if created and instance.status == Reservation.Status.QUEUED:
+        from apps.readium.services.entry_lcp_decorator import (
+            reservation_eta_earliest,
+            reservation_eta_latest,
+        )
+
+        eta_from = reservation_eta_earliest(instance.entry, instance.position)
+        eta_until = reservation_eta_latest(instance.entry, instance.position)
         context = base_context | {
             "position": instance.position,
             "claim_window_hours": settings.EVILFLOWERS_READIUM_RESERVATION_CLAIM_HOURS,
+            "estimated_available_from": eta_from.isoformat() if eta_from else "",
+            "estimated_available_until": eta_until.isoformat() if eta_until else "",
         }
         _enqueue("reservation_placed", instance.user, context)
         return
@@ -117,14 +126,23 @@ def _notify_reservation_transitions(sender, instance: Reservation, created: bool
         return
 
     if instance.status == Reservation.Status.AVAILABLE:
-        base_url = getattr(settings, "EVILFLOWERS_BASE_URL", "").rstrip("/")
+        from apps.notifications.services import NotificationService
+        from apps.readium.views.claim import CLAIM_SCOPE
+
+        claim_url = NotificationService.generate_scoped_url(
+            user_id=str(instance.user.pk),
+            scope=CLAIM_SCOPE,
+            resource_path=f"/readium/v1/reservations/{instance.pk}/claim",
+        )
         context = base_context | {
             "claim_deadline": instance.claim_deadline.isoformat() if instance.claim_deadline else "",
-            "claim_url": f"{base_url}/readium/v1/reservations/{instance.pk}",
+            "claim_url": claim_url,
         }
         _enqueue("reservation_available", instance.user, context)
     elif instance.status == Reservation.Status.EXPIRED:
         _enqueue("reservation_expired", instance.user, base_context)
+    elif instance.status == Reservation.Status.CANCELLED:
+        _enqueue("reservation_cancelled", instance.user, base_context)
 
 
 # Passphrase change ----------------------------------------------------------

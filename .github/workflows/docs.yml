@@ -192,6 +192,20 @@ jobs:
             exit 0
           fi
 
+          # Drop any branch dir without a meta.json sidecar — every current
+          # deploy writes meta.json, so a missing one means the dir is stale
+          # (predates the sidecar, or was left behind by a failed deploy).
+          stale=0
+          for dir in publish/branch/*/; do
+            [ -d "$dir" ] || continue
+            if [ ! -f "$dir/meta.json" ]; then
+              echo "Pruning stale (no meta.json): branch/$(basename "$dir")"
+              rm -rf "$dir"
+              stale=$((stale + 1))
+            fi
+          done
+          echo "Pruned $stale stale branch doc directories (missing meta.json)"
+
           # Fetch all live branches (paginated) and convert each name to its slug form.
           live_slugs=$(
             gh api --paginate \
