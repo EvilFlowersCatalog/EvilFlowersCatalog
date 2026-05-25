@@ -1,225 +1,173 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EvilFlowers Catalog - API Documentation</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0d10" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <title>EvilFlowers Catalog — Documentation</title>
+  <meta name="description" content="OPDS 1.2 digital publication catalog server — OpenAPI documentation across branches and releases.">
+  <link rel="icon" href="/EvilFlowersCatalog/logo.png" type="image/png">
+  <link rel="preconnect" href="https://rsms.me/">
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+  <link rel="stylesheet" href="/EvilFlowersCatalog/assets/index.css">
+  <script>
+    // Theme preference must apply before paint to avoid flashes.
+    (function () {
+      try {
+        var saved = localStorage.getItem("efc-theme");
+        if (saved === "light" || saved === "dark") {
+          document.documentElement.setAttribute("data-theme", saved);
         }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 3rem;
-            background: rgba(255, 255, 255, 0.95);
-            padding: 2rem;
-            border-radius: 15px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            backdrop-filter: blur(10px);
-        }
-
-        .logo {
-            width: 120px;
-            height: 120px;
-            margin: 0 auto 1rem;
-            border-radius: 50%;
-            object-fit: cover;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-        }
-
-        .header h1 {
-            font-size: 2.5rem;
-            color: #2c3e50;
-            margin-bottom: 0.5rem;
-            font-weight: 700;
-        }
-
-        .header p {
-            font-size: 1.2rem;
-            color: #7f8c8d;
-            margin-bottom: 1rem;
-        }
-
-        .badge {
-            display: inline-block;
-            background: #3498db;
-            color: white;
-            padding: 0.3rem 0.8rem;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            font-weight: 600;
-        }
-
-        .docs-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 2rem;
-            margin-top: 2rem;
-        }
-
-        .docs-section {
-            background: rgba(255, 255, 255, 0.95);
-            padding: 2rem;
-            border-radius: 15px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            backdrop-filter: blur(10px);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .docs-section:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-        }
-
-        .docs-section h2 {
-            color: #2c3e50;
-            margin-bottom: 1rem;
-            font-size: 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .docs-section h2::before {
-            content: "📖";
-            font-size: 1.2rem;
-        }
-
-        .docs-section.releases h2::before {
-            content: "🚀";
-        }
-
-        .docs-list {
-            list-style: none;
-        }
-
-        .docs-list li {
-            margin-bottom: 0.8rem;
-        }
-
-        .docs-list a {
-            display: block;
-            color: #3498db;
-            text-decoration: none;
-            padding: 0.8rem 1rem;
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            border: 2px solid transparent;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .docs-list a:hover {
-            background: linear-gradient(45deg, #3498db, #2980b9);
-            color: white;
-            transform: translateX(5px);
-            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
-        }
-
-        .docs-list a::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-            transition: left 0.5s;
-        }
-
-        .docs-list a:hover::before {
-            left: 100%;
-        }
-
-        .empty-state {
-            text-align: center;
-            color: #7f8c8d;
-            font-style: italic;
-            padding: 2rem;
-        }
-
-        .footer {
-            margin-top: 3rem;
-            text-align: center;
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 0.9rem;
-        }
-
-        .footer a {
-            color: rgba(255, 255, 255, 0.9);
-            text-decoration: none;
-        }
-
-        .footer a:hover {
-            color: white;
-        }
-
-        @media (max-width: 768px) {
-            .container {
-                padding: 1rem;
-            }
-
-            .header h1 {
-                font-size: 2rem;
-            }
-
-            .docs-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .logo {
-                width: 80px;
-                height: 80px;
-            }
-        }
-    </style>
+      } catch (_) {}
+    })();
+  </script>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <img src="logo.png" alt="EvilFlowers Logo" class="logo">
-            <h1>EvilFlowers Catalog</h1>
-            <p>OPDS 1.2 Compatible Digital Catalog Server</p>
-            <span class="badge">API Documentation</span>
-        </div>
+  <main class="page">
+    <header class="topbar">
+      <a class="brand" href="/EvilFlowersCatalog/">
+        <img class="brand__logo" src="/EvilFlowersCatalog/logo.png" alt="EvilFlowers logo">
+        <span>
+          <span class="brand__title">EvilFlowers Catalog</span><br>
+          <span class="brand__sub">Documentation</span>
+        </span>
+      </a>
+      <button type="button" class="theme-toggle" aria-label="Toggle color theme" data-theme-toggle>
+        <svg class="icon-moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 .278a.77.77 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.77.77 0 0 1 .81 1.094A8 8 0 1 1 6 .278M4.858 1.311A7.27 7.27 0 0 0 1.025 7.752a7.265 7.265 0 0 0 7.318 7.252 7.27 7.27 0 0 0 6.42-3.821 8.6 8.6 0 0 1-1.36.105c-4.872 0-8.825-3.927-8.825-8.776 0-.486.04-.965.115-1.434q.21-.078.16-.067Z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0m0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13m8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5M3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8m10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0m-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0m9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707M4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708"/></svg>
+      </button>
+    </header>
 
-        <div class="docs-grid">
-            <div class="docs-section">
-                <h2>Development Branches</h2>
-                <ul class="docs-list">
-                    <li><a href="/EvilFlowersCatalog/branch/dataverse-env-var-rename/">dataverse-env-var-rename</a></li>
-                    <li><a href="/EvilFlowersCatalog/branch/dataverse-integration/">dataverse-integration</a></li>
-                    <li><a href="/EvilFlowersCatalog/branch/dataverse-integration-backup/">dataverse-integration-backup</a></li>
-                    <li><a href="/EvilFlowersCatalog/branch/develop/"><strong>develop</strong> (main development)</a></li>
-                </ul>
-            </div>
-            <div class="docs-section releases">
-                <h2>Release Versions</h2>
-                <div class="empty-state">No releases available</div>
-            </div>
-        </div>
+    <section class="hero">
+      <h1>EvilFlowers Catalog</h1>
+      <p>OPDS 1.2 digital publication catalog server. Browse the OpenAPI reference for the active development branch, feature branches, and tagged releases.</p>
+      <div class="hero__chips">
+        <a class="hero__chip" href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
+          GitHub
+        </a>
+        <a class="hero__chip" href="https://github.com/EvilFlowersCatalog/evilflowers-protocol">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zm9.5 1a.5.5 0 0 1 .5.5v8a2.5 2.5 0 0 1-2.5 2.5h-5a.5.5 0 0 1 0-1h5A1.5 1.5 0 0 0 13 12.5v-8a.5.5 0 0 1 .5-.5"/></svg>
+          Protocol
+        </a>
+      </div>
+    </section>
 
-        <div class="footer">
-            <p>Generated automatically from <a href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog">EvilFlowers Catalog</a></p>
-            <p>For technical support, visit our <a href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues">GitHub Issues</a></p>
-        </div>
-    </div>
+    <section class="section">
+      <header class="section__header">
+        <h2 class="section__title">Branches</h2>
+        <span class="section__count">3</span>
+      </header>
+      <ul class="entries">
+        <li class="entry entry--primary">
+          <a class="entry__link" href="/EvilFlowersCatalog/branch/develop/">
+            <div class="entry__row">
+              <span class="entry__name">develop</span>
+              <span class="badge badge--accent">main</span>
+            </div>
+            <div class="entry__meta">
+              <span class="meta__chip" title="14d6241bcc6849854188133f267242e6f4f5d034"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122v1.256a2.251 2.251 0 0 1-1.875 2.218l-1.5.25a.75.75 0 0 0-.625.74V11.378a2.251 2.251 0 1 1-1.5 0V8.622A2.25 2.25 0 0 1 8.625 6.4l1.5-.25a.751.751 0 0 0 .625-.74V4.372A2.251 2.251 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM5 2.5a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5Zm-.75 2.872a2.251 2.251 0 1 1 1.5 0v5.256a2.251 2.251 0 1 1-1.5 0Z"/></svg>14d6241</span><span class="meta__chip"><time datetime="2026-05-25T21:47:55Z" data-relative></time></span><span class="meta__message">Redesign and enhance `generate-index.sh` for improved branch/release handling, templating, and UI styling; update `docs.yml` to support manual workflow dispatch.</span>
+            </div>
+            <svg class="entry__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
+          </a>
+        </li>
+        <li class="entry">
+          <a class="entry__link" href="/EvilFlowersCatalog/branch/dataverse-integration/">
+            <div class="entry__row">
+              <span class="entry__name"></span>
+              
+            </div>
+            <div class="entry__meta">
+              <span class="meta__chip meta__chip--muted">No deploy metadata</span>
+            </div>
+            <svg class="entry__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
+          </a>
+        </li>
+        <li class="entry">
+          <a class="entry__link" href="/EvilFlowersCatalog/branch/dataverse-integration-backup/">
+            <div class="entry__row">
+              <span class="entry__name"></span>
+              
+            </div>
+            <div class="entry__meta">
+              <span class="meta__chip meta__chip--muted">No deploy metadata</span>
+            </div>
+            <svg class="entry__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
+          </a>
+        </li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <header class="section__header">
+        <h2 class="section__title">Releases</h2>
+        <span class="section__count">0</span>
+      </header>
+      <ul class="entries">
+<li class="entry entry--empty">No releases available yet.</li>
+      </ul>
+    </section>
+
+    <footer class="footer">
+      <span>Generated <time datetime="2026-05-25T21:47:56Z" data-relative>2026-05-25T21:47:56Z</time></span>
+      <span class="footer__links">
+        <a href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues">Issues</a>
+        <a href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/blob/develop/CHANGELOG.md">Changelog</a>
+        <a href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog">Source</a>
+      </span>
+    </footer>
+  </main>
+
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var btn = document.querySelector("[data-theme-toggle]");
+      function preferred() {
+        try { return localStorage.getItem("efc-theme"); } catch (_) { return null; }
+      }
+      btn && btn.addEventListener("click", function () {
+        var current = root.getAttribute("data-theme")
+          || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        var next = current === "dark" ? "light" : "dark";
+        root.setAttribute("data-theme", next);
+        try { localStorage.setItem("efc-theme", next); } catch (_) {}
+      });
+
+      // Relative-time rendering.
+      var formatter = (typeof Intl !== "undefined" && Intl.RelativeTimeFormat)
+        ? new Intl.RelativeTimeFormat(navigator.language || "en", { numeric: "auto" })
+        : null;
+      function relative(date) {
+        var diff = (date.getTime() - Date.now()) / 1000;
+        var units = [
+          ["year",   60 * 60 * 24 * 365],
+          ["month",  60 * 60 * 24 * 30],
+          ["week",   60 * 60 * 24 * 7],
+          ["day",    60 * 60 * 24],
+          ["hour",   60 * 60],
+          ["minute", 60],
+          ["second", 1]
+        ];
+        for (var i = 0; i < units.length; i++) {
+          var unit = units[i][0], secs = units[i][1];
+          if (Math.abs(diff) >= secs || unit === "second") {
+            return formatter
+              ? formatter.format(Math.round(diff / secs), unit)
+              : date.toISOString().slice(0, 10);
+          }
+        }
+        return date.toISOString();
+      }
+      document.querySelectorAll("time[data-relative][datetime]").forEach(function (el) {
+        var iso = el.getAttribute("datetime");
+        if (!iso) return;
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return;
+        el.textContent = relative(d);
+        el.title = d.toLocaleString();
+      });
+    })();
+  </script>
 </body>
 </html>
