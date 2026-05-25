@@ -13,7 +13,7 @@ from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
 from apps.api.services.entry_introspection_service import EntryIntrospectionService
-from apps.api.services.text_service_client import TextServiceClient
+from apps.dataverse.services.text_publish import TextServiceClient
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.api.filters.entries import EntryFilter
 from apps.api.forms.entries import EntryForm, AcquisitionMetaForm

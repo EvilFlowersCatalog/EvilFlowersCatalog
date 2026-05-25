@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     "apps.readium",
     "apps.events",
     "apps.notifications",
+    "apps.dataverse",
 ]
 
 MIDDLEWARE = [

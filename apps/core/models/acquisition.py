@@ -30,12 +30,18 @@ class Acquisition(BaseModel):
         ACQUISITION = "acquisition", _("acquisition")
         OPEN_ACCESS = "open-access", _("open-access")
         BORROW = "borrow", _("borrow")
+        # IP-008 Phase 4 D4: Dataverse files marked `restricted` are
+        # imported with this relation so OPDS consumers can distinguish
+        # them from open-access content.
+        RESTRICTED_ACCESS = "restricted-access", _("restricted-access")
 
         def __str__(self):
             if self == self.OPEN_ACCESS:
                 return "http://opds-spec.org/acquisition/open-access"
             elif self == self.BORROW:
                 return "http://opds-spec.org/acquisition/borrow"
+            elif self == self.RESTRICTED_ACCESS:
+                return "http://opds-spec.org/acquisition"
             return "http://opds-spec.org/acquisition"
 
     class AcquisitionMIME(models.TextChoices):
