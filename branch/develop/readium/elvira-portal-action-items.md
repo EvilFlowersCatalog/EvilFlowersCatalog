@@ -151,7 +151,40 @@ environment **before** the EFC Phase 4 PR merges.
 **Acceptance**: production access logs show zero `.lcpl` requests
 with bearer auth in the 7 days following the EFC deploy.
 
+## G9 — *Optional* reservation claim route (IP-011 Phase 1)
+
+**Status**: optional. EFC ships a self-contained Django-templated claim
+page so the catalog is usable without elvira-portal. Adopt this item only
+if you want the SPA UX for the email-driven claim flow.
+
+**Why**: IP-011 closes the G1 gap in the reservation queue — the email's
+"Claim your book" button now lands on
+`GET /readium/v1/reservations/{id}/claim?access_token=…` (an EFC-hosted
+HTML page). When `EVILFLOWERS_PORTAL_URL` is set on the EFC deployment,
+the GET endpoint 302-redirects to
+`{EVILFLOWERS_PORTAL_URL}/library/reservations/{id}/claim?access_token=…`
+instead. If your deployment sets that env var, the portal needs the route.
+
+**Required changes**:
+
+1. Add a route `/library/reservations/:id/claim` that:
+    - Reads `access_token` from the URL query.
+    - Renders a confirmation card (entry title/author, claim deadline,
+      [Claim] [Cancel]).
+    - On [Claim], POSTs back to
+      `${EFC_BASE_URL}/readium/v1/reservations/{id}/claim` with
+      `access_token=…` as a form field.
+    - Shows the success/error response.
+2. The scoped JWT (`scope: "reservation:claim"`) is single-use — after a
+   successful claim, replays return 410 Gone. Surface a friendly "this
+   link has been used" message instead of the raw error.
+
+**Acceptance**: emailed "Claim your book" link opens the portal claim
+screen without manual re-auth; clicking [Claim] creates the loan and
+shows the new download URL.
+
 ## Reference
 
 - Backend [integration contract](integration-contract.md)
 - Proposal [IP-009](../proposals/posts/ip-009-readium-integration-closeout.md)
+- Proposal [IP-011](../proposals/posts/ip-011-reservation-ux-completion.md) (G9 above)

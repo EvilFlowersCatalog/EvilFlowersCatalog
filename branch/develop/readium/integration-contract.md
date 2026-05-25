@@ -34,6 +34,8 @@ directly.
 | `GET /readium/v1/licenses/{id}/status` | Bearer (LSD proxy) |
 | `POST /readium/v1/reservations` | Bearer |
 | `PATCH /readium/v1/reservations/{id}` | Bearer |
+| `GET /readium/v1/reservations/{id}/claim?access_token=…` | **scoped JWT (`reservation:claim`)** |
+| `POST /readium/v1/reservations/{id}/claim` | **scoped JWT (`reservation:claim`)** in form body |
 | `GET /readium/v1/entries/{id}/availability` | Bearer |
 
 ## License lifecycle vocabulary (IP-009 Phase 1)
@@ -187,6 +189,56 @@ PATCH  /readium/v1/reservations/{id}     { status: "cancelled" | "claimed" }
 ```
 
 `PATCH` here is the **only** PATCH method in the Readium surface.
+
+### Claim from email (IP-011 Phase 1)
+
+The `reservation_available` email carries a scoped-JWT-authenticated link
+to a self-contained claim page hosted by EFC. The contract:
+
+```
+GET  /readium/v1/reservations/{id}/claim?access_token=<scoped JWT>
+     -- renders the confirmation form ("Claim 'Title' by 'Author'? [Claim] [Cancel]")
+     -- 302-redirects to `{EVILFLOWERS_PORTAL_URL}/library/reservations/{id}/claim?access_token=…`
+        when `EVILFLOWERS_PORTAL_URL` is set
+POST /readium/v1/reservations/{id}/claim
+     Form body: access_token=<scoped JWT>
+     -- performs the claim; renders success/error HTML
+```
+
+The state mutation still goes through `ReservationService.claim` server-side
+— the declarative `PATCH /reservations/{id}` contract is unchanged. The
+claim page is a UX shell so email links work without requiring a separate
+SPA deployment.
+
+Scope and replay protection:
+
+- Token must carry `scope == "reservation:claim"` and `sub` must match the
+  reservation owner. Wrong scope or mismatched subject → 401/403 problem
+  detail.
+- After a successful POST claim the token's `jti` is added to a Redis
+  deny-list with the token's remaining TTL. Replays return 410 Gone.
+
+## Notification types
+
+| Notification type | Trigger | Context keys |
+|---|---|---|
+| `license_created` | New License row created | `download_url`, `expires_at`, … |
+| `license_renewed` | Successful renew | `expires_at`, `renewal_count` |
+| `license_returned` | License → RETURNED | `entry_title`, `license_id` |
+| `license_revoked` | License → REVOKED | `entry_title`, `reason` |
+| `license_expiring_soon` | Sweep, ≤ `EXPIRY_REMINDER_DAYS` | `expires_at`, `days_left` |
+| `reservation_placed` | New reservation (QUEUED) | `position`, `claim_window_hours`, `estimated_available_from`, `estimated_available_until` |
+| `reservation_available` | Promote → AVAILABLE | `claim_deadline`, `claim_url` (EFC claim page, scoped JWT) |
+| `reservation_expired` | Sweep, claim deadline lapsed | `entry_title` |
+| `reservation_promoted` *(IP-011)* | Position decrease (opt-in) | `old_position`, `new_position`, `entry_id` |
+| `reservation_cancelled` *(IP-011)* | QUEUED/AVAILABLE → CANCELLED | `entry_title` |
+| `reservation_claim_reminder` *(IP-011)* | Sweep, `claim_deadline` within `CLAIM_REMINDER_HOURS` | `claim_deadline`, `claim_url`, `available_at` |
+| `passphrase_changed` | `lcp_passphrase_hash` rotated | `user_name` |
+
+`reservation_promoted` is opt-in — set
+`EVILFLOWERS_READIUM_NOTIFY_POSITION_CHANGES=true` and tune
+`EVILFLOWERS_READIUM_PROMOTED_MAX_PER_USER_PER_ENTRY_PER_DAY` (default 3)
+to taste.
 
 ## Errors (RFC 7807 problem details)
 

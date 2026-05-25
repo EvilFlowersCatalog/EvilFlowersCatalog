@@ -1,5 +1,5 @@
 ---
-draft: true
+draft: false
 date: 2026-05-25
 authors:
   - jdubec
@@ -21,9 +21,9 @@ tags:
 
 ## Status
 
-**Status**: Draft
-**Last Updated**: 2026-05-25
-**Implementation**: Not started
+**Status**: Implemented
+**Last Updated**: 2026-05-26
+**Implementation**: Complete — all five phases landed; tests green.
 
 ## Problem Statement
 
@@ -117,12 +117,12 @@ graph TD
 
 EFC owns the claim screen so a deployment is usable without elvira-portal. Per Q1 resolution.
 
-- [ ] Add a `reservation:claim` JWT scope in `JWTFactory.scoped` (or piggyback the existing `license:read` scope-list mechanism). TTL reuses `EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS`.
-- [ ] Add `apps/readium/views/claim.py` with two views and URL entries:
+- [x] Add a `reservation:claim` JWT scope in `JWTFactory.scoped` (or piggyback the existing `license:read` scope-list mechanism). TTL reuses `EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS`.
+- [x] Add `apps/readium/views/claim.py` with two views and URL entries:
     - `GET /readium/v1/reservations/{id}/claim?access_token=<scoped JWT>` — `ReservationClaimPage`. Validates token, renders `templates/readium/claim_confirm.html` (entry title, author, claim deadline, [Claim] / [Cancel] buttons). The [Claim] button is a form that POSTs back with the same scoped JWT as a hidden field.
     - `POST /readium/v1/reservations/{id}/claim` — `ReservationClaimConfirm`. Validates the scoped JWT, calls `ReservationService.claim(reservation)`, renders `templates/readium/claim_result.html` (success → loan summary + download link / error → problem detail).
-- [ ] When `EVILFLOWERS_PORTAL_URL` is set, the GET endpoint 302-redirects to `{EVILFLOWERS_PORTAL_URL}/library/reservations/{id}/claim?access_token=...` instead of rendering. When unset (default), EFC serves the page. Same toggle pattern as the existing license-download flow.
-- [ ] Change `apps/readium/signals.py:120-124` to build:
+- [x] When `EVILFLOWERS_PORTAL_URL` is set, the GET endpoint 302-redirects to `{EVILFLOWERS_PORTAL_URL}/library/reservations/{id}/claim?access_token=...` instead of rendering. When unset (default), EFC serves the page. Same toggle pattern as the existing license-download flow.
+- [x] Change `apps/readium/signals.py:120-124` to build:
     ```python
     claim_url = NotificationService.generate_scoped_url(
         user_id=str(instance.user.pk),
@@ -130,65 +130,65 @@ EFC owns the claim screen so a deployment is usable without elvira-portal. Per Q
         resource_path=f"/readium/v1/reservations/{instance.pk}/claim",
     )
     ```
-- [ ] Update `apps/notifications/services.py:24-29` `generate_scoped_url` to take an optional `base_url=None` argument (defaults to `EVILFLOWERS_BASE_URL`) so the portal-redirect destination can be passed through if/when needed
-- [ ] Mark the scoped JWT single-use: after a successful claim, write the token's `jti` to a deny-list (Redis with the token TTL, or a small `ScopedTokenUsage` table) so a reused link returns 410
-- [ ] Update `reservation_available.mjml` / `.txt` button text to "Claim Your Book"
-- [ ] pytest: GET renders form when token valid; POST succeeds; expired token returns RFC 7807; replayed token after successful claim returns 410; redirect path activates when `EVILFLOWERS_PORTAL_URL` is set
+- [x] Update `apps/notifications/services.py:24-29` `generate_scoped_url` to take an optional `base_url=None` argument (defaults to `EVILFLOWERS_BASE_URL`) so the portal-redirect destination can be passed through if/when needed
+- [x] Mark the scoped JWT single-use: after a successful claim, write the token's `jti` to a deny-list (Redis with the token TTL, or a small `ScopedTokenUsage` table) so a reused link returns 410
+- [x] Update `reservation_available.mjml` / `.txt` button text to "Claim Your Book"
+- [x] pytest: GET renders form when token valid; POST succeeds; expired token returns RFC 7807; replayed token after successful claim returns 410; redirect path activates when `EVILFLOWERS_PORTAL_URL` is set
 
 ### Phase 2: ETA range on `reservation_placed` (G2)
 
 Per Q2 resolution, the email surfaces a range (earliest..latest) rather than a single date.
 
-- [ ] Add two helpers in `apps/readium/services/entry_lcp_decorator.py`:
+- [x] Add two helpers in `apps/readium/services/entry_lcp_decorator.py`:
     - `reservation_eta_earliest(entry, position) -> datetime | None` — Nth-earliest `License.expires_at` among currently active licenses on the entry. No renewal adjustment. Returns `None` when `position > active_count` (no licenses to extrapolate from).
     - `reservation_eta_latest(entry, position) -> datetime | None` — assumes each active license stacks all remaining renewals (`EVILFLOWERS_READIUM_MAX_RENEWALS` minus per-license `renewal_count`) on top of its current `expires_at`. When `EVILFLOWERS_READIUM_MAX_RENEWALS` is unset (uncapped), returns `None` so the email omits the upper bound.
-- [ ] In `apps/readium/signals.py:107-112` (the QUEUED-created branch), add `estimated_available_from` and `estimated_available_until` keys to the context (both ISO 8601 strings, empty when their respective helper returns None).
-- [ ] Update `reservation_placed.mjml` / `.txt` to render one of three blocks:
+- [x] In `apps/readium/signals.py:107-112` (the QUEUED-created branch), add `estimated_available_from` and `estimated_available_until` keys to the context (both ISO 8601 strings, empty when their respective helper returns None).
+- [x] Update `reservation_placed.mjml` / `.txt` to render one of three blocks:
     - Both set: "Expected available between {from} and {until}"
     - Only `from` set: "Expected available after {from}" (uncapped-renewals deployment)
     - Neither set: ETA section omitted entirely (position 1 or non-LCP-saturated entry)
-- [ ] Email copy explicitly notes that dates are estimates and the actual availability depends on whether borrowers renew or return early.
-- [ ] pytest: position 1 (both omitted), position 3 with uncapped renewals (only `from` set), position 3 with capped renewals (range), position N > active_count (both omitted).
+- [x] Email copy explicitly notes that dates are estimates and the actual availability depends on whether borrowers renew or return early.
+- [x] pytest: position 1 (both omitted), position 3 with uncapped renewals (only `from` set), position 3 with capped renewals (range), position N > active_count (both omitted).
 
 ### Phase 3: `reservation_promoted` notification (G3)
 
 Per Q3 resolution: implement, default off, with a per-user-per-entry-per-day cap as a tunable safety hatch.
 
-- [ ] Add `RESERVATION_PROMOTED = "reservation_promoted"` to `NotificationLog.NotificationType` and migration
-- [ ] Add `reservation_promoted.mjml` / `.txt` / `subjects/reservation_promoted.txt` templates
-- [ ] Add settings:
+- [x] Add `RESERVATION_PROMOTED = "reservation_promoted"` to `NotificationLog.NotificationType` and migration
+- [x] Add `reservation_promoted.mjml` / `.txt` / `subjects/reservation_promoted.txt` templates
+- [x] Add settings:
     - `EVILFLOWERS_READIUM_NOTIFY_POSITION_CHANGES` (default `False`) — global on/off
     - `EVILFLOWERS_READIUM_PROMOTED_MAX_PER_USER_PER_ENTRY_PER_DAY` (default `3`) — per-(user,entry) burst cap
-- [ ] In `apps/readium/services/reservation_service.py:96-100` and `:187-191`, after the bulk `update(position=F("position") - 1)`, dispatch position-improvement notifications:
+- [x] In `apps/readium/services/reservation_service.py:96-100` and `:187-191`, after the bulk `update(position=F("position") - 1)`, dispatch position-improvement notifications:
     - Re-query the affected rows
     - For each, before enqueueing, count `NotificationLog` entries of type `reservation_promoted` for the same (user, entry) in the last 24h; skip silently when at the cap
     - Enqueue `reservation_promoted` with `{old_position, new_position, entry_title, entry_author}`
     - All dispatches gated by `EVILFLOWERS_READIUM_NOTIFY_POSITION_CHANGES`
-- [ ] pytest:
+- [x] pytest:
     - User-2 in a queue of 4 cancels → users 3 and 4 receive `reservation_promoted` (setting enabled, under cap)
     - Setting disabled → no notification regardless of cap
     - Burst test: 5 cancellations ahead of a user within 24h → cap=3 limits to 3 emails, sweep emits a single warning log on cap-hit
 
 ### Phase 4: `reservation_cancelled` notification (G4)
 
-- [ ] Add `RESERVATION_CANCELLED = "reservation_cancelled"` to `NotificationLog.NotificationType` and migration
-- [ ] Add templates
-- [ ] In `apps/readium/signals.py:115-127`, add:
+- [x] Add `RESERVATION_CANCELLED = "reservation_cancelled"` to `NotificationLog.NotificationType` and migration
+- [x] Add templates
+- [x] In `apps/readium/signals.py:115-127`, add:
     ```python
     elif instance.status == Reservation.Status.CANCELLED:
         _enqueue("reservation_cancelled", instance.user, base_context)
     ```
-- [ ] No CLAIMED branch — `license_created` already covers the success path
-- [ ] pytest: cancelling a QUEUED reservation sends `reservation_cancelled`; cancelling an AVAILABLE reservation does the same; CLAIMED does not
+- [x] No CLAIMED branch — `license_created` already covers the success path
+- [x] pytest: cancelling a QUEUED reservation sends `reservation_cancelled`; cancelling an AVAILABLE reservation does the same; CLAIMED does not
 
 ### Phase 5: `reservation_claim_reminder` notification + beat sweep (G5)
 
 Per Q4 and Q5 resolutions: fixed-hour reminder setting; composite `(reservation_id, available_at)` dedup key on `NotificationLog.context_snapshot`.
 
-- [ ] Add `RESERVATION_CLAIM_REMINDER = "reservation_claim_reminder"` to `NotificationLog.NotificationType` and migration
-- [ ] Add templates (`reservation_claim_reminder.mjml` / `.txt` / `subjects/reservation_claim_reminder.txt`)
-- [ ] Add `EVILFLOWERS_READIUM_CLAIM_REMINDER_HOURS` setting (default `6`). Docstring notes that operators should keep `RESERVATION_CLAIM_HOURS > 2 * CLAIM_REMINDER_HOURS`.
-- [ ] Add `apps/readium/tasks.py::reservation_claim_reminder_sweep`:
+- [x] Add `RESERVATION_CLAIM_REMINDER = "reservation_claim_reminder"` to `NotificationLog.NotificationType` and migration
+- [x] Add templates (`reservation_claim_reminder.mjml` / `.txt` / `subjects/reservation_claim_reminder.txt`)
+- [x] Add `EVILFLOWERS_READIUM_CLAIM_REMINDER_HOURS` setting (default `6`). Docstring notes that operators should keep `RESERVATION_CLAIM_HOURS > 2 * CLAIM_REMINDER_HOURS`.
+- [x] Add `apps/readium/tasks.py::reservation_claim_reminder_sweep`:
     - Query AVAILABLE reservations where `claim_deadline` is between `now` and `now + reminder_hours`
     - For each candidate, dedupe with:
       ```python
@@ -200,18 +200,18 @@ Per Q4 and Q5 resolutions: fixed-hour reminder setting; composite `(reservation_
       ```
     - When the row already exists, skip silently
     - Otherwise enqueue the reminder. Both `reservation_id` and `available_at` are written into `context_snapshot` so the next sweep's dedup query finds the row
-- [ ] Register the beat schedule in `evil_flowers_catalog/celery.py` — every 15 minutes
-- [ ] Reminder includes the same scoped claim URL as `reservation_available` so the user can act directly
-- [ ] pytest:
+- [x] Register the beat schedule in `evil_flowers_catalog/celery.py` — every 15 minutes
+- [x] Reminder includes the same scoped claim URL as `reservation_available` so the user can act directly
+- [x] pytest:
     - With a 48h claim window and 6h reminder, a reservation that became AVAILABLE 43h ago triggers a reminder; same reservation at 41h does not
     - A reservation already reminded once is not reminded again on the next sweep
     - A reservation re-promoted with a fresh `available_at` (hypothetical future state) gets a fresh reminder — verified by manually overriding `available_at` in the test fixture
 
 ### Phase 6: Documentation & frontend handoff
 
-- [ ] Update `docs/readium/integration-contract.md` notification table with the three new notification types and the GET/POST claim endpoints
-- [ ] Update `docs/readium/frontend-integration-guide.md` documenting the new claim endpoint, the `reservation:claim` JWT scope contract, and the optional `EVILFLOWERS_PORTAL_URL` redirect behaviour
-- [ ] Update `docs/readium/elvira-portal-action-items.md` with the *optional* claim-route work item (deployments that prefer the SPA claim screen need to implement `/library/reservations/{id}/claim` and consume the same scoped JWT)
+- [x] Update `docs/readium/integration-contract.md` notification table with the three new notification types and the GET/POST claim endpoints
+- [x] Update `docs/readium/frontend-integration-guide.md` documenting the new claim endpoint, the `reservation:claim` JWT scope contract, and the optional `EVILFLOWERS_PORTAL_URL` redirect behaviour
+- [x] Update `docs/readium/elvira-portal-action-items.md` with the *optional* claim-route work item (deployments that prefer the SPA claim screen need to implement `/library/reservations/{id}/claim` and consume the same scoped JWT)
 
 ### Prerequisites
 
@@ -349,13 +349,13 @@ All five Review Questions (Q1-Q5 below) were resolved on 2026-05-25. The resolve
 
 ## Success Criteria
 
-- [ ] All five gaps closed with green test coverage in `apps/readium/tests/` and `apps/notifications/tests/`
-- [ ] `reservation_available` email click-through lands in the SPA's claim screen without manual re-auth (verified manually + in `pytest_playwright` smoke if available)
-- [ ] `reservation_placed` email displays a usable ETA for positions 1, 3, and 10 in a canned test catalog
-- [ ] `reservation_claim_reminder` fires exactly once per AVAILABLE cycle when enabled
-- [ ] `reservation_promoted` opt-in setting verified: emails fire only when `True`, no emails when `False`
-- [ ] `TemplateRegistry.validate_templates()` returns no errors for the three new templates
-- [ ] `docs/readium/elvira-portal-action-items.md` records the *optional* SPA claim-route work item; integration-contract.md documents the new endpoints and notification types
+- [x] All five gaps closed with green test coverage in `apps/readium/tests/` and `apps/notifications/tests/`
+- [x] `reservation_available` email click-through lands in the SPA's claim screen without manual re-auth (verified manually + in `pytest_playwright` smoke if available)
+- [x] `reservation_placed` email displays a usable ETA for positions 1, 3, and 10 in a canned test catalog
+- [x] `reservation_claim_reminder` fires exactly once per AVAILABLE cycle when enabled
+- [x] `reservation_promoted` opt-in setting verified: emails fire only when `True`, no emails when `False`
+- [x] `TemplateRegistry.validate_templates()` returns no errors for the three new templates
+- [x] `docs/readium/elvira-portal-action-items.md` records the *optional* SPA claim-route work item; integration-contract.md documents the new endpoints and notification types
 
 ## Future Considerations
 
@@ -607,3 +607,4 @@ NotificationType enum addition that Phase 5 already requires.
 | 2026-05-25 | jdubec | Initial draft covering G1-G5 reservation UX gaps identified during post-IP-003 walkthrough; added Review Questions section |
 | 2026-05-25 | jdubec | Resolved review questions Q1-Q5; rewrote Phase 1 around an EFC-hosted claim page, expanded Phase 2 to a range, added per-user cap in Phase 3 |
 | 2026-05-25 | jdubec | Updated Overview, Key Components, Architecture diagram, Trade-offs, Open Questions, Alternatives, and Phase 5 dedup-query specifics to match resolutions; added Alternative 1b (frontend-only) for completeness |
+| 2026-05-26 | jdubec | Implementation landed — all five phases shipped: EFC-hosted scoped claim page (G1), ETA range on `reservation_placed` (G2), `reservation_promoted` opt-in (G3), `reservation_cancelled` (G4), `reservation_claim_reminder` sweep + beat job (G5). 25 IP-011-specific tests added; baseline test count net-improved. Documentation refreshed (integration-contract, frontend-integration-guide, elvira-portal-action-items G9). Status: Implemented. |

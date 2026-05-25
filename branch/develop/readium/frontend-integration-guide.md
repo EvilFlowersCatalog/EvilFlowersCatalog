@@ -806,6 +806,33 @@ const openInReadingApp = (licenseUrl: string) => {
 };
 ```
 
+## Reservation Claim From Email (IP-011 Phase 1)
+
+When a user reserves a fully-borrowed entry and reaches the head of the
+queue, EFC sends a `reservation_available` email containing a "Claim your
+book" button. The button targets an EFC-hosted page:
+
+```
+GET  /readium/v1/reservations/{id}/claim?access_token=<scoped JWT>
+POST /readium/v1/reservations/{id}/claim  (form body: access_token=…)
+```
+
+The `access_token` is a JWT with `scope: "reservation:claim"`, TTL =
+`EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS` (default 72h). It is
+single-use: after a successful POST claim the JWT's `jti` is added to a
+deny-list with the token's remaining TTL — replays return 410 Gone.
+
+**Standalone-friendly default**: EFC renders the confirmation page itself
+in plain HTML when `EVILFLOWERS_PORTAL_URL` is unset, so the catalog works
+without any frontend deployment.
+
+**Portal-rerouting mode**: setting `EVILFLOWERS_PORTAL_URL=https://portal.example.com`
+flips the GET handler into a 302-redirect to
+`{EVILFLOWERS_PORTAL_URL}/library/reservations/{id}/claim?access_token=…`.
+The portal then renders the claim screen and POSTs the same scoped JWT
+back to the EFC POST endpoint. See `docs/readium/elvira-portal-action-items.md`
+G9 for the route the portal needs to implement.
+
 ## Error Handling
 
 ```typescript
