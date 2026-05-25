@@ -9,9 +9,9 @@ its helpers.
 import hmac
 import json
 import logging
-import os
 from http import HTTPStatus
 
+from django.conf import settings
 from django.db import transaction
 from django.http import HttpResponse
 from django.utils.decorators import method_decorator
@@ -46,7 +46,7 @@ class PrepublishView(View):
 
         # Authn: shared secret (per current contract — HMAC migration
         # is a future hardening item; out of scope for IP-008).
-        expected_secret = os.getenv("DATAVERSE_WORKFLOW_SECRET", "")
+        expected_secret = settings.EVILFLOWERS_DATAVERSE_WORKFLOW_SECRET
         provided_secret = payload_dict.get("secret", "") if isinstance(payload_dict, dict) else ""
         if not expected_secret or not hmac.compare_digest(provided_secret, expected_secret):
             logger.warning("Dataverse prepublish secret validation failed")

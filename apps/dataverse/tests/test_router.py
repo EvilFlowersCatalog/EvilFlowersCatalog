@@ -85,10 +85,10 @@ class TestCatalogRouter:
         decision = router.resolve(dataset_id=None, global_id="doi:10.5072/STU/ABC")
         assert decision.catalog.pk == stu.pk
 
-    def test_env_default(self, monkeypatch):
+    @override_settings(EVILFLOWERS_DATAVERSE_CATALOG_URL_NAME="env-default")
+    def test_env_default(self):
         _make_catalog("first")
         target = _make_catalog("env-default")
-        monkeypatch.setenv("DATAVERSE_CATALOG_URL_NAME", "env-default")
 
         router = CatalogRouter()
         decision = router.resolve(dataset_id="999", global_id="urn:unknown:X")

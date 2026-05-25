@@ -1,7 +1,7 @@
 import json
 import logging
-import os
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.test import RequestFactory
 
@@ -19,8 +19,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--secret",
             required=False,
-            default=os.getenv("DATAVERSE_WORKFLOW_SECRET", ""),
-            help="Prepublish workflow secret (must match DATAVERSE_WORKFLOW_SECRET)",
+            default=settings.EVILFLOWERS_DATAVERSE_WORKFLOW_SECRET,
+            help="Prepublish workflow secret (must match settings.EVILFLOWERS_DATAVERSE_WORKFLOW_SECRET)",
         )
 
     def handle(self, *args, **options):

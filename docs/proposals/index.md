@@ -17,6 +17,7 @@ changes are documented before implementation.
 | IP-008 | [Readium + Dataverse Post-Merge Consolidation](posts/ip-008-readium-correctness-followup.md) | :white_check_mark: Implemented | 2026-05-25 |
 | IP-009 | [Readium Integration Closeout — Lifecycle Vocabulary, Expiry Reconcile, and Single-Use Download Tokens](posts/ip-009-readium-integration-closeout.md) | :white_check_mark: Implemented | 2026-05-25 |
 | IP-010 | [Multi-Tenancy & ACL Correctness](posts/ip-010-multi-tenancy-acl-correctness.md) | 📝 Draft | 2026-05-25 |
+| IP-011 | [Reservation Queue UX Completion](posts/ip-011-reservation-ux-completion.md) | 📝 Draft | 2026-05-25 |
 
 
 

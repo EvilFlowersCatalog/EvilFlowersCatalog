@@ -5,11 +5,12 @@ IP-008 Phase 4 D3 / Q3 resolution: implement the documented precedence
 that the legacy view promised in a comment but never wired.
 
 Precedence (first match wins):
-  1. `EVILFLOWERS_DATAVERSE_CATALOG_MAP` — explicit dataset_id → catalog
-     url_name map.
-  2. `EVILFLOWERS_DATAVERSE_GLOBAL_ID_PREFIXES` — list of
+  1. `settings.EVILFLOWERS_DATAVERSE_CATALOG_MAP` — explicit dataset_id
+     → catalog url_name map.
+  2. `settings.EVILFLOWERS_DATAVERSE_GLOBAL_ID_PREFIXES` — list of
      `{prefix, catalog}` entries, longest prefix wins.
-  3. `DATAVERSE_CATALOG_URL_NAME` env — deployment-wide default.
+  3. `settings.EVILFLOWERS_DATAVERSE_CATALOG_URL_NAME` — deployment-wide
+     default.
   4. First catalog by id — last-resort fallback, logged at ERROR.
 
 The decision returns BOTH the catalog and the matched-rule name so the
@@ -21,10 +22,9 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from django.conf import settings
 
@@ -53,7 +53,7 @@ class CatalogRouter:
 
     SETTING_MAP = "EVILFLOWERS_DATAVERSE_CATALOG_MAP"
     SETTING_PREFIXES = "EVILFLOWERS_DATAVERSE_GLOBAL_ID_PREFIXES"
-    SETTING_ENV_DEFAULT = "DATAVERSE_CATALOG_URL_NAME"
+    SETTING_DEFAULT = "EVILFLOWERS_DATAVERSE_CATALOG_URL_NAME"
 
     def resolve(self, *, dataset_id: Optional[str], global_id: Optional[str]) -> RoutingDecision:
         # 1) Explicit map by dataset_id
@@ -79,22 +79,22 @@ class CatalogRouter:
                 )
                 return decision
 
-        # 3) Env default
-        env_value = (os.getenv(self.SETTING_ENV_DEFAULT) or "").strip()
-        if env_value:
-            catalog = Catalog.objects.filter(url_name=env_value).first()
+        # 3) Settings default
+        default_value = (getattr(settings, self.SETTING_DEFAULT, "") or "").strip()
+        if default_value:
+            catalog = Catalog.objects.filter(url_name=default_value).first()
             if catalog is not None:
                 logger.warning(
                     "Dataverse routing fell through to env_default: %s=%s catalog=%s",
-                    self.SETTING_ENV_DEFAULT,
-                    env_value,
+                    self.SETTING_DEFAULT,
+                    default_value,
                     catalog.url_name,
                 )
-                return RoutingDecision(catalog, MatchedRule.ENV_DEFAULT, env_value)
+                return RoutingDecision(catalog, MatchedRule.ENV_DEFAULT, default_value)
             logger.warning(
                 "Dataverse routing env_default %s=%s does not match any catalog",
-                self.SETTING_ENV_DEFAULT,
-                env_value,
+                self.SETTING_DEFAULT,
+                default_value,
             )
 
         # 4) Fallback: first catalog
@@ -113,7 +113,7 @@ class CatalogRouter:
     # ----- precedence steps -----------------------------------------------
 
     def _load_map(self) -> Dict[str, str]:
-        raw = getattr(settings, self.SETTING_MAP, None) or os.getenv(self.SETTING_MAP) or ""
+        raw = getattr(settings, self.SETTING_MAP, None) or ""
         if not raw:
             return {}
         if isinstance(raw, dict):
@@ -129,7 +129,7 @@ class CatalogRouter:
         return {str(k): str(v) for k, v in parsed.items()}
 
     def _load_prefixes(self) -> List[Dict[str, str]]:
-        raw = getattr(settings, self.SETTING_PREFIXES, None) or os.getenv(self.SETTING_PREFIXES) or ""
+        raw = getattr(settings, self.SETTING_PREFIXES, None) or ""
         if not raw:
             return []
         if isinstance(raw, list):

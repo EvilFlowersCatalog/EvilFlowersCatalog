@@ -13,31 +13,11 @@ Celery's autoretry on `DataverseTransientError`.
 """
 
 import logging
-import os
 from typing import Optional
 
+from django.conf import settings
+
 logger = logging.getLogger(__name__)
-
-
-def _env_flag(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _int_env(name: str, default: int) -> int:
-    try:
-        return int(os.getenv(name, str(default)))
-    except ValueError:
-        return default
-
-
-def _float_env(name: str, default: float) -> float:
-    try:
-        return float(os.getenv(name, str(default)))
-    except ValueError:
-        return default
 
 
 def schedule_workflow_resume(
@@ -48,15 +28,15 @@ def schedule_workflow_resume(
 ) -> None:
     """Enqueue a Celery task to resume the Dataverse workflow.
 
-    Gated by `DATAVERSE_RESUME_WORKFLOW=1` (operator opt-in). The task
-    is deferred via `transaction.on_commit` by the caller; we only do
-    the env validation here.
+    Gated by `EVILFLOWERS_DATAVERSE_RESUME_WORKFLOW` (operator opt-in).
+    The task is deferred via `transaction.on_commit` by the caller;
+    we only do the configuration validation here.
     """
-    if not _env_flag("DATAVERSE_RESUME_WORKFLOW", default=False):
+    if not settings.EVILFLOWERS_DATAVERSE_RESUME_WORKFLOW:
         return
 
     if not invocation_id:
-        logger.warning("DATAVERSE_RESUME_WORKFLOW=1 but invocation_id is missing")
+        logger.warning("EVILFLOWERS_DATAVERSE_RESUME_WORKFLOW is enabled but invocation_id is missing")
         return
 
     # Lazy import to keep the apps.dataverse import graph light.
@@ -64,9 +44,9 @@ def schedule_workflow_resume(
 
     from apps.dataverse.tasks import resume_workflow
 
-    max_attempts = _int_env("DATAVERSE_RESUME_WORKFLOW_ATTEMPTS", 10)
-    initial_delay = _float_env("DATAVERSE_RESUME_WORKFLOW_INITIAL_DELAY", 1.0)
-    resume_base_url = os.getenv("DV_WORKFLOW_RESUME_BASE", dataverse_base_url)
+    max_attempts = settings.EVILFLOWERS_DATAVERSE_RESUME_WORKFLOW_ATTEMPTS
+    initial_delay = settings.EVILFLOWERS_DATAVERSE_RESUME_WORKFLOW_INITIAL_DELAY
+    resume_base_url = settings.EVILFLOWERS_DATAVERSE_WORKFLOW_RESUME_BASE or dataverse_base_url
 
     transaction.on_commit(
         lambda: resume_workflow.apply_async(

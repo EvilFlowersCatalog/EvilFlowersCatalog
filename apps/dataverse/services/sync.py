@@ -20,10 +20,10 @@ This module also handles:
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from django.conf import settings
 from django.db import transaction
 
 from apps.core.models import Acquisition, Author, Catalog, Entry, EntryAuthor, User
@@ -33,13 +33,6 @@ from apps.dataverse.services.mapper import extract_metadata, map_content_type_to
 from apps.dataverse.services.router import CatalogRouter, RoutingDecision
 
 logger = logging.getLogger(__name__)
-
-
-def _env_flag(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass
@@ -89,14 +82,12 @@ class DataverseSyncService:
     ):
         self.client = client or self._default_client()
         self.router = router or CatalogRouter()
-        self.public_base_url = public_base_url or (
-            os.getenv("DV_PUBLIC_BASE") or os.getenv("DV_BASE_INTERNAL") or "http://dataverse:8080"
-        ).rstrip("/")
+        self.public_base_url = (public_base_url or settings.EVILFLOWERS_DATAVERSE_PUBLIC_BASE).rstrip("/")
 
     @staticmethod
     def _default_client() -> DataverseClient:
-        base = (os.getenv("DV_BASE_INTERNAL") or "http://dataverse:8080").rstrip("/")
-        token = (os.getenv("DATAVERSE_API_TOKEN") or "").strip()
+        base = settings.EVILFLOWERS_DATAVERSE_BASE_INTERNAL
+        token = settings.EVILFLOWERS_DATAVERSE_API_TOKEN
         if not token:
             raise DataverseConfigError("DATAVERSE_API_TOKEN is missing")
         return DataverseClient(base, token)
@@ -320,7 +311,7 @@ class DataverseSyncService:
         orphan_qs = Acquisition.objects.filter(entry=entry, file_url__startswith=dataverse_prefix).exclude(
             file_url__in=seen_urls
         )
-        destroy_drift = _env_flag("EVILFLOWERS_DATAVERSE_SYNC_DELETE_REMOVED", default=False)
+        destroy_drift = bool(settings.EVILFLOWERS_DATAVERSE_SYNC_DELETE_REMOVED)
         for orphan in orphan_qs:
             summary.drifted_files.append(orphan.file_url)
             logger.warning(

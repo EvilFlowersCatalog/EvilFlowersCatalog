@@ -330,6 +330,43 @@ EVILFLOWERS_OPDS2_MAX_PAGE_SIZE = int(os.getenv("EVILFLOWERS_OPDS2_MAX_PAGE_SIZE
 SEARCH_SERVICE_URL = os.getenv("SEARCH_SERVICE_URL", "")
 SEARCH_SERVICE_TIMEOUT_SECONDS = int(os.getenv("SEARCH_SERVICE_TIMEOUT_SECONDS", 10))
 
+
+def _bool_env(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+# Dataverse integration
+# Consumed by apps/dataverse/* (services, views, management commands).
+# Operator-facing env names are kept for backwards compatibility, but
+# all application code reads these via `django.conf.settings`.
+EVILFLOWERS_DATAVERSE_API_TOKEN = (os.getenv("DATAVERSE_API_TOKEN") or "").strip()
+EVILFLOWERS_DATAVERSE_WORKFLOW_SECRET = os.getenv("DATAVERSE_WORKFLOW_SECRET", "")
+EVILFLOWERS_DATAVERSE_BASE_INTERNAL = (os.getenv("DV_BASE_INTERNAL") or "http://dataverse:8080").rstrip("/")
+EVILFLOWERS_DATAVERSE_PUBLIC_BASE = (os.getenv("DV_PUBLIC_BASE") or EVILFLOWERS_DATAVERSE_BASE_INTERNAL).rstrip("/")
+# Empty string means "fall back to the dataverse base url at call time".
+EVILFLOWERS_DATAVERSE_WORKFLOW_RESUME_BASE = (os.getenv("DV_WORKFLOW_RESUME_BASE") or "").rstrip("/")
+
+# Catalog routing (see apps/dataverse/services/router.py for precedence).
+# CATALOG_MAP / GLOBAL_ID_PREFIXES accept JSON strings; the router parses
+# them. CATALOG_URL_NAME is the deployment-wide default.
+EVILFLOWERS_DATAVERSE_CATALOG_MAP = os.getenv("EVILFLOWERS_DATAVERSE_CATALOG_MAP", "")
+EVILFLOWERS_DATAVERSE_GLOBAL_ID_PREFIXES = os.getenv("EVILFLOWERS_DATAVERSE_GLOBAL_ID_PREFIXES", "")
+EVILFLOWERS_DATAVERSE_CATALOG_URL_NAME = (os.getenv("DATAVERSE_CATALOG_URL_NAME") or "").strip()
+
+# Sync behaviour
+EVILFLOWERS_DATAVERSE_SYNC_DELETE_REMOVED = _bool_env("EVILFLOWERS_DATAVERSE_SYNC_DELETE_REMOVED", default=False)
+
+# Workflow resume (Celery task gating)
+EVILFLOWERS_DATAVERSE_RESUME_WORKFLOW = _bool_env("DATAVERSE_RESUME_WORKFLOW", default=False)
+EVILFLOWERS_DATAVERSE_RESUME_WORKFLOW_ATTEMPTS = int(os.getenv("DATAVERSE_RESUME_WORKFLOW_ATTEMPTS", 10))
+EVILFLOWERS_DATAVERSE_RESUME_WORKFLOW_INITIAL_DELAY = float(os.getenv("DATAVERSE_RESUME_WORKFLOW_INITIAL_DELAY", 1.0))
+EVILFLOWERS_DATAVERSE_AUTO_WHITELIST_WORKFLOW_RESUME = _bool_env(
+    "DATAVERSE_AUTO_WHITELIST_WORKFLOW_RESUME", default=False
+)
+
 # Cache
 EVILFLOWERS_CACHE_SERVER_HASHES = timedelta(minutes=int(os.getenv("EVILFLOWERS_CACHE_HASHES", 7 * 24 * 60)))
 EVILFLOWERS_CACHE_SERVER_API_KEYS = timedelta(minutes=int(os.getenv("EVILFLOWERS_CACHE_API_KEYS", 0)))
