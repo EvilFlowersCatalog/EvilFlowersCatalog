@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "14d6241bcc6849854188133f267242e6f4f5d034",
-    "short": "14d6241",
-    "message": "Redesign and enhance `generate-index.sh` for improved branch/release handling, templating, and UI styling; update `docs.yml` to support manual workflow dispatch.",
+    "sha": "e5fc159602a7e304ea614c466ac3875254d730bb",
+    "short": "e5fc159",
+    "message": "Add proposal for completing reservation queue UX gaps",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/14d6241bcc6849854188133f267242e6f4f5d034"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e5fc159602a7e304ea614c466ac3875254d730bb"
   },
-  "deployed_at": "2026-05-25T21:47:55Z",
+  "deployed_at": "2026-05-25T22:03:05Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
