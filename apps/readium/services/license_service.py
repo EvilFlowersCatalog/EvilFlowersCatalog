@@ -14,7 +14,7 @@ import logging
 import uuid
 
 import requests
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Q, Count
 from django.utils import timezone
 from django.conf import settings
@@ -168,7 +168,7 @@ class LicenseService:
         if end_date is None:
             end_date = start_date + timedelta(days=14)  # Default 2 weeks
 
-        # Check if user already has an active license for this entry
+        # Check if user already has an active license for this entry.
         existing_license = License.objects.filter(
             entry=entry,
             user=user,
@@ -176,11 +176,31 @@ class LicenseService:
         ).first()
 
         if existing_license:
-            return {
-                "can_borrow": False,
-                "reason": "User already has an active license for this entry",
-                "existing_license": existing_license.pk,
-            }
+            # IP-009 Phase 2: on-read expiry reconcile. The 5-minute
+            # beat sweep is the bulk path; on the borrow hot path we
+            # transition stale ACTIVE → EXPIRED immediately so the
+            # caller doesn't get a confusing "already has active
+            # license" error for a loan that lapsed minutes ago.
+            if existing_license.expires_at < timezone.now():
+                with transaction.atomic():
+                    locked = License.objects.select_for_update().get(pk=existing_license.pk)
+                    if locked.state in (License.LicenseState.READY, License.LicenseState.ACTIVE) and (
+                        locked.expires_at < timezone.now()
+                    ):
+                        locked.state = License.LicenseState.EXPIRED
+                        locked.save(update_fields=["state", "updated_at"])
+                        logger.info(
+                            "readium.expire_on_read",
+                            extra={"event": "readium.expire_on_read", "license_id": str(locked.pk)},
+                        )
+                # The lapsed license is gone; fall through to the
+                # capacity check below.
+            else:
+                return {
+                    "can_borrow": False,
+                    "reason": "User already has an active license for this entry",
+                    "existing_license": existing_license.pk,
+                }
 
         max_concurrent = entry.read_config("readium_amount")
 
@@ -399,11 +419,25 @@ class LicenseService:
             raise ValueError(f"Cannot renew license in state: {license.state}")
 
         if new_end_date is None:
+            # IP-009 Phase 1 (Q1): one-release legacy shim. Callers
+            # should pass `new_end_date=` directly; the duration-derived
+            # path will be removed one release after Phase 1 lands.
+            logger.warning(
+                "license_service_legacy_new_duration_days",
+                extra={"license_id": str(license.pk), "days": new_duration_days},
+            )
             new_end_date = timezone.now() + timedelta(days=new_duration_days)
 
-        # Update via Status Server
+        # Update via Status Server (read-after-write reconciles state /
+        # expires_at on the License row).
         status_client = StatusServerClient()
         status_client.renew_license(license, new_end_date)
+
+        # IP-009 Phase 5 E1: increment the per-loan renewal counter.
+        # The Status Server PATCH succeeded by this point, so the
+        # counter reflects accepted renewals only.
+        License.objects.filter(pk=license.pk).update(renewal_count=models.F("renewal_count") + 1)
+        license.refresh_from_db(fields=["renewal_count", "state", "expires_at"])
 
         if getattr(settings, "EVILFLOWERS_NOTIFICATIONS_ENABLED", False):
             from apps.notifications.tasks import send_notification

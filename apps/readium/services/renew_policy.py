@@ -33,9 +33,17 @@ def evaluate_renew(license: License, requested_end: Optional[datetime] = None) -
     now = timezone.now()
     max_days = settings.EVILFLOWERS_READIUM_MAX_RENEW_DAYS
     embargo_days = settings.EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS
+    # IP-009 Phase 5 E2: optional per-loan renewal cap (None = uncapped).
+    max_renewals = getattr(settings, "EVILFLOWERS_READIUM_MAX_RENEWALS", None)
 
     if license.state in [License.LicenseState.REVOKED, License.LicenseState.CANCELLED, License.LicenseState.EXPIRED]:
         return RenewDecision(False, reason=f"License is in terminal state: {license.state}")
+
+    if max_renewals is not None and license.renewal_count >= max_renewals:
+        return RenewDecision(
+            False,
+            reason=f"Renewal cap reached ({license.renewal_count}/{max_renewals})",
+        )
 
     has_queue = Reservation.objects.filter(
         entry=license.entry,

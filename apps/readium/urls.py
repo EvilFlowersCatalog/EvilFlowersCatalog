@@ -5,7 +5,7 @@ Endpoints:
 - /hooks/encryption - Webhook for lcpencrypt worker notifications
 - /content/{id} - Download encrypted publications
 - /licenses - License CRUD operations
-- /licenses/{id}.lcpl - License Gateway (download .lcpl files)
+- /licenses/{id}.lcpl - License Gateway (download .lcpl files; capability-token only after IP-009)
 - /licenses/{id}/status - LSD proxy: License Status Document
 - /licenses/{id}/register - LSD proxy: Device registration
 - /licenses/{id}/return - LSD proxy: Loan return
@@ -49,7 +49,11 @@ urlpatterns = [
     # License Management
     path("licenses", LicenseManagement.as_view(), name="license-management"),
     path("licenses/<uuid:license_id>", LicenseDetail.as_view(), name="license-detail"),
-    # License Gateway (reading apps download .lcpl files here)
+    # License Gateway (reading apps download .lcpl files here).
+    # Capability-token only after IP-009 Phase 4. Tokens are minted
+    # inline by `LicenseSerializer.Base.download_url` when the
+    # serializer has a request context, so the client opens the URL
+    # straight from the License response — no separate mint round-trip.
     path("licenses/<uuid:license_id>.lcpl", LicenseDownloadView.as_view(), name="license-gateway"),
     # LSD Proxy (Status Server -- never exposed directly)
     path("licenses/<uuid:license_id>/status", StatusDocumentView.as_view(), name="lsd-status"),

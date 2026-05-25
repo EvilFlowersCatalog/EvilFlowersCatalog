@@ -19,6 +19,8 @@ from typing import List, Literal, Optional
 from django.urls import reverse
 
 from apps.core.models import Entry
+from apps.core.services.capability_tokens import CapabilityTokenService
+from apps.readium.capability_scopes import LCPL_FEED_DOWNLOAD, lcpl_feed_download_ttl
 from apps.readium.models import License
 
 LCP_LICENSE_MIME = "application/vnd.readium.lcp.license.v1.0+json"
@@ -67,9 +69,27 @@ class BorrowLinkResolver:
         return f"{self._base_url}{path}"
 
     def license_url(self, license: License) -> str:
-        """Direct URL to the .lcpl license document."""
+        """Direct URL to the .lcpl license document.
+
+        After IP-009 Phase 4 the gateway is capability-token only.
+        OPDS feed responses carry a `lcpl_feed_download`-scoped token
+        (multi-use peek within TTL) so the reader app can fetch the
+        `.lcpl` without an extra mint round-trip.
+        """
         path = reverse("readium:license-gateway", kwargs={"license_id": license.pk})
-        return f"{self._base_url}{path}"
+        user = getattr(self.request, "user", None) if self.request is not None else None
+        if user is None or not getattr(user, "is_authenticated", False):
+            # Anonymous OPDS render — no user to scope to. Return the
+            # tokenless URL so the unauthenticated client at least sees
+            # a stable shape; the gateway will 401 on consume.
+            return f"{self._base_url}{path}"
+        token = CapabilityTokenService.mint(
+            scope=LCPL_FEED_DOWNLOAD,
+            subject={"sub": str(user.pk), "resource_id": str(license.pk)},
+            ttl=lcpl_feed_download_ttl(),
+            single_use=False,
+        )
+        return f"{self._base_url}{path}?token={token}"
 
     def emit_links(self, entry: Entry, active_license: Optional[License] = None) -> List[BorrowLink]:
         """Build the LCP-related link tuples for an entry.

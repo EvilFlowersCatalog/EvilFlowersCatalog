@@ -15,6 +15,7 @@ changes are documented before implementation.
 | IP-004 | [Configure and Operate Per-Entry Active-License Limits](posts/ip-004-readium-amount-configurability.md) | :white_check_mark: Implemented | 2026-05-14 |
 | IP-007 | [Crash-on-First-Contact Bug Triage](posts/ip-007-crash-on-first-contact-triage.md) | :white_check_mark: Implemented | 2026-05-25 |
 | IP-008 | [Readium + Dataverse Post-Merge Consolidation](posts/ip-008-readium-correctness-followup.md) | :white_check_mark: Implemented | 2026-05-25 |
+| IP-009 | [Readium Integration Closeout — Lifecycle Vocabulary, Expiry Reconcile, and Single-Use Download Tokens](posts/ip-009-readium-integration-closeout.md) | 📝 Draft | 2026-05-25 |
 | IP-010 | [Multi-Tenancy & ACL Correctness](posts/ip-010-multi-tenancy-acl-correctness.md) | 📝 Draft | 2026-05-25 |
 
 
@@ -27,6 +28,15 @@ changes are documented before implementation.
 - ✅ **Implemented**: Implementation complete
 - ❌ **Rejected**: Proposal declined
 - ⏭️ **Superseded**: Replaced by another proposal
+
+## Readium integration reference
+
+- [Integration contract](../readium/integration-contract.md) — endpoint
+  catalogue, payload shapes, lifecycle vocabulary, capability-token
+  semantics. Published by IP-009 Phase 6.
+- [elvira-portal action items](../readium/elvira-portal-action-items.md) —
+  frontend punch-list paired with IP-009 (tracked as GitHub issues
+  G1–G8 on `EvilFlowersCatalog/elvira-portal`).
 
 ## What are Proposals?
 

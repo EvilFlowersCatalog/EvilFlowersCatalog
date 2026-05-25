@@ -96,6 +96,13 @@ class License(BaseModel):
     passphrase_hash = models.CharField(max_length=64, null=True, blank=True)  # SHA256 hex
     device_count = models.PositiveIntegerField(default=0)
 
+    # IP-009 Phase 5: per-license renewal counter. Incremented inside
+    # the same transaction as the state mutation in
+    # `LicenseService.renew_license`. `evaluate_renew` consults this
+    # plus `EVILFLOWERS_READIUM_MAX_RENEWALS` to enforce the per-loan
+    # renewal cap.
+    renewal_count = models.PositiveIntegerField(default=0)
+
     @property
     def is_active(self):
         return self.state == self.LicenseState.ACTIVE

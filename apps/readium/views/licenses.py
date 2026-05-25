@@ -5,12 +5,14 @@ Handles license CRUD operations and state management.
 Uses the new service layer for all business logic.
 """
 
+import logging
 from datetime import datetime
 from http import HTTPStatus
 from uuid import UUID
 
 from django.db import transaction
 from django.http import JsonResponse
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
@@ -19,6 +21,7 @@ from apps import openapi
 from apps.api.response import PaginationResponse, SingleResponse
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.core.views import SecuredView
+from apps.readium.enums import LicenseAction
 from apps.readium.filters import LicenseFilter
 from apps.readium.forms import CreateLicenseForm, UpdateLicenseForm
 from apps.readium.models import License
@@ -26,6 +29,8 @@ from apps.readium.serializers import LicenseSerializer
 from apps.readium.services import LicenseService, PassphraseRequiredError
 from apps.readium.services.renew_policy import evaluate_renew
 from apps.readium.views._license_lookup import LicenseLookupMixin
+
+logger = logging.getLogger(__name__)
 
 
 class LicenseManagement(SecuredView):
@@ -131,8 +136,22 @@ class LicenseDetail(LicenseLookupMixin, SecuredView):
         if not form.is_valid():
             raise ValidationException(form)
 
+        # IP-009 Phase 1 (Q1): emit a single deprecation log per request
+        # for legacy `state`/`duration` payloads. The view layer logs;
+        # the form layer surfaces the booleans without logging itself.
+        if form.cleaned_data.get("_used_legacy_state"):
+            logger.warning(
+                "license_update_legacy_state_field",
+                extra={"license_id": str(license_id)},
+            )
+        if form.cleaned_data.get("_used_legacy_duration"):
+            logger.warning(
+                "license_update_legacy_duration_field",
+                extra={"license_id": str(license_id)},
+            )
+
         # IP-008 Phase 1 A6: hold the License row lock across state
-        # change + form populate + save. Without this, the status-proxy
+        # change + save. Without this, the status-proxy
         # DeviceRegistrationProxyView (which also writes device_count
         # and state) can race with this PUT and lose updates.
         with transaction.atomic():
@@ -149,28 +168,26 @@ class LicenseDetail(LicenseLookupMixin, SecuredView):
             if not has_object_permission("check_license_state_manage", request.user, license):
                 raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-            new_state = form.cleaned_data.get("state")
-            if new_state:
-                self._handle_state_change(license, new_state, form.cleaned_data)
-
-            form.populate(license)
-            license.save()
+            action = form.cleaned_data.get("action")
+            if action:
+                self._dispatch_action(license, action, form.cleaned_data)
+                license.save()
 
         return SingleResponse(request, data=LicenseSerializer.Base.model_validate(license))
 
-    def _handle_state_change(self, license: License, new_state: str, data: dict):
-        """Handle license state transitions with automatic LCP operations via service layer."""
+    def _dispatch_action(self, license: License, action: str, data: dict):
+        """Dispatch a `LicenseAction` to the service layer (IP-009 Phase 1)."""
 
-        if new_state == "active" and license.state == License.LicenseState.READY:
-            # Device registration (device tracking happens in Status Server)
+        if action == LicenseAction.ACTIVATE and license.state == License.LicenseState.READY:
+            # Device registration is canonically driven by the Status
+            # Server proxy; the PUT path is a UI shortcut.
             license.state = License.LicenseState.ACTIVE
             license.device_count += 1
+            return
 
-        elif new_state == "returned":
-            # Return license via service
+        if action == LicenseAction.RETURN:
             try:
                 LicenseService.return_license(license)
-                # Note: service updates state to RETURNED
             except Exception as e:
                 raise ProblemDetailException(
                     _("Failed to return license"),
@@ -178,14 +195,29 @@ class LicenseDetail(LicenseLookupMixin, SecuredView):
                     status=HTTPStatus.INTERNAL_SERVER_ERROR,
                     previous=e,
                 )
+            return
 
-        elif new_state == "renewed":
-            # Renew license via service
-            duration = data.get("duration")
-            duration_days = duration.days if duration else 14
+        if action == LicenseAction.RENEW:
+            # Canonical payload: requested_end (ISO-8601 datetime).
+            # Legacy: duration → translate to requested_end at the
+            # form/view boundary (Q1 resolution).
+            requested_end = data.get("requested_end")
+            if requested_end is None:
+                duration = data.get("duration")
+                if duration is not None:
+                    requested_end = timezone.now() + duration
+
+            decision = evaluate_renew(license, requested_end=requested_end)
+            if not decision.allowed:
+                raise ProblemDetailException(
+                    _("Renewal denied"),
+                    detail=decision.reason,
+                    status=HTTPStatus.FORBIDDEN,
+                    detail_type=DetailType.CONFLICT,
+                )
+
             try:
-                LicenseService.renew_license(license, new_duration_days=duration_days)
-                # Note: service updates expires_at
+                LicenseService.renew_license(license, new_end_date=decision.new_end)
             except Exception as e:
                 raise ProblemDetailException(
                     _("Failed to renew license"),
@@ -193,12 +225,11 @@ class LicenseDetail(LicenseLookupMixin, SecuredView):
                     status=HTTPStatus.INTERNAL_SERVER_ERROR,
                     previous=e,
                 )
+            return
 
-        elif new_state == "revoked":
-            # Revoke license via service
+        if action == LicenseAction.REVOKE:
             try:
                 LicenseService.revoke_license(license)
-                # Note: service updates state to REVOKED
             except Exception as e:
                 raise ProblemDetailException(
                     _("Failed to revoke license"),
@@ -206,12 +237,11 @@ class LicenseDetail(LicenseLookupMixin, SecuredView):
                     status=HTTPStatus.INTERNAL_SERVER_ERROR,
                     previous=e,
                 )
+            return
 
-        elif new_state == "cancelled":
-            # Cancel license via service
+        if action == LicenseAction.CANCEL:
             try:
                 LicenseService.cancel_license(license)
-                # Note: service updates state to CANCELLED
             except Exception as e:
                 raise ProblemDetailException(
                     _("Failed to cancel license"),

@@ -38,3 +38,9 @@ app.conf.beat_schedule["readium-notify-expiring-licenses"] = {
     "task": "apps.readium.tasks.notify_expiring_licenses",
     "schedule": crontab(hour=6, minute=0),
 }
+# IP-009 Phase 2: transition naturally-expired licenses out of
+# READY/ACTIVE so `can_user_borrow` no longer rejects re-borrow.
+app.conf.beat_schedule["readium-expire-lapsed-licenses"] = {
+    "task": "apps.readium.tasks.expire_lapsed_licenses",
+    "schedule": crontab(minute="*/5"),
+}

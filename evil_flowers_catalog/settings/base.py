@@ -305,6 +305,21 @@ EVILFLOWERS_READIUM_MAX_RESERVATIONS_PER_USER = int(os.getenv("EVILFLOWERS_READI
 # IP-003: lifecycle notification timing
 EVILFLOWERS_READIUM_EXPIRY_REMINDER_DAYS = int(os.getenv("EVILFLOWERS_READIUM_EXPIRY_REMINDER_DAYS", 3))
 
+# IP-009 Phase 5: optional renewal cap. `None` = uncapped (default).
+# Set to an integer (e.g. STU policy: 2) to enforce a per-license
+# renewal limit in `evaluate_renew`.
+_max_renewals = os.getenv("EVILFLOWERS_READIUM_MAX_RENEWALS")
+EVILFLOWERS_READIUM_MAX_RENEWALS = int(_max_renewals) if _max_renewals else None
+
+# IP-009 Phase 4: capability-token TTLs (seconds). `LCPL_TTL` covers
+# single-use download tokens minted from `POST /licenses/{id}/download-tokens`.
+# `LCPL_FEED_TTL` covers multi-use tokens embedded in OPDS feed
+# serialization (peek, not consume).
+EVILFLOWERS_CAPABILITY_TOKEN_LCPL_TTL_SECONDS = int(os.getenv("EVILFLOWERS_CAPABILITY_TOKEN_LCPL_TTL_SECONDS", 60))
+EVILFLOWERS_CAPABILITY_TOKEN_LCPL_FEED_TTL_SECONDS = int(
+    os.getenv("EVILFLOWERS_CAPABILITY_TOKEN_LCPL_FEED_TTL_SECONDS", 1800)
+)
+
 # OPDS 2.0
 EVILFLOWERS_OPDS2_PAGE_SIZE = int(os.getenv("EVILFLOWERS_OPDS2_PAGE_SIZE", 50))
 EVILFLOWERS_OPDS2_MAX_PAGE_SIZE = int(os.getenv("EVILFLOWERS_OPDS2_MAX_PAGE_SIZE", 100))

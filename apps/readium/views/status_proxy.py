@@ -167,18 +167,18 @@ class ReturnProxyView(StatusProxyView):
         except http_requests.RequestException as e:
             raise ProblemDetailException(_("Failed to return loan"), status=HTTPStatus.BAD_GATEWAY, previous=e)
 
-        # Update local row (cache of canonical LSD state) + LCP rights.
+        # IP-009 Phase 3 C2: the LSD PUT above is the canonical state
+        # change. Reconcile the local row from the proxied response so
+        # we don't GET twice. Falls back to a refetch if the response
+        # body doesn't carry a parseable status doc.
         from django.db import transaction
-        from django.utils import timezone
 
-        from apps.readium.services import LicenseService
+        from apps.readium.services import LicenseService, StatusServerSyncService
         from apps.readium.services.lcp_server_client import LCPServerClient
 
         with transaction.atomic():
             license_obj = License.objects.select_for_update().get(pk=license_id)
-            license_obj.expires_at = timezone.now()
-            license_obj.state = License.LicenseState.RETURNED
-            license_obj.save(update_fields=["expires_at", "state", "updated_at"])
+            StatusServerSyncService().reconcile(license_obj, lsd_doc=data if isinstance(data, dict) else None)
             try:
                 LCPServerClient().update_license_rights(license_obj)
             except Exception:
