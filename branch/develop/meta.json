@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "e5fc159602a7e304ea614c466ac3875254d730bb",
-    "short": "e5fc159",
-    "message": "Add proposal for completing reservation queue UX gaps",
+    "sha": "6b78dd09bef07ad1f8c9b25c320e6fd260d07e81",
+    "short": "6b78dd0",
+    "message": "Add OPDS 2.0 support, Readium LCP integration, and update README with new features, deployment details, and documentation links.",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e5fc159602a7e304ea614c466ac3875254d730bb"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/6b78dd09bef07ad1f8c9b25c320e6fd260d07e81"
   },
-  "deployed_at": "2026-05-25T22:03:05Z",
+  "deployed_at": "2026-05-25T22:05:19Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
