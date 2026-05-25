@@ -1,5 +1,5 @@
 ---
-draft: true
+draft: false
 date: 2026-05-25
 authors:
   - jdubec
@@ -35,10 +35,10 @@ search.
 
 ## Status
 
-**Status**: Draft
+**Status**: Implemented
 **Last Updated**: 2026-05-25
-**Implementation**: Not started — IP-007 prerequisite landed in commit
-`1953da4`. This proposal is now the next executable step.
+**Implementation**: Complete — all six phases shipped on top of IP-007
+(commit `1953da4`).
 
 ## Problem Statement
 
@@ -1449,3 +1449,4 @@ the IP-007 D10 dedup point.
 | 2026-05-25 | jdubec | Consolidated IP-008 (Readium) + IP-009 (Dataverse) into a single executable proposal. Folded in OPDS 1.2 LCP link parity (from former IP-011 Cluster C) and OPDS 2.0 search-service integration (from former IP-011 Cluster F). Dropped cross-references to former IP-005 (security hardening) and IP-006 (deployability) — those concerns are deferred to a future hardening cycle. Focus is functional state for the May→August window. |
 | 2026-05-25 | jdubec | Resolved Review Questions Q1–Q6. Q1 (LSD sync): expanded into a full license-lifecycle sync audit via `StatusServerSyncService` covering return/renew/revoke/cancel/register/expire. Q2 (upstream-file deletion): kept safe-default dry-run, added structured logging + `dataverse.upstream_file_removed` event emission + `dataverse_drift` management command. Q3 (routing precedence): kept fall-through, added `RoutingDecision.matched_rule`, `docs/dataverse/catalog-routing.md` with worked examples per step, `dataverse_route` debug command. Q4 (OPDS 1.2 borrow link): promoted `attach_lcp_license_link` from helper to `BorrowLinkResolver` service-layer abstraction shared across OPDS 1.2 / OPDS 2.0. Q5 (search mode default): kept `mode=catalog`, added `docs/opds2/search.md` documenting each mode + `search_check` management command. Q6 (event fanout): audited cross-app couplings; in-scope events `entry.changed`, `license.*`, `acquisition.uploaded`, `dataverse.upstream_file_removed` added with listeners; full migration-candidates table moved to `docs/events/migration-candidates.md`. Status flipped to ✅ Resolved. |
 | 2026-05-25 | jdubec | Rebased on top of IP-007 (commit `1953da4`). Added a "Baseline assumed" section to Problem Statement listing what's already in `develop`: partial `UniqueConstraint` on License, signal name-mangling fix, `Entry.first_author_name`, `DetailType.FORBIDDEN`/`INTERNAL_ERROR`, `apps/opds/services/entry_search.py::EntrySearchService`, `OpenSearchDescription` + URL-encoded template, `apps/api/utils/parse.py::parse_int_query`, `DV_BASE_INTERNAL` rename, single text-service publish, OPDS 1.2 root/Latest fixes, `license_renewed` notification, complete `NotificationType` enum. Cluster D5 trimmed (DV env rename removed). Phase 4 D5 trimmed accordingly. Phase 2 B5 reworked to consume the existing OPDS 1.2 `SearchView` baseline and to thread through `BorrowLinkResolver`. Phase 6 F1 reworked to EXTEND `EntrySearchService` with a `mode` parameter rather than rewriting `apps/opds2/views/search.py` from scratch. References section updated with IP-007 commit hash and new shared-service citations. |
+| 2026-05-25 | jdubec | **Implemented.** All six phases shipped: Phase 1 (concurrency A1–A6 + C1/C2/C6/C7); Phase 2 (LSD/RWPM compliance B1–B5 incl. `BorrowLinkResolver` shared service); Phase 3 (service correctness C3–C8 + D1 `LicenseChecker` move to `apps.readium` + D2 signal direction reversal + D3 OPDS 2 passphrase pre-check dedup + D4 `LicenseLookupMixin`); Phase 4 (full `apps/dataverse/` extraction — `DataverseClient`, `DataverseSyncService`, `CatalogRouter` with documented precedence, Celery `resume_workflow`, partial unique constraint on `(catalog, dataverse_pid)`, `RESTRICTED_ACCESS` mapping, drift detection); Phase 5 (`Acquisition.storage_backend` enum + `AcquisitionStorageService` dispatch + lazy `checksum_cached` + auth-before-redirect in `AcquisitionDownload`); Phase 6 (`SearchServiceClient` + `EntrySearchService.search(mode=)` + OPDS 2.0 `?mode=keyword/semantic` with 502+Retry-After + `reindex_acquisitions` command + `docs/opds2/search.md`). Migrations: `core/0036_uppercase_lcp_passphrase_hash`, `core/0037_acquisition_restricted_access`, `core/0038_dataverse_pid_unique`, `core/0039_acquisition_storage_backend`. Status flipped to ✅ Implemented. |
