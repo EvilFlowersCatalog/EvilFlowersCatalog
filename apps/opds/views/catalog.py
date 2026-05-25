@@ -9,7 +9,7 @@ from apps.opds.views.base import OpdsCatalogView
 
 class RootView(OpdsCatalogView):
     def get(self, request, catalog_name: str):
-        feeds = self.catalog.feeds.filter(parents__content__isnull=True)
+        feeds = self.catalog.feeds.filter(parents__isnull=True)
 
         result = OpdsFeed(
             id=request.build_absolute_uri(reverse("opds:root", kwargs={"catalog_name": catalog_name})),

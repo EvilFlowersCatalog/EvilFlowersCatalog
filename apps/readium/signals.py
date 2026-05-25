@@ -38,25 +38,18 @@ def _enqueue(notification_type: str, user, context: dict) -> None:
         logger.exception("Failed to enqueue notification %s for user %s", notification_type, user.pk)
 
 
-def _entry_author_name(entry) -> str:
-    first = entry.authors.first() if hasattr(entry, "authors") else None
-    if first is None:
-        return ""
-    return getattr(first, "full_name", None) or f"{getattr(first, 'name', '')} {getattr(first, 'surname', '')}".strip()
-
-
 # License state transitions ---------------------------------------------------
 
 
 @receiver(pre_save, sender=License)
 def _stash_original_license_state(sender, instance: License, **kwargs):
     if instance.pk is None:
-        instance.__original_state = None
+        instance._original_state = None
         return
     try:
-        instance.__original_state = License.objects.only("state").get(pk=instance.pk).state
+        instance._original_state = License.objects.only("state").get(pk=instance.pk).state
     except License.DoesNotExist:
-        instance.__original_state = None
+        instance._original_state = None
 
 
 @receiver(post_save, sender=License)
@@ -64,14 +57,14 @@ def _notify_license_transitions(sender, instance: License, created: bool, **kwar
     if not _enabled() or created:
         return
 
-    previous = getattr(instance, "_License__original_state", None)
+    previous = getattr(instance, "_original_state", None)
     if previous == instance.state:
         return
 
     base_context = {
         "user_name": instance.user.full_name or instance.user.username,
         "entry_title": instance.entry.title,
-        "entry_author": _entry_author_name(instance.entry),
+        "entry_author": instance.entry.first_author_name,
         "license_id": str(instance.pk),
     }
 
@@ -91,12 +84,12 @@ def _notify_license_transitions(sender, instance: License, created: bool, **kwar
 @receiver(pre_save, sender=Reservation)
 def _stash_original_reservation_status(sender, instance: Reservation, **kwargs):
     if instance.pk is None:
-        instance.__original_status = None
+        instance._original_status = None
         return
     try:
-        instance.__original_status = Reservation.objects.only("status").get(pk=instance.pk).status
+        instance._original_status = Reservation.objects.only("status").get(pk=instance.pk).status
     except Reservation.DoesNotExist:
-        instance.__original_status = None
+        instance._original_status = None
 
 
 @receiver(post_save, sender=Reservation)
@@ -107,7 +100,7 @@ def _notify_reservation_transitions(sender, instance: Reservation, created: bool
     base_context = {
         "user_name": instance.user.full_name or instance.user.username,
         "entry_title": instance.entry.title,
-        "entry_author": _entry_author_name(instance.entry),
+        "entry_author": instance.entry.first_author_name,
         "reservation_id": str(instance.pk),
     }
 
@@ -119,7 +112,7 @@ def _notify_reservation_transitions(sender, instance: Reservation, created: bool
         _enqueue("reservation_placed", instance.user, context)
         return
 
-    previous = getattr(instance, "_Reservation__original_status", None)
+    previous = getattr(instance, "_original_status", None)
     if previous == instance.status:
         return
 
@@ -140,21 +133,21 @@ def _notify_reservation_transitions(sender, instance: Reservation, created: bool
 @receiver(pre_save, sender=User)
 def _stash_original_passphrase_hash(sender, instance: User, **kwargs):
     if instance.pk is None:
-        instance.__original_passphrase_hash = None
+        instance._original_passphrase_hash = None
         return
     try:
-        instance.__original_passphrase_hash = (
+        instance._original_passphrase_hash = (
             User.objects.only("lcp_passphrase_hash").get(pk=instance.pk).lcp_passphrase_hash
         )
     except User.DoesNotExist:
-        instance.__original_passphrase_hash = None
+        instance._original_passphrase_hash = None
 
 
 @receiver(post_save, sender=User)
 def _notify_passphrase_change(sender, instance: User, created: bool, **kwargs):
     if not _enabled() or created:
         return
-    previous = getattr(instance, "_User__original_passphrase_hash", None)
+    previous = getattr(instance, "_original_passphrase_hash", None)
     new_value = instance.lcp_passphrase_hash
     if previous == new_value:
         return

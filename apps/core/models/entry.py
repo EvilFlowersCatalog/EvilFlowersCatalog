@@ -111,6 +111,16 @@ class Entry(BaseModel):
     related_entries = models.ManyToManyField("self", symmetrical=False, related_name="related_to", blank=True)
 
     @property
+    def first_author_name(self) -> str:
+        first = self.authors.first()
+        if first is None:
+            return ""
+        return (
+            getattr(first, "full_name", None)
+            or f"{getattr(first, 'name', '')} {getattr(first, 'surname', '')}".strip()
+        )
+
+    @property
     def image_url(self) -> Optional[str]:
         if not self.image:
             return None

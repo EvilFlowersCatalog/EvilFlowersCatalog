@@ -370,6 +370,21 @@ class LicenseService:
         status_client = StatusServerClient()
         status_client.renew_license(license, new_end_date)
 
+        if getattr(settings, "EVILFLOWERS_NOTIFICATIONS_ENABLED", False):
+            from apps.notifications.tasks import send_notification
+
+            send_notification.delay(
+                notification_type="license_renewed",
+                recipient_user_id=str(license.user.pk),
+                context={
+                    "user_name": license.user.full_name or license.user.username,
+                    "entry_title": license.entry.title,
+                    "entry_author": license.entry.first_author_name,
+                    "license_id": str(license.pk),
+                    "expires_at": license.expires_at.isoformat() if license.expires_at else "",
+                },
+            )
+
         return license
 
     @staticmethod

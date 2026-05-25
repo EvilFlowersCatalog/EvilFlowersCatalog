@@ -19,13 +19,13 @@ def on_license_created(sender, instance: License, created: bool, **kwargs):
     download_url = NotificationService.generate_scoped_url(
         user_id=str(instance.user.pk),
         scope="license:read",
-        resource_path=f"/readium/licenses/{instance.pk}.lcpl",
+        resource_path=f"/readium/v1/licenses/{instance.pk}.lcpl",
     )
 
     context = {
         "user_name": instance.user.full_name,
         "entry_title": instance.entry.title,
-        "entry_author": instance.entry.author,
+        "entry_author": instance.entry.first_author_name,
         "starts_at": instance.starts_at.isoformat(),
         "expires_at": instance.expires_at.isoformat(),
         "passphrase_hint": instance.passphrase_hint or "",

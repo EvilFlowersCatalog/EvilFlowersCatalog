@@ -8,7 +8,12 @@
       "WebFetch(domain:github.com)",
       "mcp__MCP_DOCKER__get_file_contents",
       "Bash(find:*)",
-      "WebFetch(domain:www.edrlab.org)"
+      "WebFetch(domain:www.edrlab.org)",
+      "WebFetch(domain:elvira.digital)",
+      "WebFetch(domain:ieeexplore.ieee.org)",
+      "WebSearch",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:dblp.org)"
     ],
     "deny": []
   }

@@ -18,6 +18,8 @@ class DetailType(Enum):
     NOT_FOUND = "/not-found"
     VALIDATION_ERROR = "/validation-error"
     CONFLICT = "/conflict"
+    FORBIDDEN = "/forbidden"
+    INTERNAL_ERROR = "/internal-error"
     PASSPHRASE_REQUIRED = "/passphrase-required"
     READIUM_AMOUNT_BELOW_ACTIVE_COUNT = "/readium-amount-below-active-count"
 

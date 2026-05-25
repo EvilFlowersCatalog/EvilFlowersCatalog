@@ -1,4 +1,5 @@
 import base64
+import binascii
 import logging
 import uuid
 from datetime import timedelta
@@ -7,8 +8,10 @@ from typing import Optional, TypedDict, Dict
 from urllib.parse import urlparse, urlunparse
 
 import ldap
-from authlib.jose import JsonWebToken, jwt
-from authlib.jose.errors import JoseError
+from joserfc import jwt
+from joserfc.errors import JoseError
+from joserfc.jwk import KeyFlexible, import_key
+from joserfc.jwt import JWTClaimsRegistry
 from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import Group
@@ -19,6 +22,11 @@ from django.utils.translation import gettext as _
 
 from apps.core.errors import ProblemDetailException
 from apps.core.models import ApiKey, User, AuthSource, UserCatalog
+
+
+def _jwt_key() -> KeyFlexible:
+    """Build a joserfc-compatible key object from the configured JWK dict."""
+    return import_key(settings.SECURED_VIEW_JWK)
 
 
 class JWTFactory:
@@ -34,9 +42,9 @@ class JWTFactory:
 
         return jwt.encode(
             header={"alg": settings.SECURED_VIEW_JWT_ALGORITHM},
-            payload={**base_payload, **additional_payload},
-            key=settings.SECURED_VIEW_JWK,
-        ).decode()
+            claims={**base_payload, **additional_payload},
+            key=_jwt_key(),
+        )
 
     def refresh(self) -> tuple:
         jti = str(uuid.uuid4())
@@ -81,9 +89,13 @@ class JWTFactory:
 
     @classmethod
     def decode(cls, token: str):
-        claims = JsonWebToken(settings.SECURED_VIEW_JWT_ALGORITHM).decode(token, settings.SECURED_VIEW_JWK)
-        claims.validate()
-        return claims
+        decoded = jwt.decode(
+            token,
+            _jwt_key(),
+            algorithms=[settings.SECURED_VIEW_JWT_ALGORITHM],
+        )
+        JWTClaimsRegistry().validate(decoded.claims)
+        return decoded.claims
 
 
 class BearerBackend(ModelBackend):
@@ -279,7 +291,33 @@ class BasicBackend(ModelBackend):
         return super().authenticate(request, username=username, password=password)
 
     def authenticate(self, request, basic=None, **kwargs):
-        bits = base64.b64decode(basic).decode().split(":")
+        try:
+            bits = base64.b64decode(basic, validate=True).decode().split(":")
+        except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+            raise ProblemDetailException(
+                _("Invalid credentials"),
+                status=HTTPStatus.UNAUTHORIZED,
+                extra_headers=(
+                    (
+                        "WWW-Authenticate",
+                        f"Basic realm={slugify(settings.INSTANCE_NAME)},"
+                        f' Bearer realm="{slugify(settings.INSTANCE_NAME)}"',
+                    ),
+                ),
+                previous=exc,
+            )
+        if len(bits) < 2:
+            raise ProblemDetailException(
+                _("Invalid credentials"),
+                status=HTTPStatus.UNAUTHORIZED,
+                extra_headers=(
+                    (
+                        "WWW-Authenticate",
+                        f"Basic realm={slugify(settings.INSTANCE_NAME)},"
+                        f' Bearer realm="{slugify(settings.INSTANCE_NAME)}"',
+                    ),
+                ),
+            )
         username = bits[0].lower()
         password = ":".join(bits[1:])
         user = None

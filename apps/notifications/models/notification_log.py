@@ -27,6 +27,14 @@ class NotificationLog(BaseModel):
 
     class NotificationType(models.TextChoices):
         LICENSE_CREATED = "license_created", _("License Created")
+        LICENSE_RENEWED = "license_renewed", _("License Renewed")
+        LICENSE_RETURNED = "license_returned", _("License Returned")
+        LICENSE_REVOKED = "license_revoked", _("License Revoked")
+        LICENSE_EXPIRING_SOON = "license_expiring_soon", _("License Expiring Soon")
+        RESERVATION_PLACED = "reservation_placed", _("Reservation Placed")
+        RESERVATION_AVAILABLE = "reservation_available", _("Reservation Available")
+        RESERVATION_EXPIRED = "reservation_expired", _("Reservation Expired")
+        PASSPHRASE_CHANGED = "passphrase_changed", _("Passphrase Changed")
 
     recipient = models.ForeignKey(
         "core.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="notifications"

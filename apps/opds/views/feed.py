@@ -135,7 +135,7 @@ class CompleteFeedView(OpdsCatalogView):
 
 class LatestFeedView(OpdsCatalogView):
     def get(self, request, catalog_name: str):
-        entries = Entry.objects.filter(catalog=self.catalog).order_by("created_at")[
+        entries = Entry.objects.filter(catalog=self.catalog).order_by("-created_at")[
             : settings.EVILFLOWERS_FEEDS_NEW_LIMIT
         ]
 

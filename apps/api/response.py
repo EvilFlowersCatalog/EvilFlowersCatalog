@@ -10,6 +10,7 @@ from django.utils.translation import gettext as _
 from pydantic import BaseModel, RootModel
 
 from apps.api.serializers import Serializer
+from apps.api.utils.parse import parse_int_query
 from apps.core.errors import (
     ProblemDetailException,
     DetailType,
@@ -142,8 +143,13 @@ class PaginationResponse(GeneralResponse):
         # Pagination
         paginate = request.GET.get("paginate", "true") == "true"
         if paginate:
-            limit = int(request.GET.get("limit", settings.EVILFLOWERS_PAGINATION_DEFAULT_LIMIT))
-            page = int(request.GET.get("page", 1))
+            limit = parse_int_query(
+                request,
+                "limit",
+                default=settings.EVILFLOWERS_PAGINATION_DEFAULT_LIMIT,
+                min_value=1,
+            )
+            page = parse_int_query(request, "page", default=1, min_value=1)
 
             paginator = Paginator(qs, limit)
 

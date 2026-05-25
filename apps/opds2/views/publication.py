@@ -4,6 +4,7 @@ from uuid import UUID
 from django.http import JsonResponse
 from django.utils.translation import gettext as _
 
+from apps.api.utils.parse import parse_int_query
 from apps.core.errors import ProblemDetailException
 from apps.core.models import Entry
 from apps.opds2.services import FeedBuilder, ManifestBuilder
@@ -13,8 +14,8 @@ from apps.opds2.views.base import Opds2CatalogView
 class PublicationFeedView(Opds2CatalogView):
     def get(self, request, catalog_name: str):
         entries = Entry.objects.filter(catalog=self.catalog).order_by("-created_at")
-        page = int(request.GET.get("page", 1))
-        per_page = int(request.GET.get("per_page", 0)) or None
+        page = parse_int_query(request, "page", default=1, min_value=1)
+        per_page = parse_int_query(request, "per_page", default=0, min_value=0) or None
 
         feed = FeedBuilder.build_publication_feed(
             entries, self.catalog, request, page=page, per_page=per_page, title=f"{self.catalog.title} - Publications"

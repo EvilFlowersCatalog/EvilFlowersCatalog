@@ -148,15 +148,26 @@ class OpdsFeed(BaseXmlModel, tag="feed", nsmap=NSMAP):
     entries: List[Union[NavigationEntry, AcquisitionEntry]] = element(tag="entry", default=list())
 
 
-class OpenSearchLink(BaseXmlModel, tag="Url", nsmap=NSMAP):
+OPENSEARCH_NSMAP = {"": "http://a9.com/-/spec/opensearch/1.1/"}
+
+
+class OpenSearchLink(BaseXmlModel, tag="Url", nsmap=OPENSEARCH_NSMAP):
     type: Literal["application/atom+xml;profile=opds-catalog"] = attr(
         name="type", default="application/atom+xml;profile=opds-catalog"
     )
     template: str = attr(name="template")
 
     def __init__(self, base_path: str, template_items: Dict[str, str], **data):
-        template = base_path + "?" + "&".join(f"{k}={{{v}}}" for k, v in template_items.items())
+        from urllib.parse import quote
+
+        template = base_path + "?" + "&".join(f"{quote(k, safe='')}={{{v}}}" for k, v in template_items.items())
         super().__init__(template=template, **data)
 
 
-class OpenSearchQuery(BaseXmlModel, tag="Query", nsmap=NSMAP): ...
+class OpenSearchQuery(BaseXmlModel, tag="Query", nsmap=OPENSEARCH_NSMAP): ...
+
+
+class OpenSearchDescription(BaseXmlModel, tag="OpenSearchDescription", nsmap=OPENSEARCH_NSMAP):
+    short_name: str = element(tag="ShortName")
+    description: str = element(tag="Description")
+    url: OpenSearchLink = element()

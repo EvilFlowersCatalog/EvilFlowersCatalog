@@ -27,11 +27,12 @@ class EntryService:
 
         # Conflicts
         # TODO: this is suppose to be some kind of a setting
+        identifiers = entry.identifiers or {}
         conditions = [Q(title=entry.title)]
-        if entry.identifiers.get("isbn"):
-            conditions.append(Q(identifiers__isbn=entry.identifiers.get("isbn")))
-        if entry.identifiers.get("doi"):
-            conditions.append(Q(identifiers__doi=entry.identifiers.get("doi")))
+        if identifiers.get("isbn"):
+            conditions.append(Q(identifiers__isbn=identifiers.get("isbn")))
+        if identifiers.get("doi"):
+            conditions.append(Q(identifiers__doi=identifiers.get("doi")))
         if Entry.objects.exclude(pk=entry.pk).filter(catalog=self._catalog).filter(reduce(or_, conditions)).exists():
             raise self.AlreadyExists()
 
@@ -39,11 +40,11 @@ class EntryService:
         if all(
             [
                 entry.citation is None,
-                (entry.identifiers and entry.identifiers.get("isbn")),
+                identifiers.get("isbn"),
                 entry.read_config("evilflowers_metadata_fetch"),
             ]
         ):
-            metadata = isbnlib.meta(entry.identifiers["isbn"])
+            metadata = isbnlib.meta(identifiers["isbn"])
             if metadata:
                 entry.citation = bibformatters["bibtex"](metadata)
 

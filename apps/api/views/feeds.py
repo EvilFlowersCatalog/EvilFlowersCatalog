@@ -26,7 +26,7 @@ class FeedManagement(SecuredView):
         if not form.is_valid():
             raise ValidationException(form)
 
-        if not has_object_permission("check_catalog_read", request.user, form.cleaned_data["catalog_id"]):
+        if not has_object_permission("check_catalog_manage", request.user, form.cleaned_data["catalog_id"]):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         # FIXME: Probably not working
@@ -70,13 +70,13 @@ class FeedManagement(SecuredView):
 
 class FeedDetail(SecuredView):
     @staticmethod
-    def _get_feed(request, feed_id: UUID) -> Feed:
+    def _get_feed(request, feed_id: UUID, checker: str = "check_catalog_manage") -> Feed:
         try:
             feed = Feed.objects.select_related("catalog").get(pk=feed_id)
         except Feed.DoesNotExist as e:
             raise ProblemDetailException(_("Feed not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        if not has_object_permission("check_catalog_read", request.user, feed.catalog):
+        if not has_object_permission(checker, request.user, feed.catalog):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return feed
@@ -87,7 +87,7 @@ class FeedDetail(SecuredView):
         summary="Get feed details",
     )
     def get(self, request, feed_id: UUID):
-        feed = self._get_feed(request, feed_id)
+        feed = self._get_feed(request, feed_id, "check_catalog_read")
 
         return SingleResponse(request, data=FeedSerializer.Base.model_validate(feed, context={"request": request}))
 
@@ -100,7 +100,7 @@ class FeedDetail(SecuredView):
         feed = self._get_feed(request, feed_id)
 
         form = FeedForm.create_from_request(request)
-        form["parents"].queryset = form["parents"].queryset.exclude(pk=feed.pk)
+        form.fields["parents"].queryset = form.fields["parents"].queryset.exclude(pk=feed.pk)
 
         if not form.is_valid():
             raise ValidationException(form)

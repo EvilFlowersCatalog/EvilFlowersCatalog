@@ -277,17 +277,6 @@ class EntryDetail(SecuredView):
                     # Log error but don't fail the upload
                     logger.exception(f"Failed to enqueue text processing task for acquisition_id={acquisition.pk}")
 
-            # Process file with text service via Celery (non-blocking)
-            if acquisition.content and acquisition.mime == Acquisition.AcquisitionMIME.PDF:
-                try:
-                    text_client = TextServiceClient()
-                    source = acquisition.content.name
-                    entry_id = str(acquisition.entry.pk)
-                    text_client.process_acquisition(source, entry_id)
-                except Exception:
-                    # Log error but don't fail the upload
-                    logger.exception(f"Failed to enqueue text processing task for acquisition_id={acquisition.pk}")
-
         for price in form.cleaned_data.get("prices", []):
             Price.objects.create(
                 acquisition=acquisition,

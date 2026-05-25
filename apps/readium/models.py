@@ -58,7 +58,13 @@ class License(BaseModel):
         default_permissions = ()
         verbose_name = _("License")
         verbose_name_plural = _("Licenses")
-        unique_together = [["entry", "user", "state"]]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["entry", "user"],
+                condition=Q(state__in=["ready", "active"]),
+                name="unique_active_license_per_user_per_entry",
+            ),
+        ]
 
     class LicenseState(models.TextChoices):
         READY = "ready", _("Ready")

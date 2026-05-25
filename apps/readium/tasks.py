@@ -67,7 +67,7 @@ def notify_expiring_licenses() -> int:
         context = {
             "user_name": license_obj.user.full_name or license_obj.user.username,
             "entry_title": license_obj.entry.title,
-            "entry_author": _entry_author_name(license_obj.entry),
+            "entry_author": license_obj.entry.first_author_name,
             "expires_at": license_obj.expires_at.isoformat() if license_obj.expires_at else "",
             "days_left": (license_obj.expires_at - now).days if license_obj.expires_at else None,
             "license_id": str(license_obj.pk),
@@ -78,10 +78,3 @@ def notify_expiring_licenses() -> int:
     if sent:
         logger.info("Sent %d license_expiring_soon notifications", sent)
     return sent
-
-
-def _entry_author_name(entry) -> str:
-    first = entry.authors.first() if hasattr(entry, "authors") else None
-    if first is None:
-        return ""
-    return getattr(first, "full_name", None) or f"{getattr(first, 'name', '')} {getattr(first, 'surname', '')}".strip()
