@@ -4,8 +4,9 @@
     <img width="150" height="150" src="docs/images/logo.png">
 </p>
 
-A publication catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2), written in Python with
-a straightforward management REST API for CRUD operations.
+A publication catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2) and
+[OPDS 2.0](https://drafts.opds.io/opds-2.0), written in Python with a straightforward management REST API for CRUD
+operations and end-to-end Readium LCP DRM support.
 
 ## Features
 
@@ -19,13 +20,17 @@ or [contact us directly](mailto:jakub.dubec@stuba.sk).
 
 The current list of features:
 
-- **OPDS 1.2**: Access your publications using [OPDS 1.2](https://specs.opds.io/opds-1.2) - suitable for e-book
+- **OPDS 1.2**: Access your publications using [OPDS 1.2](https://specs.opds.io/opds-1.2) — suitable for e-book
   readers.
+- **OPDS 2.0**: Full [OPDS 2.0](https://drafts.opds.io/opds-2.0) JSON server with navigation, search, custom feeds,
+  pagination, and Readium LCP borrowing — compatible with Thorium Reader and other modern LCP-capable reading apps.
+- **Readium LCP**: End-to-end DRM lending pipeline (encrypt → license → borrow → reserve → renew → return) with
+  reservation queue, oversharing detection, capability tokens, and a fully proxied LSD surface.
 - **REST API**: Facilitates easy access and manipulation of catalog data for developers through CRUD operations.
-- **Multiple storage options**: Store your documents on the filesystem path or S3 compatible storage.
+- **Multiple storage options**: Store your documents on the filesystem or any S3-compatible object store.
 - **Multi-tenant Catalog**: Supports multiple tenants, allowing separate catalogs for different user groups within the
   same server instance.
-- **Authentication Support**: Offers both LDAP and local user authentication methods, ensuring secure access control.
+- **Authentication Support**: Local users, LDAP, JWT access/refresh tokens, and long-lived API keys.
 - **Custom Feeds**: Users can organize publications into custom feeds, tailoring the catalog to specific needs or
   themes.
 - **Publications Sharing**: Enables users to share publications with others, facilitating collaboration and
@@ -36,32 +41,29 @@ The current list of features:
   for custom modifications and adjustments.
 - **Dataverse integration**: Imports published Dataverse datasets into Evil Flowers Catalog through a Dataverse
   publish workflow, preserving dataset metadata and file links as catalog entries and acquisitions.
-- **Asynchronous Task Processing with Celery**: EvilFlowers Catalog leverages a robust Celery-based distributed task
-  system to efficiently handle resource-intensive and time-consuming jobs. This includes tasks like OCR processing,
-  data extraction, and Readium package compression. By offloading these tasks to a scalable worker environment, the
-  catalog ensures smooth and responsive user interactions while processing large datasets and files in the background.
+- **Search service**: Optional integration with an external keyword/semantic search backend (IP-008).
+- **Notifications**: MJML-based email notifications for license, reservation, and passphrase events (IP-002).
+- **Asynchronous Task Processing with Celery**: EvilFlowers Catalog leverages a Celery-based distributed task system to
+  handle resource-intensive jobs — OCR processing, data extraction, LCP encryption, license-lifecycle sweeps, daily
+  reminders, and database backups — through dedicated workers and beat schedules.
 
-The implementation is based on these RFCs:
+The implementation is based on these RFCs and specifications:
 
 - [RFC7807: Problem Details for HTTP APIs](https://datatracker.ietf.org/doc/html/rfc7807)
 - [RFC7617: The 'Basic' HTTP Authentication Scheme](https://datatracker.ietf.org/doc/html/rfc7617)
-- [RFC6705: The OAuth 2.0 Authorization Framework: Bearer Token Usage](https://datatracker.ietf.org/doc/html/rfc6750)
-- [RFC5005: Feed Paging and Archiving](https://datatracker.ietf.org/doc/html/rfc5005) (not implemented yet)
+- [RFC6750: The OAuth 2.0 Authorization Framework: Bearer Token Usage](https://datatracker.ietf.org/doc/html/rfc6750)
+- [RFC7519: JSON Web Token (JWT)](https://datatracker.ietf.org/doc/html/rfc7519)
+- [OPDS 1.2](https://specs.opds.io/opds-1.2) and [OPDS 2.0](https://drafts.opds.io/opds-2.0)
+- [Readium LCP](https://readium.org/lcp-specs/) and [Readium Web Publication Manifest](https://readium.org/webpub-manifest/)
 
-## Work in progress
+## Project status
 
-Although this project is already in use in a production environment, work is still in progress, and the API
-remains unstable. If you wish to deploy the project, please feel free to open a discussion or
-[send us an email](mailto:jakub.dubec@stuba.sk). We are actively working on new features and documenting existing
-ones, but it takes time.
-
-The main goal is to implement the complete [OPDS 1.2](https://specs.opds.io/opds-1.2) and later
-[OPDS 2.0](https://drafts.opds.io/opds-2.0) specifications. The ordered list below represents the current progress:
-
-- [ ] Readium DRM
-- [ ] [Facets](https://specs.opds.io/opds-1.2#4-facets)
-- [ ] [Search](https://specs.opds.io/opds-1.2#3-search)
-- [ ] [Pagination](https://datatracker.ietf.org/doc/html/rfc5005)
+The project is in active production use. Major specifications — OPDS 1.2, OPDS 2.0 (navigation, search, pagination,
+facets), and Readium LCP — are implemented end-to-end. New features are tracked as **Implementation Proposals (IP-XXX)**
+under [`docs/proposals/posts/`](docs/proposals/posts); see the [proposals index](docs/proposals/index.md) for current
+status. The REST API remains under active iteration — if you plan to deploy, please
+[open a discussion](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/discussions) or
+[email us](mailto:jakub.dubec@stuba.sk).
 
 ## Installation
 
@@ -70,17 +72,20 @@ The main goal is to implement the complete [OPDS 1.2](https://specs.opds.io/opds
 A pre-built Docker image is available on the GitHub Container registry as
 [evilflowerscatalog](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pkgs/container/evilflowerscatalog).
 
-The repository contains a working example of a `docker-compose.yml` file configured for a development environment.
-You can use a similar configuration for production usage. The application image will be built from the source.
+The repository contains a working `compose.yml` configured for a development environment, with sidecars for
+PostgreSQL, Redis, MinIO, Dataverse, the Readium LCP server, and the external workers (`evilflowers-ocr-worker`,
+`evilflowers-lcpencrypt-worker`, `evilflowers-text-service`, `evil-flowers-search-service`). You can use a similar
+configuration for production. The application image is built from the source.
 
-Setup steps (container name may differ):
+Setup steps (service name `django` per `compose.yml`):
 
-1. Initialize containers `docker-compose up`
-2. Import languages, currencies, and set up CRON jobs
-   `docker exec -it evilflowerscatalog-django-1 python3 manage.py setup`
-3. Create a superuser `docker exec -it evilflowerscatalog-django-1 python3 manage.py createsuperuser`
+1. Initialize the stack: `docker compose up -d --build`
+2. Seed languages and currencies: `docker compose exec django python3 manage.py setup`
+3. Create a superuser: `docker compose exec django python3 manage.py createsuperuser`
 
-The server will start on port 8000.
+The server will start on port 8000. For a Readium LCP-enabled deployment with shared filesystem storage between
+Django, the LCP Server, and the lcpencrypt worker, follow the dedicated
+[Readium LCP Deployment guide](docs/catalog-wiki/Readium-LCP-Deployment.md).
 
 ### Dataverse
 
@@ -139,17 +144,35 @@ To set up an instance with a demo database, follow these simple steps:
 2. Enter the environment (`source venv/bin/activate`)
 3. Install dependencies `poetry install`
 4. Create a JWK (if you are unsure how, check this [mkjwk](https://mkjwk.org/) generator) and keep it private
-5. Create an `.env` file according to `.env.example`
+5. Create an `.env` file according to `.env.example` (see the
+   [Settings & Enumerations wiki](docs/catalog-wiki/Settings-&-Enumerations.md) for the full env-variable reference)
 6. Execute migrations `python manage.py migrate`
-7. Import currencies, languages, and set up CRON jobs using `python manage.py setup`
+7. Seed currencies and languages using `python manage.py setup`
 8. Create a superuser using `python manage.py createsuperuser`
+9. (Optional) Start a Celery worker (`celery -A evil_flowers_catalog worker -l info`) and Celery beat
+   (`celery -A evil_flowers_catalog beat -l info`) to enable asynchronous tasks (OCR, LCP encryption, lifecycle sweeps,
+   reservation queue, daily reminders, backups).
 
 ## Documentation
 
-The OpenAPI specification is generated automatically from the source code using `python manage.py openapi` command
-(check the `apps.openapi` for more). The complete documentation is available on
-[https://elvira.digital/EvilFlowersCatalog/](https://elvira.digital/EvilFlowersCatalog/). Additional features are
-detailed on the [GitHub Wiki](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/wiki).
+The OpenAPI specification is generated automatically from the source code using `python manage.py openapi`
+(see `apps.openapi`) and is published from `master` at
+[elvira.digital/EvilFlowersCatalog/](https://elvira.digital/EvilFlowersCatalog/).
+
+Operator and contributor documentation lives in this repository under [`docs/catalog-wiki/`](docs/catalog-wiki/) and
+is mirrored on the [GitHub Wiki](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/wiki). Start with:
+
+- [Home](docs/catalog-wiki/Home.md) — overview and navigation
+- [Settings & Enumerations](docs/catalog-wiki/Settings-&-Enumerations.md) — every environment variable
+- [Storage](docs/catalog-wiki/Storage.md) — filesystem vs S3
+- [Security](docs/catalog-wiki/Security.md) — authentication, authorization, JWT, LDAP
+- [OPDS 2.0 Server](docs/catalog-wiki/OPDS-2.md)
+- [Readium LCP Integration](docs/catalog-wiki/Readium-LCP-Integration.md) and
+  [Deployment](docs/catalog-wiki/Readium-LCP-Deployment.md)
+- [Management Commands](docs/catalog-wiki/Management-commands.md)
+- [Asynchronous Tasks](docs/catalog-wiki/Asynchronous-Tasks.md)
+
+Implementation proposals (`IP-XXX`) sit under [`docs/proposals/posts/`](docs/proposals/posts) — every feature has one.
 
 ## Acknowledgment
 
