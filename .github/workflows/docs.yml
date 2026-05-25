@@ -125,7 +125,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: EvilFlowersCatalog/evilflowers-protocol
-          ref: ${{ steps.slug.outputs.raw_ref }}
           ssh-key: ${{ secrets.EVILFLOWERS_DEPLOY_KEY }}
           path: protocol_repo
           fetch-depth: 1
@@ -135,11 +134,18 @@ jobs:
         if: steps.slug.outputs.action == 'deploy' && steps.protocol_checkout.outcome == 'success'
         run: |
           cd protocol_repo
+          REF="${{ steps.slug.outputs.raw_ref }}"
+          if git ls-remote --exit-code --heads origin "${REF}" >/dev/null 2>&1; then
+            git fetch --depth=1 origin "${REF}:${REF}"
+            git checkout "${REF}"
+          else
+            git checkout -b "${REF}"
+          fi
           mkdir -p openapi metadata
           cp ../${PUBLISH_DIR}/openapi.yaml openapi/openapi.yaml
-          echo "${{ steps.slug.outputs.raw_ref }}" > metadata/version.txt
+          echo "${REF}" > metadata/version.txt
           git config user.name "ci-bot"
           git config user.email "ci@evilflowers.org"
           git add .
-          git diff-index --quiet HEAD || git commit -m "Sync OpenAPI for ${{ steps.slug.outputs.raw_ref }}"
-          git push origin ${{ steps.slug.outputs.raw_ref }}
+          git diff-index --quiet HEAD || git commit -m "Sync OpenAPI for ${REF}"
+          git push origin "${REF}"
