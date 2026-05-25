@@ -50,6 +50,22 @@ class Acquisition(BaseModel):
         MOBI = "application/x-mobipocket-ebook", _("MOBI")
         READIUM_PACKAGE = "application/webpub+zip", _("READIUM PACKAGE")
 
+    class StorageBackend(models.TextChoices):
+        """IP-008 Phase 5: explicit storage mode.
+
+        `LOCAL` — file lives in our `get_storage()` backend (FS or S3).
+        `EXTERNAL_URL` — `file_url` points at an external host
+        (Dataverse). Authentication checks must still apply before the
+        URL is exposed to the requester.
+
+        All dispatch goes through
+        `apps/files/services.py::AcquisitionStorageService` so callers
+        don't repeat the `if file_url else ...` branch.
+        """
+
+        LOCAL = "local", _("local")
+        EXTERNAL_URL = "external_url", _("external_url")
+
     def upload_base_path(self):
         return f"catalogs/{self.entry.catalog.url_name}/{self.entry.pk}"
 
@@ -65,32 +81,62 @@ class Acquisition(BaseModel):
     mime = models.CharField(choices=AcquisitionMIME.choices, max_length=100)
     content = models.FileField(upload_to=upload_to_path, null=True, max_length=255, storage=get_storage)
     file_url = models.URLField(null=True, blank=True, max_length=2048)
+    storage_backend = models.CharField(
+        max_length=20,
+        choices=StorageBackend.choices,
+        default=StorageBackend.LOCAL,
+    )
+    # IP-008 Phase 5: lazy checksum cache. The SHA-256 is computed on
+    # first demand (via the property below) and persisted here. The old
+    # behaviour read the entire file on every detailed serialization.
+    checksum_cached = models.CharField(max_length=64, null=True, blank=True)
 
     @property
     def url(self) -> Optional[str]:
-        # If file_url is set (external URL like Dataverse), return it directly
+        """Best-effort URL for the resource.
+
+        Callers that need ACL enforcement should go through
+        `apps.files.services.AcquisitionStorageService.url(...)`
+        instead. This property is kept as a backward-compatible shim.
+        """
+        if self.storage_backend == self.StorageBackend.EXTERNAL_URL and self.file_url:
+            return self.file_url
         if self.file_url:
             return self.file_url
-        # Otherwise, return the download URL for stored content
         if not self.content:
             return None
         return reverse("files:acquisition-download", kwargs={"acquisition_id": self.pk})
 
     @property
     def base64(self) -> Optional[str]:
-        if self.content is not None:
-            encoded = base64.b64encode(self.content.read()).decode("ascii")
-            return f"data:{self.mime};base64,{encoded}"
-        return None
+        """Base64-encoded content payload.
+
+        IP-008 Phase 5 lazy-hashing note: this is expensive — it reads
+        the full file each call. Detailed serializers no longer include
+        it by default; clients opt in via `?include=content`.
+        """
+        if self.storage_backend != self.StorageBackend.LOCAL or self.content is None:
+            return None
+        encoded = base64.b64encode(self.content.read()).decode("ascii")
+        return f"data:{self.mime};base64,{encoded}"
 
     @property
     def checksum(self) -> Optional[str]:
-        if self.content is not None:
-            checksum = hashlib.sha256()
-            while block := self.content.read(4096):
-                checksum.update(block)
-            return checksum.hexdigest()
-        return None
+        """SHA-256 hex of the local file content (cached after first read)."""
+        if self.storage_backend != self.StorageBackend.LOCAL or self.content is None:
+            return None
+        if self.checksum_cached:
+            return self.checksum_cached
+        digest = hashlib.sha256()
+        while block := self.content.read(4096):
+            digest.update(block)
+        hexdigest = digest.hexdigest()
+        # Persist for next time. `update_fields` keeps the write
+        # narrow and avoids firing post_save side effects on unrelated
+        # columns.
+        Acquisition.objects.filter(pk=self.pk).update(checksum_cached=hexdigest)
+        self.checksum_cached = hexdigest
+        return hexdigest
 
 
 @receiver(post_save, sender=Acquisition)

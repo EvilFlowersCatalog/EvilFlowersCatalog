@@ -294,6 +294,9 @@ class DataverseSyncService:
                     file_url=browser_url,
                     relation=target_relation,
                     content=None,
+                    # IP-008 Phase 5: tag Dataverse acquisitions so the
+                    # storage service dispatches them as redirects.
+                    storage_backend=Acquisition.StorageBackend.EXTERNAL_URL,
                 )
                 continue
 
@@ -304,6 +307,9 @@ class DataverseSyncService:
             if existing.relation != target_relation:
                 existing.relation = target_relation
                 updated_fields.append("relation")
+            if existing.storage_backend != Acquisition.StorageBackend.EXTERNAL_URL:
+                existing.storage_backend = Acquisition.StorageBackend.EXTERNAL_URL
+                updated_fields.append("storage_backend")
             if updated_fields:
                 existing.save(update_fields=updated_fields + ["updated_at"])
 

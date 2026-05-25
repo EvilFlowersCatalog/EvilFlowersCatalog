@@ -6,6 +6,7 @@ from http import HTTPStatus
 from mimetypes import guess_extension
 
 from django.conf import settings
+from django.db.models import F
 from django.http import FileResponse
 from django.urls import reverse
 from django.utils.module_loading import import_string
@@ -20,6 +21,7 @@ from apps.core.fields.multirange import depack
 from apps.core.models import Acquisition, Entry, UserAcquisition, AnnotationItem
 from apps.core.modifiers import InvalidPage
 from apps.core.views import SecuredView
+from apps.files.services import AcquisitionStorageError, AcquisitionStorageService
 
 
 def _get_client_ip(request) -> str:
@@ -60,16 +62,13 @@ class AcquisitionDownload(SecuredView):
         except Acquisition.DoesNotExist:
             raise ProblemDetailException(_("Acquisition not found"), status=HTTPStatus.NOT_FOUND)
 
-        # Handle acquisitions with file_url (e.g., from Dataverse) vs content (file storage)
-        if acquisition.file_url:
-            # For acquisitions with external URLs (like Dataverse), redirect to the URL
-            from django.http import HttpResponseRedirect
-
-            return HttpResponseRedirect(acquisition.file_url)
-
-        if not acquisition.content or not acquisition.content.storage.exists(acquisition.content.name):
-            raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND)
-
+        # IP-008 Phase 5: auth + IP block + UserAcquisition bookkeeping
+        # run FIRST. Only after the requester is allowed do we ask
+        # `AcquisitionStorageService` to dispatch (redirect for
+        # EXTERNAL_URL, FileResponse for LOCAL). The old code had a
+        # `file_url` redirect path that ran BEFORE the auth checks,
+        # which let a UUID-guesser pull Dataverse-backed content from
+        # private catalogs.
         if acquisition.relation != Acquisition.AcquisitionType.OPEN_ACCESS:
             request.user = self._authenticate(request)
 
@@ -77,6 +76,9 @@ class AcquisitionDownload(SecuredView):
             raise AuthorizationException(request)
 
         _check_ip_block(request, acquisition.entry)
+
+        if not AcquisitionStorageService.exists(acquisition):
+            raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND)
 
         if request.user.is_authenticated and settings.EVILFLOWERS_ENFORCE_USER_ACQUISITIONS:
             if settings.EVILFLOWERS_USER_ACQUISITION_MODE == "single":
@@ -110,13 +112,21 @@ class AcquisitionDownload(SecuredView):
                 + params.urlencode()
             )
 
-        acquisition.entry.popularity = acquisition.entry.popularity + 1
-        sanitized_filename = f"{slugify(acquisition.entry.title.lower())}{guess_extension(acquisition.mime)}"
+        # Atomic popularity increment (IP-010 M8 pattern).
+        Entry.objects.filter(pk=acquisition.entry_id).update(popularity=F("popularity") + 1)
 
         if request.GET.get("format", None) == "base64":
+            if acquisition.storage_backend == Acquisition.StorageBackend.EXTERNAL_URL:
+                raise ProblemDetailException(
+                    _("base64 format is not supported for externally stored content"),
+                    status=HTTPStatus.BAD_REQUEST,
+                )
             return SingleResponse(request, data={"data": base64.b64encode(acquisition.content.read()).decode()})
 
-        return FileResponse(acquisition.content, as_attachment=True, filename=sanitized_filename)
+        try:
+            return AcquisitionStorageService.download_response(acquisition)
+        except AcquisitionStorageError as exc:
+            raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND) from exc
 
 
 class UserAcquisitionDownload(SecuredView):

@@ -70,8 +70,15 @@ class AcquisitionSerializer:
         id: UUID
 
     class Detailed(Base):
-        base64: Optional[str] = Field(serialization_alias="content")
-        checksum: Optional[str]
+        # IP-008 Phase 5: `content` (base64) and `checksum` are no longer
+        # emitted by default — reading them triggered a full-file read
+        # per serialization. Clients that need the bytes use the
+        # `/files/acquisitions/{id}` download endpoint
+        # (with `?format=base64` for the inline-base64 variant); a
+        # cached checksum lives in `Acquisition.checksum_cached` and
+        # can be exposed via a dedicated field if a future caller
+        # needs it. Removed fields are a documented breaking change.
+        pass
 
 
 class EntrySerializer:
