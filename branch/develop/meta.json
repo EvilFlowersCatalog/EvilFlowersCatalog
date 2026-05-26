@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "077cce2d26feebb6d716e0f2d4aec33bd49d6b4c",
-    "short": "077cce2",
-    "message": "Add IP-011 regression tests for reservation UX (G1-G5) and enhance `generate-index.sh` with modular entries and templating.",
+    "sha": "c33d93282c64b1b4b60759d8138be809ad8b4d0b",
+    "short": "c33d932",
+    "message": "Add per-endpoint `Cache-Control` headers for file responses and configure defaults via settings",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/077cce2d26feebb6d716e0f2d4aec33bd49d6b4c"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/c33d93282c64b1b4b60759d8138be809ad8b4d0b"
   },
-  "deployed_at": "2026-05-25T22:50:22Z",
+  "deployed_at": "2026-05-26T09:14:46Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
