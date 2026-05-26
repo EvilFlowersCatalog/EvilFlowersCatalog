@@ -89,7 +89,7 @@ Django, the LCP Server, and the lcpencrypt worker, follow the dedicated
 
 ### Dataverse
 
-The Docker setup includes a local [Dataverse](https://dataverse.org/) instance through `dataverse/compose.yml`.
+The Docker setup includes a local [Dataverse](https://dataverse.org/) instance through `conf/dataverse/compose.yml`.
 
 In the local development stack:
 
@@ -100,7 +100,7 @@ In the local development stack:
 
 How the integration works:
 
-1. A Dataverse pre-publish workflow is registered from `dataverse/hooks/prepublish-sync.json`.
+1. A Dataverse pre-publish workflow is registered from `conf/dataverse/hooks/prepublish-sync.json`.
 2. When a user clicks **Publish** in the Dataverse GUI, Dataverse calls the Django endpoint
    `POST /api/v1/dataverse-prepublish`.
 3. Django validates `DATAVERSE_WORKFLOW_SECRET`, fetches dataset metadata and files from Dataverse using
@@ -128,7 +128,7 @@ Local setup:
 5. Register the Dataverse pre-publish workflow:
    ```bash
    export DATAVERSE_API_TOKEN="your-dataverse-api-token"
-   dataverse/scripts/hook.sh "$DATAVERSE_API_TOKEN" --url http://127.0.0.1:8080 --trigger pre --file dataverse/hooks/prepublish-sync.json
+   conf/dataverse/scripts/hook.sh "$DATAVERSE_API_TOKEN" --url http://127.0.0.1:8080 --trigger pre --file conf/dataverse/hooks/prepublish-sync.json
    ```
 6. Publish a dataset from the Dataverse GUI. During publish, Dataverse sends the dataset to Django; after Django
    imports it, Dataverse completes the publish workflow.

@@ -1,6 +1,6 @@
 version: "2.4"
 include:
-  - ./dataverse/compose.yml
+  - ./conf/dataverse/compose.yml
 
 services:
   db:
@@ -24,7 +24,7 @@ services:
     networks:
       - shared
     volumes:
-      - ./dataverse/db:/init
+      - ./conf/dataverse/db:/init
     command:
       - sh
       - -lc

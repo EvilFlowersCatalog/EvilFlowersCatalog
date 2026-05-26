@@ -25,5 +25,8 @@ node_modules/
 !/static/.gitkeep
 requirements.txt
 compose.local.yml
-dataverse/data/
+conf/dataverse/data/
 .mcp.json
+.playwright-mcp/
+.logfire/
+**/.ipynb_checkpoints/
