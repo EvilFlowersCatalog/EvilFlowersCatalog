@@ -22,11 +22,11 @@
       "mcp__github__list_commits",
       "mcp__plugin_figma_figma__get_metadata",
       "mcp__plugin_figma_figma__get_screenshot",
-
-
       "mcp__github__issue_read",
       "mcp__playwright__browser_navigate",
-      "mcp__playwright__browser_take_screenshot"
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__github__list_issues",
+      "mcp__github__get_me"
     ],
     "deny": []
   },

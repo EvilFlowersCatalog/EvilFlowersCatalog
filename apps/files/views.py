@@ -124,9 +124,12 @@ class AcquisitionDownload(SecuredView):
             return SingleResponse(request, data={"data": base64.b64encode(acquisition.content.read()).decode()})
 
         try:
-            return AcquisitionStorageService.download_response(acquisition)
+            response = AcquisitionStorageService.download_response(acquisition)
         except AcquisitionStorageError as exc:
             raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND) from exc
+
+        response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE
+        return response
 
 
 class UserAcquisitionDownload(SecuredView):
@@ -197,7 +200,9 @@ class UserAcquisitionDownload(SecuredView):
         if request.GET.get("format", None) == "base64":
             return SingleResponse(request, data={"data": base64.b64encode(content.read()).decode()})
 
-        return FileResponse(content, as_attachment=True, filename=sanitized_filename)
+        response = FileResponse(content, as_attachment=True, filename=sanitized_filename)
+        response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE
+        return response
 
 
 class EntryImageDownload(SecuredView):
@@ -213,7 +218,9 @@ class EntryImageDownload(SecuredView):
         if not entry.image.storage.exists(entry.image.name):
             raise ProblemDetailException(_("Entry image file not found"), status=HTTPStatus.NOT_FOUND)
 
-        return FileResponse(entry.image, filename=sanitized_filename)
+        response = FileResponse(entry.image, filename=sanitized_filename)
+        response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC
+        return response
 
 
 class EntryThumbnailDownload(SecuredView):
@@ -229,4 +236,6 @@ class EntryThumbnailDownload(SecuredView):
         if not entry.thumbnail.storage.exists(entry.thumbnail.name):
             raise ProblemDetailException(_("Entry thumbnail file not found"), status=HTTPStatus.NOT_FOUND)
 
-        return FileResponse(streaming_content=entry.thumbnail, filename=sanitized_filename)
+        response = FileResponse(streaming_content=entry.thumbnail, filename=sanitized_filename)
+        response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC
+        return response

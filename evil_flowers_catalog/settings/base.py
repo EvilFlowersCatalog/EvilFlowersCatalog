@@ -275,6 +275,16 @@ EVILFLOWERS_STORAGE_S3_SECRET_KEY = os.getenv("EVILFLOWERS_STORAGE_S3_SECRET_KEY
 EVILFLOWERS_STORAGE_S3_SECURE = bool(int(os.getenv("EVILFLOWERS_STORAGE_S3_SECURE", 0)))
 EVILFLOWERS_STORAGE_S3_BUCKET = os.getenv("EVILFLOWERS_STORAGE_S3_BUCKET")
 
+# Cache-Control for file-serving endpoints (issue #29).
+# - PUBLIC: cover images / thumbnails. Safe to cache on shared caches and CDNs.
+# - PRIVATE: acquisition and user-acquisition downloads. Per-user, may carry
+#   watermarks or personalised modifications; never shared.
+# Override via env to integrate with nginx / CDN policy.
+EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC = os.getenv("EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC", "public, max-age=86400")
+EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE = os.getenv(
+    "EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE", "private, max-age=0, must-revalidate"
+)
+
 # Events
 EVILFLOWERS_EVENT_BROKER_EXECUTOR = os.getenv("EVILFLOWERS_EVENT_BROKER_EXECUTOR")
 EVILFLOWERS_EVENT_BROKER_TRANSFORMER = os.getenv("EVILFLOWERS_EVENT_BROKER_TRANSFORMER")
