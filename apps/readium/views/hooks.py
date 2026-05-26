@@ -58,7 +58,11 @@ class EncryptionWebhook(View):
             return JsonResponse({"status": "error", "message": "EncryptedContent not found"}, status=404)
 
         try:
-            ContentEncryptionService.mark_encryption_completed(lcp_content_id)
+            # `mark_encryption_completed` re-fetches the row and sets `encrypted_at`.
+            # Use the returned fresh instance — the local `encrypted_content` above
+            # was loaded before the timestamp was written and would clobber it
+            # back to NULL on the next save (breaking `is_ready_for_licensing`).
+            encrypted_content = ContentEncryptionService.mark_encryption_completed(lcp_content_id)
             logger.info(f"Marked encryption completed for lcp_content_id: {lcp_content_id}")
 
             # lcpencrypt already registered with LCP server before calling this webhook
