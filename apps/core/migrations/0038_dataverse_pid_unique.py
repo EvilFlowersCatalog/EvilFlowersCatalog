@@ -16,7 +16,7 @@ _INDEX_NAME = "unique_dataverse_pid_per_catalog"
 
 CREATE_INDEX_SQL = f"""
 CREATE UNIQUE INDEX IF NOT EXISTS {_INDEX_NAME}
-ON entries (catalog_id, (identifiers->>'dataverse_pid'))
+ON entries (catalog_id, (identifiers->'dataverse_pid'))
 WHERE identifiers ? 'dataverse_pid';
 """
 
