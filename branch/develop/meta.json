@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "c33d93282c64b1b4b60759d8138be809ad8b4d0b",
-    "short": "c33d932",
-    "message": "Add per-endpoint `Cache-Control` headers for file responses and configure defaults via settings",
+    "sha": "62d79753f58fee9a159f73c8fc5b5827ce67ea15",
+    "short": "62d7975",
+    "message": "Add EDRLab certification notebook: executable walkthrough for Readium LCP compliance, bundling, and validation",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/c33d93282c64b1b4b60759d8138be809ad8b4d0b"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/62d79753f58fee9a159f73c8fc5b5827ce67ea15"
   },
-  "deployed_at": "2026-05-26T09:14:46Z",
+  "deployed_at": "2026-05-26T13:53:41Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
