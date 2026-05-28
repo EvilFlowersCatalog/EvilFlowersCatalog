@@ -6,12 +6,16 @@ Responsible for license generation, fetching, and updates.
 """
 
 import hashlib
+import logging
 import requests
 from typing import Dict
 from django.conf import settings
 from django.db import transaction
 
 from apps.readium.models import License
+from apps.readium.services.lsd_transport import _format_error, _split_url_and_auth
+
+logger = logging.getLogger(__name__)
 
 
 class LCPServerClient:
@@ -26,7 +30,10 @@ class LCPServerClient:
     """
 
     def __init__(self):
-        self.license_server_url = settings.EVILFLOWERS_READIUM_LCPSV_URL
+        # Split userinfo out of the configured URL so we (a) log a
+        # redacted URL on failure and (b) keep an explicit auth path
+        # alongside the body-snippet error formatter.
+        self.license_server_url, self.auth = _split_url_and_auth(settings.EVILFLOWERS_READIUM_LCPSV_URL)
         self.provider_url = getattr(
             settings, "EVILFLOWERS_READIUM_PROVIDER_URL", settings.EVILFLOWERS_READIUM_BASE_URL
         )
@@ -108,12 +115,13 @@ class LCPServerClient:
                 f"{self.license_server_url}/contents/{lcp_content_id}/license",
                 json=partial_license,
                 timeout=30,
+                auth=self.auth,
             )
             response.raise_for_status()
             lcp_license = response.json()
         except requests.RequestException as e:
             # Nothing to roll back — we haven't written to the License row yet.
-            raise Exception(f"Failed to generate LCP license: {str(e)}")
+            raise Exception(_format_error("LCP generate_license", e)) from e
 
         with transaction.atomic():
             license.passphrase_hash = final_hash
@@ -203,13 +211,14 @@ class LCPServerClient:
                 f"{self.license_server_url}/licenses/{license.lcp_license_id}",
                 json=partial_license,
                 timeout=30,
+                auth=self.auth,
             )
             response.raise_for_status()
 
             return response.json()
 
         except requests.RequestException as e:
-            raise Exception(f"Failed to fetch fresh license: {str(e)}")
+            raise Exception(_format_error("LCP fetch_fresh_license", e)) from e
 
     def update_license_rights(self, license: License, print_limit: int = 10, copy_limit: int = 2048) -> None:
         """
@@ -245,8 +254,9 @@ class LCPServerClient:
                 f"{self.license_server_url}/licenses/{license.lcp_license_id}",
                 json=partial_license,
                 timeout=30,
+                auth=self.auth,
             )
             response.raise_for_status()
 
         except requests.RequestException as e:
-            raise Exception(f"Failed to update license rights: {str(e)}")
+            raise Exception(_format_error("LCP update_license_rights", e)) from e

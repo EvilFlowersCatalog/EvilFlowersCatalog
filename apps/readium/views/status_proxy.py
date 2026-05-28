@@ -6,6 +6,8 @@ All reading app interactions with the Status Server go through these endpoints.
 Link URLs in responses are rewritten to point back to our proxy.
 """
 
+import logging
+
 import requests as http_requests
 from http import HTTPStatus
 from urllib.parse import urlparse
@@ -19,13 +21,27 @@ from django.utils.translation import gettext as _
 from apps.core.errors import ProblemDetailException
 from apps.core.views import SecuredView
 from apps.readium.models import License
+from apps.readium.services.lsd_transport import _format_error, _split_url_and_auth
+
+logger = logging.getLogger(__name__)
 
 
 class StatusProxyView(SecuredView):
     """Base for all LSD proxy endpoints."""
 
+    def _get_lsd(self):
+        """Return (clean_url, auth_tuple_or_None) for the upstream LSD.
+
+        Strips URL-embedded credentials so the rewritten link targets
+        we render don't leak userinfo and so error logs carry a redacted
+        URL. `requests` would extract them anyway, but doing it here lets
+        us also reuse the clean URL for `_internal_lsd_host` comparison.
+        """
+        raw = getattr(settings, "EVILFLOWERS_READIUM_LSDSV_URL", "http://127.0.0.1:8990")
+        return _split_url_and_auth(raw)
+
     def _get_lsd_url(self) -> str:
-        return getattr(settings, "EVILFLOWERS_READIUM_LSDSV_URL", "http://127.0.0.1:8990")
+        return self._get_lsd()[0]
 
     def _get_license(self, license_id: UUID) -> License:
         try:
@@ -92,16 +108,21 @@ class StatusDocumentView(StatusProxyView):
         if not license_obj.lcp_license_id:
             raise ProblemDetailException(_("License not yet generated"), status=HTTPStatus.NOT_FOUND)
 
+        lsd_url, lsd_auth = self._get_lsd()
         try:
             response = http_requests.get(
-                f"{self._get_lsd_url()}/licenses/{license_obj.lcp_license_id}/status",
+                f"{lsd_url}/licenses/{license_obj.lcp_license_id}/status",
                 timeout=30,
+                auth=lsd_auth,
             )
             response.raise_for_status()
             data = response.json()
         except http_requests.RequestException as e:
             raise ProblemDetailException(
-                _("Failed to fetch license status"), status=HTTPStatus.BAD_GATEWAY, previous=e
+                _("Failed to fetch license status"),
+                detail=_format_error("LSD get_status (proxy)", e),
+                status=HTTPStatus.BAD_GATEWAY,
+                previous=e,
             )
 
         data = self._rewrite_links(data, request, license_id)
@@ -119,16 +140,23 @@ class DeviceRegistrationProxyView(StatusProxyView):
         device_id = request.GET.get("id", "")
         device_name = request.GET.get("name", "")
 
+        lsd_url, lsd_auth = self._get_lsd()
         try:
             response = http_requests.post(
-                f"{self._get_lsd_url()}/licenses/{license_obj.lcp_license_id}/register",
+                f"{lsd_url}/licenses/{license_obj.lcp_license_id}/register",
                 params={"id": device_id, "name": device_name},
                 timeout=30,
+                auth=lsd_auth,
             )
             response.raise_for_status()
             data = response.json()
         except http_requests.RequestException as e:
-            raise ProblemDetailException(_("Failed to register device"), status=HTTPStatus.BAD_GATEWAY, previous=e)
+            raise ProblemDetailException(
+                _("Failed to register device"),
+                detail=_format_error("LSD register_device (proxy)", e),
+                status=HTTPStatus.BAD_GATEWAY,
+                previous=e,
+            )
 
         # Update local device count
         license_obj.device_count += 1
@@ -156,16 +184,23 @@ class ReturnProxyView(StatusProxyView):
         # We do NOT call `StatusServerClient.return_license` here because
         # that would PATCH the Status Server a second time — the LSD PUT
         # below is the canonical state change.
+        lsd_url, lsd_auth = self._get_lsd()
         try:
             response = http_requests.put(
-                f"{self._get_lsd_url()}/licenses/{license_obj.lcp_license_id}/return",
+                f"{lsd_url}/licenses/{license_obj.lcp_license_id}/return",
                 params={"id": device_id, "name": device_name},
                 timeout=30,
+                auth=lsd_auth,
             )
             response.raise_for_status()
             data = response.json()
         except http_requests.RequestException as e:
-            raise ProblemDetailException(_("Failed to return loan"), status=HTTPStatus.BAD_GATEWAY, previous=e)
+            raise ProblemDetailException(
+                _("Failed to return loan"),
+                detail=_format_error("LSD return (proxy)", e),
+                status=HTTPStatus.BAD_GATEWAY,
+                previous=e,
+            )
 
         # IP-009 Phase 3 C2: the LSD PUT above is the canonical state
         # change. Reconcile the local row from the proxied response so
@@ -213,16 +248,23 @@ class RenewProxyView(StatusProxyView):
         if end:
             params["end"] = end
 
+        lsd_url, lsd_auth = self._get_lsd()
         try:
             response = http_requests.put(
-                f"{self._get_lsd_url()}/licenses/{license_obj.lcp_license_id}/renew",
+                f"{lsd_url}/licenses/{license_obj.lcp_license_id}/renew",
                 params=params,
                 timeout=30,
+                auth=lsd_auth,
             )
             response.raise_for_status()
             data = response.json()
         except http_requests.RequestException as e:
-            raise ProblemDetailException(_("Failed to renew loan"), status=HTTPStatus.BAD_GATEWAY, previous=e)
+            raise ProblemDetailException(
+                _("Failed to renew loan"),
+                detail=_format_error("LSD renew (proxy)", e),
+                status=HTTPStatus.BAD_GATEWAY,
+                previous=e,
+            )
 
         data = self._rewrite_links(data, request, license_id)
         return JsonResponse(data, content_type="application/vnd.readium.license.status.v1.0+json")
