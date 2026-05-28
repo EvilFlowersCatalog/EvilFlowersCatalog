@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "31d8fd8278ae2a61fd5dc450c641ed7c98b0f4e3",
-    "short": "31d8fd8",
-    "message": "Fix `mark_encryption_completed` usage to prevent stale instance overwrites after encryption timestamp update",
+    "sha": "810a3141ef3e2c7f508d3f9ed69e3e03fbc585f3",
+    "short": "810a314",
+    "message": "Refactor LCP and LSD client implementations to centralize URL/auth handling, improve error formatting, and enhance logging clarity.",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/31d8fd8278ae2a61fd5dc450c641ed7c98b0f4e3"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/810a3141ef3e2c7f508d3f9ed69e3e03fbc585f3"
   },
-  "deployed_at": "2026-05-26T15:38:35Z",
+  "deployed_at": "2026-05-28T15:20:36Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
