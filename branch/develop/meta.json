@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "5bbc9915b7ede7678734fda81f43732b7e722558",
-    "short": "5bbc991",
-    "message": "Add regression tests for LCP encryption payload metadata, validate title/author forwarding to the worker, and extend helper for test user creation.",
+    "sha": "d154fcb49d9049a4a428b9ab48ec3be9c1a30914",
+    "short": "d154fcb",
+    "message": "Refactor license generation commands to use `LicenseService`, standardize `.lcpl` serialization, and add device registration support for activation during certification.",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/5bbc9915b7ede7678734fda81f43732b7e722558"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/d154fcb49d9049a4a428b9ab48ec3be9c1a30914"
   },
-  "deployed_at": "2026-07-17T20:15:26Z",
+  "deployed_at": "2026-07-17T20:49:31Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
