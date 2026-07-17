@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "77ffa25eae827022d1f9671ffc15f065c4c062a4",
-    "short": "77ffa25",
-    "message": "Fixing RDLab tokens to avoid single-use expriation with Thorium",
+    "sha": "e7f8b530d903e5a338170056b91aaeb6be0ca9c9",
+    "short": "e7f8b53",
+    "message": "Add regression tests for `.lcpl` link resolution and LSD endpoint transitions, refactor license lookups for dual identifier support, and fix incorrect status transitions.",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/77ffa25eae827022d1f9671ffc15f065c4c062a4"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e7f8b530d903e5a338170056b91aaeb6be0ca9c9"
   },
-  "deployed_at": "2026-07-17T07:46:15Z",
+  "deployed_at": "2026-07-17T08:47:33Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
