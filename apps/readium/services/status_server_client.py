@@ -33,6 +33,9 @@ class StatusServerClient:
     def register_license(self, lcp_license: Dict) -> None:
         self._sync.register_license(lcp_license)
 
+    def register_device(self, license: License, device_id: str, device_name: str) -> None:
+        self._sync.register_device(license, device_id, device_name)
+
     def revoke_license(self, license: License, reason: str = "Revoked by administrator") -> None:
         self._sync.revoke_license(license, reason)
 

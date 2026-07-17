@@ -4,8 +4,8 @@ Generate the EDRLab certification bundle (IP-003 Phase 1).
 Produces six artifacts in `--output-dir`:
 
     buy_ready.lcpl           (license in `ready` state)
-    buy_cancelled.lcpl       (driven through real StatusServerClient.cancel_license)
-    buy_revoked.lcpl         (driven through real StatusServerClient.revoke_license)
+    buy_cancelled.lcpl       (driven through real LicenseService.cancel_license)
+    buy_revoked.lcpl         (activated via device registration, then LicenseService.revoke_license)
     loan_ready.lcpl          (license in `ready` state, loan profile)
     loan_expired.lcpl        (license issued with rights.end already in the past)
     protected.lcpdf          (one Licensed PDF — LCP-for-PDF profile)
@@ -13,9 +13,12 @@ Produces six artifacts in `--output-dir`:
 Plus a README listing each artifact, the test user passphrase, and how to
 verify with Thorium Reader.
 
-No DB shortcuts — every state transition goes through the real service layer
-and the upstream LCP / Status servers so EDRLab sees the same surface as
-production traffic.
+Every state transition (create / cancel / revoke) goes through `LicenseService`
+— the same high-level service the borrow API uses — and the `.lcpl` is
+serialized through the service-level `fetch_fresh_license` (the download-gateway
+path), so EDRLab sees exactly the surface production traffic produces. The only
+non-service step is a local borrow-slot release (see `_release_local_slot`),
+which is pure bookkeeping and never touches the upstream status of any artifact.
 
 Q1 resolution: `--entry <uuid>` is required. Command fails fast if the entry
 is not LCP-enabled or has no encrypted PDF acquisition.
@@ -33,7 +36,6 @@ from django.utils import timezone
 from apps.core.models import Entry, User
 from apps.readium.models import EncryptedContent, License
 from apps.readium.services import (
-    ContentEncryptionService,
     LCPServerClient,
     LicenseService,
     StatusServerClient,
@@ -54,8 +56,8 @@ review of the EvilFlowersCatalog LCP integration.
 | File | State | Notes |
 |------|-------|-------|
 | `buy_ready.lcpl`     | ready     | License available for activation, full rights window |
-| `buy_cancelled.lcpl` | cancelled | Real PATCH /licenses/{id}/status to `cancelled` |
-| `buy_revoked.lcpl`   | revoked   | Real PATCH /licenses/{id}/status to `revoked` |
+| `buy_cancelled.lcpl` | cancelled | Real PATCH /licenses/{{id}}/status to `cancelled` |
+| `buy_revoked.lcpl`   | revoked   | Real PATCH /licenses/{{id}}/status to `revoked` |
 | `loan_ready.lcpl`    | ready     | Loan-style license (short rights window) |
 | `loan_expired.lcpl`  | expired   | License issued with rights.end in the past |
 | `protected.lcpdf`    | n/a       | Licensed PDF with `META-INF/license.lcpl` embedded |
@@ -191,63 +193,61 @@ class Command(BaseCommand):
         return user
 
     def _produce_buy_ready(self, entry, user, passphrase, out_path: Path):
-        lcp_license = self._issue_license(entry, user, passphrase, duration_days=365)
-        out_path.write_text(json.dumps(lcp_license, indent=2))
-        self.stdout.write(f"  ✓ {out_path.name}")
+        license_obj = self._create(entry, user, passphrase, duration_days=365)
+        self._fetch_and_save(license_obj, out_path)
 
     def _produce_buy_cancelled(self, entry, user, passphrase, out_path: Path):
-        license_obj = self._reissue_db_license(entry, user, passphrase, duration_days=365)
-        StatusServerClient().cancel_license(license_obj, reason="EDRLab certification — cancelled sample")
-        lcp_license = LCPServerClient().fetch_fresh_license(license_obj)
-        out_path.write_text(json.dumps(lcp_license, indent=2))
-        self.stdout.write(f"  ✓ {out_path.name}")
+        license_obj = self._create(entry, user, passphrase, duration_days=365)
+        # Serialize the signed .lcpl while it is still valid, then cancel through
+        # the same service the API uses so the LSD status becomes `cancelled`.
+        self._fetch_and_save(license_obj, out_path)
+        LicenseService.cancel_license(license_obj, reason="EDRLab certification — cancelled sample")
 
     def _produce_buy_revoked(self, entry, user, passphrase, out_path: Path):
-        license_obj = self._reissue_db_license(entry, user, passphrase, duration_days=365)
-        StatusServerClient().revoke_license(license_obj, reason="EDRLab certification — revoked sample")
-        lcp_license = LCPServerClient().fetch_fresh_license(license_obj)
-        out_path.write_text(json.dumps(lcp_license, indent=2))
-        self.stdout.write(f"  ✓ {out_path.name}")
+        license_obj = self._create(entry, user, passphrase, duration_days=365)
+        # `revoked` (as opposed to `cancelled`) requires the license to be ACTIVE
+        # first: the Status Server derives the resulting status from the current
+        # one (READY → cancelled, ACTIVE → revoked). Register a device through the
+        # real status service to activate it, serialize, then revoke via the service.
+        StatusServerClient().register_device(
+            license_obj, device_id="edrlab-cert-device", device_name="EDRLab Certification"
+        )
+        license_obj.refresh_from_db()
+        self._fetch_and_save(license_obj, out_path)
+        LicenseService.revoke_license(license_obj, reason="EDRLab certification — revoked sample")
 
     def _produce_loan_ready(self, entry, user, passphrase, out_path: Path):
-        lcp_license = self._issue_license(entry, user, passphrase, duration_days=14)
-        out_path.write_text(json.dumps(lcp_license, indent=2))
-        self.stdout.write(f"  ✓ {out_path.name}")
+        license_obj = self._create(entry, user, passphrase, duration_days=14)
+        self._fetch_and_save(license_obj, out_path)
 
     def _produce_loan_expired(self, entry, user, passphrase, out_path: Path):
-        # Issue with a past end. We back-date both starts_at and expires_at
-        # so the LCP Server stamps the license with rights.end < now.
-        license_obj = self._reissue_db_license(entry, user, passphrase, duration_days=1, back_date_days=30)
-        lcp_license = LCPServerClient().fetch_fresh_license(license_obj)
-        out_path.write_text(json.dumps(lcp_license, indent=2))
-        self.stdout.write(f"  ✓ {out_path.name}")
+        # Issue with a past end so the LCP Server stamps rights.end < now and the
+        # Status Server reports `expired`. The service fetch refuses expired
+        # licenses (like the download gateway), so _fetch_and_save falls back to a
+        # raw read for the bytes.
+        license_obj = self._create(entry, user, passphrase, duration_days=1, back_date_days=30)
+        self._fetch_and_save(license_obj, out_path)
 
     def _copy_protected_pdf(self, encrypted: EncryptedContent, out_path: Path) -> None:
-        from django.conf import settings as dj_settings
+        # Read through the same storage abstraction the content view uses, so
+        # this works whether the encrypted file lives on the local filesystem
+        # or an S3/MinIO backend (a hard-coded DATADIR path fails on S3).
+        from apps.files.storage import get_storage
 
-        src = Path(dj_settings.EVILFLOWERS_READIUM_DATADIR) / encrypted.encrypted_path
-        if not src.exists():
-            self.stdout.write(self.style.WARNING(f"  ! protected.lcpdf source not found at {src}"))
+        storage = get_storage()
+        if not storage.exists(encrypted.encrypted_path):
+            self.stdout.write(
+                self.style.WARNING(f"  ! protected.lcpdf source not found on storage: {encrypted.encrypted_path}")
+            )
             return
-        shutil.copy(src, out_path)
+        with storage.open(encrypted.encrypted_path) as src, open(out_path, "wb") as dst:
+            shutil.copyfileobj(src, dst)
         self.stdout.write(f"  ✓ {out_path.name}")
 
-    def _issue_license(self, entry, user, passphrase, duration_days: int) -> dict:
-        license_obj = LicenseService.create_license(
-            entry=entry, user=user, user_passphrase=passphrase, duration_days=duration_days
-        )
-        return LCPServerClient().fetch_fresh_license(license_obj)
-
-    def _reissue_db_license(self, entry, user, passphrase, duration_days: int, back_date_days: int = 0) -> License:
-        """Create a license and return the local License model (not yet serialised)."""
-        # Bypass uniqueness on (entry, user, state=ready) by cancelling any prior ready one.
-        License.objects.filter(entry=entry, user=user, state=License.LicenseState.READY).update(
-            state=License.LicenseState.CANCELLED
-        )
-
-        now = timezone.now()
-        start = now - timedelta(days=back_date_days) if back_date_days else now
-
+    def _create(self, entry, user, passphrase, duration_days: int, back_date_days: int = 0) -> License:
+        """Mint a license through the real borrow service (`LicenseService.create_license`)."""
+        self._release_local_slot(entry, user)
+        start = timezone.now() - timedelta(days=back_date_days) if back_date_days else None
         return LicenseService.create_license(
             entry=entry,
             user=user,
@@ -255,3 +255,32 @@ class Command(BaseCommand):
             start_date=start,
             duration_days=duration_days,
         )
+
+    def _fetch_and_save(self, license_obj: License, out_path: Path) -> None:
+        """Serialize the `.lcpl` via the service-level fetch used by the download
+        gateway. Expired/terminal licenses are refused there by design, so fall
+        back to the raw signed document for those (a read-only operation that
+        changes no state)."""
+        try:
+            lcp_license = LicenseService.fetch_fresh_license(license_obj)
+        except ValueError:
+            lcp_license = LCPServerClient().fetch_fresh_license(license_obj)
+        out_path.write_text(json.dumps(lcp_license, indent=2))
+        self.stdout.write(f"  ✓ {out_path.name}")
+
+    def _release_local_slot(self, entry, user) -> None:
+        """Free this test user's local borrow slot on the entry so the next
+        license can be minted.
+
+        This is local bookkeeping ONLY: the entry's `readium_amount` is typically
+        1, and both the unique constraint and the per-entry capacity check would
+        otherwise block a second `ready` license. It deliberately does NOT cancel
+        upstream, so each already-written artifact keeps its own authoritative
+        status on the Status Server. It never fabricates or alters an artifact's
+        LSD status — those come exclusively from `LicenseService` transitions.
+        """
+        License.objects.filter(
+            entry=entry,
+            user=user,
+            state__in=[License.LicenseState.READY, License.LicenseState.ACTIVE],
+        ).update(state=License.LicenseState.CANCELLED)
