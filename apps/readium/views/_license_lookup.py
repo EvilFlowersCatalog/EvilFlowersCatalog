@@ -9,13 +9,36 @@ predicate via `license_permission` and centralizes the lookup.
 """
 
 from http import HTTPStatus
+from typing import Optional
 from uuid import UUID
 
+from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
 from apps.core.errors import DetailType, ProblemDetailException
 from apps.readium.models import License
+
+
+def resolve_license(identifier) -> Optional[License]:
+    """Resolve a License by catalog pk **or** `lcp_license_id`.
+
+    Links embedded in a `.lcpl` are written by the LCP server before it
+    signs the document, and it expands `{license_id}` with the *LCP*
+    license id — not our pk. The signature covers the links, so we cannot
+    rewrite them after issuance. The public endpoints those links point at
+    (LSD proxy, hint page) must therefore accept either identifier.
+
+    Both columns hold unique UUIDs, so an OR lookup is unambiguous in
+    practice. Returns None for unknown or malformed identifiers; callers
+    decide the error shape.
+    """
+    try:
+        return License.objects.filter(Q(pk=identifier) | Q(lcp_license_id=identifier)).first()
+    except (ValidationError, ValueError, TypeError):
+        # Malformed UUID — indistinguishable from "not found" to a caller.
+        return None
 
 
 class LicenseLookupMixin:

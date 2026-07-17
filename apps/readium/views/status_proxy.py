@@ -22,6 +22,7 @@ from apps.core.errors import ProblemDetailException
 from apps.core.views import SecuredView
 from apps.readium.models import License
 from apps.readium.services.lsd_transport import _format_error, _split_url_and_auth
+from apps.readium.views._license_lookup import resolve_license
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +45,12 @@ class StatusProxyView(SecuredView):
         return self._get_lsd()[0]
 
     def _get_license(self, license_id: UUID) -> License:
-        try:
-            return License.objects.get(pk=license_id)
-        except License.DoesNotExist:
+        # Accepts our pk *or* the LCP license id: the `status` link inside a
+        # signed `.lcpl` is expanded by the LCP server with the latter.
+        license_obj = resolve_license(license_id)
+        if license_obj is None:
             raise ProblemDetailException(_("License not found"), status=HTTPStatus.NOT_FOUND)
+        return license_obj
 
     def _internal_lsd_host(self) -> str:
         """Hostname (with port) of the upstream LSD as seen from the catalog.
@@ -82,7 +85,9 @@ class StatusProxyView(SecuredView):
                     link["href"] = f"{base_url}{reverse('readium:lsd-renew', kwargs={'license_id': license_id})}"
                     continue
                 if rel == "hint":
-                    link["href"] = f"{base_url}{reverse('readium:hint')}"
+                    # Carry the license through: without it the page can only
+                    # render the generic fallback hint, never the per-license one.
+                    link["href"] = f"{base_url}{reverse('readium:hint')}?license_id={license_id}"
                     continue
 
                 href = link.get("href")

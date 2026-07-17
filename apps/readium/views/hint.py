@@ -12,7 +12,7 @@ from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.views import View
 
-from apps.readium.models import License
+from apps.readium.views._license_lookup import resolve_license
 
 # IP-008 Phase 2 B4: throttle to slow enumeration. The hint page returns
 # the same response shape for "no hint set" and "license not found", but
@@ -37,12 +37,11 @@ class HintPageView(View):
 
         hint = "Your library password"
         if license_id:
-            try:
-                license_obj = License.objects.get(pk=license_id)
-                if license_obj.passphrase_hint:
-                    hint = license_obj.passphrase_hint
-            except (License.DoesNotExist, ValueError):
-                pass
+            # Accepts our pk *or* the LCP license id: the `hint` link inside a
+            # signed `.lcpl` is expanded by the LCP server with the latter.
+            license_obj = resolve_license(license_id)
+            if license_obj is not None and license_obj.passphrase_hint:
+                hint = license_obj.passphrase_hint
 
         html = render_to_string("readium/hint.html", {"hint": hint})
         return HttpResponse(html, content_type="text/html")

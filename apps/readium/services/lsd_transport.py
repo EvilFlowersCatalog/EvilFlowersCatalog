@@ -17,6 +17,7 @@ Public surface:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone as dt_timezone
 from typing import Dict, Optional
 from urllib.parse import urlsplit, urlunsplit
 
@@ -133,8 +134,75 @@ class LsdTransport:
         except requests.RequestException as e:
             raise LsdTransportError(_format_error("LSD get_status", e)) from e
 
+    def put_return(self, lcp_license_id, device_id: str = "", device_name: str = "") -> Dict:
+        """PUT /licenses/{id}/return — return a loan.
+
+        Returning is its own LSD endpoint. It is emphatically *not*
+        `PATCH /status`: that route is `LendingCancellation` upstream and
+        rejects anything other than `cancelled`/`revoked` with a 400
+        ("The new status must be either cancelled or revoked").
+
+        Upstream derives the resulting status itself — READY becomes
+        `cancelled`, ACTIVE/EXPIRED become `returned` — so callers should
+        reconcile rather than assume.
+        """
+        try:
+            response = requests.put(
+                f"{self.url}/licenses/{lcp_license_id}/return",
+                params={"id": device_id, "name": device_name},
+                timeout=self.timeout,
+                auth=self.auth,
+            )
+            response.raise_for_status()
+            try:
+                return response.json()
+            except ValueError:
+                return {}
+        except requests.RequestException as e:
+            raise LsdTransportError(_format_error("LSD return", e)) from e
+
+    def put_renew(
+        self,
+        lcp_license_id,
+        end: Optional[datetime] = None,
+        device_id: str = "",
+        device_name: str = "",
+    ) -> Dict:
+        """PUT /licenses/{id}/renew — extend a loan.
+
+        Like `put_return`, a dedicated endpoint rather than a status PATCH.
+        `end` is sent as RFC 3339, which is what upstream parses. Omitting
+        it lets the Status Server apply its configured `renew_days`.
+
+        Upstream refuses the renewal unless the status document carries a
+        `potential_rights.end` upper bound, which it only sets when the
+        Status Server config has `license_status.renew: true` and
+        `renting_days > 0`.
+        """
+        params = {"id": device_id, "name": device_name}
+        if end is not None:
+            params["end"] = end.astimezone(dt_timezone.utc).isoformat().replace("+00:00", "Z")
+        try:
+            response = requests.put(
+                f"{self.url}/licenses/{lcp_license_id}/renew",
+                params=params,
+                timeout=self.timeout,
+                auth=self.auth,
+            )
+            response.raise_for_status()
+            try:
+                return response.json()
+            except ValueError:
+                return {}
+        except requests.RequestException as e:
+            raise LsdTransportError(_format_error("LSD renew", e)) from e
+
     def patch_status(self, lcp_license_id, payload: Dict) -> Dict:
-        """PATCH /licenses/{id}/status — request a status transition."""
+        """PATCH /licenses/{id}/status — cancel or revoke.
+
+        Upstream (`LendingCancellation`) accepts `cancelled` and `revoked`
+        only. Use `put_return` / `put_renew` for the loan lifecycle.
+        """
         try:
             response = requests.patch(
                 f"{self.url}/licenses/{lcp_license_id}/status",

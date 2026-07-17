@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -53,17 +53,27 @@ class StatusServerSyncService:
         self.transport.register(lcp_license)
 
     def return_license(self, license: License) -> License:
-        return self._patch_then_reconcile(
+        # LSD exposes return as its own endpoint; `PATCH /status` is
+        # LendingCancellation upstream and 400s on `{"status": "returned"}`.
+        # Upstream also picks the resulting status itself: READY → cancelled,
+        # ACTIVE/EXPIRED → returned. Mirror that in the optimistic fallback so
+        # a GET failure doesn't record a state the Status Server never set.
+        expected_state = (
+            License.LicenseState.RETURNED
+            if license.state == License.LicenseState.ACTIVE
+            else License.LicenseState.CANCELLED
+        )
+        return self._transition_then_reconcile(
             license,
-            patch_payload={"status": "returned"},
-            expected_state=License.LicenseState.RETURNED,
+            lambda lcp_license_id: self.transport.put_return(lcp_license_id),
+            expected_state=expected_state,
             expected_expires_at=timezone.now(),
         )
 
     def renew_license(self, license: License, new_end_date: datetime) -> License:
-        return self._patch_then_reconcile(
+        return self._transition_then_reconcile(
             license,
-            patch_payload={"status": "active", "end": new_end_date.isoformat()},
+            lambda lcp_license_id: self.transport.put_renew(lcp_license_id, end=new_end_date),
             expected_state=License.LicenseState.ACTIVE,
             expected_expires_at=new_end_date,
         )
@@ -120,17 +130,38 @@ class StatusServerSyncService:
         expected_state: str,
         expected_expires_at: Optional[datetime] = None,
     ) -> License:
+        """Cancel/revoke via `PATCH /status`, then reconcile."""
+        return self._transition_then_reconcile(
+            license,
+            lambda lcp_license_id: self.transport.patch_status(lcp_license_id, patch_payload),
+            expected_state=expected_state,
+            expected_expires_at=expected_expires_at,
+        )
+
+    def _transition_then_reconcile(
+        self,
+        license: License,
+        mutate: Callable[[object], Dict],
+        expected_state: str,
+        expected_expires_at: Optional[datetime] = None,
+    ) -> License:
+        """Apply `mutate` to the Status Server, then reconcile the local row.
+
+        `mutate` receives the LCP license id and performs exactly one
+        canonical transition — which endpoint that is depends on the
+        transition (see `LsdTransport`), so the caller supplies it.
+        """
         if not license.lcp_license_id:
             raise ValueError("License does not have an LCP license ID")
 
-        # 1. PATCH the canonical state surface first.
+        # 1. Mutate the canonical state surface first.
         try:
-            self.transport.patch_status(license.lcp_license_id, patch_payload)
+            mutate(license.lcp_license_id)
         except LsdTransportError:
-            # PATCH failed: do NOT write locally. Surface upstream.
+            # Upstream refused: do NOT write locally. Surface upstream.
             logger.exception(
-                "lsd.patch.failed",
-                extra={"license_id": str(license.pk), "payload": patch_payload},
+                "lsd.transition.failed",
+                extra={"license_id": str(license.pk), "expected_state": expected_state},
             )
             raise
 
