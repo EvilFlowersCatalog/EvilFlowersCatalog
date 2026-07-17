@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "810a3141ef3e2c7f508d3f9ed69e3e03fbc585f3",
-    "short": "810a314",
-    "message": "Refactor LCP and LSD client implementations to centralize URL/auth handling, improve error formatting, and enhance logging clarity.",
+    "sha": "2f5b3a314fbbab1160a260f38d588b0c35618165",
+    "short": "2f5b3a3",
+    "message": "Add regression tests for `.lcpl` download URL tokenization and fix missing `request` context in `LicenseSerializer` usage. Update settings for TLS proxy handling in development.",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/810a3141ef3e2c7f508d3f9ed69e3e03fbc585f3"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/2f5b3a314fbbab1160a260f38d588b0c35618165"
   },
-  "deployed_at": "2026-05-28T15:20:36Z",
+  "deployed_at": "2026-07-17T07:13:08Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
