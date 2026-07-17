@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "ee24b26b0f22277d0bf8a3e71c550f1fb1e487b3",
-    "short": "ee24b26",
-    "message": "Add deploy-time loan policy validation, improve renewal policy visibility, and fix email backend misconfigurations.",
+    "sha": "392c7881735ba09f75325fd770c3d7b8df92e021",
+    "short": "392c788",
+    "message": "Add regression tests for renewal policy parity and enforce consistent policy application in `RenewProxyView`",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/ee24b26b0f22277d0bf8a3e71c550f1fb1e487b3"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/392c7881735ba09f75325fd770c3d7b8df92e021"
   },
-  "deployed_at": "2026-07-17T09:55:23Z",
+  "deployed_at": "2026-07-17T10:45:04Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

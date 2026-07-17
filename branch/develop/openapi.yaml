@@ -3986,6 +3986,26 @@
             },
             "description": "_('License not yet generated')"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
+                }
+              }
+            },
+            "description": "_('`end` must be an ISO-8601 datetime')"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
+                }
+              }
+            },
+            "description": "_('Renewal denied')"
+          },
           "502": {
             "content": {
               "application/json": {
@@ -3994,7 +4014,7 @@
                 }
               }
             },
-            "description": "_('Failed to renew loan')"
+            "description": "_('Failed to fetch license status')"
           }
         },
         "operationId": "RenewProxyView.put",
@@ -5196,92 +5216,6 @@
         "title": "TokenSerializer.Refresh",
         "type": "object"
       },
-      "LicenseState": {
-        "enum": [
-          "ready",
-          "active",
-          "returned",
-          "expired",
-          "revoked",
-          "cancelled"
-        ],
-        "title": "LicenseState",
-        "type": "string"
-      },
-      "apps__readium__serializers__LicenseSerializer__Base": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "entry_id": {
-            "format": "uuid",
-            "title": "Entry Id",
-            "type": "string"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "state": {
-            "$ref": "#/components/schemas/LicenseState"
-          },
-          "starts_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Starts At"
-          },
-          "expires_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Expires At"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "renewal_count": {
-            "default": 0,
-            "title": "Renewal Count",
-            "type": "integer"
-          },
-          "download_url": {
-            "default": "",
-            "title": "Download Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "entry_id",
-          "user_id",
-          "state",
-          "starts_at",
-          "expires_at",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "LicenseSerializer.Base",
-        "type": "object"
-      },
       "apps__api__response__SingleResponseModel": {
         "properties": {
           "response": {
@@ -5748,6 +5682,96 @@
           "id"
         ],
         "title": "AcquisitionSerializer.Base",
+        "type": "object"
+      },
+      "LicenseState": {
+        "enum": [
+          "ready",
+          "active",
+          "returned",
+          "expired",
+          "revoked",
+          "cancelled"
+        ],
+        "title": "LicenseState",
+        "type": "string"
+      },
+      "apps__readium__serializers__LicenseSerializer__Detailed": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "entry_id": {
+            "format": "uuid",
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/LicenseState"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Starts At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Expires At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "renewal_count": {
+            "default": 0,
+            "title": "Renewal Count",
+            "type": "integer"
+          },
+          "download_url": {
+            "default": "",
+            "title": "Download Url",
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/apps__api__serializers__entries__EntrySerializer__Base"
+          }
+        },
+        "required": [
+          "id",
+          "entry_id",
+          "user_id",
+          "state",
+          "starts_at",
+          "expires_at",
+          "created_at",
+          "updated_at",
+          "entry"
+        ],
+        "title": "LicenseSerializer.Detailed",
         "type": "object"
       },
       "Mode": {
@@ -6535,6 +6559,80 @@
         "title": "TokenSerializer.Access",
         "type": "object"
       },
+      "apps__readium__serializers__LicenseSerializer__Base": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "entry_id": {
+            "format": "uuid",
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/LicenseState"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Starts At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Expires At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "renewal_count": {
+            "default": 0,
+            "title": "Renewal Count",
+            "type": "integer"
+          },
+          "download_url": {
+            "default": "",
+            "title": "Download Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "entry_id",
+          "user_id",
+          "state",
+          "starts_at",
+          "expires_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "LicenseSerializer.Base",
+        "type": "object"
+      },
       "apps__api__serializers__feeds__FeedSerializer__Base": {
         "properties": {
           "id": {
@@ -6701,84 +6799,6 @@
           "updated_at"
         ],
         "title": "CatalogSerializer.Base",
-        "type": "object"
-      },
-      "apps__readium__serializers__LicenseSerializer__Detailed": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "entry_id": {
-            "format": "uuid",
-            "title": "Entry Id",
-            "type": "string"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "state": {
-            "$ref": "#/components/schemas/LicenseState"
-          },
-          "starts_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Starts At"
-          },
-          "expires_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Expires At"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "renewal_count": {
-            "default": 0,
-            "title": "Renewal Count",
-            "type": "integer"
-          },
-          "download_url": {
-            "default": "",
-            "title": "Download Url",
-            "type": "string"
-          },
-          "entry": {
-            "$ref": "#/components/schemas/apps__api__serializers__entries__EntrySerializer__Base"
-          }
-        },
-        "required": [
-          "id",
-          "entry_id",
-          "user_id",
-          "state",
-          "starts_at",
-          "expires_at",
-          "created_at",
-          "updated_at",
-          "entry"
-        ],
-        "title": "LicenseSerializer.Detailed",
         "type": "object"
       },
       "apps__core__errors__ValidationErrorItem": {
@@ -7460,35 +7480,6 @@
           "catalog_id"
         ]
       },
-      "UpdateReservationForm": {
-        "type": "object",
-        "title": "UpdateReservationForm",
-        "properties": {
-          "status": {
-            "title": "status",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "cancelled",
-              "claimed"
-            ]
-          }
-        },
-        "required": [
-          "status"
-        ]
-      },
-      "EncryptionTriggerForm": {
-        "type": "object",
-        "title": "EncryptionTriggerForm",
-        "properties": {
-          "force": {
-            "title": "force",
-            "description": "",
-            "type": "boolean"
-          }
-        }
-      },
       "UpdateAnnotationForm": {
         "type": "object",
         "title": "UpdateAnnotationForm",
@@ -7523,6 +7514,24 @@
         "required": [
           "name",
           "surname"
+        ]
+      },
+      "UpdateReservationForm": {
+        "type": "object",
+        "title": "UpdateReservationForm",
+        "properties": {
+          "status": {
+            "title": "status",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "cancelled",
+              "claimed"
+            ]
+          }
+        },
+        "required": [
+          "status"
         ]
       },
       "EntryConfigForm": {
@@ -7606,49 +7615,6 @@
           "username",
           "password"
         ]
-      },
-      "UpdateLicenseForm": {
-        "type": "object",
-        "title": "UpdateLicenseForm",
-        "properties": {
-          "action": {
-            "title": "action",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "active",
-              "returned",
-              "renewed",
-              "revoked",
-              "cancelled"
-            ]
-          },
-          "state": {
-            "title": "state",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "active",
-              "returned",
-              "renewed",
-              "revoked",
-              "cancelled"
-            ]
-          },
-          "requested_end": {
-            "title": "requested_end",
-            "description": "",
-            "type": "string",
-            "format": "date-time"
-          },
-          "duration": {
-            "title": "duration",
-            "description": "Duration in ISO 8601 format. Example: \"PT1H30M\" for 1 hour and 30 minutes.\nThe format is defined as follows:\n- \"P\" indicates the period.\n- \"Y\" for years, \"M\" for months, \"D\" for days.\n- \"T\" indicates the start of the time section.\n- \"H\" for hours, \"M\" for minutes, \"S\" for seconds.\n- Valid examples include:\n  - \"PT30M\" (30 minutes)\n  - \"P1Y2M10DT5H30M\" (1 year, 2 months, 10 days, 5 hours, and 30 minutes)",
-            "type": "string",
-            "example": "P14D",
-            "pattern": "^P(?!P)(?:(\\d+Y)?(\\d+M)?(\\d+D)?(T(?:(\\d+H)?(\\d+M)?(\\d+S)?))?)?$"
-          }
-        }
       },
       "CatalogForm": {
         "type": "object",
@@ -7883,6 +7849,49 @@
           "password",
           "username"
         ]
+      },
+      "UpdateLicenseForm": {
+        "type": "object",
+        "title": "UpdateLicenseForm",
+        "properties": {
+          "action": {
+            "title": "action",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "active",
+              "returned",
+              "renewed",
+              "revoked",
+              "cancelled"
+            ]
+          },
+          "state": {
+            "title": "state",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "active",
+              "returned",
+              "renewed",
+              "revoked",
+              "cancelled"
+            ]
+          },
+          "requested_end": {
+            "title": "requested_end",
+            "description": "",
+            "type": "string",
+            "format": "date-time"
+          },
+          "duration": {
+            "title": "duration",
+            "description": "Duration in ISO 8601 format. Example: \"PT1H30M\" for 1 hour and 30 minutes.\nThe format is defined as follows:\n- \"P\" indicates the period.\n- \"Y\" for years, \"M\" for months, \"D\" for days.\n- \"T\" indicates the start of the time section.\n- \"H\" for hours, \"M\" for minutes, \"S\" for seconds.\n- Valid examples include:\n  - \"PT30M\" (30 minutes)\n  - \"P1Y2M10DT5H30M\" (1 year, 2 months, 10 days, 5 hours, and 30 minutes)",
+            "type": "string",
+            "example": "P14D",
+            "pattern": "^P(?!P)(?:(\\d+Y)?(\\d+M)?(\\d+D)?(T(?:(\\d+H)?(\\d+M)?(\\d+S)?))?)?$"
+          }
+        }
       },
       "AcquisitionMetaForm": {
         "type": "object",
@@ -8179,6 +8188,17 @@
           "currency_code",
           "value"
         ]
+      },
+      "EncryptionTriggerForm": {
+        "type": "object",
+        "title": "EncryptionTriggerForm",
+        "properties": {
+          "force": {
+            "title": "force",
+            "description": "",
+            "type": "boolean"
+          }
+        }
       },
       "UserForm": {
         "type": "object",
