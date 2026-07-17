@@ -32,6 +32,8 @@
   },
   "enabledMcpjsonServers": [
     "playwright",
-    "github"
+    "github",
+    "github-evilflowers",
+    "elvira-gateway-ssh"
   ]
 }

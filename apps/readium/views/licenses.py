@@ -83,7 +83,7 @@ class LicenseManagement(SecuredView):
 
             return SingleResponse(
                 request,
-                data=LicenseSerializer.Base.model_validate(license),
+                data=LicenseSerializer.Base.model_validate(license, context={"request": request}),
                 status=HTTPStatus.CREATED,
             )
 
@@ -123,7 +123,9 @@ class LicenseDetail(LicenseLookupMixin, SecuredView):
     )
     def get(self, request, license_id: UUID):
         license = self.get_license_or_404(request, license_id)
-        return SingleResponse(request, data=LicenseSerializer.Base.model_validate(license))
+        return SingleResponse(
+            request, data=LicenseSerializer.Base.model_validate(license, context={"request": request})
+        )
 
     @openapi.metadata(
         description="Update license state and properties. Supports state transitions like 'active', 'returned', 'renewed' etc. LCP operations are handled automatically based on state changes.",
@@ -173,7 +175,9 @@ class LicenseDetail(LicenseLookupMixin, SecuredView):
                 self._dispatch_action(license, action, form.cleaned_data)
                 license.save()
 
-        return SingleResponse(request, data=LicenseSerializer.Base.model_validate(license))
+        return SingleResponse(
+            request, data=LicenseSerializer.Base.model_validate(license, context={"request": request})
+        )
 
     def _dispatch_action(self, license: License, action: str, data: dict):
         """Dispatch a `LicenseAction` to the service layer (IP-009 Phase 1)."""

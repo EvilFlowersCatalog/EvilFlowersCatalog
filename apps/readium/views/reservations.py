@@ -152,7 +152,7 @@ class ReservationDetail(SecuredView):
                 )
             response = SingleResponse(
                 request,
-                data=LicenseSerializer.Base.model_validate(license_obj),
+                data=LicenseSerializer.Base.model_validate(license_obj, context={"request": request}),
                 status=HTTPStatus.CREATED,
             )
             response["Location"] = f"/readium/v1/licenses/{license_obj.pk}"
