@@ -28,6 +28,7 @@ from apps.readium.forms import CreateReservationForm, UpdateReservationForm
 from apps.readium.models import Reservation
 from apps.readium.serializers import LicenseSerializer, ReservationSerializer
 from apps.readium.services import LicenseService, PassphraseRequiredError, ReservationService
+from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
 
 
 class ReservationCollection(SecuredView):
