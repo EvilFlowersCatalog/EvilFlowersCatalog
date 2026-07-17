@@ -16,12 +16,14 @@ from uuid import UUID
 from django.conf import settings
 from django.http import JsonResponse
 from django.urls import reverse
+from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext as _
 
-from apps.core.errors import ProblemDetailException
+from apps.core.errors import DetailType, ProblemDetailException
 from apps.core.views import SecuredView
 from apps.readium.models import License
 from apps.readium.services.lsd_transport import _format_error, _split_url_and_auth
+from apps.readium.services.renew_policy import evaluate_renew
 from apps.readium.views._license_lookup import resolve_license
 
 logger = logging.getLogger(__name__)
@@ -217,7 +219,10 @@ class ReturnProxyView(StatusProxyView):
         from apps.readium.services.lcp_server_client import LCPServerClient
 
         with transaction.atomic():
-            license_obj = License.objects.select_for_update().get(pk=license_id)
+            # Re-fetch by the resolved pk, NOT the URL kwarg: links inside a
+            # signed `.lcpl` carry the LCP license id, so `license_id` here is
+            # frequently not our pk and this lookup would 500 on the reader path.
+            license_obj = License.objects.select_for_update().get(pk=license_obj.pk)
             StatusServerSyncService().reconcile(license_obj, lsd_doc=data if isinstance(data, dict) else None)
             try:
                 LCPServerClient().update_license_rights(license_obj)
@@ -238,26 +243,62 @@ class ReturnProxyView(StatusProxyView):
 
 
 class RenewProxyView(StatusProxyView):
-    """PUT /readium/v1/licenses/{license_id}/renew -- Loan renewal."""
+    """PUT /readium/v1/licenses/{license_id}/renew -- Loan renewal.
+
+    This is the door reading apps come through: the `renew` link inside the
+    LSD status document points here. It used to forward straight to the Status
+    Server, applying none of the STU renewal policy — so a reader could renew
+    while other users were queued for the title, inside the acquisition
+    embargo, or past the per-loan renewal cap, and `renewal_count` was never
+    incremented (which meant the cap could never be reached on the portal path
+    either). The bypass was unreachable only because the status document
+    carried no `renew` link until `license_status.renew` was enabled.
+
+    Policy lives in `evaluate_renew` and the transition in
+    `LicenseService.renew_license` — the same two the portal's
+    `PUT /readium/v1/licenses/{id}` uses — so both doors now behave identically.
+    """
 
     def put(self, request, license_id: UUID):
         license_obj = self._get_license(license_id)
         if not license_obj.lcp_license_id:
             raise ProblemDetailException(_("License not yet generated"), status=HTTPStatus.NOT_FOUND)
 
-        device_id = request.GET.get("id", "")
-        device_name = request.GET.get("name", "")
         end = request.GET.get("end", "")
+        requested_end = parse_datetime(end) if end else None
+        if end and requested_end is None:
+            raise ProblemDetailException(
+                _("`end` must be an ISO-8601 datetime"),
+                status=HTTPStatus.BAD_REQUEST,
+                detail_type=DetailType.VALIDATION_ERROR,
+            )
 
-        params = {"id": device_id, "name": device_name}
-        if end:
-            params["end"] = end
+        decision = evaluate_renew(license_obj, requested_end=requested_end)
+        if not decision.allowed:
+            raise ProblemDetailException(
+                _("Renewal denied"),
+                detail=decision.reason,
+                status=HTTPStatus.FORBIDDEN,
+                detail_type=DetailType.CONFLICT,
+            )
 
+        from apps.readium.services import LicenseService
+
+        try:
+            LicenseService.renew_license(license_obj, new_end_date=decision.new_end)
+        except Exception as e:
+            raise ProblemDetailException(
+                _("Failed to renew loan"),
+                detail=str(e),
+                status=HTTPStatus.BAD_GATEWAY,
+                previous=e,
+            )
+
+        # The LSD contract expects the updated status document back.
         lsd_url, lsd_auth = self._get_lsd()
         try:
-            response = http_requests.put(
-                f"{lsd_url}/licenses/{license_obj.lcp_license_id}/renew",
-                params=params,
+            response = http_requests.get(
+                f"{lsd_url}/licenses/{license_obj.lcp_license_id}/status",
                 timeout=30,
                 auth=lsd_auth,
             )
@@ -265,8 +306,8 @@ class RenewProxyView(StatusProxyView):
             data = response.json()
         except http_requests.RequestException as e:
             raise ProblemDetailException(
-                _("Failed to renew loan"),
-                detail=_format_error("LSD renew (proxy)", e),
+                _("Failed to fetch license status"),
+                detail=_format_error("LSD get_status (renew proxy)", e),
                 status=HTTPStatus.BAD_GATEWAY,
                 previous=e,
             )
