@@ -27,6 +27,7 @@ from apps.readium.forms import CreateLicenseForm, UpdateLicenseForm
 from apps.readium.models import License
 from apps.readium.serializers import LicenseSerializer
 from apps.readium.services import LicenseService, PassphraseRequiredError
+from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
 from apps.readium.services.renew_policy import evaluate_renew
 from apps.readium.views._license_lookup import LicenseLookupMixin
 
@@ -40,11 +41,26 @@ class LicenseManagement(SecuredView):
         summary="List all licenses",
     )
     def get(self, request):
-        # TODO: prefetch entries
-        licenses = LicenseFilter(request.GET, queryset=License.objects.all(), request=request).qs
+        licenses = LicenseFilter(
+            request.GET,
+            queryset=License.objects.select_related("entry").prefetch_related("entry__authors"),
+            request=request,
+        ).qs
 
+        # `LicenseSerializer.Detailed` nests the full entry serializer, whose LCP
+        # availability fields (`lcp_state`, `total_slots`, `available_slots`,
+        # `active_count`, `queue_length`) are only populated from a
+        # `lcp_states` context. Without it every nested entry silently
+        # serialized as `not_lcp` with 0/0 slots — the readium_amount
+        # indicators were wrong on every license response.
         return PaginationResponse(
-            request, licenses, serializer=LicenseSerializer.Detailed, serializer_context={"request": request}
+            request,
+            licenses,
+            serializer=LicenseSerializer.Detailed,
+            serializer_context={"request": request},
+            context_builder=lambda items: {
+                "lcp_states": lcp_state_mapping(request.user, [lic.entry for lic in items if lic.entry_id])
+            },
         )
 
     @openapi.metadata(

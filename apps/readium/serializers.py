@@ -101,6 +101,23 @@ class LicenseSerializer:
 
         @computed_field
         @property
+        def renew_policy(self) -> dict:
+            """The renewal rules, published so clients stop guessing them.
+
+            The portal previously hardcoded its own extension options and had no
+            way to know the server's bounds, so it offered choices the API always
+            refused (`requested_end` is capped at `now + max_renew_days`) and
+            could not explain the embargo to the user. Publishing the policy keeps
+            one source of truth: `evaluate_renew` and the UI read the same numbers.
+            """
+            return {
+                "max_renew_days": settings.EVILFLOWERS_READIUM_MAX_RENEW_DAYS,
+                "embargo_days": settings.EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS,
+                "max_renewals": getattr(settings, "EVILFLOWERS_READIUM_MAX_RENEWALS", None),
+            }
+
+        @computed_field
+        @property
         def renewals_remaining(self) -> Optional[int]:
             """
             IP-009 Phase 5 (Q6): None when `EVILFLOWERS_READIUM_MAX_RENEWALS`

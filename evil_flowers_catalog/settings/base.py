@@ -303,7 +303,13 @@ EVILFLOWERS_READIUM_DEFAULT_BORROW_DURATION_DAYS = int(
 
 # IP-003: renewal policy
 EVILFLOWERS_READIUM_MAX_RENEW_DAYS = int(os.getenv("EVILFLOWERS_READIUM_MAX_RENEW_DAYS", 14))
-EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS = int(os.getenv("EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS", 30))
+# Freshly-acquired titles cannot be renewed immediately. This MUST stay below
+# EVILFLOWERS_READIUM_DEFAULT_BORROW_DURATION_DAYS: an embargo that outlives the
+# loan makes renewal unreachable, because the loan hits the terminal `expired`
+# state (which `evaluate_renew` refuses) before the embargo ever lifts. The old
+# default of 30 against a 14-day loan did exactly that. `readium.E001` enforces
+# the invariant at startup.
+EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS = int(os.getenv("EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS", 7))
 
 # IP-003: oversharing detection
 EVILFLOWERS_READIUM_OVERSHARE_THRESHOLD = int(os.getenv("EVILFLOWERS_READIUM_OVERSHARE_THRESHOLD", 5))
@@ -414,6 +420,18 @@ EVILFLOWERS_MODIFIERS = {"application/pdf": "apps.core.modifiers.pdf.PDFModifier
 
 # Admin
 EVILFLOWERS_CONTACT_EMAIL = os.getenv("CONTACT_EMAIL", "root@localhost")
+
+# Email transport.
+# These were previously not read at all: deployments set EMAIL_BACKEND /
+# EMAIL_HOST / EMAIL_PORT in the environment and nothing consumed them, so the
+# Django defaults (or a settings-module hardcode) silently won.
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = os.getenv("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", 25))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "false").lower() in ("1", "true")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EVILFLOWERS_CONTACT_EMAIL)
 
 # Notifications
 EVILFLOWERS_NOTIFICATIONS_ENABLED = os.getenv("EVILFLOWERS_NOTIFICATIONS_ENABLED", "false").lower() == "true"

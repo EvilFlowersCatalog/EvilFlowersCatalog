@@ -12,3 +12,6 @@ class ReadiumConfig(AppConfig):
         # readium side. `object_checker` discovers AbacChecker subclasses
         # via `__subclasses__()`, so a side-effect import here is enough.
         import apps.readium.checkers  # noqa: F401
+
+        # Deploy-time policy guards (readium.E001) — registered via decorator.
+        import apps.readium.checks  # noqa: F401
