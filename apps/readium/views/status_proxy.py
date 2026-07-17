@@ -20,7 +20,9 @@ from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext as _
 
 from apps.core.errors import DetailType, ProblemDetailException
+from apps.core.services.capability_tokens import CapabilityTokenService
 from apps.core.views import SecuredView
+from apps.readium.capability_scopes import LCPL_FEED_DOWNLOAD, lcpl_feed_download_ttl
 from apps.readium.models import License
 from apps.readium.services.lsd_transport import _format_error, _split_url_and_auth
 from apps.readium.services.renew_policy import evaluate_renew
@@ -63,7 +65,28 @@ class StatusProxyView(SecuredView):
         """
         return urlparse(self._get_lsd_url()).netloc
 
-    def _rewrite_links(self, data: dict, request, license_id: UUID) -> dict:
+    def _license_gateway_url(self, base_url: str, license_obj: License) -> str:
+        """Tokenised `.lcpl` gateway URL for the LSD `license` rel.
+
+        The reader re-downloads an updated License Document from this link
+        after a renew/return (LSD `updated.license` timestamp check). The
+        gateway is capability-token only (`views/download.py`), and a reader
+        arriving from a public LSD endpoint carries no bearer JWT — so we mint
+        an `lcpl_feed_download` token (multi-use peek within TTL) bound to the
+        license, exactly as OPDS feeds do via `BorrowLinkResolver.license_url`.
+        A fresh token is minted every time the status document is fetched, so
+        the reader always re-derives a live URL from the latest status doc.
+        """
+        path = reverse("readium:license-gateway", kwargs={"license_id": license_obj.pk})
+        token = CapabilityTokenService.mint(
+            scope=LCPL_FEED_DOWNLOAD,
+            subject={"sub": str(license_obj.user_id), "resource_id": str(license_obj.pk)},
+            ttl=lcpl_feed_download_ttl(),
+            single_use=False,
+        )
+        return f"{base_url}{path}?token={token}"
+
+    def _rewrite_links(self, data: dict, request, license_obj: License) -> dict:
         """Rewrite LSD links to point through our proxy.
 
         IP-008 Phase 2 B2: host-based AND rel-based. We map the known
@@ -73,12 +96,22 @@ class StatusProxyView(SecuredView):
         apps via `status`, `publication`, `self`, etc.
         """
         base_url = f"{request.scheme}://{request.get_host()}"
+        # Always reverse our proxy routes with our own pk: `license_obj` was
+        # resolved from either our pk or the LCP license id, and the
+        # `.lcpl` gateway looks the row up strictly by `pk`.
+        license_id = license_obj.pk
         if "links" in data and isinstance(data["links"], list):
             internal_host = self._internal_lsd_host()
             for link in data["links"]:
                 rel = link.get("rel", "")
-                if rel == "register" or rel == "license":
+                if rel == "register":
                     link["href"] = f"{base_url}{reverse('readium:lsd-register', kwargs={'license_id': license_id})}"
+                    continue
+                if rel == "license":
+                    # The License Document link — NOT the device-register
+                    # endpoint. Points at the tokenised `.lcpl` gateway so the
+                    # reader can fetch the refreshed license after renew/return.
+                    link["href"] = self._license_gateway_url(base_url, license_obj)
                     continue
                 if rel == "return":
                     link["href"] = f"{base_url}{reverse('readium:lsd-return', kwargs={'license_id': license_id})}"
@@ -132,7 +165,7 @@ class StatusDocumentView(StatusProxyView):
                 previous=e,
             )
 
-        data = self._rewrite_links(data, request, license_id)
+        data = self._rewrite_links(data, request, license_obj)
         return JsonResponse(data, content_type="application/vnd.readium.license.status.v1.0+json")
 
 
@@ -171,7 +204,7 @@ class DeviceRegistrationProxyView(StatusProxyView):
             license_obj.state = License.LicenseState.ACTIVE
         license_obj.save()
 
-        data = self._rewrite_links(data, request, license_id)
+        data = self._rewrite_links(data, request, license_obj)
         return JsonResponse(data, content_type="application/vnd.readium.license.status.v1.0+json")
 
 
@@ -238,7 +271,7 @@ class ReturnProxyView(StatusProxyView):
         # Best-effort queue promotion (matches LicenseService.return_license).
         LicenseService._maybe_promote_next(license_obj)
 
-        data = self._rewrite_links(data, request, license_id)
+        data = self._rewrite_links(data, request, license_obj)
         return JsonResponse(data, content_type="application/vnd.readium.license.status.v1.0+json")
 
 
@@ -312,5 +345,5 @@ class RenewProxyView(StatusProxyView):
                 previous=e,
             )
 
-        data = self._rewrite_links(data, request, license_id)
+        data = self._rewrite_links(data, request, license_obj)
         return JsonResponse(data, content_type="application/vnd.readium.license.status.v1.0+json")

@@ -11,6 +11,7 @@ from apps.opds2.schema.rwpm import Link
 from apps.opds2.views.base import Opds2CatalogView
 from apps.readium.models import License
 from apps.readium.services import LicenseService, PassphraseRequiredError
+from apps.readium.services.renew_policy import evaluate_renew
 
 
 class BorrowView(Opds2CatalogView):
@@ -119,10 +120,21 @@ class RenewView(Opds2CatalogView):
         except License.DoesNotExist:
             raise ProblemDetailException(_("No active loan found"), status=HTTPStatus.NOT_FOUND)
 
-        duration_days = getattr(settings, "EVILFLOWERS_READIUM_DEFAULT_BORROW_DURATION_DAYS", 14)
+        # Route through the same renewal policy as the portal PUT and the LSD
+        # `renew` proxy (test_renew_policy_parity). Skipping `evaluate_renew`
+        # here would let this door renew past the per-loan cap, inside the
+        # acquisition embargo, or while other users are queued for the title.
+        decision = evaluate_renew(license_obj, requested_end=None)
+        if not decision.allowed:
+            raise ProblemDetailException(
+                _("Renewal denied"),
+                detail=decision.reason,
+                status=HTTPStatus.FORBIDDEN,
+                detail_type=DetailType.CONFLICT,
+            )
 
         try:
-            LicenseService.renew_license(license_obj, new_duration_days=duration_days)
+            LicenseService.renew_license(license_obj, new_end_date=decision.new_end)
         except Exception as e:
             raise ProblemDetailException(
                 _("Failed to renew loan"), status=HTTPStatus.INTERNAL_SERVER_ERROR, previous=e

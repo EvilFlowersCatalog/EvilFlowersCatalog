@@ -62,6 +62,22 @@ class RenewProxyPolicyParityTests(SimpleTestCase):
             "LicenseService.renew_license so the policy and renewal_count apply.",
         )
 
+    def test_opds2_renew_view_consults_the_renewal_policy(self):
+        """The OPDS 2.0 catalog renew door is a third renewal entry point.
+
+        `POST /opds/v2/{catalog}/publications/{id}/renew` must gate on
+        `evaluate_renew` like the portal PUT and the LSD `renew` proxy —
+        otherwise it renews past the cap, inside the embargo, or while
+        other users are queued.
+        """
+        from apps.opds2.views import borrow as opds2_borrow
+
+        source = inspect.getsource(opds2_borrow.RenewView)
+
+        self.assertIn("evaluate_renew", source)
+        self.assertIn("LicenseService.renew_license", source)
+        self.assertNotIn("new_duration_days", source)
+
     def test_return_proxy_refetches_by_resolved_pk_not_url_kwarg(self):
         """Links in a signed `.lcpl` carry the LCP id, not our pk.
 

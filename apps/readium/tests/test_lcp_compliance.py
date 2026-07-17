@@ -54,13 +54,19 @@ class OpdsLcpLinkPresenceTests(SimpleTestCase):
     """OPDS feeds must carry the LCP license link type for readium-enabled entries."""
 
     def test_opds2_borrow_emits_lcp_acquisition_link(self):
-        # The BorrowView in apps/opds2/views/borrow.py adds a link with
-        # type "application/vnd.readium.lcp.license.v1.0+json". Assert that constant
-        # is referenced — protects against accidental edits.
+        # The borrow flow advertises a link of type
+        # "application/vnd.readium.lcp.license.v1.0+json". The literal lives in
+        # the shared `BorrowLinkResolver` (used by both OPDS 1.2 and 2.0); the
+        # OPDS 2.0 BorrowView emits it through that resolver. Assert both, so an
+        # accidental edit to either side is caught.
         from pathlib import Path
 
-        source = Path("apps/opds2/views/borrow.py").read_text()
-        self.assertIn("application/vnd.readium.lcp.license.v1.0+json", source)
+        from apps.opds.services.borrow_link import LCP_LICENSE_MIME
+
+        self.assertEqual(LCP_LICENSE_MIME, "application/vnd.readium.lcp.license.v1.0+json")
+
+        borrow_source = Path("apps/opds2/views/borrow.py").read_text()
+        self.assertIn("BorrowLinkResolver", borrow_source)
 
 
 class ReservationStateMachineTests(SimpleTestCase):

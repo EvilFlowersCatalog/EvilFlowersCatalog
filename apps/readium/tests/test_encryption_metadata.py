@@ -42,9 +42,7 @@ class EncryptionPayloadMetadataTests(SimpleTestCase):
         return encrypted_content
 
     def _captured_kwargs(self, encrypted_content):
-        with patch(
-            "apps.readium.services.content_encryption_service.get_event_broker"
-        ) as mock_get_broker:
+        with patch("apps.readium.services.content_encryption_service.get_event_broker") as mock_get_broker:
             broker = MagicMock()
             mock_get_broker.return_value = broker
 
@@ -55,9 +53,7 @@ class EncryptionPayloadMetadataTests(SimpleTestCase):
             return payload["kwargs"]
 
     def test_payload_includes_title_and_author(self):
-        ec = self._make_encrypted_content(
-            title="The Great Gatsby", author_name="F. Scott Fitzgerald"
-        )
+        ec = self._make_encrypted_content(title="The Great Gatsby", author_name="F. Scott Fitzgerald")
 
         kwargs = self._captured_kwargs(ec)
 
@@ -70,8 +66,7 @@ class EncryptionPayloadMetadataTests(SimpleTestCase):
         self.assertEqual(
             kwargs.get("author"),
             "F. Scott Fitzgerald",
-            "Encryption payload must carry the first author name so lcpencrypt "
-            "can populate the package manifest.",
+            "Encryption payload must carry the first author name so lcpencrypt " "can populate the package manifest.",
         )
 
     def test_missing_author_sends_empty_string_not_crash(self):

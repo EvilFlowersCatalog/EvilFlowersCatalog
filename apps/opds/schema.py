@@ -53,6 +53,12 @@ class LinkType(str, Enum):
     IMAGE = "http://opds-spec.org/image"
     OPEN_ACCESS = "http://opds-spec.org/acquisition/open-access"
     ACQUISITION = "http://opds-spec.org/acquisition"
+    # LCP borrow (IP-008): a readium-enabled entry advertises this rel so
+    # OPDS 1.2 readers can reach the borrow endpoint. Without the member,
+    # `BorrowLinkResolver` emitting `rel=…/acquisition/borrow` raises a
+    # pydantic ValidationError and 500s every 1.2 feed that contains an
+    # LCP title.
+    BORROW = "http://opds-spec.org/acquisition/borrow"
 
 
 class Link(BaseXmlModel, tag="link", nsmap=NSMAP):
