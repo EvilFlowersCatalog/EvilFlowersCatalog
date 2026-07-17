@@ -108,6 +108,19 @@ class ContentEncryptionService:
         # filename = just the lcp_content_id (no extension, lcpencrypt appends .lcpdf/.epub)
         # url = public base URL → LCP server registers {url}/{filename} as content location
         # No -notify: the LCP server registration via -lcpsv is sufficient
+        #
+        # title/author: publication display metadata. For the LCP-for-PDF
+        # profile (`.lcpdf`) lcpencrypt wraps the raw PDF into a Readium
+        # package and generates its `manifest.json`; a raw PDF carries no
+        # embedded title/author, so without these the manifest falls back to
+        # the filename (title) and empty authors — which is why Thorium shows
+        # "no title and no authors available" for borrowed PDFs. We forward
+        # the Entry's metadata so the worker can inject it into the package
+        # manifest. (The worker must consume these keys — see
+        # evilflowers-lcpencrypt-worker; unknown keys are ignored by older
+        # workers, so sending them is backwards compatible.)
+        entry = acquisition.entry
+        author_name = entry.first_author_name
         event_broker = get_event_broker()
         event_broker.execute(
             "evilflowers_lcpencrypt_worker.lcpencrypt",
@@ -119,6 +132,8 @@ class ContentEncryptionService:
                     "filename": encrypted_content.lcp_content_id,
                     "lcpsv": getattr(settings, "EVILFLOWERS_READIUM_LCPSV_URL", None),
                     "url": f"{settings.EVILFLOWERS_READIUM_BASE_URL}/readium/v1/content",
+                    "title": entry.title,
+                    "author": author_name,
                 },
                 "queue": "evilflowers_lcpencrypt_worker",
             },

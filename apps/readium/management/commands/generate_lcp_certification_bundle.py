@@ -166,9 +166,21 @@ class Command(BaseCommand):
     # --- helpers --------------------------------------------------------
 
     def _ensure_test_user(self, username: str, passphrase: str) -> User:
+        # User.auth_source is a required FK; pick an active local (database)
+        # source, falling back to any source. Without this, creating the test
+        # user violates the NOT NULL constraint on auth_source_id.
+        from apps.core.models.auth_source import AuthSource
+
+        auth_source = (
+            AuthSource.objects.filter(driver=AuthSource.Driver.DATABASE, is_active=True).first()
+            or AuthSource.objects.first()
+        )
+        if auth_source is None:
+            raise CommandError("No AuthSource exists; create one before generating the certification bundle.")
+
         user, created = User.objects.get_or_create(
             username=username,
-            defaults={"name": "EDRLab", "surname": "Tester", "is_active": True},
+            defaults={"name": "EDRLab", "surname": "Tester", "is_active": True, "auth_source": auth_source},
         )
         # Set passphrase hash (uppercased SHA-256 per LCP spec).
         user.lcp_passphrase_hash = LCPServerClient.hash_passphrase(passphrase)
