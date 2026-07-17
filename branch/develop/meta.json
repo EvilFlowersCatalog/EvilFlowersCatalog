@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "392c7881735ba09f75325fd770c3d7b8df92e021",
-    "short": "392c788",
-    "message": "Add regression tests for renewal policy parity and enforce consistent policy application in `RenewProxyView`",
+    "sha": "47f66338adb1010d2a495c5f0c2fa3210fa3a75b",
+    "short": "47f6633",
+    "message": "Implement attachment resolver framework for notifications, integrate `.lcpl` resolver, and extend tests for fail-soft resolution and registry behavior.",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/392c7881735ba09f75325fd770c3d7b8df92e021"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/47f66338adb1010d2a495c5f0c2fa3210fa3a75b"
   },
-  "deployed_at": "2026-07-17T10:45:04Z",
+  "deployed_at": "2026-07-17T19:14:32Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
