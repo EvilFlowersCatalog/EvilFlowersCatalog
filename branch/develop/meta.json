@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "4b58e0547c405fabc81fa5d6d1af07d66d98e572",
-    "short": "4b58e05",
-    "message": "Add tests to validate `lcp_state_mapping` imports in context builder lambdas and fix missing import in `reservations`.",
+    "sha": "5bbc9915b7ede7678734fda81f43732b7e722558",
+    "short": "5bbc991",
+    "message": "Add regression tests for LCP encryption payload metadata, validate title/author forwarding to the worker, and extend helper for test user creation.",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/4b58e0547c405fabc81fa5d6d1af07d66d98e572"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/5bbc9915b7ede7678734fda81f43732b7e722558"
   },
-  "deployed_at": "2026-07-17T19:22:28Z",
+  "deployed_at": "2026-07-17T20:15:26Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
