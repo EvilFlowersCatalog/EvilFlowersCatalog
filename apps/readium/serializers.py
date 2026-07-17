@@ -21,9 +21,21 @@ from apps.readium.models import License, Reservation
 def _mint_lcpl_download_url(license_id: UUID, user_id: UUID, info: ValidationInfo) -> str:
     """
     IP-009 Phase 4 D2: mint a capability token and return the absolute
-    download URL. Scope is `lcpl_feed_download` (multi-use peek, 30 min)
-    when the serializer context flags an OPDS feed render; otherwise
-    `lcpl_download` (single-use, 60s).
+    download URL. Scope is `lcpl_feed_download` (30 min) when the
+    serializer context flags an OPDS feed render; otherwise
+    `lcpl_download` (short TTL).
+
+    Both scopes are redeemable more than once within their TTL.
+    Single-use is unusable here: reading apps fetch the `.lcpl` URL
+    twice — Thorium issues a throwaway GET purely to sniff
+    `Content-Type`, then fetches again for the real download (see
+    `importFromLinkService` in edrlab/thorium-reader). A single-use
+    token is burned by the sniff, so the real download 401s and the
+    import fails with "publicationDocument not imported on db".
+
+    Replay exposure stays bounded by the TTL, and the `.lcpl` itself is
+    inert without the user's passphrase — the LCP model assumes the
+    licence document may be copied around.
 
     Falls back to the relative path with no token when no request is
     in context — that response is unusable by clients but is fine for
@@ -38,11 +50,10 @@ def _mint_lcpl_download_url(license_id: UUID, user_id: UUID, info: ValidationInf
     if context.get("opds_feed"):
         scope = LCPL_FEED_DOWNLOAD
         ttl = lcpl_feed_download_ttl()
-        single_use = False
     else:
         scope = LCPL_DOWNLOAD
         ttl = lcpl_download_ttl()
-        single_use = True
+    single_use = False
 
     token = CapabilityTokenService.mint(
         scope=scope,

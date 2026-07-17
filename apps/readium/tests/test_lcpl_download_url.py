@@ -69,9 +69,26 @@ class LcplDownloadUrlTests(SimpleTestCase):
     def test_feed_context_mints_multi_use_scope(self, mint):
         request = RequestFactory().get("/opds/feed")
 
-        LicenseSerializer.Base.model_validate(
-            _license_stub(), context={"request": request, "opds_feed": True}
-        )
+        LicenseSerializer.Base.model_validate(_license_stub(), context={"request": request, "opds_feed": True})
 
         self.assertEqual(mint.call_args.kwargs["scope"], "lcpl_feed_download")
         self.assertFalse(mint.call_args.kwargs["single_use"])
+
+    def test_ui_download_token_is_not_single_use(self, mint):
+        """Reading apps fetch the `.lcpl` twice — the token must survive the first.
+
+        Thorium's `importFromLinkService` issues a throwaway GET purely to read
+        `Content-Type`, then fetches again to download. A single-use token is
+        burned by the sniff, so the real download 401s and Thorium reports
+        "publicationDocument not imported on db". Regression guard: do not
+        reintroduce `single_use=True` here.
+        """
+        request = RequestFactory().get("/readium/v1/licenses")
+
+        LicenseSerializer.Base.model_validate(_license_stub(), context={"request": request})
+
+        self.assertEqual(mint.call_args.kwargs["scope"], "lcpl_download")
+        self.assertFalse(
+            mint.call_args.kwargs["single_use"],
+            "lcpl_download must be redeemable twice; Thorium's Content-Type probe consumes the first redemption",
+        )

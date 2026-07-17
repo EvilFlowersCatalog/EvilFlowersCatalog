@@ -11,8 +11,13 @@ is scope-agnostic.
 
 from django.conf import settings
 
-# Single-use, ~60s TTL. Issued by `POST /readium/v1/licenses/{id}/download-tokens`.
-# Reader apps redeem once via `GET .../{id}.lcpl?token=…`.
+# Short TTL (~60s by default), redeemable repeatedly within that window.
+# Reader apps redeem via `GET .../{id}.lcpl?token=…`.
+#
+# NOT single-use: Thorium fetches the URL twice — a throwaway GET to sniff
+# `Content-Type`, then the real download. A single-use token is consumed by
+# the sniff and the download 401s ("publicationDocument not imported on db").
+# Keep the TTL short rather than reaching for single-use again.
 LCPL_DOWNLOAD = "lcpl_download"
 
 # Multi-use within TTL (peek-able), ~30 min. Issued automatically when
