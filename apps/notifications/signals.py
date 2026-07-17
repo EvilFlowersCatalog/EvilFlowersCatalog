@@ -40,10 +40,17 @@ def on_license_created(sender, instance: License, created: bool, **kwargs):
     # sent. Outside a transaction `on_commit` fires immediately so the
     # behaviour is identical for callers that don't use atomic().
     recipient_user_id = str(instance.user.pk)
+    # Attach the .lcpl so the user can open the loan straight from the email on a
+    # tablet/reader — the capability-token gateway URL can't be embedded in mail.
+    # LCP-compliant: the file is inert without the passphrase (only the hint ships).
+    from apps.readium.notifications import lcpl_attachment_ref
+
+    attachment_refs = [lcpl_attachment_ref(instance.pk)]
     transaction.on_commit(
         lambda: send_notification.delay(
             notification_type="license_created",
             recipient_user_id=recipient_user_id,
             context=context,
+            attachment_refs=attachment_refs,
         )
     )

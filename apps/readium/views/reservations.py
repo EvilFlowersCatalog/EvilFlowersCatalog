@@ -38,8 +38,20 @@ class ReservationCollection(SecuredView):
         summary="List reservations",
     )
     def get(self, request):
-        qs = ReservationFilter(request.GET, queryset=Reservation.objects.all(), request=request).qs
-        return PaginationResponse(request, qs, serializer=ReservationSerializer.Base)
+        qs = ReservationFilter(
+            request.GET,
+            queryset=Reservation.objects.select_related("entry").prefetch_related("entry__authors"),
+            request=request,
+        ).qs
+        return PaginationResponse(
+            request,
+            qs,
+            serializer=ReservationSerializer.Detailed,
+            serializer_context={"request": request},
+            context_builder=lambda items: {
+                "lcp_states": lcp_state_mapping(request.user, [r.entry for r in items if r.entry_id])
+            },
+        )
 
     @openapi.metadata(
         description=(

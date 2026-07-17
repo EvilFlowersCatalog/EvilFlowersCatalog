@@ -7,6 +7,7 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 
 from apps.core.auth import JWTFactory
+from apps.notifications.attachments import EmailAttachment
 from apps.notifications.models import NotificationContact, NotificationLog
 
 logger = logging.getLogger(__name__)
@@ -39,8 +40,18 @@ class NotificationService:
         return f"{effective_base}{resource_path}?access_token={token}"
 
     @staticmethod
-    def send(notification_type: str, recipient_user, context: dict) -> NotificationLog:
-        """Resolve recipient, render templates, compile MJML, send email, and log result."""
+    def send(
+        notification_type: str,
+        recipient_user,
+        context: dict,
+        attachments: "list[EmailAttachment] | None" = None,
+    ) -> NotificationLog:
+        """Resolve recipient, render templates, compile MJML, send email, and log result.
+
+        `attachments` are already-materialised `EmailAttachment` value objects;
+        this layer stays ignorant of where they came from (see
+        `apps.notifications.attachments`).
+        """
         recipient_email = NotificationService.resolve_recipient_email(recipient_user)
         if not recipient_email:
             return NotificationLog.objects.create(
@@ -75,6 +86,10 @@ class NotificationService:
                 to=[recipient_email],
             )
             email.attach_alternative(html_content, "text/html")
+
+            for attachment in attachments or []:
+                email.attach(attachment.filename, attachment.content, attachment.mimetype)
+
             email.send()
 
             log.status = NotificationLog.Status.SENT

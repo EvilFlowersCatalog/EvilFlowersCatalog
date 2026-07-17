@@ -15,3 +15,10 @@ class ReadiumConfig(AppConfig):
 
         # Deploy-time policy guards (readium.E001) — registered via decorator.
         import apps.readium.checks  # noqa: F401
+
+        # Plug readium's `.lcpl` attachment resolver into the notifications
+        # registry (dependency inversion — notifications stays readium-agnostic).
+        from apps.notifications.attachments import register_attachment_resolver
+        from apps.readium.notifications import LCPL_RESOLVER, resolve_lcpl_attachment
+
+        register_attachment_resolver(LCPL_RESOLVER, resolve_lcpl_attachment)

@@ -145,3 +145,9 @@ class ReservationSerializer:
         claimed_license_id: Optional[UUID] = None
         created_at: datetime
         updated_at: datetime
+
+    class Detailed(Base):
+        """Reservation list/detail for the portal: embeds the entry so the queue
+        UI can render title/author/thumbnail without an N+1 fetch per row."""
+
+        entry: EntrySerializer.Base
