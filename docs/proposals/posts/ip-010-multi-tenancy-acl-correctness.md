@@ -20,9 +20,17 @@ The catalog's headline access-control pattern — every queryset filters through
 
 ## Status
 
-**Status**: Draft
-**Last Updated**: 2026-05-14
-**Implementation**: Not started
+**Status**: Rejected (descoped — ACL/security hardening deprioritized)
+**Last Updated**: 2026-07-18
+**Implementation**: Not started (dropped)
+
+> **Dropped (2026-07-18).** This is a security/multi-tenancy **hardening** bundle, not a
+> feature, and is descoped in favor of feature work (see IP-012). The genuinely
+> user-affecting items already shipped elsewhere: **M4** (cross-tenant `Category`
+> uniqueness) via IP-007 D17, **M6** (feed permission) via IP-007 D18, and **M9** via
+> IP-009 Cluster E. The remaining items (M1 cache invalidation, M2 cover/thumbnail ACL,
+> M12 UserAcquisition DELETE) are left as tracked GitHub issues rather than a proposal.
+> Reopen only if a concrete multi-tenant deployment makes them blocking.
 
 ## Problem Statement
 

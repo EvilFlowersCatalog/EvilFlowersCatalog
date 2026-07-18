@@ -22,9 +22,15 @@ This proposal introduces a notification engine built on MJML-compiled email temp
 
 ## Status
 
-**Status**: Accepted
-**Last Updated**: 2026-04-09
+**Status**: Implemented
+**Last Updated**: 2026-07-18
 **Implementation**: Complete (Phases 1-3)
+
+> Verified against `develop`: `apps/notifications/` ships the engine
+> (`models/{notification_contact,notification_log}.py`, `services.py`, `tasks.py`,
+> `signals.py`, `registry.py`, `attachments.py`), MJML templates + subjects, and the
+> `test_notification`/`compile_templates` commands. Reservation-lifecycle templates were
+> added by IP-003/IP-011. (Template engine later switched `mrml` → `mjml-python` per IP-007 D5.)
 
 ## Problem Statement
 
