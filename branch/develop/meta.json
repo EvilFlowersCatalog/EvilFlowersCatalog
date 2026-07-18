@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "e13ec877063e47fdf5e95ba447b693911846a215",
-    "short": "e13ec87",
-    "message": "Add regression tests for OPDS 1.2 `<link>` schema and LSD `license` rel, enforce consistent renewal policies, and fix `.lcpl` gateway tokenization.",
+    "sha": "2bed1e8dfef8f5296dc8167facdeb21969550cbf",
+    "short": "2bed1e8",
+    "message": "Future steps incorporating AI",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e13ec877063e47fdf5e95ba447b693911846a215"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/2bed1e8dfef8f5296dc8167facdeb21969550cbf"
   },
-  "deployed_at": "2026-07-17T23:05:04Z",
+  "deployed_at": "2026-07-18T00:27:58Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

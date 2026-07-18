@@ -10,14 +10,21 @@ changes are documented before implementation.
 | ID | Title | Status | Last Updated |
 |----|-------|--------|--------------|
 | IP-001 | [Complete LCP Integration & OPDS 2.0 Server with Readium Borrowing](posts/ip-001-lcp-opds2-integration.md) | :white_check_mark: Implemented | 2026-04-08 |
-| IP-002 | [Notification Engine with MJML Templates](posts/ip-002-notification-engine.md) | ✅ Accepted | 2026-04-09 |
-| IP-003 | [Readium LCP — EDRLab Certification Readiness](posts/ip-003-lcp-edrlab-certification.md) | ✅ Accepted | 2026-05-12 |
+| IP-002 | [Notification Engine with MJML Templates](posts/ip-002-notification-engine.md) | :white_check_mark: Implemented | 2026-07-18 |
+| IP-003 | [Readium LCP — EDRLab Certification Readiness](posts/ip-003-lcp-edrlab-certification.md) | :white_check_mark: Implemented (feature scope) · cert/hardening descoped | 2026-07-18 |
 | IP-004 | [Configure and Operate Per-Entry Active-License Limits](posts/ip-004-readium-amount-configurability.md) | :white_check_mark: Implemented | 2026-05-14 |
 | IP-007 | [Crash-on-First-Contact Bug Triage](posts/ip-007-crash-on-first-contact-triage.md) | :white_check_mark: Implemented | 2026-05-25 |
 | IP-008 | [Readium + Dataverse Post-Merge Consolidation](posts/ip-008-readium-correctness-followup.md) | :white_check_mark: Implemented | 2026-05-25 |
 | IP-009 | [Readium Integration Closeout — Lifecycle Vocabulary, Expiry Reconcile, and Single-Use Download Tokens](posts/ip-009-readium-integration-closeout.md) | :white_check_mark: Implemented | 2026-05-25 |
-| IP-010 | [Multi-Tenancy & ACL Correctness](posts/ip-010-multi-tenancy-acl-correctness.md) | 📝 Draft | 2026-05-25 |
+| IP-010 | [Multi-Tenancy & ACL Correctness](posts/ip-010-multi-tenancy-acl-correctness.md) | ❌ Rejected (descoped — hardening) | 2026-07-18 |
 | IP-011 | [Reservation Queue UX Completion](posts/ip-011-reservation-ux-completion.md) | :white_check_mark: Implemented | 2026-05-26 |
+| IP-012 | [AI-Powered Discovery (Search, Recommendations, Summarization, Assistant)](posts/ip-012-ai-powered-discovery.md) | 📝 Draft (review questions resolved) | 2026-07-18 |
+| IP-013 | [Document Extraction, Classification & Feature Pipeline](posts/ip-013-document-extraction-structure.md) | 📝 Draft (review questions resolved) | 2026-07-18 |
+
+**Note on the Readium cluster.** IP-001, IP-003 (feature scope), IP-004, IP-007, IP-008,
+IP-009, and IP-011 together constitute the completed Readium LCP delivery and are all
+Implemented. IP-002 (notifications) and IP-011 (reservation UX) attach to it. Readium LCP
+is considered **done**; remaining certification/deployment items are descoped (see IP-003).
 
 
 

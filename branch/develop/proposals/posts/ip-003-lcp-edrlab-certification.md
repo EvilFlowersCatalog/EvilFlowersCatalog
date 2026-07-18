@@ -23,9 +23,21 @@ This proposal closes the remaining gaps between the current LCP integration (del
 
 ## Status
 
-**Status**: Accepted
-**Last Updated**: 2026-05-12
-**Implementation**: In Progress
+**Status**: Implemented (feature scope) · Descoped (certification/hardening scope)
+**Last Updated**: 2026-07-18
+**Implementation**: Complete for the feature scope; certification/hardening scope dropped
+
+> **Scope trim (2026-07-18).** The **feature** half of this proposal shipped and is verified
+> on `develop`: the reservation queue (`apps/readium/models.py` `Reservation`,
+> `reservation_service.py`, `renew_policy.py`, `views/reservations.py`) and the full set of
+> lifecycle emails (8 templates), completed together with IP-008/IP-009/IP-011.
+>
+> The **certification & hardening** half is **descoped from active tracking**: Phase 5
+> (compliance test suite), Phase 6 (deployment hardening — nginx/iptables/compose docs),
+> and Phase 7 (EDRLab pre-flight checklist). Readium LCP is considered done for our
+> purposes; formal EDRLab certification is deferred and no longer blocks feature work. The
+> certification-bundle (`generate_lcp_certification_bundle.py`) and oversharing
+> (`check_overshared_licenses.py`) commands remain in the tree but are not tracked here.
 
 ## Scope: PDF-only (LCP-for-PDF profile)
 
