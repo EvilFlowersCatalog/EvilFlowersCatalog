@@ -110,7 +110,11 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
             id=f"urn:uuid:{entry.id}",
             updated=entry.updated_at,
             authors=[
-                Author(name=entry_author.author.full_name) for entry_author in entry.entry_authors.order_by("position")
+                Author(name=entry_author.author.full_name)
+                # Sort in Python (not `.order_by`) so a prefetched
+                # `entry_authors__author` cache is reused instead of firing a
+                # fresh per-entry query for every feed row.
+                for entry_author in sorted(entry.entry_authors.all(), key=lambda ea: ea.position)
             ],
             summary=Summary(type="text", value=entry.summary),
         )

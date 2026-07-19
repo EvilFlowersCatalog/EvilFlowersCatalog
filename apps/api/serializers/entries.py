@@ -169,7 +169,10 @@ class EntrySerializer:
 
         @field_validator("entry_authors", mode="before")
         def generate_authors(cls, v, info: ValidationInfo):
-            return [entry_author.author for entry_author in v.order_by("position")]
+            # Sort in Python so the `entry_authors__author` prefetch from the
+            # list view is reused; `.order_by()` would fire a fresh query per
+            # entry and turn the paginated list back into an N+1.
+            return [entry_author.author for entry_author in sorted(v.all(), key=lambda ea: ea.position)]
 
         @field_validator("acquisitions", mode="before")
         def generate_acquisitions(cls, v, info: ValidationInfo):

@@ -142,9 +142,13 @@ class Entry(BaseModel):
 
 @receiver(post_save, sender=Entry)
 def touch_parents(sender, instance: Entry, **kwargs):
-    instance.catalog.touched_at = timezone.now()
-    instance.catalog.save()
-    instance.feeds.update(touched_at=timezone.now())
+    # Bump only the `touched_at` column with a targeted UPDATE instead of a
+    # full `catalog.save()` — the latter rewrites every column, bumps the
+    # catalog's own `updated_at`, and re-fires Catalog's save signals on every
+    # entry write (heavy under bulk imports / batch edits).
+    now = timezone.now()
+    Catalog.objects.filter(pk=instance.catalog_id).update(touched_at=now)
+    instance.feeds.update(touched_at=now)
 
 
 # IP-008 Phase 3 D2: the post-save encryption trigger lived here, which

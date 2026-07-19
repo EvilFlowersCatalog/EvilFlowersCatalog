@@ -81,9 +81,16 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # GZip compresses the highly-repetitive OPDS Atom XML and entry JSON
+    # payloads (which now carry ~15 LCP fields per entry). Placed high so it
+    # wraps the response body produced by the middleware below it.
+    "django.middleware.gzip.GZipMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
+    # Honours If-Modified-Since / If-None-Match against Last-Modified / ETag so
+    # clients that re-poll feeds get a cheap 304 instead of a full re-render.
+    "django.middleware.http.ConditionalGetMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "apps.api.middleware.exceptions.ExceptionMiddleware",

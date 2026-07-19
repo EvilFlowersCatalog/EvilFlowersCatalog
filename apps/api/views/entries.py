@@ -66,19 +66,10 @@ def _assert_readium_amount_above_active(entry: Entry, form: EntryForm) -> None:
 
 
 import logging
-import sys
 
-# Get logger with explicit name that matches Django's logging config
+# Handlers/level/formatting come from Django's LOGGING config; attaching a
+# StreamHandler here duplicated log lines and bypassed the project formatter.
 logger = logging.getLogger("apps.api.views.entries")
-
-# Ensure logger has handlers and correct level
-if not logger.handlers:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.INFO)
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-logger.setLevel(logging.INFO)
 
 
 def shelf_record_mapping(user: User) -> dict[UUID, UUID]:

@@ -65,7 +65,12 @@ class CatalogDetail(SecuredView):
     @staticmethod
     def _get_catalog(request, catalog_id: UUID, checker: str = "check_catalog_manage") -> Catalog:
         try:
-            catalog = Catalog.objects.select_related("creator").prefetch_related("users").get(pk=catalog_id)
+            # `CatalogSerializer.Detailed` reads `user_catalogs` (each with its
+            # `.user`), not the bare `users` M2M — prefetch the relation that is
+            # actually traversed so the detail view stays a single round-trip.
+            catalog = (
+                Catalog.objects.select_related("creator").prefetch_related("user_catalogs__user").get(pk=catalog_id)
+            )
         except Catalog.DoesNotExist as e:
             raise ProblemDetailException(_("Catalog not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 

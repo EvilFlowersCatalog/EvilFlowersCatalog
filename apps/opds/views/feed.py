@@ -17,6 +17,20 @@ from apps.opds.services.feeds import AcquisitionFeed, NavigationFeed
 from apps.opds.views.base import OpdsCatalogView
 
 
+def _with_acquisition_prefetch(qs):
+    """Eager-load everything `AcquisitionEntry.from_model` touches per entry.
+
+    Without this an N-entry feed fans out to ~3N extra queries (authors,
+    categories, acquisitions) plus a catalog lookup per row. Matches the
+    Python-side `sorted(entry_authors)` in `apps/opds/schema.py`.
+    """
+    return qs.select_related("catalog").prefetch_related(
+        "entry_authors__author",
+        "categories",
+        "acquisitions",
+    )
+
+
 class FeedView(OpdsCatalogView):
     def get(self, request, catalog_name: str, feed_name: str):
         try:
@@ -35,7 +49,7 @@ class FeedView(OpdsCatalogView):
                 title=feed.title,
                 author=feed.creator,
                 updated_at=feed.touched_at,
-                qs=feed.entries.all(),
+                qs=_with_acquisition_prefetch(feed.entries.all()),
                 request=request,
                 user=request.user,
             )
@@ -115,7 +129,7 @@ class CompleteFeedView(OpdsCatalogView):
             title=_("Complete %s feed") % (self.catalog.title,),
             author=self.catalog.creator,
             updated_at=self.catalog.touched_at,
-            qs=self.catalog.entries.order_by("-created_at"),
+            qs=_with_acquisition_prefetch(self.catalog.entries.order_by("-created_at")),
             links=[
                 Link(
                     rel=LinkType.SELF,
@@ -139,9 +153,9 @@ class CompleteFeedView(OpdsCatalogView):
 
 class LatestFeedView(OpdsCatalogView):
     def get(self, request, catalog_name: str):
-        entries = Entry.objects.filter(catalog=self.catalog).order_by("-created_at")[
-            : settings.EVILFLOWERS_FEEDS_NEW_LIMIT
-        ]
+        entries = _with_acquisition_prefetch(
+            Entry.objects.filter(catalog=self.catalog).order_by("-created_at")[: settings.EVILFLOWERS_FEEDS_NEW_LIMIT]
+        )
 
         result = AcquisitionFeed(
             f"urn:uuid:{uuid.uuid4()}",
@@ -171,9 +185,9 @@ class LatestFeedView(OpdsCatalogView):
 
 class PopularFeedView(OpdsCatalogView):
     def get(self, request, catalog_name: str):
-        entries = Entry.objects.filter(catalog=self.catalog).order_by("-popularity")[
-            : settings.EVILFLOWERS_FEEDS_NEW_LIMIT
-        ]
+        entries = _with_acquisition_prefetch(
+            Entry.objects.filter(catalog=self.catalog).order_by("-popularity")[: settings.EVILFLOWERS_FEEDS_NEW_LIMIT]
+        )
 
         result = AcquisitionFeed(
             f"urn:uuid:{uuid.uuid4()}",
@@ -220,7 +234,7 @@ class ShelfFeedView(OpdsCatalogView):
             ),
             author=request.user,
             updated_at=updated_at,
-            qs=Entry.objects.filter(shelf_records__user=request.user),
+            qs=_with_acquisition_prefetch(Entry.objects.filter(shelf_records__user=request.user)),
             links=[
                 Link(
                     rel=LinkType.SELF,
