@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "b9266fb0e1f5144354f62cb3f9ff1060649935a7",
-    "short": "b9266fb",
-    "message": "Remove outdated READIUM_ACTION_PLAN.md following completion of LCP certification prep tasks.",
+    "sha": "70f3bca95d6b91202ac5eb855df4f43bd630da0f",
+    "short": "70f3bca",
+    "message": "Add `thumbnail_mime` field to `entry` model and implement management command to regenerate thumbnails. Update dependencies.",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/b9266fb0e1f5144354f62cb3f9ff1060649935a7"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/70f3bca95d6b91202ac5eb855df4f43bd630da0f"
   },
-  "deployed_at": "2026-07-19T11:58:49Z",
+  "deployed_at": "2026-07-19T14:18:52Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
