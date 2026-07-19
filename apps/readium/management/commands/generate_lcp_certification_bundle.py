@@ -1,14 +1,13 @@
 """
 Generate the EDRLab certification bundle (IP-003 Phase 1).
 
-Produces six artifacts in `--output-dir`:
+Produces five artifacts in `--output-dir`:
 
     buy_ready.lcpl           (license in `ready` state)
     buy_cancelled.lcpl       (driven through real LicenseService.cancel_license)
     buy_revoked.lcpl         (activated via device registration, then LicenseService.revoke_license)
     loan_ready.lcpl          (license in `ready` state, loan profile)
     loan_expired.lcpl        (license issued with rights.end already in the past)
-    protected.lcpdf          (one Licensed PDF — LCP-for-PDF profile)
 
 Plus a README listing each artifact, the test user passphrase, and how to
 verify with Thorium Reader.
@@ -25,7 +24,6 @@ is not LCP-enabled or has no encrypted PDF acquisition.
 """
 
 import json
-import shutil
 from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
@@ -60,7 +58,6 @@ review of the EvilFlowersCatalog LCP integration.
 | `buy_revoked.lcpl`   | revoked   | Real PATCH /licenses/{{id}}/status to `revoked` |
 | `loan_ready.lcpl`    | ready     | Loan-style license (short rights window) |
 | `loan_expired.lcpl`  | expired   | License issued with rights.end in the past |
-| `protected.lcpdf`    | n/a       | Licensed PDF with `META-INF/license.lcpl` embedded |
 
 ## Verification with Thorium Reader
 
@@ -69,8 +66,6 @@ review of the EvilFlowersCatalog LCP integration.
 3. Enter the passphrase above when prompted.
 4. Expected: `buy_ready` and `loan_ready` open. `buy_cancelled`, `buy_revoked`,
    and `loan_expired` are refused with the appropriate error.
-5. For `protected.lcpdf`, double-click it; Thorium should detect the embedded
-   license, prompt for the passphrase, and open the document.
 
 ## How this bundle was produced
 
@@ -83,7 +78,7 @@ Generated at: `{generated_at}`
 
 
 class Command(BaseCommand):
-    help = "Produce the 6-artifact EDRLab certification bundle for an LCP-enabled entry."
+    help = "Produce the 5-artifact EDRLab certification bundle for an LCP-enabled entry."
 
     def add_arguments(self, parser):
         parser.add_argument("--entry", type=str, required=True, help="UUID of an LCP-enabled entry (required)")
@@ -151,7 +146,6 @@ class Command(BaseCommand):
         self._produce_buy_revoked(entry, user, passphrase, output_dir / "buy_revoked.lcpl")
         self._produce_loan_ready(entry, user, passphrase, output_dir / "loan_ready.lcpl")
         self._produce_loan_expired(entry, user, passphrase, output_dir / "loan_expired.lcpl")
-        self._copy_protected_pdf(encrypted, output_dir / "protected.lcpdf")
 
         readme = output_dir / "README.md"
         readme.write_text(
@@ -227,22 +221,6 @@ class Command(BaseCommand):
         # raw read for the bytes.
         license_obj = self._create(entry, user, passphrase, duration_days=1, back_date_days=30)
         self._fetch_and_save(license_obj, out_path)
-
-    def _copy_protected_pdf(self, encrypted: EncryptedContent, out_path: Path) -> None:
-        # Read through the same storage abstraction the content view uses, so
-        # this works whether the encrypted file lives on the local filesystem
-        # or an S3/MinIO backend (a hard-coded DATADIR path fails on S3).
-        from apps.files.storage import get_storage
-
-        storage = get_storage()
-        if not storage.exists(encrypted.encrypted_path):
-            self.stdout.write(
-                self.style.WARNING(f"  ! protected.lcpdf source not found on storage: {encrypted.encrypted_path}")
-            )
-            return
-        with storage.open(encrypted.encrypted_path) as src, open(out_path, "wb") as dst:
-            shutil.copyfileobj(src, dst)
-        self.stdout.write(f"  ✓ {out_path.name}")
 
     def _create(self, entry, user, passphrase, duration_days: int, back_date_days: int = 0) -> License:
         """Mint a license through the real borrow service (`LicenseService.create_license`)."""

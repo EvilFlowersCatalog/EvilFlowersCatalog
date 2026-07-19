@@ -25,7 +25,7 @@ Already implemented and exercised in test mode:
 Management command that produces the artifacts EDRLab requires for certification:
 - 3 "buy" licenses: `ready`, `cancelled`, `revoked`
 - 2 "loan" licenses: `ready`, `expired`
-- 1 protected EPUB (license embedded in `META-INF/license.lcpl`)
+- ~~1 protected EPUB (license embedded in `META-INF/license.lcpl`)~~ — **N/A for EvilFlowers.** This is the EDRLab **e1** EPUB slot; EvilFlowers is PDF-only, and EDRLab only requires a standalone protected file "if the platform embeds LCP licenses inside EPUBs". The five `.lcpl` samples + live Status Server + each license's `publication` link fully demonstrate the integration (see #69 / #68).
 
 The `cancelled` and `revoked` states must be driven through real Status Server `PATCH` calls — not direct DB writes — so they go through the same path EDRLab will exercise. The `expired` loan state should be produced by issuing a license with a past `end` and letting the Status Server transition it naturally.
 
