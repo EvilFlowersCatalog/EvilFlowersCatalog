@@ -26,7 +26,10 @@
       "mcp__playwright__browser_navigate",
       "mcp__playwright__browser_take_screenshot",
       "mcp__github__list_issues",
-      "mcp__github__get_me"
+      "mcp__github__get_me",
+      "mcp__github-evilflowers__get_file_contents",
+      "mcp__github-evilflowers__list_issues",
+      "mcp__github-evilflowers__search_code"
     ],
     "deny": []
   },
