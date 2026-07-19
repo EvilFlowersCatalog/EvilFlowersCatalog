@@ -231,11 +231,16 @@ class EntryThumbnailDownload(SecuredView):
         except Entry.DoesNotExist:
             raise ProblemDetailException(_("Entry thumbnail not found"), status=HTTPStatus.NOT_FOUND)
 
-        sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime)}"
+        # thumbnail_mime is set when the thumbnail is generated (JPEG for most
+        # covers); legacy rows predate the field and fall back to image_mime.
+        thumbnail_mime = entry.thumbnail_mime or entry.image_mime
+        sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(thumbnail_mime)}"
 
         if not entry.thumbnail.storage.exists(entry.thumbnail.name):
             raise ProblemDetailException(_("Entry thumbnail file not found"), status=HTTPStatus.NOT_FOUND)
 
-        response = FileResponse(streaming_content=entry.thumbnail, filename=sanitized_filename)
+        response = FileResponse(
+            streaming_content=entry.thumbnail, filename=sanitized_filename, content_type=thumbnail_mime
+        )
         response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC
         return response
