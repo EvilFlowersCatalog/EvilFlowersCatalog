@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "70f3bca95d6b91202ac5eb855df4f43bd630da0f",
-    "short": "70f3bca",
-    "message": "Add `thumbnail_mime` field to `entry` model and implement management command to regenerate thumbnails. Update dependencies.",
+    "sha": "e8cb11a043578ff89bc9b257f9f6dfcdbcc08d07",
+    "short": "e8cb11a",
+    "message": "Thumbnails placeholders",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/70f3bca95d6b91202ac5eb855df4f43bd630da0f"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e8cb11a043578ff89bc9b257f9f6dfcdbcc08d07"
   },
-  "deployed_at": "2026-07-19T14:18:52Z",
+  "deployed_at": "2026-07-19T14:37:46Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
