@@ -60,8 +60,7 @@ docs/readium/certification-bundle/
 ├── buy_cancelled.lcpl
 ├── buy_revoked.lcpl
 ├── loan_ready.lcpl
-├── loan_expired.lcpl
-└── protected.lcpdf
+└── loan_expired.lcpl
 ```
 
 Smoke-test each `.lcpl` in Thorium Reader with the passphrase above.
