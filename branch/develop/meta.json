@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "f276095232944568c6882a114812e6ffb4493212",
-    "short": "f276095",
-    "message": "Drop protected.lcpdf artifact from LCP certification bundle",
+    "sha": "b9266fb0e1f5144354f62cb3f9ff1060649935a7",
+    "short": "b9266fb",
+    "message": "Remove outdated READIUM_ACTION_PLAN.md following completion of LCP certification prep tasks.",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/f276095232944568c6882a114812e6ffb4493212"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/b9266fb0e1f5144354f62cb3f9ff1060649935a7"
   },
-  "deployed_at": "2026-07-19T11:57:21Z",
+  "deployed_at": "2026-07-19T11:58:49Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
