@@ -426,7 +426,11 @@ EVILFLOWERS_CACHE_CLIENT_IMAGES = timedelta(minutes=int(os.getenv("EVILFLOWERS_C
 EVILFLOWERS_MODIFIERS = {"application/pdf": "apps.core.modifiers.pdf.PDFModifier"}
 
 # Admin
-EVILFLOWERS_CONTACT_EMAIL = os.getenv("CONTACT_EMAIL", "root@localhost")
+# Deployments set the namespaced EVILFLOWERS_CONTACT_EMAIL (elvira-devops compose);
+# the bare CONTACT_EMAIL is the legacy name, kept as a fallback. Reading only the
+# legacy name made every notification go out as root@localhost — bounced by
+# mail.stuba.sk with "550 Sender verify failed".
+EVILFLOWERS_CONTACT_EMAIL = os.getenv("EVILFLOWERS_CONTACT_EMAIL", os.getenv("CONTACT_EMAIL", "root@localhost"))
 
 # Email transport.
 # These were previously not read at all: deployments set EMAIL_BACKEND /
