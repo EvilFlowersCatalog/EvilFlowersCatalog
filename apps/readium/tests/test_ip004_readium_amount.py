@@ -293,7 +293,7 @@ class PredicateSplitTests(SimpleTestCase):
     """Phase 4 / Q2: legacy predicate is split; download is owner-only."""
 
     def test_legacy_predicate_replaced(self):
-        from apps.core.checkers import LicenseChecker
+        from apps.readium.checkers import LicenseChecker
 
         self.assertTrue(hasattr(LicenseChecker, "check_license_state_manage"))
         self.assertTrue(hasattr(LicenseChecker, "check_license_download"))
@@ -301,7 +301,7 @@ class PredicateSplitTests(SimpleTestCase):
         self.assertFalse(hasattr(LicenseChecker, "check_license_manage"))
 
     def test_download_predicate_owner_only(self):
-        from apps.core.checkers import LicenseChecker
+        from apps.readium.checkers import LicenseChecker
 
         owner = MagicMock(is_authenticated=True, is_superuser=False, id="owner-id")
         license_obj = MagicMock(user_id="owner-id")
@@ -319,7 +319,7 @@ class PredicateSplitTests(SimpleTestCase):
         self.assertFalse(LicenseChecker.check_license_download(anon, license_obj))
 
     def test_state_manage_predicate_admits_owner_and_superuser(self):
-        from apps.core.checkers import LicenseChecker
+        from apps.readium.checkers import LicenseChecker
 
         owner = MagicMock(is_authenticated=True, is_superuser=False, id="owner-id")
         license_obj = MagicMock(user_id="owner-id")
@@ -333,7 +333,7 @@ class PredicateSplitTests(SimpleTestCase):
         self.assertFalse(LicenseChecker.check_license_state_manage(anon, license_obj))
 
     def test_state_manage_predicate_admits_catalog_manager(self):
-        from apps.core.checkers import LicenseChecker
+        from apps.readium.checkers import LicenseChecker
 
         manager = MagicMock(is_authenticated=True, is_superuser=False, id="manager-id")
         license_obj = MagicMock(user_id="other-id")
@@ -342,10 +342,13 @@ class PredicateSplitTests(SimpleTestCase):
         self.assertTrue(LicenseChecker.check_license_state_manage(manager, license_obj))
 
     def test_callsites_use_split_predicates(self):
+        # IP-009 Phase 4 made the download view capability-token only — it no
+        # longer runs an object-checker predicate at all. The legacy
+        # undifferentiated `check_license_manage` must stay gone from both.
         from pathlib import Path
 
         download_src = Path("apps/readium/views/download.py").read_text()
-        self.assertIn("check_license_download", download_src)
+        self.assertIn("CapabilityTokenService", download_src)
         self.assertNotIn("check_license_manage", download_src)
 
         license_src = Path("apps/readium/views/licenses.py").read_text()

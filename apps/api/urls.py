@@ -16,6 +16,7 @@ from apps.api.views import (
     categories,
     annotation_items,
     languages,
+    notification_contacts,
 )
 
 # IP-008 Phase 4: the Dataverse integration moved to `apps.dataverse`.
@@ -116,6 +117,17 @@ urlpatterns = [
         "annotation-items/<uuid:annotation_item_id>",
         annotation_items.AnnotationItemDetail.as_view(),
         name="annotation-item-detail",
+    ),
+    # Notification contacts
+    path(
+        "notification-contacts",
+        notification_contacts.NotificationContactManagement.as_view(),
+        name="notification-contact-management",
+    ),
+    path(
+        "notification-contacts/<uuid:contact_id>",
+        notification_contacts.NotificationContactDetail.as_view(),
+        name="notification-contact-detail",
     ),
     # Status
     path("status", status.StatusManagement.as_view(), name="status"),

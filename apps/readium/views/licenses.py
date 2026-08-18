@@ -26,7 +26,14 @@ from apps.readium.filters import LicenseFilter
 from apps.readium.forms import CreateLicenseForm, UpdateLicenseForm
 from apps.readium.models import License
 from apps.readium.serializers import LicenseSerializer
-from apps.readium.services import LicenseService, PassphraseRequiredError
+from apps.readium.services import (
+    AlreadyBorrowedError,
+    BorrowError,
+    LicenseService,
+    NoAvailableSlotsError,
+    NotReadiumEnabledError,
+    PassphraseRequiredError,
+)
 from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
 from apps.readium.services.renew_policy import evaluate_renew
 from apps.readium.views._license_lookup import LicenseLookupMixin
@@ -83,6 +90,33 @@ class LicenseManagement(SecuredView):
         tags=["Licenses"],
         summary="Create new LCP license",
     )
+    @staticmethod
+    def _borrow_conflict_data(request, entry, error: BorrowError) -> dict:
+        """Structured payload for 409 borrow conflicts.
+
+        `no_available_slots` carries the queue snapshot the frontend needs to
+        offer a reservation; `already_borrowed` points at the existing license.
+        """
+        data = {"reason_code": error.reason_code, "entry_id": str(entry.pk)}
+
+        if isinstance(error, AlreadyBorrowedError) and error.availability.get("existing_license"):
+            data["existing_license_id"] = str(error.availability["existing_license"])
+
+        if isinstance(error, NoAvailableSlotsError):
+            state = lcp_state_mapping(request.user, [entry]).get(entry.pk, {})
+            next_available_at = state.get("next_available_at")
+            user_reservation_id = state.get("user_reservation_id")
+            data.update(
+                {
+                    "queue_length": state.get("queue_length", 0),
+                    "next_available_at": next_available_at.isoformat() if next_available_at else None,
+                    "user_reservation_id": str(user_reservation_id) if user_reservation_id else None,
+                    "reservations_url": "/readium/v1/reservations",
+                }
+            )
+
+        return data
+
     def post(self, request):
         form = CreateLicenseForm.create_from_request(request)
 
@@ -110,6 +144,25 @@ class LicenseManagement(SecuredView):
                 status=HTTPStatus.BAD_REQUEST,
                 detail_type=DetailType.PASSPHRASE_REQUIRED,
                 additional_data={"set_passphrase_url": "/api/v1/users/me"},
+                previous=e,
+            )
+        except NotReadiumEnabledError as e:
+            raise ProblemDetailException(
+                str(e),
+                status=HTTPStatus.BAD_REQUEST,
+                detail_type=DetailType.VALIDATION_ERROR,
+                previous=e,
+            )
+        except BorrowError as e:
+            # Availability conflicts (fully borrowed, duplicate loan) are 409s
+            # with a machine-readable `reason_code` — the frontend offers the
+            # reservation queue on `no_available_slots` instead of surfacing a
+            # generic validation error.
+            raise ProblemDetailException(
+                str(e),
+                status=HTTPStatus.CONFLICT,
+                detail_type=DetailType.CONFLICT,
+                additional_data=self._borrow_conflict_data(request, form.cleaned_data["entry_id"], e),
                 previous=e,
             )
         except ValueError as e:

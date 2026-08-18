@@ -3,6 +3,7 @@ import logging
 from mjml import mjml2html
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
+from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
 
@@ -21,6 +22,27 @@ class NotificationService:
             user=user, type=NotificationContact.ContactType.EMAIL, is_primary=True
         ).first()
         return contact.value if contact else None
+
+    @staticmethod
+    @transaction.atomic
+    def set_contact(user, contact_type: str, value: str, is_primary: bool = True) -> NotificationContact:
+        """Upsert a notification contact and keep at most one primary per (user, type).
+
+        `resolve_recipient_email` picks the primary contact, so demoting the
+        previous primary here is what makes the newly saved address the one
+        notifications actually go to.
+        """
+        contact, _ = NotificationContact.objects.update_or_create(
+            user=user,
+            type=contact_type,
+            value=value,
+            defaults={"is_primary": is_primary},
+        )
+        if is_primary:
+            NotificationContact.objects.filter(user=user, type=contact_type, is_primary=True).exclude(
+                pk=contact.pk
+            ).update(is_primary=False)
+        return contact
 
     @staticmethod
     def generate_scoped_url(

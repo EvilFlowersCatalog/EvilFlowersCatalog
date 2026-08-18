@@ -22,6 +22,7 @@ from django.conf import settings
 from apps.core.models import Entry, User, Acquisition
 from apps.readium.models import License, EncryptedContent
 from .content_encryption_service import ContentEncryptionService
+from .exceptions import borrow_error_from_availability
 from .lcp_server_client import LCPServerClient
 from .status_server_client import StatusServerClient
 
@@ -161,7 +162,11 @@ class LicenseService:
                 - available_slots: int (if can_borrow is True)
         """
         if not entry.read_config("readium_enabled"):
-            return {"can_borrow": False, "reason": "Entry is not readium-enabled"}
+            return {
+                "can_borrow": False,
+                "reason": "Entry is not readium-enabled",
+                "reason_code": "not_readium_enabled",
+            }
 
         if start_date is None:
             start_date = timezone.now()
@@ -199,6 +204,7 @@ class LicenseService:
                 return {
                     "can_borrow": False,
                     "reason": "User already has an active license for this entry",
+                    "reason_code": "already_borrowed",
                     "existing_license": existing_license.pk,
                 }
 
@@ -216,6 +222,7 @@ class LicenseService:
             return {
                 "can_borrow": False,
                 "reason": "No available slots for the requested period",
+                "reason_code": "no_available_slots",
                 "available_slots": max_concurrent - conflicting_licenses,
             }
 
@@ -294,7 +301,7 @@ class LicenseService:
             # Re-check availability with the lock held.
             availability = LicenseService.can_user_borrow(entry, user, start_date, end_date)
             if not availability["can_borrow"]:
-                raise ValueError(f"Cannot create license: {availability['reason']}")
+                raise borrow_error_from_availability(availability)
 
             # Deterministic acquisition selection (C1): PDF preferred unless
             # caller asks for EPUB explicitly.
