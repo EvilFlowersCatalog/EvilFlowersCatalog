@@ -101,8 +101,12 @@ class BorrowConflictViewContractTests(SimpleTestCase):
                 "user_reservation_id": None,
             }
         }
+        # Call on an INSTANCE — exactly how `post()` invokes it. A class-level
+        # call hides staticmethod-binding regressions (a decorator applied on
+        # top of @staticmethod turns the attribute into a plain function that
+        # implicitly receives `self` → TypeError, seen live on dev 2026-08-18).
         with patch("apps.readium.views.licenses.lcp_state_mapping", return_value=state):
-            data = LicenseManagement._borrow_conflict_data(request, entry, error)
+            data = LicenseManagement()._borrow_conflict_data(request, entry, error)
 
         self.assertEqual(data["reason_code"], "no_available_slots")
         self.assertEqual(data["entry_id"], entry.pk)
@@ -122,7 +126,51 @@ class BorrowConflictViewContractTests(SimpleTestCase):
             "Cannot create license: User already has an active license for this entry",
             availability={"existing_license": "22222222-2222-2222-2222-222222222222"},
         )
-        data = LicenseManagement._borrow_conflict_data(request, entry, error)
+        data = LicenseManagement()._borrow_conflict_data(request, entry, error)
 
         self.assertEqual(data["reason_code"], "already_borrowed")
         self.assertEqual(data["existing_license_id"], "22222222-2222-2222-2222-222222222222")
+
+    def test_helper_is_a_staticmethod_and_post_keeps_openapi_metadata(self):
+        # Regression for the dev 500: `@openapi.metadata` accidentally ended up
+        # decorating `_borrow_conflict_data` instead of `post`, breaking the
+        # staticmethod binding AND stripping post's OpenAPI docs.
+        from apps.readium.views.licenses import LicenseManagement
+
+        self.assertIsInstance(LicenseManagement.__dict__["_borrow_conflict_data"], staticmethod)
+        self.assertEqual(getattr(LicenseManagement.post, "_openapi_summary", None), "Create new LCP license")
+
+    def test_post_translates_borrow_error_into_409_problem_detail(self):
+        """Drive the real `post()` except-branch end to end (service mocked)."""
+        from http import HTTPStatus
+        from unittest.mock import patch
+
+        from apps.core.errors import DetailType, ProblemDetailException
+        from apps.readium.views.licenses import LicenseManagement
+
+        entry = MagicMock()
+        entry.pk = "11111111-1111-1111-1111-111111111111"
+
+        form = MagicMock()
+        form.is_valid.return_value = True
+        form.cleaned_data = {"entry_id": entry, "duration": MagicMock(days=14), "starts_at": None}
+
+        error = AlreadyBorrowedError(
+            "Cannot create license: User already has an active license for this entry",
+            availability={"existing_license": "22222222-2222-2222-2222-222222222222"},
+        )
+
+        with (
+            patch("apps.readium.views.licenses.CreateLicenseForm") as form_class,
+            patch("apps.readium.views.licenses.LicenseService") as service,
+        ):
+            form_class.create_from_request.return_value = form
+            service.create_license.side_effect = error
+
+            with self.assertRaises(ProblemDetailException) as ctx:
+                LicenseManagement().post(MagicMock())
+
+        self.assertEqual(ctx.exception.status, HTTPStatus.CONFLICT)
+        self.assertEqual(ctx.exception._type, DetailType.CONFLICT)
+        self.assertEqual(ctx.exception._additional_data["reason_code"], "already_borrowed")
+        self.assertEqual(ctx.exception._additional_data["existing_license_id"], "22222222-2222-2222-2222-222222222222")

@@ -31,6 +31,16 @@ from apps.readium.services import LicenseService, PassphraseRequiredError, Reser
 from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
 
 
+def _conflict_additional_data(error: Exception) -> dict | None:
+    """Forward the typed `reason_code` (BorrowError/ReservationError) when present.
+
+    Lets the frontend branch on `slots_available` / `already_reserved` /
+    `already_borrowed` / `reservation_cap_reached` without string matching.
+    """
+    reason_code = getattr(error, "reason_code", None)
+    return {"reason_code": reason_code} if reason_code else None
+
+
 class ReservationCollection(SecuredView):
     @openapi.metadata(
         description="List the caller's reservations. Superusers see all. "
@@ -78,6 +88,7 @@ class ReservationCollection(SecuredView):
                 str(e),
                 status=HTTPStatus.CONFLICT,
                 detail_type=DetailType.CONFLICT,
+                additional_data=_conflict_additional_data(e),
                 previous=e,
             )
 
@@ -140,6 +151,7 @@ class ReservationDetail(SecuredView):
                     str(e),
                     status=HTTPStatus.CONFLICT,
                     detail_type=DetailType.CONFLICT,
+                    additional_data=_conflict_additional_data(e),
                     previous=e,
                 )
             return SingleResponse(request, data=ReservationSerializer.Base.model_validate(reservation))
@@ -161,6 +173,7 @@ class ReservationDetail(SecuredView):
                     str(e),
                     status=HTTPStatus.CONFLICT,
                     detail_type=DetailType.CONFLICT,
+                    additional_data=_conflict_additional_data(e),
                     previous=e,
                 )
             response = SingleResponse(

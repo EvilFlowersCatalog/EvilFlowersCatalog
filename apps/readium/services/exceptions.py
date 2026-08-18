@@ -37,6 +37,29 @@ class NoAvailableSlotsError(BorrowError):
     reason_code = "no_available_slots"
 
 
+class ReservationError(ValueError):
+    """Base class for reservation-queue conflicts raised by `ReservationService`.
+
+    Same contract as `BorrowError`: the API layer forwards `reason_code` in
+    `additional_data` so the frontend can branch without string matching.
+    (`AlreadyBorrowedError` above is reused for the reserve-while-licensed case.)
+    """
+
+    reason_code = "reservation_conflict"
+
+
+class SlotsAvailableError(ReservationError):
+    reason_code = "slots_available"
+
+
+class AlreadyReservedError(ReservationError):
+    reason_code = "already_reserved"
+
+
+class ReservationCapReachedError(ReservationError):
+    reason_code = "reservation_cap_reached"
+
+
 _BORROW_ERRORS_BY_REASON_CODE = {
     exc.reason_code: exc for exc in (NotReadiumEnabledError, AlreadyBorrowedError, NoAvailableSlotsError)
 }
@@ -53,5 +76,9 @@ __all__ = [
     "NotReadiumEnabledError",
     "AlreadyBorrowedError",
     "NoAvailableSlotsError",
+    "ReservationError",
+    "SlotsAvailableError",
+    "AlreadyReservedError",
+    "ReservationCapReachedError",
     "borrow_error_from_availability",
 ]

@@ -70,26 +70,6 @@ class LicenseManagement(SecuredView):
             },
         )
 
-    @openapi.metadata(
-        description="""
-        Create a new LCP license for a readium-enabled entry.
-
-        This endpoint handles the complete license creation workflow:
-        1. Validates availability (checks concurrent license limits)
-        2. Ensures content is encrypted and registered with LCP Server
-        3. Generates LCP license with user passphrase
-        4. Registers license with Status Server
-
-        Required fields:
-        - entry_id: UUID of the entry to license
-        - duration: License duration (e.g. "14 00:00:00" for 14 days)
-
-        Optional fields:
-        - starts_at: License start date (default: now)
-        """,
-        tags=["Licenses"],
-        summary="Create new LCP license",
-    )
     @staticmethod
     def _borrow_conflict_data(request, entry, error: BorrowError) -> dict:
         """Structured payload for 409 borrow conflicts.
@@ -117,6 +97,26 @@ class LicenseManagement(SecuredView):
 
         return data
 
+    @openapi.metadata(
+        description="""
+        Create a new LCP license for a readium-enabled entry.
+
+        This endpoint handles the complete license creation workflow:
+        1. Validates availability (checks concurrent license limits)
+        2. Ensures content is encrypted and registered with LCP Server
+        3. Generates LCP license with user passphrase
+        4. Registers license with Status Server
+
+        Required fields:
+        - entry_id: UUID of the entry to license
+        - duration: License duration (e.g. "14 00:00:00" for 14 days)
+
+        Optional fields:
+        - starts_at: License start date (default: now)
+        """,
+        tags=["Licenses"],
+        summary="Create new LCP license",
+    )
     def post(self, request):
         form = CreateLicenseForm.create_from_request(request)
 

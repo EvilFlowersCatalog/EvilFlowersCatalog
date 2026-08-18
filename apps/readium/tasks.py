@@ -31,12 +31,22 @@ logger = logging.getLogger(__name__)
 
 @shared_task
 def sweep_unclaimed_reservations() -> int:
-    """Expire `available` reservations past their claim_deadline; promote next."""
+    """Expire `available` reservations past their claim_deadline; promote next.
+
+    Also heals stuck queues: entries with queued reservations and free
+    capacity (e.g. `readium_amount` raised) get their heads promoted even
+    though no license transition fired.
+    """
     from apps.readium.services import ReservationService
 
     expired = ReservationService.expire_unclaimed()
     if expired:
         logger.info("Expired %d unclaimed reservations", expired)
+
+    promoted = ReservationService.promote_stuck_queues()
+    if promoted:
+        logger.info("Promoted %d stuck queued reservations", promoted)
+
     return expired
 
 

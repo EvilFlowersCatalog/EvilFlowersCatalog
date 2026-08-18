@@ -25,6 +25,12 @@ from django.utils import timezone
 
 from apps.core.models import Entry, User
 from apps.readium.models import License, Reservation
+from apps.readium.services.exceptions import (
+    AlreadyBorrowedError,
+    AlreadyReservedError,
+    ReservationCapReachedError,
+    SlotsAvailableError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -113,22 +119,39 @@ class ReservationService:
     """All queue lifecycle operations live on this static class."""
 
     @staticmethod
+    def _slots_in_use(entry: Entry) -> tuple:
+        """Return `(occupied, total_slots)` for `entry`.
+
+        `occupied` counts active licenses plus AVAILABLE reservations — a
+        promoted-but-unclaimed reservation holds a virtual slot (the user has
+        the right to claim it). Shared by `enqueue` (reject reserving an entry
+        with free capacity) and `promote_next` (never over-promote).
+        """
+        now = timezone.now()
+        active_states = [License.LicenseState.READY, License.LicenseState.ACTIVE]
+        active_count = License.objects.filter(entry=entry, state__in=active_states, expires_at__gt=now).count()
+        pending_promotions = Reservation.objects.filter(entry=entry, status=Reservation.Status.AVAILABLE).count()
+        return active_count + pending_promotions, int(entry.read_config("readium_amount") or 0)
+
+    @staticmethod
     @transaction.atomic
     def enqueue(entry: Entry, user: User) -> Reservation:
         """
         Place `user` at the tail of `entry`'s queue.
 
         Raises:
-            ValueError: if entry is not LCP-enabled, user already has an active
-                license, or user already has a non-terminal reservation, or the
-                user is over the per-user reservation cap.
+            ValueError: typed subclasses carrying a `reason_code` — entry not
+                LCP-enabled, slots still available (`slots_available`), user
+                already has an active license (`already_borrowed`) or a
+                non-terminal reservation (`already_reserved`), or the user is
+                over the per-user cap (`reservation_cap_reached`).
         """
         if not entry.read_config("readium_enabled"):
             raise ValueError("Entry is not readium-enabled")
 
         active_license_states = [License.LicenseState.READY, License.LicenseState.ACTIVE]
         if License.objects.filter(entry=entry, user=user, state__in=active_license_states).exists():
-            raise ValueError("User already has an active license for this entry")
+            raise AlreadyBorrowedError("User already has an active license for this entry")
 
         existing = Reservation.objects.filter(
             entry=entry,
@@ -136,12 +159,19 @@ class ReservationService:
             status__in=Reservation.NON_TERMINAL_STATUSES,
         ).first()
         if existing is not None:
-            raise ValueError("User already has a reservation for this entry")
+            raise AlreadyReservedError("User already has a reservation for this entry")
 
         cap = settings.EVILFLOWERS_READIUM_MAX_RESERVATIONS_PER_USER
         user_active = Reservation.objects.filter(user=user, status__in=Reservation.NON_TERMINAL_STATUSES).count()
         if user_active >= cap:
-            raise ValueError(f"User has reached the reservation cap ({cap})")
+            raise ReservationCapReachedError(f"User has reached the reservation cap ({cap})")
+
+        # Reserving an entry with free capacity would leave the reservation
+        # stuck `queued` — promotion only fires on license terminal transitions.
+        # The user should borrow directly instead.
+        occupied, total_slots = ReservationService._slots_in_use(entry)
+        if occupied < total_slots:
+            raise SlotsAvailableError("Entry has available slots — borrow it directly instead of reserving")
 
         # Lock the queue for this entry while we compute the tail position.
         # SELECT FOR UPDATE on the existing queued rows prevents two concurrent
@@ -249,20 +279,14 @@ class ReservationService:
         insufficient — two workers could both observe "1 slot free" and
         promote two different heads (different rows, no row-lock conflict).
         """
-        active_states = [License.LicenseState.READY, License.LicenseState.ACTIVE]
         now = timezone.now()
 
         # Serialize on the entry row. Other parallel promote_next callers
         # for the same entry block here.
         Entry.objects.select_for_update().get(pk=entry.pk)
 
-        total_slots = int(entry.read_config("readium_amount") or 0)
-        active_count = License.objects.filter(entry=entry, state__in=active_states, expires_at__gt=now).count()
-
-        # An "available" reservation also occupies a virtual slot — the user has
-        # the right to claim it. Count them so we never over-promote.
-        pending_promotions = Reservation.objects.filter(entry=entry, status=Reservation.Status.AVAILABLE).count()
-        if active_count + pending_promotions >= total_slots:
+        occupied, total_slots = ReservationService._slots_in_use(entry)
+        if occupied >= total_slots:
             return None
 
         # The entry lock already serializes us; skip_locked is not needed.
@@ -307,6 +331,36 @@ class ReservationService:
             )
 
         return head
+
+    @staticmethod
+    def promote_stuck_queues() -> int:
+        """Promote heads of queues on entries that have free capacity.
+
+        Promotion normally happens as a side effect of license terminal
+        transitions; this sweep heals queues that got stuck another way —
+        `readium_amount` raised by an operator, direct DB edits, or
+        reservations created while slots were free (possible before the
+        `enqueue` capacity guard existed). Called from the per-minute
+        `sweep_unclaimed_reservations` beat task.
+
+        Returns the number of reservations promoted.
+        """
+        entry_ids = (
+            Reservation.objects.filter(status=Reservation.Status.QUEUED).values_list("entry_id", flat=True).distinct()
+        )
+
+        promoted = 0
+        for entry_id in entry_ids:
+            try:
+                entry = Entry.objects.get(pk=entry_id)
+            except Entry.DoesNotExist:
+                continue
+            # `promote_next` checks capacity itself and runs in its own
+            # transaction — loop so multiple free slots fill in one sweep.
+            while ReservationService.promote_next(entry) is not None:
+                promoted += 1
+
+        return promoted
 
     @staticmethod
     def expire_unclaimed() -> int:
