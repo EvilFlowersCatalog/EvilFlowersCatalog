@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "ac781f718924cb3b13d7f7a00984fbdfcd6e53f6",
-    "short": "ac781f7",
-    "message": "Contact email 😰",
+    "sha": "8130336a70bad0133a3fd984f35bde833c01fefe",
+    "short": "8130336",
+    "message": "Add notification templates, filters, and documentation",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/ac781f718924cb3b13d7f7a00984fbdfcd6e53f6"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/8130336a70bad0133a3fd984f35bde833c01fefe"
   },
-  "deployed_at": "2026-08-18T21:52:58Z",
+  "deployed_at": "2026-09-03T11:02:02Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

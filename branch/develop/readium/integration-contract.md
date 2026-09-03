@@ -44,6 +44,9 @@ The state machine has two enums that should not be conflated.
 
 - `LicenseState` — the *resting* state the row is in. One of
   `ready / active / returned / expired / revoked / cancelled`.
+  `ready` is a **live loan** that has not been opened in a reader yet (the LSD flips it to
+  `active` on the first device registration; it never changes on its own). Clients must not
+  treat it as inactive — use the `is_active_loan` field or `GET /readium/v1/licenses?active=true`.
   Only the server transitions these; clients read them.
 - `LicenseAction` — the *verb* a client can ask the server to
   perform via `PUT /licenses/{id}`. One of

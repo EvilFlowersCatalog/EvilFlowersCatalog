@@ -3730,6 +3730,15 @@
               "type": "integer",
               "format": "int32"
             }
+          },
+          {
+            "name": "active",
+            "in": "query",
+            "description": "Filter by active (exact)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -4293,6 +4302,19 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "description": "Filter by scope (exact)",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "own",
+                "managed"
+              ]
+            }
           }
         ],
         "responses": {
@@ -4320,7 +4342,7 @@
         },
         "operationId": "ReservationCollection.get",
         "summary": "List reservations",
-        "description": "List the caller's reservations. Superusers see all. Supports filters: entry_id, user_id, status (comma-separated for OR).",
+        "description": "List reservations. Default (`scope=own`): only the caller's reservations, whoever they are. `scope=managed`: additionally reservations on entries in catalogs the caller manages (superusers: all reservations) \u2014 for admin queue views. Other filters: entry_id, user_id, status (comma-separated for OR).",
         "tags": [
           "Reservations"
         ]
@@ -4415,7 +4437,7 @@
         },
         "operationId": "ReservationDetail.get",
         "summary": "Get reservation",
-        "description": "Read a reservation. Callers only see their own; superusers see any.",
+        "description": "Read a reservation. Allowed for the owner, superusers, and managers of the entry's catalog.",
         "tags": [
           "Reservations"
         ]
@@ -4432,6 +4454,16 @@
               }
             },
             "description": "Validation error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
+                }
+              }
+            },
+            "description": "_('Insufficient permissions')"
           },
           "409": {
             "content": {
@@ -4480,7 +4512,7 @@
         },
         "operationId": "ReservationDetail.patch",
         "summary": "Update reservation status",
-        "description": "Mutate a reservation's status. Body: `{\"status\": \"cancelled\"}` (user-cancel) or `{\"status\": \"claimed\"}` (convert an `available` reservation into a license). Server-side transitions (`queued`\u2192`available`, `available`\u2192`expired`) are not exposed.",
+        "description": "Mutate a reservation's status. Body: `{\"status\": \"cancelled\"}` (owner or superuser) or `{\"status\": \"claimed\"}` (owner only \u2014 converts an `available` reservation into a license). Server-side transitions (`queued`\u2192`available`, `available`\u2192`expired`) are not exposed.",
         "tags": [
           "Reservations"
         ]
@@ -5287,296 +5319,172 @@
         "title": "NotificationContactSerializer.Base",
         "type": "object"
       },
-      "Status": {
+      "DetailType": {
         "enum": [
-          "queued",
-          "available",
-          "claimed",
-          "expired",
-          "cancelled"
+          "/out-of-range",
+          "/not-found",
+          "/validation-error",
+          "/conflict",
+          "/forbidden",
+          "/internal-error",
+          "/passphrase-required",
+          "/readium-amount-below-active-count"
         ],
-        "title": "Status",
+        "title": "DetailType",
         "type": "string"
       },
-      "apps__readium__serializers__ReservationSerializer__Base": {
+      "ValidationErrorItem": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Code"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Path"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "ValidationErrorItem",
+        "type": "object"
+      },
+      "apps__core__errors__ValidationError": {
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DetailType"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Detail"
+          },
+          "trace": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Trace"
+          },
+          "additional_data": {
+            "anyOf": [
+              {}
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Additional Data"
+          },
+          "validation_errors": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationErrorItem"
+            },
+            "title": "Validation Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "validation_errors"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "apps__api__serializers__entries__LanguageSerializer__Base": {
         "properties": {
           "id": {
             "format": "uuid",
             "title": "Id",
-            "type": "string"
-          },
-          "entry_id": {
-            "format": "uuid",
-            "title": "Entry Id",
-            "type": "string"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "position": {
-            "title": "Position",
-            "type": "integer"
-          },
-          "status": {
-            "$ref": "#/components/schemas/Status"
-          },
-          "requested_at": {
-            "format": "date-time",
-            "title": "Requested At",
-            "type": "string"
-          },
-          "available_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Available At"
-          },
-          "claim_deadline": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Claim Deadline"
-          },
-          "claimed_license_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Claimed License Id"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "entry_id",
-          "user_id",
-          "position",
-          "status",
-          "requested_at",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "ReservationSerializer.Base",
-        "type": "object"
-      },
-      "apps__api__serializers__status__StatusClientIP": {
-        "properties": {
-          "remote_addr": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Remote Addr"
-          },
-          "x_real_ip": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "X Real Ip"
-          },
-          "x_forwarded_for": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "X Forwarded For"
-          },
-          "resolved": {
-            "title": "Resolved",
-            "type": "string"
-          }
-        },
-        "required": [
-          "resolved"
-        ],
-        "title": "StatusClientIP",
-        "type": "object"
-      },
-      "LicenseState": {
-        "enum": [
-          "ready",
-          "active",
-          "returned",
-          "expired",
-          "revoked",
-          "cancelled"
-        ],
-        "title": "LicenseState",
-        "type": "string"
-      },
-      "apps__readium__serializers__LicenseSerializer__Detailed": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "entry_id": {
-            "format": "uuid",
-            "title": "Entry Id",
-            "type": "string"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "state": {
-            "$ref": "#/components/schemas/LicenseState"
-          },
-          "starts_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Starts At"
-          },
-          "expires_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Expires At"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "renewal_count": {
-            "default": 0,
-            "title": "Renewal Count",
-            "type": "integer"
-          },
-          "download_url": {
-            "default": "",
-            "title": "Download Url",
-            "type": "string"
-          },
-          "entry": {
-            "$ref": "#/components/schemas/apps__api__serializers__entries__EntrySerializer__Base"
-          }
-        },
-        "required": [
-          "id",
-          "entry_id",
-          "user_id",
-          "state",
-          "starts_at",
-          "expires_at",
-          "created_at",
-          "updated_at",
-          "entry"
-        ],
-        "title": "LicenseSerializer.Detailed",
-        "type": "object"
-      },
-      "apps__api__serializers__users__UserSerializer__Base": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "username": {
-            "title": "Username",
             "type": "string"
           },
           "name": {
             "title": "Name",
             "type": "string"
           },
-          "surname": {
-            "title": "Surname",
+          "alpha2": {
+            "title": "Alpha2",
             "type": "string"
           },
-          "is_superuser": {
-            "title": "Is Superuser",
-            "type": "boolean"
-          },
-          "is_active": {
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "last_login": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Last Login"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
+          "alpha3": {
+            "title": "Alpha3",
             "type": "string"
           }
         },
         "required": [
           "id",
-          "username",
           "name",
-          "surname",
-          "is_superuser",
-          "is_active",
-          "last_login",
-          "created_at",
-          "updated_at"
+          "alpha2",
+          "alpha3"
         ],
-        "title": "UserSerializer.Base",
+        "title": "LanguageSerializer.Base",
+        "type": "object"
+      },
+      "apps__api__serializers__status__StatusStatistics": {
+        "properties": {
+          "catalogs": {
+            "title": "Catalogs",
+            "type": "integer"
+          },
+          "entries": {
+            "title": "Entries",
+            "type": "integer"
+          },
+          "acquisitions": {
+            "title": "Acquisitions",
+            "type": "integer"
+          },
+          "users": {
+            "title": "Users",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "catalogs",
+          "entries",
+          "acquisitions",
+          "users"
+        ],
+        "title": "StatusStatistics",
         "type": "object"
       },
       "Mode": {
@@ -5688,332 +5596,6 @@
         "title": "UserSerializer.Detailed",
         "type": "object"
       },
-      "apps__api__serializers__entries__CategorySerializer__Base": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "term": {
-            "title": "Term",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "term"
-        ],
-        "title": "CategorySerializer.Base",
-        "type": "object"
-      },
-      "PaginationModel": {
-        "properties": {
-          "page": {
-            "title": "Page",
-            "type": "integer"
-          },
-          "limit": {
-            "anyOf": [
-              {
-                "type": "integer"
-              }
-            ],
-            "nullable": true,
-            "title": "Limit"
-          },
-          "pages": {
-            "title": "Pages",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "page",
-          "limit",
-          "pages",
-          "total"
-        ],
-        "title": "PaginationModel",
-        "type": "object"
-      },
-      "RootModel_TypeVar_": {
-        "title": "RootModel[TypeVar]"
-      },
-      "apps__api__response__PaginationResponseModel": {
-        "properties": {
-          "items": {
-            "$ref": "#/components/schemas/RootModel_TypeVar_"
-          },
-          "metadata": {
-            "$ref": "#/components/schemas/PaginationModel"
-          }
-        },
-        "required": [
-          "items",
-          "metadata"
-        ],
-        "title": "PaginationResponseModel",
-        "type": "object"
-      },
-      "apps__api__serializers__status__StatusStatistics": {
-        "properties": {
-          "catalogs": {
-            "title": "Catalogs",
-            "type": "integer"
-          },
-          "entries": {
-            "title": "Entries",
-            "type": "integer"
-          },
-          "acquisitions": {
-            "title": "Acquisitions",
-            "type": "integer"
-          },
-          "users": {
-            "title": "Users",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "catalogs",
-          "entries",
-          "acquisitions",
-          "users"
-        ],
-        "title": "StatusStatistics",
-        "type": "object"
-      },
-      "apps__api__serializers__shelf_records__ShelfRecordSerializer__Base": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "entry": {
-            "$ref": "#/components/schemas/apps__api__serializers__entries__EntrySerializer__Base"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "user_id",
-          "entry",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "ShelfRecordSerializer.Base",
-        "type": "object"
-      },
-      "apps__api__serializers__api_keys__ApiKeySerializer__Base": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Name"
-          },
-          "is_active": {
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "last_seen_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Last Seen At"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "user_id",
-          "name",
-          "is_active",
-          "last_seen_at",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "ApiKeySerializer.Base",
-        "type": "object"
-      },
-      "apps__api__serializers__entries__AuthorSerializer__Detailed": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "surname": {
-            "title": "Surname",
-            "type": "string"
-          },
-          "catalog_id": {
-            "format": "uuid",
-            "title": "Catalog Id",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "surname",
-          "catalog_id",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "AuthorSerializer.Detailed",
-        "type": "object"
-      },
-      "apps__readium__serializers__ReservationSerializer__Detailed": {
-        "description": "Reservation list/detail for the portal: embeds the entry so the queue\nUI can render title/author/thumbnail without an N+1 fetch per row.",
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "entry_id": {
-            "format": "uuid",
-            "title": "Entry Id",
-            "type": "string"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "position": {
-            "title": "Position",
-            "type": "integer"
-          },
-          "status": {
-            "$ref": "#/components/schemas/Status"
-          },
-          "requested_at": {
-            "format": "date-time",
-            "title": "Requested At",
-            "type": "string"
-          },
-          "available_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Available At"
-          },
-          "claim_deadline": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Claim Deadline"
-          },
-          "claimed_license_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Claimed License Id"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "entry": {
-            "$ref": "#/components/schemas/apps__api__serializers__entries__EntrySerializer__Base"
-          }
-        },
-        "required": [
-          "id",
-          "entry_id",
-          "user_id",
-          "position",
-          "status",
-          "requested_at",
-          "created_at",
-          "updated_at",
-          "entry"
-        ],
-        "title": "ReservationSerializer.Detailed",
-        "type": "object"
-      },
       "apps__api__serializers__feeds__FeedSerializer__Base": {
         "properties": {
           "id": {
@@ -6110,33 +5692,491 @@
         "title": "FeedSerializer.Base",
         "type": "object"
       },
-      "apps__api__serializers__catalogs__CatalogSerializer__Base": {
+      "apps__api__serializers__catalogs__UserCatalog": {
+        "properties": {
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/Minimal"
+          }
+        },
+        "required": [
+          "mode",
+          "user"
+        ],
+        "title": "UserCatalog",
+        "type": "object"
+      },
+      "Status": {
+        "enum": [
+          "queued",
+          "available",
+          "claimed",
+          "expired",
+          "cancelled"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "apps__readium__serializers__ReservationSerializer__Base": {
         "properties": {
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
           },
-          "creator_id": {
+          "entry_id": {
             "format": "uuid",
-            "title": "Creator Id",
+            "title": "Entry Id",
             "type": "string"
           },
-          "url_name": {
-            "title": "Url Name",
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
             "type": "string"
           },
-          "title": {
-            "title": "Title",
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
             "type": "string"
           },
-          "is_public": {
-            "title": "Is Public",
+          "available_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Available At"
+          },
+          "claim_deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Claim Deadline"
+          },
+          "claimed_license_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Claimed License Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "entry_id",
+          "user_id",
+          "position",
+          "status",
+          "requested_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ReservationSerializer.Base",
+        "type": "object"
+      },
+      "apps__api__serializers__entries__AcquisitionSerializer__Base": {
+        "properties": {
+          "relation": {
+            "$ref": "#/components/schemas/AcquisitionType"
+          },
+          "mime": {
+            "$ref": "#/components/schemas/AcquisitionMIME"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Url"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relation",
+          "mime",
+          "id"
+        ],
+        "title": "AcquisitionSerializer.Base",
+        "type": "object"
+      },
+      "apps__api__serializers__entries__AcquisitionSerializer__Detailed": {
+        "properties": {
+          "relation": {
+            "$ref": "#/components/schemas/AcquisitionType"
+          },
+          "mime": {
+            "$ref": "#/components/schemas/AcquisitionMIME"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Url"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relation",
+          "mime",
+          "id"
+        ],
+        "title": "AcquisitionSerializer.Detailed",
+        "type": "object"
+      },
+      "Detailed": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "surname": {
+            "title": "Surname",
+            "type": "string"
+          },
+          "is_superuser": {
+            "title": "Is Superuser",
             "type": "boolean"
           },
-          "touched_at": {
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "last_login": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Last Login"
+          },
+          "created_at": {
             "format": "date-time",
-            "title": "Touched At",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "catalog_permissions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Mode"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "Catalog Permissions",
+            "type": "object"
+          },
+          "lcp_passphrase_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Lcp Passphrase Hash"
+          },
+          "lcp_passphrase_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Lcp Passphrase Hint"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "name",
+          "surname",
+          "is_superuser",
+          "is_active",
+          "last_login",
+          "created_at",
+          "updated_at",
+          "permissions"
+        ],
+        "title": "UserSerializer.Detailed",
+        "type": "object"
+      },
+      "apps__api__serializers__tokens__TokenSerializer__Access": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/Detailed"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "user"
+        ],
+        "title": "TokenSerializer.Access",
+        "type": "object"
+      },
+      "PaginationModel": {
+        "properties": {
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              }
+            ],
+            "nullable": true,
+            "title": "Limit"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "limit",
+          "pages",
+          "total"
+        ],
+        "title": "PaginationModel",
+        "type": "object"
+      },
+      "RootModel_TypeVar_": {
+        "title": "RootModel[TypeVar]"
+      },
+      "apps__api__response__PaginationResponseModel": {
+        "properties": {
+          "items": {
+            "$ref": "#/components/schemas/RootModel_TypeVar_"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/PaginationModel"
+          }
+        },
+        "required": [
+          "items",
+          "metadata"
+        ],
+        "title": "PaginationResponseModel",
+        "type": "object"
+      },
+      "apps__api__serializers__entries__CategorySerializer__Detailed": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "term": {
+            "title": "Term",
+            "type": "string"
+          },
+          "catalog_id": {
+            "format": "uuid",
+            "title": "Catalog Id",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Label"
+          },
+          "scheme": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Scheme"
+          }
+        },
+        "required": [
+          "id",
+          "term",
+          "catalog_id",
+          "label",
+          "scheme"
+        ],
+        "title": "CategorySerializer.Detailed",
+        "type": "object"
+      },
+      "apps__api__response__SingleResponseModel": {
+        "properties": {
+          "response": {
+            "title": "Response"
+          }
+        },
+        "required": [
+          "response"
+        ],
+        "title": "SingleResponseModel",
+        "type": "object"
+      },
+      "apps__api__serializers__api_keys__ApiKeySerializer__Base": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Name"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Last Seen At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "name",
+          "is_active",
+          "last_seen_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ApiKeySerializer.Base",
+        "type": "object"
+      },
+      "apps__api__serializers__annotation__AnnotationItemSerializer__Base": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "content": {
+            "title": "Content",
             "type": "string"
           },
           "created_at": {
@@ -6152,154 +6192,13 @@
         },
         "required": [
           "id",
-          "creator_id",
-          "url_name",
-          "title",
-          "is_public",
-          "touched_at",
+          "annotation_id",
+          "page",
+          "content",
           "created_at",
           "updated_at"
         ],
-        "title": "CatalogSerializer.Base",
-        "type": "object"
-      },
-      "apps__core__errors__ValidationErrorItem": {
-        "properties": {
-          "code": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Code"
-          },
-          "message": {
-            "title": "Message",
-            "type": "string"
-          },
-          "path": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Path"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "title": "ValidationErrorItem",
-        "type": "object"
-      },
-      "DetailType": {
-        "enum": [
-          "/out-of-range",
-          "/not-found",
-          "/validation-error",
-          "/conflict",
-          "/forbidden",
-          "/internal-error",
-          "/passphrase-required",
-          "/readium-amount-below-active-count"
-        ],
-        "title": "DetailType",
-        "type": "string"
-      },
-      "apps__core__errors__ProblemDetail": {
-        "properties": {
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DetailType"
-              }
-            ],
-            "default": null,
-            "nullable": true
-          },
-          "detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Detail"
-          },
-          "trace": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Trace"
-          },
-          "additional_data": {
-            "anyOf": [
-              {}
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Additional Data"
-          }
-        },
-        "required": [
-          "title"
-        ],
-        "title": "ProblemDetail",
-        "type": "object"
-      },
-      "apps__api__response__SingleResponseModel": {
-        "properties": {
-          "response": {
-            "title": "Response"
-          }
-        },
-        "required": [
-          "response"
-        ],
-        "title": "SingleResponseModel",
-        "type": "object"
-      },
-      "apps__api__serializers__entries__AuthorSerializer__Base": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "surname": {
-            "title": "Surname",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "surname"
-        ],
-        "title": "AuthorSerializer.Base",
+        "title": "AnnotationItemSerializer.Base",
         "type": "object"
       },
       "apps__api__serializers__entries__AcquisitionSerializer__Nested": {
@@ -6326,6 +6225,187 @@
           "mime"
         ],
         "title": "AcquisitionSerializer.Nested",
+        "type": "object"
+      },
+      "apps__api__serializers__users__UserSerializer__Minimal": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "surname": {
+            "title": "Surname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "name",
+          "surname"
+        ],
+        "title": "UserSerializer.Minimal",
+        "type": "object"
+      },
+      "apps__api__serializers__users__UserSerializer__Base": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "surname": {
+            "title": "Surname",
+            "type": "string"
+          },
+          "is_superuser": {
+            "title": "Is Superuser",
+            "type": "boolean"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "last_login": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Last Login"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "name",
+          "surname",
+          "is_superuser",
+          "is_active",
+          "last_login",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "UserSerializer.Base",
+        "type": "object"
+      },
+      "LicenseState": {
+        "enum": [
+          "ready",
+          "active",
+          "returned",
+          "expired",
+          "revoked",
+          "cancelled"
+        ],
+        "title": "LicenseState",
+        "type": "string"
+      },
+      "apps__readium__serializers__LicenseSerializer__Detailed": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "entry_id": {
+            "format": "uuid",
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/LicenseState"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Starts At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Expires At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "renewal_count": {
+            "default": 0,
+            "title": "Renewal Count",
+            "type": "integer"
+          },
+          "download_url": {
+            "default": "",
+            "title": "Download Url",
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/apps__api__serializers__entries__EntrySerializer__Base"
+          }
+        },
+        "required": [
+          "id",
+          "entry_id",
+          "user_id",
+          "state",
+          "starts_at",
+          "expires_at",
+          "created_at",
+          "updated_at",
+          "entry"
+        ],
+        "title": "LicenseSerializer.Detailed",
         "type": "object"
       },
       "apps__api__serializers__entries__EntrySerializer__Base": {
@@ -6563,421 +6643,7 @@
         "title": "EntrySerializer.Base",
         "type": "object"
       },
-      "apps__api__serializers__annotation__AnnotationSerializer__Base": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "user_acquisition_id": {
-            "format": "uuid",
-            "title": "User Acquisition Id",
-            "type": "string"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "user_acquisition_id",
-          "title",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "AnnotationSerializer.Base",
-        "type": "object"
-      },
-      "UserCatalog": {
-        "properties": {
-          "mode": {
-            "title": "Mode",
-            "type": "string"
-          },
-          "user": {
-            "$ref": "#/components/schemas/Minimal"
-          }
-        },
-        "required": [
-          "mode",
-          "user"
-        ],
-        "title": "UserCatalog",
-        "type": "object"
-      },
-      "apps__api__serializers__catalogs__CatalogSerializer__Detailed": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "creator_id": {
-            "format": "uuid",
-            "title": "Creator Id",
-            "type": "string"
-          },
-          "url_name": {
-            "title": "Url Name",
-            "type": "string"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "is_public": {
-            "title": "Is Public",
-            "type": "boolean"
-          },
-          "touched_at": {
-            "format": "date-time",
-            "title": "Touched At",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "user_catalogs": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/UserCatalog"
-            },
-            "title": "User Catalogs",
-            "type": "array"
-          }
-        },
-        "required": [
-          "id",
-          "creator_id",
-          "url_name",
-          "title",
-          "is_public",
-          "touched_at",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "CatalogSerializer.Detailed",
-        "type": "object"
-      },
-      "apps__api__serializers__catalogs__UserCatalog": {
-        "properties": {
-          "mode": {
-            "title": "Mode",
-            "type": "string"
-          },
-          "user": {
-            "$ref": "#/components/schemas/Minimal"
-          }
-        },
-        "required": [
-          "mode",
-          "user"
-        ],
-        "title": "UserCatalog",
-        "type": "object"
-      },
-      "apps__api__serializers__tokens__TokenSerializer__Refresh": {
-        "properties": {
-          "access_token": {
-            "title": "Access Token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "access_token"
-        ],
-        "title": "TokenSerializer.Refresh",
-        "type": "object"
-      },
-      "apps__readium__serializers__LicenseSerializer__Base": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "entry_id": {
-            "format": "uuid",
-            "title": "Entry Id",
-            "type": "string"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "state": {
-            "$ref": "#/components/schemas/LicenseState"
-          },
-          "starts_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Starts At"
-          },
-          "expires_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Expires At"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "renewal_count": {
-            "default": 0,
-            "title": "Renewal Count",
-            "type": "integer"
-          },
-          "download_url": {
-            "default": "",
-            "title": "Download Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "entry_id",
-          "user_id",
-          "state",
-          "starts_at",
-          "expires_at",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "LicenseSerializer.Base",
-        "type": "object"
-      },
-      "StatusClientIP": {
-        "properties": {
-          "remote_addr": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Remote Addr"
-          },
-          "x_real_ip": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "X Real Ip"
-          },
-          "x_forwarded_for": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "X Forwarded For"
-          },
-          "resolved": {
-            "title": "Resolved",
-            "type": "string"
-          }
-        },
-        "required": [
-          "resolved"
-        ],
-        "title": "StatusClientIP",
-        "type": "object"
-      },
-      "StatusStatistics": {
-        "properties": {
-          "catalogs": {
-            "title": "Catalogs",
-            "type": "integer"
-          },
-          "entries": {
-            "title": "Entries",
-            "type": "integer"
-          },
-          "acquisitions": {
-            "title": "Acquisitions",
-            "type": "integer"
-          },
-          "users": {
-            "title": "Users",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "catalogs",
-          "entries",
-          "acquisitions",
-          "users"
-        ],
-        "title": "StatusStatistics",
-        "type": "object"
-      },
-      "apps__api__serializers__status__StatusSerializer": {
-        "properties": {
-          "timestamp": {
-            "format": "date-time",
-            "title": "Timestamp",
-            "type": "string"
-          },
-          "instance": {
-            "title": "Instance",
-            "type": "string"
-          },
-          "stats": {
-            "$ref": "#/components/schemas/StatusStatistics"
-          },
-          "build": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Build"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Version"
-          },
-          "python": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Python"
-          },
-          "supervisord": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Supervisord"
-          },
-          "client_ip": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/StatusClientIP"
-              }
-            ],
-            "default": null,
-            "nullable": true
-          },
-          "allowed_ip_ranges": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Allowed Ip Ranges"
-          }
-        },
-        "required": [
-          "timestamp",
-          "instance",
-          "stats"
-        ],
-        "title": "StatusSerializer",
-        "type": "object"
-      },
-      "ValidationErrorItem": {
-        "properties": {
-          "code": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Code"
-          },
-          "message": {
-            "title": "Message",
-            "type": "string"
-          },
-          "path": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Path"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "title": "ValidationErrorItem",
-        "type": "object"
-      },
-      "apps__core__errors__ValidationError": {
+      "apps__core__errors__ProblemDetail": {
         "properties": {
           "title": {
             "title": "Title",
@@ -7022,20 +6688,119 @@
             "default": null,
             "nullable": true,
             "title": "Additional Data"
-          },
-          "validation_errors": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationErrorItem"
-            },
-            "title": "Validation Errors",
-            "type": "array"
           }
         },
         "required": [
-          "title",
-          "validation_errors"
+          "title"
         ],
-        "title": "ValidationError",
+        "title": "ProblemDetail",
+        "type": "object"
+      },
+      "apps__api__serializers__entries__AuthorSerializer__Base": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "surname": {
+            "title": "Surname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "surname"
+        ],
+        "title": "AuthorSerializer.Base",
+        "type": "object"
+      },
+      "apps__api__response__PaginationModel": {
+        "properties": {
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              }
+            ],
+            "nullable": true,
+            "title": "Limit"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "limit",
+          "pages",
+          "total"
+        ],
+        "title": "PaginationModel",
+        "type": "object"
+      },
+      "apps__api__serializers__tokens__TokenSerializer__Refresh": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token"
+        ],
+        "title": "TokenSerializer.Refresh",
+        "type": "object"
+      },
+      "apps__api__serializers__annotation__AnnotationSerializer__Base": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "user_acquisition_id": {
+            "format": "uuid",
+            "title": "User Acquisition Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_acquisition_id",
+          "title",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AnnotationSerializer.Base",
         "type": "object"
       },
       "apps__api__serializers__entries__EntrySerializer__Detailed": {
@@ -7343,180 +7108,20 @@
         "title": "EntrySerializer.Detailed",
         "type": "object"
       },
-      "Detailed": {
+      "apps__api__serializers__shelf_records__ShelfRecordSerializer__Base": {
         "properties": {
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
           },
-          "username": {
-            "title": "Username",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "surname": {
-            "title": "Surname",
-            "type": "string"
-          },
-          "is_superuser": {
-            "title": "Is Superuser",
-            "type": "boolean"
-          },
-          "is_active": {
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "last_login": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Last Login"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "permissions": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Permissions",
-            "type": "array"
-          },
-          "catalog_permissions": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/Mode"
-            },
-            "propertyNames": {
-              "format": "uuid"
-            },
-            "title": "Catalog Permissions",
-            "type": "object"
-          },
-          "lcp_passphrase_hash": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Lcp Passphrase Hash"
-          },
-          "lcp_passphrase_hint": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Lcp Passphrase Hint"
-          }
-        },
-        "required": [
-          "id",
-          "username",
-          "name",
-          "surname",
-          "is_superuser",
-          "is_active",
-          "last_login",
-          "created_at",
-          "updated_at",
-          "permissions"
-        ],
-        "title": "UserSerializer.Detailed",
-        "type": "object"
-      },
-      "apps__api__serializers__tokens__TokenSerializer__Access": {
-        "properties": {
-          "access_token": {
-            "title": "Access Token",
-            "type": "string"
-          },
-          "refresh_token": {
-            "title": "Refresh Token",
-            "type": "string"
-          },
-          "user": {
-            "$ref": "#/components/schemas/Detailed"
-          }
-        },
-        "required": [
-          "access_token",
-          "refresh_token",
-          "user"
-        ],
-        "title": "TokenSerializer.Access",
-        "type": "object"
-      },
-      "apps__api__response__PaginationModel": {
-        "properties": {
-          "page": {
-            "title": "Page",
-            "type": "integer"
-          },
-          "limit": {
-            "anyOf": [
-              {
-                "type": "integer"
-              }
-            ],
-            "nullable": true,
-            "title": "Limit"
-          },
-          "pages": {
-            "title": "Pages",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "page",
-          "limit",
-          "pages",
-          "total"
-        ],
-        "title": "PaginationModel",
-        "type": "object"
-      },
-      "apps__api__serializers__annotation__AnnotationItemSerializer__Base": {
-        "properties": {
-          "id": {
+          "user_id": {
             "format": "uuid",
-            "title": "Id",
+            "title": "User Id",
             "type": "string"
           },
-          "annotation_id": {
-            "format": "uuid",
-            "title": "Annotation Id",
-            "type": "string"
-          },
-          "page": {
-            "title": "Page",
-            "type": "integer"
-          },
-          "content": {
-            "title": "Content",
-            "type": "string"
+          "entry": {
+            "$ref": "#/components/schemas/apps__api__serializers__entries__EntrySerializer__Base"
           },
           "created_at": {
             "format": "date-time",
@@ -7531,45 +7136,217 @@
         },
         "required": [
           "id",
-          "annotation_id",
-          "page",
-          "content",
+          "user_id",
+          "entry",
           "created_at",
           "updated_at"
         ],
-        "title": "AnnotationItemSerializer.Base",
+        "title": "ShelfRecordSerializer.Base",
         "type": "object"
       },
-      "apps__api__serializers__entries__LanguageSerializer__Base": {
+      "apps__api__serializers__status__StatusClientIP": {
         "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
+          "remote_addr": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Remote Addr"
           },
-          "name": {
-            "title": "Name",
-            "type": "string"
+          "x_real_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "X Real Ip"
           },
-          "alpha2": {
-            "title": "Alpha2",
-            "type": "string"
+          "x_forwarded_for": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "X Forwarded For"
           },
-          "alpha3": {
-            "title": "Alpha3",
+          "resolved": {
+            "title": "Resolved",
             "type": "string"
           }
         },
         "required": [
-          "id",
-          "name",
-          "alpha2",
-          "alpha3"
+          "resolved"
         ],
-        "title": "LanguageSerializer.Base",
+        "title": "StatusClientIP",
         "type": "object"
       },
-      "apps__api__serializers__entries__CategorySerializer__Detailed": {
+      "StatusClientIP": {
+        "properties": {
+          "remote_addr": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Remote Addr"
+          },
+          "x_real_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "X Real Ip"
+          },
+          "x_forwarded_for": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "X Forwarded For"
+          },
+          "resolved": {
+            "title": "Resolved",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolved"
+        ],
+        "title": "StatusClientIP",
+        "type": "object"
+      },
+      "StatusStatistics": {
+        "properties": {
+          "catalogs": {
+            "title": "Catalogs",
+            "type": "integer"
+          },
+          "entries": {
+            "title": "Entries",
+            "type": "integer"
+          },
+          "acquisitions": {
+            "title": "Acquisitions",
+            "type": "integer"
+          },
+          "users": {
+            "title": "Users",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "catalogs",
+          "entries",
+          "acquisitions",
+          "users"
+        ],
+        "title": "StatusStatistics",
+        "type": "object"
+      },
+      "apps__api__serializers__status__StatusSerializer": {
+        "properties": {
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "instance": {
+            "title": "Instance",
+            "type": "string"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/StatusStatistics"
+          },
+          "build": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Build"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Version"
+          },
+          "python": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Python"
+          },
+          "supervisord": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Supervisord"
+          },
+          "client_ip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusClientIP"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
+          "allowed_ip_ranges": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Allowed Ip Ranges"
+          }
+        },
+        "required": [
+          "timestamp",
+          "instance",
+          "stats"
+        ],
+        "title": "StatusSerializer",
+        "type": "object"
+      },
+      "apps__api__serializers__entries__CategorySerializer__Base": {
         "properties": {
           "id": {
             "format": "uuid",
@@ -7579,50 +7356,98 @@
           "term": {
             "title": "Term",
             "type": "string"
-          },
-          "catalog_id": {
-            "format": "uuid",
-            "title": "Catalog Id",
-            "type": "string"
-          },
-          "label": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Label"
-          },
-          "scheme": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Scheme"
           }
         },
         "required": [
           "id",
-          "term",
-          "catalog_id",
-          "label",
-          "scheme"
+          "term"
         ],
-        "title": "CategorySerializer.Detailed",
+        "title": "CategorySerializer.Base",
         "type": "object"
       },
-      "apps__api__serializers__users__UserSerializer__Minimal": {
+      "UserCatalog": {
+        "properties": {
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/Minimal"
+          }
+        },
+        "required": [
+          "mode",
+          "user"
+        ],
+        "title": "UserCatalog",
+        "type": "object"
+      },
+      "apps__api__serializers__catalogs__CatalogSerializer__Detailed": {
         "properties": {
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
           },
-          "username": {
-            "title": "Username",
+          "creator_id": {
+            "format": "uuid",
+            "title": "Creator Id",
+            "type": "string"
+          },
+          "url_name": {
+            "title": "Url Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "is_public": {
+            "title": "Is Public",
+            "type": "boolean"
+          },
+          "touched_at": {
+            "format": "date-time",
+            "title": "Touched At",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_catalogs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UserCatalog"
+            },
+            "title": "User Catalogs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "creator_id",
+          "url_name",
+          "title",
+          "is_public",
+          "touched_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CatalogSerializer.Detailed",
+        "type": "object"
+      },
+      "apps__api__serializers__entries__AuthorSerializer__Detailed": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
             "type": "string"
           },
           "name": {
@@ -7632,662 +7457,287 @@
           "surname": {
             "title": "Surname",
             "type": "string"
+          },
+          "catalog_id": {
+            "format": "uuid",
+            "title": "Catalog Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
           "id",
-          "username",
-          "name",
-          "surname"
-        ],
-        "title": "UserSerializer.Minimal",
-        "type": "object"
-      },
-      "apps__api__serializers__entries__AcquisitionSerializer__Detailed": {
-        "properties": {
-          "relation": {
-            "$ref": "#/components/schemas/AcquisitionType"
-          },
-          "mime": {
-            "$ref": "#/components/schemas/AcquisitionMIME"
-          },
-          "url": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Url"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "relation",
-          "mime",
-          "id"
-        ],
-        "title": "AcquisitionSerializer.Detailed",
-        "type": "object"
-      },
-      "apps__api__serializers__entries__AcquisitionSerializer__Base": {
-        "properties": {
-          "relation": {
-            "$ref": "#/components/schemas/AcquisitionType"
-          },
-          "mime": {
-            "$ref": "#/components/schemas/AcquisitionMIME"
-          },
-          "url": {
-            "anyOf": [
-              {
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Url"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "relation",
-          "mime",
-          "id"
-        ],
-        "title": "AcquisitionSerializer.Base",
-        "type": "object"
-      },
-      "ShelfRecordForm": {
-        "type": "object",
-        "title": "ShelfRecordForm",
-        "properties": {
-          "entry_id": {
-            "title": "entry_id",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "entry_id"
-        ]
-      },
-      "CreateAuthorForm": {
-        "type": "object",
-        "title": "CreateAuthorForm",
-        "properties": {
-          "name": {
-            "title": "name",
-            "description": "",
-            "type": "string",
-            "maxLength": 255
-          },
-          "surname": {
-            "title": "surname",
-            "description": "",
-            "type": "string",
-            "maxLength": 255
-          },
-          "catalog_id": {
-            "title": "catalog_id",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
           "name",
           "surname",
-          "catalog_id"
-        ]
-      },
-      "UserAcquisitionForm": {
-        "type": "object",
-        "title": "UserAcquisitionForm",
-        "properties": {
-          "acquisition_id": {
-            "title": "acquisition_id",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
-          },
-          "type": {
-            "title": "type",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "shared",
-              "personal",
-              "lcp"
-            ]
-          },
-          "range": {
-            "title": "range",
-            "description": "",
-            "type": "string"
-          },
-          "expire_at": {
-            "title": "expire_at",
-            "description": "",
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "acquisition_id",
-          "type"
-        ]
-      },
-      "ApiKeyForm": {
-        "type": "object",
-        "title": "ApiKeyForm",
-        "properties": {
-          "user_id": {
-            "title": "user_id",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "title": "name",
-            "description": "",
-            "type": "string",
-            "maxLength": 100
-          },
-          "is_active": {
-            "title": "is_active",
-            "description": "",
-            "type": "boolean"
-          }
-        }
-      },
-      "UpdateAnnotationForm": {
-        "type": "object",
-        "title": "UpdateAnnotationForm",
-        "properties": {
-          "title": {
-            "title": "title",
-            "description": "",
-            "type": "string"
-          }
-        },
-        "required": [
-          "title"
-        ]
-      },
-      "UserCatalogForm": {
-        "type": "object",
-        "title": "UserCatalogForm",
-        "properties": {
-          "user_id": {
-            "title": "user_id",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
-          },
-          "mode": {
-            "title": "mode",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "read",
-              "write",
-              "manage"
-            ]
-          }
-        },
-        "required": [
-          "user_id",
-          "mode"
-        ]
-      },
-      "FeedForm": {
-        "type": "object",
-        "title": "FeedForm",
-        "properties": {
-          "catalog_id": {
-            "title": "catalog_id",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
-          },
-          "title": {
-            "title": "title",
-            "description": "",
-            "type": "string",
-            "maxLength": 100
-          },
-          "url_name": {
-            "title": "url_name",
-            "description": "",
-            "type": "string",
-            "maxLength": 50
-          },
-          "kind": {
-            "title": "kind",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "navigation",
-              "acquisition"
-            ]
-          },
-          "content": {
-            "title": "content",
-            "description": "",
-            "type": "string"
-          },
-          "per_page": {
-            "title": "per_page",
-            "description": "",
-            "type": "integer",
-            "minimum": 1
-          },
-          "entries": {
-            "title": "entries",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
-          },
-          "parents": {
-            "title": "parents",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
           "catalog_id",
-          "title",
-          "url_name",
-          "kind",
-          "content"
-        ]
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AuthorSerializer.Detailed",
+        "type": "object"
       },
-      "AuthorForm": {
-        "type": "object",
-        "title": "AuthorForm",
+      "apps__readium__serializers__ReservationSerializer__Detailed": {
+        "description": "Reservation list/detail for the portal: embeds the entry so the queue\nUI can render title/author/thumbnail without an N+1 fetch per row.",
         "properties": {
-          "name": {
-            "title": "name",
-            "description": "",
-            "type": "string",
-            "maxLength": 255
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
           },
-          "surname": {
-            "title": "surname",
-            "description": "",
-            "type": "string",
-            "maxLength": 255
-          }
-        },
-        "required": [
-          "name",
-          "surname"
-        ]
-      },
-      "UpdateReservationForm": {
-        "type": "object",
-        "title": "UpdateReservationForm",
-        "properties": {
+          "entry_id": {
+            "format": "uuid",
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
           "status": {
-            "title": "status",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "cancelled",
-              "claimed"
-            ]
-          }
-        },
-        "required": [
-          "status"
-        ]
-      },
-      "EntryConfigForm": {
-        "type": "object",
-        "title": "EntryConfigForm",
-        "properties": {
-          "evilflowers_ocr_enabled": {
-            "title": "evilflowers_ocr_enabled",
-            "description": "",
-            "type": "boolean"
+            "$ref": "#/components/schemas/Status"
           },
-          "evilflowers_ocr_rewrite": {
-            "title": "evilflowers_ocr_rewrite",
-            "description": "",
-            "type": "boolean"
-          },
-          "evilflowers_annotations_create": {
-            "title": "evilflowers_annotations_create",
-            "description": "",
-            "type": "boolean"
-          },
-          "evilflowers_viewer_print": {
-            "title": "evilflowers_viewer_print",
-            "description": "",
-            "type": "boolean"
-          },
-          "evilflowers_share_enabled": {
-            "title": "evilflowers_share_enabled",
-            "description": "",
-            "type": "boolean"
-          },
-          "evilflowers_metadata_fetch": {
-            "title": "evilflowers_metadata_fetch",
-            "description": "",
-            "type": "boolean"
-          },
-          "evilflowers_ip_block": {
-            "title": "evilflowers_ip_block",
-            "description": "",
-            "type": "boolean"
-          },
-          "readium_enabled": {
-            "title": "readium_enabled",
-            "description": "",
-            "type": "boolean"
-          },
-          "readium_amount": {
-            "title": "readium_amount",
-            "description": "",
-            "type": "integer",
-            "minimum": 1
-          },
-          "evilflowers_render_type": {
-            "title": "evilflowers_render_type",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "document",
-              "page"
-            ]
-          }
-        }
-      },
-      "RefreshTokenForm": {
-        "type": "object",
-        "title": "RefreshTokenForm",
-        "properties": {
-          "refresh": {
-            "title": "refresh",
-            "description": "",
-            "type": "string"
-          }
-        },
-        "required": [
-          "refresh"
-        ]
-      },
-      "EncryptionTriggerForm": {
-        "type": "object",
-        "title": "EncryptionTriggerForm",
-        "properties": {
-          "force": {
-            "title": "force",
-            "description": "",
-            "type": "boolean"
-          }
-        }
-      },
-      "CatalogForm": {
-        "type": "object",
-        "title": "CatalogForm",
-        "properties": {
-          "url_name": {
-            "title": "url_name",
-            "description": "",
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
             "type": "string"
           },
-          "title": {
-            "title": "title",
-            "description": "",
-            "type": "string",
-            "maxLength": 100
+          "available_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Available At"
           },
-          "is_public": {
-            "title": "is_public",
-            "description": "",
-            "type": "boolean"
+          "claim_deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Claim Deadline"
           },
-          "users": {
-            "title": "users",
-            "description": "",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/UserCatalogForm"
-            }
+          "claimed_license_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Claimed License Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/apps__api__serializers__entries__EntrySerializer__Base"
           }
         },
         "required": [
-          "url_name",
-          "title"
-        ]
-      },
-      "CreateReservationForm": {
-        "type": "object",
-        "title": "CreateReservationForm",
-        "properties": {
-          "entry_id": {
-            "title": "entry_id",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "entry_id"
-        ]
-      },
-      "CreateLicenseForm": {
-        "type": "object",
-        "title": "CreateLicenseForm",
-        "properties": {
-          "entry_id": {
-            "title": "entry_id",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
-          },
-          "duration": {
-            "title": "duration",
-            "description": "Duration in ISO 8601 format. Example: \"PT1H30M\" for 1 hour and 30 minutes.\nThe format is defined as follows:\n- \"P\" indicates the period.\n- \"Y\" for years, \"M\" for months, \"D\" for days.\n- \"T\" indicates the start of the time section.\n- \"H\" for hours, \"M\" for minutes, \"S\" for seconds.\n- Valid examples include:\n  - \"PT30M\" (30 minutes)\n  - \"P1Y2M10DT5H30M\" (1 year, 2 months, 10 days, 5 hours, and 30 minutes)",
-            "type": "string",
-            "example": "P14D",
-            "pattern": "^P(?!P)(?:(\\d+Y)?(\\d+M)?(\\d+D)?(T(?:(\\d+H)?(\\d+M)?(\\d+S)?))?)?$"
-          },
-          "starts_at": {
-            "title": "starts_at",
-            "description": "",
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
+          "id",
           "entry_id",
-          "duration"
-        ]
+          "user_id",
+          "position",
+          "status",
+          "requested_at",
+          "created_at",
+          "updated_at",
+          "entry"
+        ],
+        "title": "ReservationSerializer.Detailed",
+        "type": "object"
       },
-      "AcquisitionForm": {
-        "type": "object",
-        "title": "AcquisitionForm",
+      "apps__core__errors__ValidationErrorItem": {
         "properties": {
-          "relation": {
-            "title": "relation",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "acquisition",
-              "open-access",
-              "borrow",
-              "restricted-access"
-            ]
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Code"
           },
-          "prices": {
-            "title": "prices",
-            "description": "",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PriceForm"
-            }
-          },
-          "content": {
-            "title": "content",
-            "description": "",
-            "type": "string",
-            "format": "uri"
-          }
-        },
-        "required": [
-          "content"
-        ]
-      },
-      "CreateAnnotationForm": {
-        "type": "object",
-        "title": "CreateAnnotationForm",
-        "properties": {
-          "user_acquisition_id": {
-            "title": "user_acquisition_id",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
-          },
-          "title": {
-            "title": "title",
-            "description": "",
+          "message": {
+            "title": "Message",
             "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Path"
           }
         },
         "required": [
-          "user_acquisition_id",
-          "title"
-        ]
+          "message"
+        ],
+        "title": "ValidationErrorItem",
+        "type": "object"
       },
-      "NotificationContactForm": {
-        "type": "object",
-        "title": "NotificationContactForm",
+      "apps__readium__serializers__LicenseSerializer__Base": {
         "properties": {
-          "type": {
-            "title": "type",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "email"
-            ]
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
           },
-          "value": {
-            "title": "value",
-            "description": "",
-            "type": "string",
-            "maxLength": 255
+          "entry_id": {
+            "format": "uuid",
+            "title": "Entry Id",
+            "type": "string"
           },
-          "is_primary": {
-            "title": "is_primary",
-            "description": ""
-          }
-        },
-        "required": [
-          "type",
-          "value"
-        ]
-      },
-      "AcquisitionMetaForm": {
-        "type": "object",
-        "title": "AcquisitionMetaForm",
-        "properties": {
-          "relation": {
-            "title": "relation",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "acquisition",
-              "open-access",
-              "borrow",
-              "restricted-access"
-            ]
-          },
-          "prices": {
-            "title": "prices",
-            "description": "",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PriceForm"
-            }
-          }
-        }
-      },
-      "UpdateLicenseForm": {
-        "type": "object",
-        "title": "UpdateLicenseForm",
-        "properties": {
-          "action": {
-            "title": "action",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "active",
-              "returned",
-              "renewed",
-              "revoked",
-              "cancelled"
-            ]
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
           },
           "state": {
-            "title": "state",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "active",
-              "returned",
-              "renewed",
-              "revoked",
-              "cancelled"
-            ]
+            "$ref": "#/components/schemas/LicenseState"
           },
-          "requested_end": {
-            "title": "requested_end",
-            "description": "",
-            "type": "string",
-            "format": "date-time"
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Starts At"
           },
-          "duration": {
-            "title": "duration",
-            "description": "Duration in ISO 8601 format. Example: \"PT1H30M\" for 1 hour and 30 minutes.\nThe format is defined as follows:\n- \"P\" indicates the period.\n- \"Y\" for years, \"M\" for months, \"D\" for days.\n- \"T\" indicates the start of the time section.\n- \"H\" for hours, \"M\" for minutes, \"S\" for seconds.\n- Valid examples include:\n  - \"PT30M\" (30 minutes)\n  - \"P1Y2M10DT5H30M\" (1 year, 2 months, 10 days, 5 hours, and 30 minutes)",
-            "type": "string",
-            "example": "P14D",
-            "pattern": "^P(?!P)(?:(\\d+Y)?(\\d+M)?(\\d+D)?(T(?:(\\d+H)?(\\d+M)?(\\d+S)?))?)?$"
-          }
-        }
-      },
-      "PriceForm": {
-        "type": "object",
-        "title": "PriceForm",
-        "properties": {
-          "currency_code": {
-            "title": "currency_code",
-            "description": "",
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Expires At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
-          "value": {
-            "title": "value",
-            "description": "",
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "renewal_count": {
+            "default": 0,
+            "title": "Renewal Count",
             "type": "integer"
+          },
+          "download_url": {
+            "default": "",
+            "title": "Download Url",
+            "type": "string"
           }
         },
         "required": [
-          "currency_code",
-          "value"
-        ]
+          "id",
+          "entry_id",
+          "user_id",
+          "state",
+          "starts_at",
+          "expires_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "LicenseSerializer.Base",
+        "type": "object"
+      },
+      "apps__api__serializers__catalogs__CatalogSerializer__Base": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "creator_id": {
+            "format": "uuid",
+            "title": "Creator Id",
+            "type": "string"
+          },
+          "url_name": {
+            "title": "Url Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "is_public": {
+            "title": "Is Public",
+            "type": "boolean"
+          },
+          "touched_at": {
+            "format": "date-time",
+            "title": "Touched At",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "creator_id",
+          "url_name",
+          "title",
+          "is_public",
+          "touched_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CatalogSerializer.Base",
+        "type": "object"
       },
       "EntryForm": {
         "type": "object",
@@ -8400,6 +7850,49 @@
           "title"
         ]
       },
+      "UpdateLicenseForm": {
+        "type": "object",
+        "title": "UpdateLicenseForm",
+        "properties": {
+          "action": {
+            "title": "action",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "active",
+              "returned",
+              "renewed",
+              "revoked",
+              "cancelled"
+            ]
+          },
+          "state": {
+            "title": "state",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "active",
+              "returned",
+              "renewed",
+              "revoked",
+              "cancelled"
+            ]
+          },
+          "requested_end": {
+            "title": "requested_end",
+            "description": "",
+            "type": "string",
+            "format": "date-time"
+          },
+          "duration": {
+            "title": "duration",
+            "description": "Duration in ISO 8601 format. Example: \"PT1H30M\" for 1 hour and 30 minutes.\nThe format is defined as follows:\n- \"P\" indicates the period.\n- \"Y\" for years, \"M\" for months, \"D\" for days.\n- \"T\" indicates the start of the time section.\n- \"H\" for hours, \"M\" for minutes, \"S\" for seconds.\n- Valid examples include:\n  - \"PT30M\" (30 minutes)\n  - \"P1Y2M10DT5H30M\" (1 year, 2 months, 10 days, 5 hours, and 30 minutes)",
+            "type": "string",
+            "example": "P14D",
+            "pattern": "^P(?!P)(?:(\\d+Y)?(\\d+M)?(\\d+D)?(T(?:(\\d+H)?(\\d+M)?(\\d+S)?))?)?$"
+          }
+        }
+      },
       "CategoryForm": {
         "type": "object",
         "title": "CategoryForm",
@@ -8431,6 +7924,33 @@
         },
         "required": [
           "term"
+        ]
+      },
+      "AnnotationItemForm": {
+        "type": "object",
+        "title": "AnnotationItemForm",
+        "properties": {
+          "annotation_id": {
+            "title": "annotation_id",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
+          },
+          "content": {
+            "title": "content",
+            "description": "",
+            "type": "string"
+          },
+          "page": {
+            "title": "page",
+            "description": "",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "annotation_id",
+          "content",
+          "page"
         ]
       },
       "CreateUserForm": {
@@ -8486,52 +8006,108 @@
           "username"
         ]
       },
-      "AnnotationItemForm": {
+      "UpdateAnnotationForm": {
         "type": "object",
-        "title": "AnnotationItemForm",
+        "title": "UpdateAnnotationForm",
         "properties": {
-          "annotation_id": {
-            "title": "annotation_id",
+          "title": {
+            "title": "title",
+            "description": "",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "EntryConfigForm": {
+        "type": "object",
+        "title": "EntryConfigForm",
+        "properties": {
+          "evilflowers_ocr_enabled": {
+            "title": "evilflowers_ocr_enabled",
+            "description": "",
+            "type": "boolean"
+          },
+          "evilflowers_ocr_rewrite": {
+            "title": "evilflowers_ocr_rewrite",
+            "description": "",
+            "type": "boolean"
+          },
+          "evilflowers_annotations_create": {
+            "title": "evilflowers_annotations_create",
+            "description": "",
+            "type": "boolean"
+          },
+          "evilflowers_viewer_print": {
+            "title": "evilflowers_viewer_print",
+            "description": "",
+            "type": "boolean"
+          },
+          "evilflowers_share_enabled": {
+            "title": "evilflowers_share_enabled",
+            "description": "",
+            "type": "boolean"
+          },
+          "evilflowers_metadata_fetch": {
+            "title": "evilflowers_metadata_fetch",
+            "description": "",
+            "type": "boolean"
+          },
+          "evilflowers_ip_block": {
+            "title": "evilflowers_ip_block",
+            "description": "",
+            "type": "boolean"
+          },
+          "readium_enabled": {
+            "title": "readium_enabled",
+            "description": "",
+            "type": "boolean"
+          },
+          "readium_amount": {
+            "title": "readium_amount",
+            "description": "",
+            "type": "integer",
+            "minimum": 1
+          },
+          "evilflowers_render_type": {
+            "title": "evilflowers_render_type",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "document",
+              "page"
+            ]
+          }
+        }
+      },
+      "CreateLicenseForm": {
+        "type": "object",
+        "title": "CreateLicenseForm",
+        "properties": {
+          "entry_id": {
+            "title": "entry_id",
             "description": "",
             "type": "string",
             "format": "uuid"
           },
-          "content": {
-            "title": "content",
-            "description": "",
-            "type": "string"
+          "duration": {
+            "title": "duration",
+            "description": "Duration in ISO 8601 format. Example: \"PT1H30M\" for 1 hour and 30 minutes.\nThe format is defined as follows:\n- \"P\" indicates the period.\n- \"Y\" for years, \"M\" for months, \"D\" for days.\n- \"T\" indicates the start of the time section.\n- \"H\" for hours, \"M\" for minutes, \"S\" for seconds.\n- Valid examples include:\n  - \"PT30M\" (30 minutes)\n  - \"P1Y2M10DT5H30M\" (1 year, 2 months, 10 days, 5 hours, and 30 minutes)",
+            "type": "string",
+            "example": "P14D",
+            "pattern": "^P(?!P)(?:(\\d+Y)?(\\d+M)?(\\d+D)?(T(?:(\\d+H)?(\\d+M)?(\\d+S)?))?)?$"
           },
-          "page": {
-            "title": "page",
-            "description": "",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "annotation_id",
-          "content",
-          "page"
-        ]
-      },
-      "AccessTokenForm": {
-        "type": "object",
-        "title": "AccessTokenForm",
-        "properties": {
-          "username": {
-            "title": "username",
+          "starts_at": {
+            "title": "starts_at",
             "description": "",
             "type": "string",
-            "maxLength": 200
-          },
-          "password": {
-            "title": "password",
-            "description": "",
-            "type": "string"
+            "format": "date-time"
           }
         },
         "required": [
-          "username",
-          "password"
+          "entry_id",
+          "duration"
         ]
       },
       "UserForm": {
@@ -8569,6 +8145,462 @@
           },
           "lcp_passphrase_hint": {
             "title": "lcp_passphrase_hint",
+            "description": "",
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "name",
+          "surname"
+        ]
+      },
+      "UpdateReservationForm": {
+        "type": "object",
+        "title": "UpdateReservationForm",
+        "properties": {
+          "status": {
+            "title": "status",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "cancelled",
+              "claimed"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "AccessTokenForm": {
+        "type": "object",
+        "title": "AccessTokenForm",
+        "properties": {
+          "username": {
+            "title": "username",
+            "description": "",
+            "type": "string",
+            "maxLength": 200
+          },
+          "password": {
+            "title": "password",
+            "description": "",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ]
+      },
+      "CreateAnnotationForm": {
+        "type": "object",
+        "title": "CreateAnnotationForm",
+        "properties": {
+          "user_acquisition_id": {
+            "title": "user_acquisition_id",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "title": "title",
+            "description": "",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_acquisition_id",
+          "title"
+        ]
+      },
+      "AcquisitionForm": {
+        "type": "object",
+        "title": "AcquisitionForm",
+        "properties": {
+          "relation": {
+            "title": "relation",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "acquisition",
+              "open-access",
+              "borrow",
+              "restricted-access"
+            ]
+          },
+          "prices": {
+            "title": "prices",
+            "description": "",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PriceForm"
+            }
+          },
+          "content": {
+            "title": "content",
+            "description": "",
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "AcquisitionMetaForm": {
+        "type": "object",
+        "title": "AcquisitionMetaForm",
+        "properties": {
+          "relation": {
+            "title": "relation",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "acquisition",
+              "open-access",
+              "borrow",
+              "restricted-access"
+            ]
+          },
+          "prices": {
+            "title": "prices",
+            "description": "",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PriceForm"
+            }
+          }
+        }
+      },
+      "UserCatalogForm": {
+        "type": "object",
+        "title": "UserCatalogForm",
+        "properties": {
+          "user_id": {
+            "title": "user_id",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
+          },
+          "mode": {
+            "title": "mode",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "read",
+              "write",
+              "manage"
+            ]
+          }
+        },
+        "required": [
+          "user_id",
+          "mode"
+        ]
+      },
+      "UserAcquisitionForm": {
+        "type": "object",
+        "title": "UserAcquisitionForm",
+        "properties": {
+          "acquisition_id": {
+            "title": "acquisition_id",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "title": "type",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "shared",
+              "personal",
+              "lcp"
+            ]
+          },
+          "range": {
+            "title": "range",
+            "description": "",
+            "type": "string"
+          },
+          "expire_at": {
+            "title": "expire_at",
+            "description": "",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "acquisition_id",
+          "type"
+        ]
+      },
+      "ApiKeyForm": {
+        "type": "object",
+        "title": "ApiKeyForm",
+        "properties": {
+          "user_id": {
+            "title": "user_id",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "title": "name",
+            "description": "",
+            "type": "string",
+            "maxLength": 100
+          },
+          "is_active": {
+            "title": "is_active",
+            "description": "",
+            "type": "boolean"
+          }
+        }
+      },
+      "ShelfRecordForm": {
+        "type": "object",
+        "title": "ShelfRecordForm",
+        "properties": {
+          "entry_id": {
+            "title": "entry_id",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "NotificationContactForm": {
+        "type": "object",
+        "title": "NotificationContactForm",
+        "properties": {
+          "type": {
+            "title": "type",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "email"
+            ]
+          },
+          "value": {
+            "title": "value",
+            "description": "",
+            "type": "string",
+            "maxLength": 255
+          },
+          "is_primary": {
+            "title": "is_primary",
+            "description": ""
+          }
+        },
+        "required": [
+          "type",
+          "value"
+        ]
+      },
+      "CatalogForm": {
+        "type": "object",
+        "title": "CatalogForm",
+        "properties": {
+          "url_name": {
+            "title": "url_name",
+            "description": "",
+            "type": "string"
+          },
+          "title": {
+            "title": "title",
+            "description": "",
+            "type": "string",
+            "maxLength": 100
+          },
+          "is_public": {
+            "title": "is_public",
+            "description": "",
+            "type": "boolean"
+          },
+          "users": {
+            "title": "users",
+            "description": "",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserCatalogForm"
+            }
+          }
+        },
+        "required": [
+          "url_name",
+          "title"
+        ]
+      },
+      "FeedForm": {
+        "type": "object",
+        "title": "FeedForm",
+        "properties": {
+          "catalog_id": {
+            "title": "catalog_id",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "title": "title",
+            "description": "",
+            "type": "string",
+            "maxLength": 100
+          },
+          "url_name": {
+            "title": "url_name",
+            "description": "",
+            "type": "string",
+            "maxLength": 50
+          },
+          "kind": {
+            "title": "kind",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "navigation",
+              "acquisition"
+            ]
+          },
+          "content": {
+            "title": "content",
+            "description": "",
+            "type": "string"
+          },
+          "per_page": {
+            "title": "per_page",
+            "description": "",
+            "type": "integer",
+            "minimum": 1
+          },
+          "entries": {
+            "title": "entries",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
+          },
+          "parents": {
+            "title": "parents",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "catalog_id",
+          "title",
+          "url_name",
+          "kind",
+          "content"
+        ]
+      },
+      "RefreshTokenForm": {
+        "type": "object",
+        "title": "RefreshTokenForm",
+        "properties": {
+          "refresh": {
+            "title": "refresh",
+            "description": "",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh"
+        ]
+      },
+      "CreateAuthorForm": {
+        "type": "object",
+        "title": "CreateAuthorForm",
+        "properties": {
+          "name": {
+            "title": "name",
+            "description": "",
+            "type": "string",
+            "maxLength": 255
+          },
+          "surname": {
+            "title": "surname",
+            "description": "",
+            "type": "string",
+            "maxLength": 255
+          },
+          "catalog_id": {
+            "title": "catalog_id",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "name",
+          "surname",
+          "catalog_id"
+        ]
+      },
+      "PriceForm": {
+        "type": "object",
+        "title": "PriceForm",
+        "properties": {
+          "currency_code": {
+            "title": "currency_code",
+            "description": "",
+            "type": "string"
+          },
+          "value": {
+            "title": "value",
+            "description": "",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency_code",
+          "value"
+        ]
+      },
+      "EncryptionTriggerForm": {
+        "type": "object",
+        "title": "EncryptionTriggerForm",
+        "properties": {
+          "force": {
+            "title": "force",
+            "description": "",
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateReservationForm": {
+        "type": "object",
+        "title": "CreateReservationForm",
+        "properties": {
+          "entry_id": {
+            "title": "entry_id",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "AuthorForm": {
+        "type": "object",
+        "title": "AuthorForm",
+        "properties": {
+          "name": {
+            "title": "name",
+            "description": "",
+            "type": "string",
+            "maxLength": 255
+          },
+          "surname": {
+            "title": "surname",
             "description": "",
             "type": "string",
             "maxLength": 255
