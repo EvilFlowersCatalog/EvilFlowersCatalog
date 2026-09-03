@@ -26,6 +26,13 @@ LCPL_DOWNLOAD = "lcpl_download"
 # times during the feed window without re-minting.
 LCPL_FEED_DOWNLOAD = "lcpl_feed_download"
 
+# Multi-use within TTL, long-lived (EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS,
+# 72h by default). Embedded in the `license_created` e-mail so the "Download
+# license file" button works days later, on any device. The gateway used to be
+# handed a scoped *JWT* (`?access_token=`) here, which it rejects outright — the
+# e-mail button was a guaranteed 401.
+LCPL_EMAIL_DOWNLOAD = "lcpl_email_download"
+
 
 def lcpl_download_ttl() -> int:
     return settings.EVILFLOWERS_CAPABILITY_TOKEN_LCPL_TTL_SECONDS
@@ -33,3 +40,7 @@ def lcpl_download_ttl() -> int:
 
 def lcpl_feed_download_ttl() -> int:
     return settings.EVILFLOWERS_CAPABILITY_TOKEN_LCPL_FEED_TTL_SECONDS
+
+
+def lcpl_email_download_ttl() -> int:
+    return int(settings.EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS) * 3600

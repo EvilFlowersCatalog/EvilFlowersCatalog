@@ -22,7 +22,7 @@ from django.conf import settings
 from apps.core.models import Entry, User, Acquisition
 from apps.readium.models import License, EncryptedContent
 from .content_encryption_service import ContentEncryptionService
-from .exceptions import borrow_error_from_availability
+from .exceptions import NotLendableError, borrow_error_from_availability
 from .lcp_server_client import LCPServerClient
 from .status_server_client import StatusServerClient
 
@@ -240,8 +240,8 @@ class LicenseService:
         passphrase_hint: Optional[str] = None,
         start_date: datetime = None,
         duration_days: int = 14,
-        print_limit: int = 10,
-        copy_limit: int = 2048,
+        print_limit: Optional[int] = None,
+        copy_limit: Optional[int] = None,
         preferred_format: Optional[str] = None,
     ) -> License:
         """
@@ -263,8 +263,10 @@ class LicenseService:
             passphrase_hint: Optional hint for passphrase. If not provided, uses user's default hint.
             start_date: License start date (default: now)
             duration_days: License duration in days (default: 14)
-            print_limit: Max pages to print (default: 10)
-            copy_limit: Max characters to copy (default: 2048)
+            print_limit: Max pages to print. Defaults to the entry's `readium_print_limit`
+                config, then `EVILFLOWERS_READIUM_PRINT_LIMIT_PAGES`.
+            copy_limit: Max characters to copy. Defaults to the entry's `readium_copy_limit`
+                config, then `EVILFLOWERS_READIUM_COPY_LIMIT_CHARS`.
             preferred_format: "pdf" or "epub" — overrides the default PDF-first selection.
 
         Returns:
@@ -277,6 +279,17 @@ class LicenseService:
             start_date = timezone.now()
 
         end_date = start_date + timedelta(days=duration_days)
+
+        # LCP usage rights: per-entry config wins, then the deployment default.
+        # The library asked for a tighter print allowance than the hardcoded 10
+        # pages; LCP only knows absolute page counts, so this is where a
+        # "10 % of the book" policy gets translated per title.
+        if print_limit is None:
+            print_limit = int(
+                entry.read_config("readium_print_limit") or settings.EVILFLOWERS_READIUM_PRINT_LIMIT_PAGES
+            )
+        if copy_limit is None:
+            copy_limit = int(entry.read_config("readium_copy_limit") or settings.EVILFLOWERS_READIUM_COPY_LIMIT_CHARS)
 
         # Resolve passphrase hash in priority order:
         # 1. explicit user_passphrase argument (plain text — hashed here)
@@ -313,18 +326,21 @@ class LicenseService:
                 acquisition = entry.acquisitions.filter(mime=mime).order_by("created_at").first()
                 if acquisition is not None:
                     break
+            # Readiness problems below are the operator's to fix, not the
+            # reader's — raise the typed error so the API answers with a
+            # sentence a student can act on (and logs the technical cause).
             if not acquisition:
-                raise ValueError("Entry has no EPUB or PDF acquisition suitable for LCP protection")
+                raise NotLendableError("Entry has no EPUB or PDF acquisition suitable for LCP protection")
 
             # Ensure content is encrypted
             if not hasattr(acquisition, "encrypted_content"):
-                raise ValueError("Content not encrypted. Trigger encryption first via ContentEncryptionService.")
+                raise NotLendableError("Content not encrypted. Trigger encryption first via ContentEncryptionService.")
 
             encrypted_content = acquisition.encrypted_content
 
             # Ensure content is registered with LCP Server
             if not ContentEncryptionService.is_ready_for_licensing(acquisition):
-                raise ValueError(f"Content not ready for licensing. Current status: {encrypted_content.status}")
+                raise NotLendableError(f"Content not ready for licensing. Current status: {encrypted_content.status}")
 
             # Create License record
             license = License.objects.create(

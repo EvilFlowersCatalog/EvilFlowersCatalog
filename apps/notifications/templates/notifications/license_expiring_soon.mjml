@@ -1,4 +1,5 @@
 {% extends "notifications/base.mjml" %}
+{% load notification_extras %}
 
 {% block content %}
 <mj-section background-color="#ffffff" padding="30px 20px">
@@ -7,7 +8,7 @@
     <mj-text>Hello {{ user_name }},</mj-text>
     <mj-text>
       Your loan for <strong>{{ entry_title }}</strong>{% if entry_author %} by {{ entry_author }}{% endif %}
-      expires on {{ expires_at }}{% if days_left is not None %} (in {{ days_left }} day{{ days_left|pluralize }}){% endif %}.
+      expires on {{ expires_at|isodatetime }}{% if days_left is not None %} (in {{ days_left }} day{{ days_left|pluralize }}){% endif %}.
     </mj-text>
     <mj-text>If you need more time, renew the loan from your library shelf.</mj-text>
   </mj-column>

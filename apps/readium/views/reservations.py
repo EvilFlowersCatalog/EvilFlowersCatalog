@@ -22,6 +22,7 @@ from django.utils.translation import gettext as _
 from apps import openapi
 from apps.api.response import PaginationResponse, SingleResponse
 from apps.core.errors import DetailType, ProblemDetailException, ValidationException
+from apps.core.models import UserCatalog
 from apps.core.views import SecuredView
 from apps.readium.filters import ReservationFilter
 from apps.readium.forms import CreateReservationForm, UpdateReservationForm
@@ -43,8 +44,12 @@ def _conflict_additional_data(error: Exception) -> dict | None:
 
 class ReservationCollection(SecuredView):
     @openapi.metadata(
-        description="List the caller's reservations. Superusers see all. "
-        "Supports filters: entry_id, user_id, status (comma-separated for OR).",
+        description=(
+            "List reservations. Default (`scope=own`): only the caller's reservations, whoever they are. "
+            "`scope=managed`: additionally reservations on entries in catalogs the caller manages "
+            "(superusers: all reservations) — for admin queue views. "
+            "Other filters: entry_id, user_id, status (comma-separated for OR)."
+        ),
         tags=["Reservations"],
         summary="List reservations",
     )
@@ -100,10 +105,25 @@ class ReservationCollection(SecuredView):
 
 
 class ReservationDetail(SecuredView):
+    """Per-row access (GitHub #73):
+
+    - read: owner, superuser, or a manager of the entry's catalog (the same
+      rows `GET /reservations?scope=managed` lists);
+    - cancel: owner or superuser (admin-cancel);
+    - claim: owner only — claiming issues a license bound to the owner's LCP
+      passphrase, nobody can do that on their behalf.
+    """
+
     @staticmethod
-    def _get_reservation(request, reservation_id: UUID) -> Reservation:
+    def _is_catalog_manager(request, reservation: Reservation) -> bool:
+        return UserCatalog.objects.filter(
+            user=request.user, catalog_id=reservation.entry.catalog_id, mode=UserCatalog.Mode.MANAGE
+        ).exists()
+
+    @classmethod
+    def _get_reservation(cls, request, reservation_id: UUID, *, owner_only: bool = False) -> Reservation:
         try:
-            reservation = Reservation.objects.get(pk=reservation_id)
+            reservation = Reservation.objects.select_related("entry").get(pk=reservation_id)
         except Reservation.DoesNotExist as e:
             raise ProblemDetailException(
                 _("Reservation not found"),
@@ -112,13 +132,19 @@ class ReservationDetail(SecuredView):
                 detail_type=DetailType.NOT_FOUND,
             )
 
-        if not (request.user.is_superuser or reservation.user_id == request.user.pk):
+        is_owner = reservation.user_id == request.user.pk
+        if owner_only:
+            allowed = is_owner
+        else:
+            allowed = is_owner or request.user.is_superuser or cls._is_catalog_manager(request, reservation)
+
+        if not allowed:
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return reservation
 
     @openapi.metadata(
-        description="Read a reservation. Callers only see their own; superusers see any.",
+        description=("Read a reservation. Allowed for the owner, superusers, and managers of the entry's catalog."),
         tags=["Reservations"],
         summary="Get reservation",
     )
@@ -128,22 +154,26 @@ class ReservationDetail(SecuredView):
 
     @openapi.metadata(
         description=(
-            'Mutate a reservation\'s status. Body: `{"status": "cancelled"}` (user-cancel) '
-            'or `{"status": "claimed"}` (convert an `available` reservation into a license). '
+            'Mutate a reservation\'s status. Body: `{"status": "cancelled"}` (owner or superuser) '
+            'or `{"status": "claimed"}` (owner only — converts an `available` reservation into a license). '
             "Server-side transitions (`queued`→`available`, `available`→`expired`) are not exposed."
         ),
         tags=["Reservations"],
         summary="Update reservation status",
     )
     def patch(self, request, reservation_id: UUID):
-        reservation = self._get_reservation(request, reservation_id)
         form = UpdateReservationForm.create_from_request(request)
         if not form.is_valid():
             raise ValidationException(form)
 
         new_status = form.cleaned_data["status"]
+        reservation = self._get_reservation(
+            request, reservation_id, owner_only=(new_status == Reservation.Status.CLAIMED)
+        )
 
         if new_status == Reservation.Status.CANCELLED:
+            if not (reservation.user_id == request.user.pk or request.user.is_superuser):
+                raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
             try:
                 ReservationService.cancel(reservation)
             except ValueError as e:

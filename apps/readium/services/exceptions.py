@@ -37,6 +37,27 @@ class NoAvailableSlotsError(BorrowError):
     reason_code = "no_available_slots"
 
 
+class NotLendableError(BorrowError):
+    """The entry is LCP-enabled but cannot be issued right now.
+
+    Covers operator-side readiness problems — no PDF/EPUB acquisition, content
+    not encrypted yet, encryption not registered with the LCP server. The
+    reader can do nothing about any of these, so `str(exc)` is a user-facing
+    sentence ("not available for borrowing yet, contact the library") and the
+    technical cause travels separately in `technical_detail` for the problem
+    detail's `detail` field and the logs.
+    """
+
+    reason_code = "not_lendable"
+
+    def __init__(self, technical_detail: str, availability: Optional[dict] = None):
+        super().__init__(
+            "This publication is not available for borrowing yet. Please contact the library.",
+            availability,
+        )
+        self.technical_detail = technical_detail
+
+
 class ReservationError(ValueError):
     """Base class for reservation-queue conflicts raised by `ReservationService`.
 
@@ -76,6 +97,7 @@ __all__ = [
     "NotReadiumEnabledError",
     "AlreadyBorrowedError",
     "NoAvailableSlotsError",
+    "NotLendableError",
     "ReservationError",
     "SlotsAvailableError",
     "AlreadyReservedError",

@@ -1,11 +1,12 @@
+{% load notification_extras %}
 Loan expiring soon
 ==================
 
 Hello {{ user_name }},
 
-Your loan for "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %} expires on {{ expires_at }}{% if days_left is not None %} (in {{ days_left }} day{{ days_left|pluralize }}){% endif %}.
+Your loan for "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %} expires on {{ expires_at|isodatetime }}{% if days_left is not None %} (in {{ days_left }} day{{ days_left|pluralize }}){% endif %}.
 
 If you need more time, renew the loan from your library shelf.
 
 --
-This is an automated notification from Evil Flowers Catalog.
+This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.

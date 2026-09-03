@@ -13,7 +13,7 @@
     <mj-section background-color="#4A90D9" padding="20px 0">
       <mj-column>
         <mj-text align="center" color="#ffffff" font-size="24px" font-weight="bold">
-          Evil Flowers Catalog
+          {{ library_name }}
         </mj-text>
       </mj-column>
     </mj-section>
@@ -24,7 +24,7 @@
       <mj-column>
         <mj-divider border-color="#e0e0e0" />
         <mj-text align="center" css-class="footer-text">
-          This is an automated notification from Evil Flowers Catalog.
+          This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.
         </mj-text>
       </mj-column>
     </mj-section>

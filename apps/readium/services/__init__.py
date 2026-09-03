@@ -14,6 +14,7 @@ from .exceptions import (
     AlreadyBorrowedError,
     BorrowError,
     NoAvailableSlotsError,
+    NotLendableError,
     NotReadiumEnabledError,
 )
 from .lcp_server_client import LCPServerClient
@@ -27,6 +28,7 @@ __all__ = [
     "AlreadyBorrowedError",
     "BorrowError",
     "NoAvailableSlotsError",
+    "NotLendableError",
     "NotReadiumEnabledError",
     "ContentEncryptionService",
     "LCPServerClient",

@@ -1,20 +1,24 @@
-New Publication License
-======================
+{% load notification_extras %}
+New e-book loan
+===============
 
 Hello {{ user_name }},
 
-A new license has been created for the following publication:
+A new loan has been created for the following publication:
 
   Title:  {{ entry_title }}
   Author: {{ entry_author }}
-  Valid:  {{ starts_at }} - {{ expires_at }}
+  Valid:  {{ starts_at|isodatetime }} - {{ expires_at|isodatetime }}
 
 Download your license file (.lcpl):
 {{ download_url }}
+
+Open the file in Thorium Reader (or another LCP-compatible reading app) and enter your passphrase to start reading.
+The license file is also attached to this e-mail.
 
 This download link expires in {{ download_expires_hours }} hours.
 {% if passphrase_hint %}
 Passphrase hint: {{ passphrase_hint }}
 {% endif %}
 --
-This is an automated notification from Evil Flowers Catalog.
+This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.

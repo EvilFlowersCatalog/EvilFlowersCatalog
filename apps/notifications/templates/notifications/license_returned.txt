@@ -8,4 +8,4 @@ Your loan of "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% en
 Thank you for using the library.
 
 --
-This is an automated notification from Evil Flowers Catalog.
+This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.

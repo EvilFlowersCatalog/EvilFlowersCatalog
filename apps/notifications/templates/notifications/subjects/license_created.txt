@@ -1,1 +1,1 @@
-New license: {{ entry_title }}
+New e-book loan: {{ entry_title }}

@@ -8,4 +8,4 @@ Your LCP passphrase was updated. Existing loans now require the new passphrase w
 If this was not you, please contact the library immediately.
 
 --
-This is an automated notification from Evil Flowers Catalog.
+This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.

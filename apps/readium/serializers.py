@@ -4,6 +4,7 @@ from uuid import UUID
 
 from django.conf import settings
 from django.urls import reverse
+from django.utils import timezone
 from pydantic import Field, ValidationInfo, computed_field, field_validator
 
 from apps.api.serializers import Serializer
@@ -89,6 +90,22 @@ class LicenseSerializer:
             if license_id is None or user_id is None:
                 return v or ""
             return _mint_lcpl_download_url(license_id, user_id, info)
+
+        @computed_field
+        @property
+        def is_active_loan(self) -> bool:
+            """True while the user can read the publication.
+
+            `ready` is a live loan that has not been opened in a reader yet —
+            LSD flips it to `active` on the first device registration. The
+            portal filtered "my loans" on `state == "active"` and hid every
+            never-opened loan (the reader saw "no active loans" while the copy
+            was blocked for 14 days). Clients should use this flag, or
+            `GET /licenses?active=true`, instead of comparing `state`.
+            """
+            if self.state not in (License.LicenseState.READY, License.LicenseState.ACTIVE):
+                return False
+            return self.expires_at is None or self.expires_at > timezone.now()
 
         @computed_field
         @property

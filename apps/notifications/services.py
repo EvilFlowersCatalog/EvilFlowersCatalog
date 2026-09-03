@@ -62,6 +62,23 @@ class NotificationService:
         return f"{effective_base}{resource_path}?access_token={token}"
 
     @staticmethod
+    def render_context(context: dict) -> dict:
+        """Per-notification context plus the deployment-wide values every template needs.
+
+        `library_name` is the header/footer brand (STU: "Digitálna knižnica
+        Elvíra / Digital Library Elvira"), `contact_email` the address readers
+        are told to write to, `portal_url` the reader-facing site when one is
+        configured. Kept out of `context_snapshot` — they are configuration,
+        not event data.
+        """
+        return {
+            "library_name": settings.EVILFLOWERS_NOTIFICATION_LIBRARY_NAME,
+            "contact_email": settings.EVILFLOWERS_CONTACT_EMAIL,
+            "portal_url": (getattr(settings, "EVILFLOWERS_PORTAL_URL", "") or "").rstrip("/"),
+            **context,
+        }
+
+    @staticmethod
     def send(
         notification_type: str,
         recipient_user,
@@ -93,13 +110,15 @@ class NotificationService:
         )
 
         try:
-            subject = render_to_string(f"notifications/subjects/{notification_type}.txt", context).strip()
+            render_context = NotificationService.render_context(context)
+
+            subject = render_to_string(f"notifications/subjects/{notification_type}.txt", render_context).strip()
             log.subject = subject
 
-            mjml_content = render_to_string(f"notifications/{notification_type}.mjml", context)
+            mjml_content = render_to_string(f"notifications/{notification_type}.mjml", render_context)
             html_content = mjml2html(mjml_content)
 
-            text_content = render_to_string(f"notifications/{notification_type}.txt", context)
+            text_content = render_to_string(f"notifications/{notification_type}.txt", render_context)
 
             email = EmailMultiAlternatives(
                 subject=subject,

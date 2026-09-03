@@ -8,4 +8,4 @@ Your reservation for "{{ entry_title }}"{% if entry_author %} by {{ entry_author
 You are welcome to place a new reservation at any time.
 
 --
-This is an automated notification from Evil Flowers Catalog.
+This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.

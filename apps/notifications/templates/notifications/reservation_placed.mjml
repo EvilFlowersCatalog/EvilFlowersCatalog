@@ -1,4 +1,5 @@
 {% extends "notifications/base.mjml" %}
+{% load notification_extras %}
 
 {% block content %}
 <mj-section background-color="#ffffff" padding="30px 20px">
@@ -13,13 +14,13 @@
     </mj-text>
     {% if estimated_available_from and estimated_available_until %}
     <mj-text>
-      Expected available between <strong>{{ estimated_available_from }}</strong> and <strong>{{ estimated_available_until }}</strong>.
-      These are estimates — actual availability depends on whether borrowers renew or return early.
+      Expected to become available between <strong>{{ estimated_available_from|isodatetime }}</strong> and <strong>{{ estimated_available_until|isodatetime }}</strong>.
+      This is only an estimate: the book may come back earlier if the current reader returns it, or later if the loan is renewed.
     </mj-text>
     {% elif estimated_available_from %}
     <mj-text>
-      Expected available after <strong>{{ estimated_available_from }}</strong>.
-      This is an estimate — actual availability depends on whether borrowers renew or return early.
+      Expected to become available after <strong>{{ estimated_available_from|isodatetime }}</strong>, when the current loan ends.
+      This is only an estimate: the book may come back earlier if the current reader returns it, or later if the loan is renewed.
     </mj-text>
     {% endif %}
     <mj-text>

@@ -18,11 +18,33 @@ import json
 import logging
 from typing import Optional
 
+from django.conf import settings
+from django.urls import reverse
+
+from apps.core.services.capability_tokens import CapabilityTokenService
 from apps.notifications.attachments import AttachmentRef, EmailAttachment
+from apps.readium.capability_scopes import LCPL_EMAIL_DOWNLOAD, lcpl_email_download_ttl
 
 logger = logging.getLogger(__name__)
 
 LCPL_RESOLVER = "readium.lcpl"
+
+
+def lcpl_email_download_url(license_id, user_id) -> str:
+    """Absolute `.lcpl` gateway URL for a notification e-mail.
+
+    Mints a long-lived, multi-use `lcpl_email_download` capability token —
+    the only credential `LicenseDownloadView` accepts. Built on
+    `EVILFLOWERS_BASE_URL` (no request in a Celery worker / signal).
+    """
+    token = CapabilityTokenService.mint(
+        scope=LCPL_EMAIL_DOWNLOAD,
+        subject={"sub": str(user_id), "resource_id": str(license_id)},
+        ttl=lcpl_email_download_ttl(),
+        single_use=False,
+    )
+    path = reverse("readium:license-gateway", kwargs={"license_id": license_id})
+    return f"{settings.EVILFLOWERS_BASE_URL.rstrip('/')}{path}?token={token}"
 
 
 def lcpl_attachment_ref(license_id: str) -> AttachmentRef:

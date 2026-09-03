@@ -14,6 +14,8 @@ Two scopes resolve here:
   - `lcpl_feed_download` — multi-use peek; OPDS feed serialization
     embeds the URL so reading apps can fetch the `.lcpl` repeatedly
     within the feed-render TTL.
+  - `lcpl_email_download` — multi-use peek, long TTL; embedded in the
+    `license_created` e-mail button.
 
 The token's `resource_id` must equal the URL's `license_id` —
 prevents cross-license replay.
@@ -29,7 +31,7 @@ from django.views import View
 from apps import openapi
 from apps.core.errors import ProblemDetailException, DetailType
 from apps.core.services.capability_tokens import CapabilityTokenService
-from apps.readium.capability_scopes import LCPL_DOWNLOAD, LCPL_FEED_DOWNLOAD
+from apps.readium.capability_scopes import LCPL_DOWNLOAD, LCPL_EMAIL_DOWNLOAD, LCPL_FEED_DOWNLOAD
 from apps.readium.models import License
 from apps.readium.services import LicenseService
 
@@ -65,6 +67,8 @@ class LicenseDownloadView(View):
         payload = CapabilityTokenService.consume(token, expected_scope=LCPL_DOWNLOAD)
         if payload is None:
             payload = CapabilityTokenService.peek(token, expected_scope=LCPL_FEED_DOWNLOAD)
+        if payload is None:
+            payload = CapabilityTokenService.peek(token, expected_scope=LCPL_EMAIL_DOWNLOAD)
         if payload is None:
             raise ProblemDetailException(
                 _("Invalid or expired capability token"),

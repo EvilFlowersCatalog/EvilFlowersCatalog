@@ -19,7 +19,7 @@ from datetime import timedelta
 from typing import Iterable, Optional
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
 
@@ -184,12 +184,19 @@ class ReservationService:
         )
         next_position = (last.position + 1) if last is not None else 1
 
-        return Reservation.objects.create(
-            entry=entry,
-            user=user,
-            position=next_position,
-            status=Reservation.Status.QUEUED,
-        )
+        try:
+            # `uniq_active_reservation_per_user_entry` is the last line of
+            # defence against a double-click / two tabs racing past the
+            # `existing` check above — surface it as the same typed 409.
+            with transaction.atomic():
+                return Reservation.objects.create(
+                    entry=entry,
+                    user=user,
+                    position=next_position,
+                    status=Reservation.Status.QUEUED,
+                )
+        except IntegrityError as exc:
+            raise AlreadyReservedError("User already has a reservation for this entry") from exc
 
     @staticmethod
     @transaction.atomic

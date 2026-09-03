@@ -1,4 +1,5 @@
 {% extends "notifications/base.mjml" %}
+{% load notification_extras %}
 
 {% block content %}
 <mj-section background-color="#ffffff" padding="30px 20px">
@@ -7,7 +8,7 @@
     <mj-text>Hello {{ user_name }},</mj-text>
     <mj-text>
       Your loan of <strong>{{ entry_title }}</strong>{% if entry_author %} by {{ entry_author }}{% endif %}
-      has been renewed. New expiration: {{ expires_at }}.
+      has been renewed. New expiration: {{ expires_at|isodatetime }}.
     </mj-text>
   </mj-column>
 </mj-section>

@@ -14,17 +14,15 @@ def on_license_created(sender, instance: License, created: bool, **kwargs):
     if not getattr(settings, "EVILFLOWERS_NOTIFICATIONS_ENABLED", False):
         return
 
-    from apps.notifications.services import NotificationService
     from apps.notifications.tasks import send_notification
+    from apps.readium.notifications import lcpl_email_download_url
 
-    download_url = NotificationService.generate_scoped_url(
-        user_id=str(instance.user.pk),
-        scope="license:read",
-        resource_path=f"/readium/v1/licenses/{instance.pk}.lcpl",
-    )
+    # The gateway is capability-token only; a scoped JWT in `?access_token=`
+    # (the previous shape of this link) is rejected with 401.
+    download_url = lcpl_email_download_url(instance.pk, instance.user.pk)
 
     context = {
-        "user_name": instance.user.full_name,
+        "user_name": instance.user.full_name or instance.user.username,
         "entry_title": instance.entry.title,
         "entry_author": instance.entry.first_author_name,
         "starts_at": instance.starts_at.isoformat(),

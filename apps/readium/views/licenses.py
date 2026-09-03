@@ -10,6 +10,7 @@ from datetime import datetime
 from http import HTTPStatus
 from uuid import UUID
 
+from django.conf import settings
 from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
@@ -31,6 +32,7 @@ from apps.readium.services import (
     BorrowError,
     LicenseService,
     NoAvailableSlotsError,
+    NotLendableError,
     NotReadiumEnabledError,
     PassphraseRequiredError,
 )
@@ -151,6 +153,27 @@ class LicenseManagement(SecuredView):
                 str(e),
                 status=HTTPStatus.BAD_REQUEST,
                 detail_type=DetailType.VALIDATION_ERROR,
+                previous=e,
+            )
+        except NotLendableError as e:
+            # Operator-side readiness problem (no PDF/EPUB, not encrypted, not
+            # registered). Readers used to get the raw technical sentence
+            # ("Entry has no EPUB or PDF acquisition suitable for LCP
+            # protection") — the review round flagged it as unintelligible.
+            logger.warning(
+                "readium.borrow.not_lendable",
+                extra={"entry_id": str(form.cleaned_data["entry_id"].pk), "cause": e.technical_detail},
+            )
+            raise ProblemDetailException(
+                str(e),
+                detail=e.technical_detail,
+                status=HTTPStatus.CONFLICT,
+                detail_type=DetailType.CONFLICT,
+                additional_data={
+                    "reason_code": e.reason_code,
+                    "entry_id": str(form.cleaned_data["entry_id"].pk),
+                    "contact_email": settings.EVILFLOWERS_CONTACT_EMAIL,
+                },
                 previous=e,
             )
         except BorrowError as e:

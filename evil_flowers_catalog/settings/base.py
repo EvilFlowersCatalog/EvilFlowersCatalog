@@ -307,6 +307,11 @@ EVILFLOWERS_READIUM_BASE_URL = os.getenv(
 EVILFLOWERS_READIUM_DEFAULT_BORROW_DURATION_DAYS = int(
     os.getenv("EVILFLOWERS_READIUM_DEFAULT_BORROW_DURATION_DAYS", 14)
 )
+# LCP usage rights written into every issued license. `print` is a page
+# count (LCP has no percentage form); `copy` is a character count. An entry
+# can override both via its config (`readium_print_limit`, `readium_copy_limit`).
+EVILFLOWERS_READIUM_PRINT_LIMIT_PAGES = int(os.getenv("EVILFLOWERS_READIUM_PRINT_LIMIT_PAGES", 10))
+EVILFLOWERS_READIUM_COPY_LIMIT_CHARS = int(os.getenv("EVILFLOWERS_READIUM_COPY_LIMIT_CHARS", 2048))
 
 # IP-003: renewal policy
 EVILFLOWERS_READIUM_MAX_RENEW_DAYS = int(os.getenv("EVILFLOWERS_READIUM_MAX_RENEW_DAYS", 14))
@@ -448,10 +453,14 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EVILFLOWERS_CONTACT_EMAIL)
 EVILFLOWERS_NOTIFICATIONS_ENABLED = os.getenv("EVILFLOWERS_NOTIFICATIONS_ENABLED", "false").lower() == "true"
 EVILFLOWERS_NOTIFICATION_FROM_EMAIL = os.getenv("EVILFLOWERS_NOTIFICATION_FROM_EMAIL", EVILFLOWERS_CONTACT_EMAIL)
 EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS = int(os.getenv("EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS", 72))
-EVILFLOWERS_BASE_URL = os.getenv(
-    "EVILFLOWERS_BASE_URL",
-    f"http://{os.getenv('DJANGO_RUNSERVER_IP', '127.0.0.1')}:{os.getenv('DJANGO_RUNSERVER_PORT', '8000')}",
-)
+# Public base URL used for absolute links in notification e-mails (claim
+# links, `.lcpl` downloads). Falls back to EVILFLOWERS_READIUM_BASE_URL — the
+# deployments already set that one to the public https origin, while this one
+# was left unset, so every e-mail link pointed at http://127.0.0.1:8000.
+EVILFLOWERS_BASE_URL = os.getenv("EVILFLOWERS_BASE_URL", EVILFLOWERS_READIUM_BASE_URL)
+# Library name shown in the notification header / footer ("Digitálna knižnica
+# Elvíra / Digital Library Elvira" on STU deployments).
+EVILFLOWERS_NOTIFICATION_LIBRARY_NAME = os.getenv("EVILFLOWERS_NOTIFICATION_LIBRARY_NAME", "Evil Flowers Catalog")
 
 # OpenAPI
 EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium"]
