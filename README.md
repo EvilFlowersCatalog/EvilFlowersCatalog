@@ -171,6 +171,8 @@ is mirrored on the [GitHub Wiki](https://github.com/EvilFlowersCatalog/EvilFlowe
   [Deployment](docs/catalog-wiki/Readium-LCP-Deployment.md)
 - [Management Commands](docs/catalog-wiki/Management-commands.md)
 - [Asynchronous Tasks](docs/catalog-wiki/Asynchronous-Tasks.md)
+- [Model Context Protocol](docs/catalog-wiki/Model-Context-Protocol.md) — the MCP server that lets
+  LLM agents search the catalog
 
 Implementation proposals (`IP-XXX`) sit under [`docs/proposals/posts/`](docs/proposals/posts) — every feature has one.
 

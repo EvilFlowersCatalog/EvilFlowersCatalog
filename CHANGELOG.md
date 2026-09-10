@@ -4,6 +4,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 
 ## 0.14.0 : TBD
 
+- **Added**: Model Context Protocol server at `POST /mcp/v1` (IP-014) — eight read-only tools over the catalog for LLM agents, authenticated with the existing API keys
 - **Added**: Proper Readium LCP integration
 - **Added**: OPDS2 support
 - **Added**: Dataverse integration for importing published Dataverse datasets as catalog entries and acquisitions

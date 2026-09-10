@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     "apps.events",
     "apps.notifications",
     "apps.dataverse",
+    "apps.mcp",
 ]
 
 MIDDLEWARE = [
@@ -291,6 +292,39 @@ EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC = os.getenv("EVILFLOWERS_FILES_CACHE_CONT
 EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE = os.getenv(
     "EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE", "private, max-age=0, must-revalidate"
 )
+
+# MCP (Model Context Protocol) server — IP-014.
+# The endpoint is mounted only when enabled, so an operator who does not want
+# the catalog reachable by agents gets a 404, not a disabled-but-present route.
+EVILFLOWERS_MCP_ENABLED = bool(int(os.getenv("EVILFLOWERS_MCP_ENABLED", "1")))
+EVILFLOWERS_MCP_DEFAULT_LIMIT = int(os.getenv("EVILFLOWERS_MCP_DEFAULT_LIMIT", 10))
+# Deliberately lower than the REST ceiling: every result is spent from a model's
+# context window, and a 200-item page is nearly always waste.
+EVILFLOWERS_MCP_MAX_LIMIT = int(os.getenv("EVILFLOWERS_MCP_MAX_LIMIT", 50))
+EVILFLOWERS_MCP_SUMMARY_MAX_CHARS = int(os.getenv("EVILFLOWERS_MCP_SUMMARY_MAX_CHARS", 600))
+EVILFLOWERS_MCP_CONTENT_MAX_CHARS = int(os.getenv("EVILFLOWERS_MCP_CONTENT_MAX_CHARS", 4000))
+# Management tools (create/update/delete feeds and categories). Off unmounts
+# them from `tools/list` entirely, so an agent is never told they exist.
+EVILFLOWERS_MCP_ALLOW_WRITE = bool(int(os.getenv("EVILFLOWERS_MCP_ALLOW_WRITE", "1")))
+# When on, anonymous MCP sessions are refused at the transport with a 401 and a
+# `WWW-Authenticate` challenge. Off (the default) keeps public catalogs
+# browsable by an agent that has no credential yet.
+EVILFLOWERS_MCP_REQUIRE_AUTHENTICATION = bool(int(os.getenv("EVILFLOWERS_MCP_REQUIRE_AUTHENTICATION", "0")))
+# Authentication schemes this endpoint accepts, narrowed from
+# SECURED_VIEW_AUTHENTICATION_SCHEMAS. Basic is excluded by default: it would
+# put a reusable password (an LDAP one, for LDAP-backed users) in an agent's
+# config file, whereas an API key is independently revocable.
+EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS = [
+    scheme.strip()
+    for scheme in os.getenv("EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS", "Bearer").split(",")
+    if scheme.strip()
+]
+# Ceiling on a single JSON-RPC request body.
+EVILFLOWERS_MCP_MAX_REQUEST_BYTES = int(os.getenv("EVILFLOWERS_MCP_MAX_REQUEST_BYTES", 1024 * 1024))
+# Comma-separated browser origins allowed to reach the MCP endpoint (DNS-rebinding
+# guard). Unset disables the check — non-browser MCP clients send no `Origin`.
+_mcp_origins = os.getenv("EVILFLOWERS_MCP_ALLOWED_ORIGINS")
+EVILFLOWERS_MCP_ALLOWED_ORIGINS = [o.strip() for o in _mcp_origins.split(",") if o.strip()] if _mcp_origins else None
 
 # Events
 EVILFLOWERS_EVENT_BROKER_EXECUTOR = os.getenv("EVILFLOWERS_EVENT_BROKER_EXECUTOR")
