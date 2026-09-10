@@ -35,10 +35,10 @@ class CategorySerializer:
     class Base(Serializer):
         id: UUID
         term: str
+        label: Optional[str]
 
     class Detailed(Base):
         catalog_id: UUID
-        label: Optional[str]
         scheme: Optional[str]
 
 
