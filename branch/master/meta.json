@@ -3,12 +3,12 @@
   "slug": "master",
   "kind": "branch",
   "commit": {
-    "sha": "e9a396eaa9e7d318dc36c0ec83a50226257ff72b",
-    "short": "e9a396e",
-    "message": "Readium, OPDS 2.0 & MCP (#75)",
+    "sha": "1c435f723eabb7722bbcaa7e9e63da5113438db1",
+    "short": "1c435f7",
+    "message": "Merge pull request #76 from EvilFlowersCatalog/develop",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e9a396eaa9e7d318dc36c0ec83a50226257ff72b"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/1c435f723eabb7722bbcaa7e9e63da5113438db1"
   },
-  "deployed_at": "2026-09-10T09:56:30Z",
+  "deployed_at": "2026-09-10T12:49:45Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
