@@ -20,6 +20,7 @@ changes are documented before implementation.
 | IP-011 | [Reservation Queue UX Completion](posts/ip-011-reservation-ux-completion.md) | :white_check_mark: Implemented | 2026-05-26 |
 | IP-012 | [AI-Powered Discovery (Search, Recommendations, Summarization, Assistant)](posts/ip-012-ai-powered-discovery.md) | 📝 Draft (review questions resolved) | 2026-07-18 |
 | IP-013 | [Document Extraction, Classification & Feature Pipeline](posts/ip-013-document-extraction-structure.md) | 📝 Draft (review questions resolved) | 2026-07-18 |
+| IP-014 | [Model Context Protocol Server](posts/ip-014-model-context-protocol-server.md) | 📝 Draft (implemented, awaiting review answers) | 2026-09-09 |
 
 **Note on the Readium cluster.** IP-001, IP-003 (feature scope), IP-004, IP-007, IP-008,
 IP-009, and IP-011 together constitute the completed Readium LCP delivery and are all
