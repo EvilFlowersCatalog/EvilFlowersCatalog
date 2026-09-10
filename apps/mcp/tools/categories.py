@@ -7,6 +7,7 @@ same `(catalog, term)` uniqueness rule the model enforces.
 
 import logging
 
+from django.conf import settings
 from django.db import transaction
 from django.http import QueryDict
 from django.utils.translation import gettext as _
@@ -16,7 +17,7 @@ from apps.api.filters.categories import CategoryFilter
 from apps.api.forms.category import CategoryForm
 from apps.core.models import Category
 from apps.mcp.arguments import Arguments
-from apps.mcp.errors import ToolConflict, ToolNotFound, ToolPermissionDenied, ToolValidationError
+from apps.mcp.errors import ToolConflict, ToolError, ToolNotFound, ToolPermissionDenied, ToolValidationError
 from apps.mcp.pagination import PAGINATION_ARGUMENTS, paginate, pagination_schema, read_pagination
 from apps.mcp.projections import category as project_category
 from apps.mcp.registry import ToolAccess, registry
@@ -81,6 +82,58 @@ def _validated_form(payload: dict) -> CategoryForm:
     if not form.is_valid():
         raise ToolValidationError(form)
     return form
+
+
+def _read_category_list(raw) -> list:
+    """Validate the nested `categories` array `create_categories` takes.
+
+    `Arguments` handles flat scalars and id lists; an array of objects needs
+    checking here. Every problem is reported with the index of the offending
+    element, because "categories[7].term is missing" is a fixable message and
+    "invalid categories" is not.
+    """
+    if not isinstance(raw, list) or not raw:
+        raise ToolError(_("`categories` must be a non-empty array of objects, each with at least a `term`."))
+
+    limit = settings.EVILFLOWERS_MCP_MAX_BULK_ITEMS
+    if len(raw) > limit:
+        raise ToolError(
+            _("`categories` holds %(count)d entries; at most %(limit)d may be created at once.")
+            % {"count": len(raw), "limit": limit}
+        )
+
+    records, seen = [], set()
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise ToolError(_("`categories[%(index)d]` must be an object.") % {"index": index})
+
+        unknown = sorted(set(item) - {"term", "label", "scheme"})
+        if unknown:
+            raise ToolError(
+                _("`categories[%(index)d]` has unknown key(s): %(unknown)s. Accepted: term, label, scheme.")
+                % {"index": index, "unknown": ", ".join(unknown)}
+            )
+
+        term = item.get("term")
+        if not isinstance(term, str) or not term.strip():
+            raise ToolError(
+                _("`categories[%(index)d].term` is required and must be a non-empty string.") % {"index": index}
+            )
+
+        term = term.strip()
+        if term in seen:
+            raise ToolError(_("`categories` names the term '%(term)s' more than once.") % {"term": term})
+        seen.add(term)
+
+        records.append(
+            {
+                "term": term,
+                "label": (item.get("label") or "").strip() or None,
+                "scheme": (item.get("scheme") or "").strip() or None,
+            }
+        )
+
+    return records
 
 
 @registry.tool(
@@ -297,3 +350,111 @@ def list_categories(request, raw_arguments: dict) -> dict:
     page = paginate(categories, requested_page)
 
     return {"items": [project_category(item) for item in page.items], "metadata": page.metadata()}
+
+
+@registry.tool(
+    name="create_categories",
+    title="Create several categories at once",
+    description=(
+        "Import a whole subject vocabulary into a catalog in one call — a UDC/MDT selection, a "
+        "faculty's subject list, a BISAC subset. Requires `manage` access on the catalog. "
+        "\n\n"
+        "Terms that already exist in the catalog are skipped and reported, not treated as an "
+        "error, so re-running the same import after adding a few terms is safe and only creates "
+        "the new ones. Set `skip_existing` to false to make a clash fail the whole call instead. "
+        "The response returns every category with its id, which is what `classify_entries` takes."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "catalog_id": {**UUID_SCHEMA, "description": "Catalog to create the categories in."},
+            "categories": {
+                "type": "array",
+                "description": "The vocabulary to import. Order is preserved in the response.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "term": CATEGORY_FIELDS["term"],
+                        "label": CATEGORY_FIELDS["label"],
+                        "scheme": CATEGORY_FIELDS["scheme"],
+                    },
+                    "required": ["term"],
+                    "additionalProperties": False,
+                },
+            },
+            "skip_existing": {
+                "type": "boolean",
+                "default": True,
+                "description": "True skips terms the catalog already has; false makes the first clash fail the call.",
+            },
+        },
+        "required": ["catalog_id", "categories"],
+        "additionalProperties": False,
+    },
+    output_schema={
+        "type": "object",
+        "properties": {
+            "created": {"type": "integer"},
+            "skipped": {"type": "integer"},
+            "categories": {
+                "type": "array",
+                "description": "Every requested term, existing ones included, so ids can be used immediately.",
+                "items": {
+                    **CATEGORY_SCHEMA,
+                    "properties": {**CATEGORY_SCHEMA["properties"], "created": {"type": "boolean"}},
+                },
+            },
+        },
+        "required": ["created", "skipped", "categories"],
+    },
+    access=ToolAccess.WRITE,
+    idempotent=False,
+)
+@transaction.atomic
+def create_categories(request, raw_arguments: dict) -> dict:
+    arguments = Arguments(raw_arguments, allowed=("catalog_id", "categories", "skip_existing"))
+
+    catalog = resolve_catalog_for_management(
+        request, arguments.uuid("catalog_id", required=True), "create categories in"
+    )
+    skip_existing = arguments.boolean("skip_existing", default=True)
+    requested = _read_category_list(raw_arguments.get("categories"))
+
+    existing = {category.term: category for category in Category.objects.filter(catalog=catalog)}
+
+    payload, created_count = [], 0
+    for record in requested:
+        term = record["term"]
+
+        if term in existing:
+            if not skip_existing:
+                _assert_term_free(catalog, term)
+            payload.append({**project_category(existing[term]), "created": False})
+            continue
+
+        form = _validated_form(
+            {
+                "catalog_id": str(catalog.pk),
+                "term": term,
+                "label": record.get("label"),
+                "scheme": record.get("scheme"),
+            }
+        )
+
+        category = Category(creator=request.user)
+        form.populate(category)
+        category.save()
+        # Registered so a duplicate term *within the same request* is skipped
+        # rather than hitting the unique constraint half-way through the batch.
+        existing[term] = category
+        created_count += 1
+        payload.append({**project_category(category), "created": True})
+
+    logger.info(
+        "mcp.write user=%s action=create_categories catalog=%s requested=%s created=%s",
+        request.user.pk,
+        catalog.pk,
+        len(requested),
+        created_count,
+    )
+    return {"created": created_count, "skipped": len(payload) - created_count, "categories": payload}

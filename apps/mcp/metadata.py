@@ -36,11 +36,18 @@ class ProtectedResourceMetadata(View):
 
         payload = {
             "resource": resource,
-            "bearer_methods_supported": ["header"],
             "resource_name": settings.INSTANCE_NAME,
             "resource_documentation": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/wiki/Model-Context-Protocol",
             "scopes_supported": _scopes(),
+            # Not an RFC 9728 member. RFC 9728 describes bearer tokens only, so
+            # a deployment that also accepts Basic has no standard field to say
+            # so. Extra members are permitted and a client that does not know
+            # this one still learns everything the standard fields carry.
+            "authentication_schemes_supported": list(schemes()),
         }
+
+        if "Bearer" in schemes():
+            payload["bearer_methods_supported"] = ["header"]
 
         response = JsonResponse(payload, status=HTTPStatus.OK)
         # Public, cacheable, and it changes only when the deployment does.
@@ -61,12 +68,62 @@ def _scopes() -> list:
     return scopes
 
 
+def schemes() -> tuple:
+    """The authentication schemes this deployment accepts on `/mcp/v1`.
+
+    Ordered Bearer-first regardless of how the operator wrote the setting: a
+    client that picks the first challenge it recognises should land on the
+    revocable credential rather than on the password.
+    """
+    configured = list(settings.EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS)
+    return tuple(sorted(configured, key=lambda scheme: (scheme != "Bearer", scheme)))
+
+
+def credential_hint() -> str:
+    """How to authenticate, phrased for a model reading a refusal message.
+
+    Every "you need credentials" message in this app routes through here, so a
+    deployment that turns Basic off never tells an agent to try it — and one
+    that turns Bearer off never tells it to mint an API key it cannot use.
+    """
+    from django.utils.translation import gettext as _
+
+    forms = {
+        "Bearer": _("`Authorization: Bearer <api key>`"),
+        "Basic": _("`Authorization: Basic <base64 of username:password>`"),
+    }
+    offered = [forms[scheme] for scheme in schemes() if scheme in forms]
+
+    if not offered:
+        return _("no authentication scheme is enabled on this endpoint")
+    if len(offered) == 1:
+        return offered[0]
+    return _("%(first)s or %(second)s") % {"first": offered[0], "second": offered[1]}
+
+
 def challenge(request) -> str:
-    """The `WWW-Authenticate` value for a 401 from the MCP endpoint."""
+    """The `WWW-Authenticate` value for a 401 from the MCP endpoint.
+
+    One comma-separated challenge per accepted scheme, which is what RFC 9110
+    prescribes for a resource offering a choice. Only the Bearer challenge
+    carries `resource_metadata` — that parameter is defined by RFC 9728 for
+    bearer tokens, and MCP clients look for it there.
+    """
     from django.utils.text import slugify
 
+    realm = slugify(settings.INSTANCE_NAME)
     metadata_url = request.build_absolute_uri(reverse("mcp-protected-resource-metadata"))
-    return f'Bearer realm="{slugify(settings.INSTANCE_NAME)}", resource_metadata="{metadata_url}"'
+
+    challenges = []
+    for scheme in schemes():
+        if scheme == "Bearer":
+            challenges.append(f'Bearer realm="{realm}", resource_metadata="{metadata_url}"')
+        else:
+            challenges.append(f'{scheme} realm="{realm}"')
+
+    # With every scheme disabled there is still a 401 to answer, and a response
+    # without `WWW-Authenticate` is malformed. Name the one we would prefer.
+    return ", ".join(challenges) or f'Bearer realm="{realm}"'
 
 
-__all__ = ["ProtectedResourceMetadata", "challenge"]
+__all__ = ["ProtectedResourceMetadata", "challenge", "credential_hint", "schemes"]

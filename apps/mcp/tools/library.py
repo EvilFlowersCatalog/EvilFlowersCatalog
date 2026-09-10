@@ -10,6 +10,7 @@ from django.utils.translation import gettext as _
 
 from apps.core.models import Catalog, ShelfRecord, UserCatalog
 from apps.mcp.arguments import Arguments
+from apps.mcp.metadata import credential_hint
 from apps.mcp.pagination import PAGINATION_ARGUMENTS, pagination_schema, paginate, read_pagination
 from apps.mcp.projections import license_summary, shelf_record
 from apps.mcp.registry import ToolAccess, registry
@@ -55,8 +56,9 @@ def whoami(request, raw_arguments: dict) -> dict:
             "can_write": False,
             "access": _(
                 "Anonymous session: public catalogs only. Personal tools (shelf, loans) and all "
-                "management tools are unavailable. Supply an `Authorization: Bearer <api key>` header."
-            ),
+                "management tools are unavailable. Supply %(hint)s."
+            )
+            % {"hint": credential_hint()},
         }
 
     if user.is_superuser:

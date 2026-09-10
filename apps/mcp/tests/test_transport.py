@@ -23,6 +23,7 @@ from apps.mcp.protocol import (
 URL = "/mcp/v1"
 
 READ_TOOLS = {
+    "get_catalog",
     "get_category",
     "get_entry",
     "get_feed",
@@ -37,10 +38,17 @@ READ_TOOLS = {
 }
 
 WRITE_TOOLS = {
+    "add_entries_to_feed",
+    "classify_entries",
+    "create_catalog",
+    "create_categories",
     "create_category",
     "create_feed",
+    "delete_catalog",
     "delete_category",
     "delete_feed",
+    "remove_entries_from_feed",
+    "update_catalog",
     "update_category",
     "update_feed",
 }
@@ -131,8 +139,22 @@ class ToolListingTests(TransportTestCase):
         # overwrite or remove, which is what makes a client ask first.
         self.assertFalse(annotations["create_feed"]["destructiveHint"])
         self.assertFalse(annotations["create_feed"]["idempotentHint"])
-        for name in ("update_feed", "delete_feed", "update_category", "delete_category"):
+        for name in (
+            "update_feed",
+            "delete_feed",
+            "update_category",
+            "delete_category",
+            "update_catalog",
+            "delete_catalog",
+            "classify_entries",
+            "remove_entries_from_feed",
+        ):
             self.assertTrue(annotations[name]["destructiveHint"], name)
+
+        # Adding to a feed only ever grows the set, and running it twice leaves
+        # the same membership — nothing for a client to prompt about.
+        self.assertFalse(annotations["add_entries_to_feed"]["destructiveHint"])
+        self.assertTrue(annotations["add_entries_to_feed"]["idempotentHint"])
 
     def test_every_tool_declares_an_output_schema(self):
         body = self.result({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})

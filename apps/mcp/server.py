@@ -22,6 +22,7 @@ from django.utils.translation import gettext as _
 from apps.core.errors import ProblemDetailException
 from apps.mcp import completions, prompts, resources
 from apps.mcp.errors import ToolError
+from apps.mcp.metadata import credential_hint
 from apps.mcp.protocol import (
     INTERNAL_ERROR,
     INVALID_PARAMS,
@@ -53,14 +54,30 @@ READ_INSTRUCTIONS = (
 )
 
 WRITE_INSTRUCTIONS = (
-    "\n\nFeeds and categories can also be created, updated and deleted. Management tools need "
-    "`manage` access on the catalog in question — call `whoami` and check `manageable_catalogs` "
-    "before planning any curation work. Survey before you write: `list_feeds` / "
-    "`list_categories` first, so you extend the existing structure instead of duplicating it. "
-    "`update_feed` and `update_category` change only the arguments you pass, but passing "
-    "`entry_ids` or `parent_ids` replaces that entire set. Deletions cannot be undone — confirm "
-    "with the user first, and note that `delete_category` reports how many publications lost "
-    "the classification."
+    "\n\nThis deployment also lets you curate the library: catalogs, feeds and categories can be "
+    "created, updated and deleted, publications can be filed under categories "
+    "(`classify_entries`) and moved in and out of feeds (`add_entries_to_feed`, "
+    "`remove_entries_from_feed`).\n\n"
+    "Every management tool needs `manage` access on the catalog in question. Start with "
+    "`list_catalogs` — each result carries an `access` level — or `whoami` for the count. "
+    "Creating a *catalog* additionally requires administrator rights, which `manage` on an "
+    "existing catalog does not confer.\n\n"
+    "Survey before you write. `list_feeds` and `list_categories` first, so you extend the "
+    "existing structure rather than duplicating it, and note that everything linked in one write "
+    "must live in the same catalog — a category from catalog A cannot be applied to a "
+    "publication in catalog B.\n\n"
+    "Bulk tools exist so cataloguing a thousand publications is not a thousand calls: "
+    "`create_categories` imports a whole vocabulary at once and skips terms that already exist, "
+    "and `classify_entries` files a batch of publications in one go. Both report per record what "
+    "actually changed, so re-running them is safe. Note that nothing here classifies *for* you — "
+    "`classify_entries` records the decision you make from each publication's own metadata.\n\n"
+    "Be careful in the other direction too. `update_feed` and `update_category` change only the "
+    "arguments you pass, but passing `entry_ids` or `parent_ids` replaces that entire set — "
+    'prefer `add_entries_to_feed` when curating. `classify_entries` with `mode: "replace"` '
+    "discards classifications you did not name; `add` is the default for that reason. Deletions "
+    "cannot be undone: confirm with the user first, note that `delete_category` reports how many "
+    "publications lost the classification, and treat `delete_catalog` — which destroys every "
+    "publication and file inside it — as something to propose, never to volunteer."
 )
 
 READ_ONLY_NOTE = "\n\nThis deployment is read-only: no tool here borrows, reserves, edits or deletes."
@@ -211,18 +228,16 @@ class McpServer:
                 return self._error_result(
                     _(
                         "`%(tool)s` changes catalog data and requires an authenticated session with "
-                        "`manage` access on the catalog. Connect with an `Authorization: Bearer "
-                        "<api key>` header."
+                        "`manage` access on the catalog. Connect with %(hint)s."
                     )
-                    % {"tool": tool.name}
+                    % {"tool": tool.name, "hint": credential_hint()}
                 )
             return self._error_result(
                 _(
                     "`%(tool)s` reports on the signed-in user's own library and needs credentials. "
-                    "Connect with an `Authorization: Bearer <api key>` header, or use "
-                    "`search_entries` to browse public catalogs instead."
+                    "Connect with %(hint)s, or use `search_entries` to browse public catalogs instead."
                 )
-                % {"tool": tool.name}
+                % {"tool": tool.name, "hint": credential_hint()}
             )
 
         return None

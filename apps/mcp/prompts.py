@@ -114,6 +114,43 @@ def _organise_catalog(arguments: Dict[str, str]) -> str:
     )
 
 
+def _classify_collection(arguments: Dict[str, str]) -> str:
+    catalog = arguments["catalog"]
+    scheme = arguments.get("scheme") or "the classification scheme I supply"
+    scope = arguments.get("scope") or "every publication in the catalog"
+
+    return (
+        f"Classify {scope} in the catalog **{catalog}** against {scheme}.\n\n"
+        "Do the classification yourself, from each publication's own metadata. There is no "
+        "classifier service behind these tools — `classify_entries` only records the decision "
+        "you make.\n\n"
+        "Work in this order:\n"
+        "1. `list_catalogs` to resolve the catalog id and confirm `access` is 'manage'. If it is "
+        "not, say so and stop — nothing below will work.\n"
+        "2. `list_categories` for that catalog. Whatever already exists is the vocabulary; only "
+        "the genuinely missing terms need creating.\n"
+        "3. `create_categories` for the missing ones, in one call. Give each a stable `term` and "
+        "a human-readable `label`, and set `scheme` so the vocabulary is identifiable later. "
+        "Existing terms are skipped, so this is safe to re-run.\n"
+        "4. Page through `search_entries` scoped to the catalog. Work in batches — the response "
+        "carries every entry's title, authors, summary and current categories, which is what you "
+        "classify from. `get_entry` gives you the full description when a title is ambiguous.\n"
+        '5. For each batch, call `classify_entries` with `mode: "add"` so nothing already filed '
+        'is lost. Use `mode: "replace"` only if I explicitly asked for a re-classification.\n\n'
+        "Rules for the classification itself:\n"
+        "- Assign the most specific term that clearly fits, plus a broader one where it genuinely "
+        "helps browsing. Two or three per publication is usually right.\n"
+        "- When a publication does not clearly fit anything, leave it unclassified and list it "
+        "for me at the end. A wrong classification is worse than none — it is invisible until "
+        "someone browses the wrong subject and finds the wrong book.\n"
+        "- Never invent a term that is not in the scheme.\n\n"
+        "Before the first write, show me: how many publications are in scope, which categories "
+        "you would create, and your classification of the first ten as a sample. **Wait for my "
+        "approval.** Then work through the batches, reporting `changed` / `unchanged` counts as "
+        "you go, and finish with the list of anything you could not place."
+    )
+
+
 def _catalog_overview(arguments: Dict[str, str]) -> str:
     return (
         "Give me an overview of this digital library.\n\n"
@@ -155,6 +192,20 @@ _PROMPTS = [
             _argument("goal", "What you are trying to achieve."),
         ],
         builder=_organise_catalog,
+    ),
+    Prompt(
+        name="classify_collection",
+        title="Classify a collection against a scheme",
+        description=(
+            "Import a subject vocabulary (UDC/MDT, BISAC, a faculty's own list) into a catalog "
+            "and file its publications under it, in reviewed batches."
+        ),
+        arguments=[
+            _argument("catalog", "The catalog to classify, by name.", required=True),
+            _argument("scheme", "The classification scheme, e.g. 'the MDT/UDC selection agreed for STU'."),
+            _argument("scope", "Which publications, e.g. 'everything added since 2025'. Defaults to all of them."),
+        ],
+        builder=_classify_collection,
     ),
     Prompt(
         name="catalog_overview",

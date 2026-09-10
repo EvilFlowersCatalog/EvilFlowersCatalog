@@ -1,24 +1,39 @@
-"""Discovery tools: find publications, then read one in full.
+"""Discovery tools: find publications, read one in full, and file them by subject.
 
-Both tools resolve their queryset through `apps.api.filters.entries.EntryFilter`
+Every tool here resolves its queryset through `apps.api.filters.entries.EntryFilter`
 rather than querying `Entry` directly. That filter is where catalog access
 control lives (`BaseSecuredFilter.apply_catalog_access_control`), so routing
 through it means MCP cannot drift from REST on who may see what — there is one
 implementation, not two.
+
+`classify_entries` is the one write here. It touches only the `categories`
+relation: an agent may decide that a book belongs under "624 Stavebné
+inžinierstvo", but it may not rewrite the book's title, authors, files or
+identifiers. That line is deliberate — classification is reversible and
+inspectable in a way that metadata rewriting is not.
 """
 
-from django.http import QueryDict
+import logging
 
+from django.db import transaction
+from django.http import QueryDict
+from django.utils.translation import gettext as _
+from object_checker.base_object_checker import has_object_permission
+
+from apps.api.filters.categories import CategoryFilter
 from apps.api.filters.entries import EntryFilter
 from apps.api.views.entries import shelf_record_mapping
-from apps.core.models import Entry
+from apps.core.models import Category, Entry
 from apps.mcp.arguments import Arguments
-from apps.mcp.errors import ToolNotFound
+from apps.mcp.errors import ToolError, ToolNotFound, ToolPermissionDenied
 from apps.mcp.pagination import PAGINATION_ARGUMENTS, pagination_schema, paginate, read_pagination
 from apps.mcp.projections import entry_detail, entry_summary
-from apps.mcp.registry import registry
+from apps.mcp.registry import ToolAccess, registry
 from apps.mcp.schemas import ENTRY_DETAIL_SCHEMA, ENTRY_SUMMARY_SCHEMA, UUID_SCHEMA, list_output, single_output
+from apps.mcp.tools.common import assert_same_catalog, assert_within_bulk_limit, resolve_all
 from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
+
+logger = logging.getLogger("apps.mcp.audit")
 
 LCP_STATES = (
     "not_lcp",
@@ -248,3 +263,167 @@ def get_entry(request, raw_arguments: dict) -> dict:
     shelf = shelf_record_mapping(request.user) if request.user.is_authenticated else {}
 
     return {"entry": entry_detail(entry, request, lcp_states, shelf)}
+
+
+CLASSIFY_MODES = ("add", "replace", "remove")
+
+
+def _manageable_entries(request, entries: list) -> list:
+    """Filter `entries` to the ones this credential may re-classify.
+
+    Mirrors `check_entry_manage`: the catalog's managers, plus an entry's own
+    creator. Evaluated in bulk rather than one `has_object_permission` call per
+    entry, which on a hundred-entry batch would be a hundred queries — the
+    catalog check is asked once, and creator ownership is a field comparison.
+    """
+    catalog = entries[0].catalog
+    if has_object_permission("check_catalog_manage", request.user, catalog):
+        return entries
+
+    return [entry for entry in entries if entry.creator_id == request.user.pk]
+
+
+@registry.tool(
+    name="classify_entries",
+    title="File publications under categories",
+    description=(
+        "Add, replace or remove subject categories on a batch of publications — the tool for "
+        "classifying a collection against a scheme such as UDC/MDT. Requires `manage` access on "
+        "the catalog (or being the publication's own creator). Every entry and every category "
+        "must belong to the same catalog; create the vocabulary first with `create_categories`. "
+        "\n\n"
+        "`mode` decides what happens to classifications already on a record: 'add' (the default) "
+        "keeps them and adds yours, 'remove' takes only the named ones away, and 'replace' "
+        "discards everything else the record was filed under. Prefer 'add' unless the user asked "
+        "for a re-classification. The result reports per publication whether anything actually "
+        "changed, so re-running the same call is safe and reports zero changes."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "entry_ids": {
+                "type": "array",
+                "items": UUID_SCHEMA,
+                "description": "Publications to file, from `search_entries`. All must share one catalog.",
+            },
+            "category_ids": {
+                "type": "array",
+                "items": UUID_SCHEMA,
+                "description": (
+                    "Categories to apply, from `list_categories` or `create_categories`. May be "
+                    "empty only with mode 'replace', which then clears every classification."
+                ),
+            },
+            "mode": {
+                "type": "string",
+                "enum": list(CLASSIFY_MODES),
+                "default": "add",
+                "description": "'add' keeps existing categories, 'remove' detaches, 'replace' overwrites the set.",
+            },
+        },
+        "required": ["entry_ids", "category_ids"],
+        "additionalProperties": False,
+    },
+    output_schema={
+        "type": "object",
+        "properties": {
+            "mode": {"type": "string"},
+            "changed": {"type": "integer"},
+            "unchanged": {"type": "integer"},
+            "results": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": UUID_SCHEMA,
+                        "title": {"type": "string"},
+                        "changed": {"type": "boolean"},
+                        "categories": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["id", "changed", "categories"],
+                },
+            },
+        },
+        "required": ["mode", "changed", "unchanged", "results"],
+    },
+    access=ToolAccess.WRITE,
+    # Re-running the same call is a no-op, and the result says so.
+    idempotent=True,
+    # 'replace' and 'remove' discard classifications the caller did not name.
+    destructive=True,
+)
+@transaction.atomic
+def classify_entries(request, raw_arguments: dict) -> dict:
+    arguments = Arguments(raw_arguments, allowed=("entry_ids", "category_ids", "mode"))
+
+    mode = arguments.enum("mode", CLASSIFY_MODES, default="add")
+    entry_ids = assert_within_bulk_limit("entry_ids", arguments.uuid_sequence("entry_ids") or [])
+    category_ids = arguments.uuid_sequence("category_ids") or []
+
+    if not category_ids and mode != "replace":
+        raise ToolError(
+            _("`category_ids` is empty. Only mode 'replace' accepts that, and it clears every classification.")
+        )
+
+    entries = resolve_all(
+        request,
+        EntryFilter,
+        Entry,
+        entry_ids,
+        label="Entry",
+        queryset=Entry.objects.select_related("catalog").prefetch_related("categories"),
+    )
+    catalog = entries[0].catalog
+    assert_same_catalog(catalog, entries, label=_("Entries"))
+
+    categories = resolve_all(request, CategoryFilter, Category, category_ids, label="Category")
+    assert_same_catalog(catalog, categories, label=_("Categories"))
+
+    # Refuse the whole batch rather than classify the permitted half: a partial
+    # write the caller has to reconcile is worse than a refusal it can act on.
+    permitted = _manageable_entries(request, entries)
+    if len(permitted) != len(entries):
+        raise ToolPermissionDenied(
+            "classify",
+            _("%(count)d of the %(total)d publications requested")
+            % {"count": len(entries) - len(permitted), "total": len(entries)},
+        )
+
+    results = []
+    for entry in entries:
+        before = {category.pk for category in entry.categories.all()}
+
+        if mode == "add":
+            entry.categories.add(*categories)
+        elif mode == "remove":
+            entry.categories.remove(*categories)
+        else:
+            entry.categories.set(categories)
+
+        after = set(entry.categories.values_list("pk", flat=True))
+        results.append(
+            {
+                "id": str(entry.pk),
+                "title": entry.title,
+                "changed": before != after,
+                "categories": sorted(entry.categories.values_list("term", flat=True)),
+            }
+        )
+
+    changed = sum(1 for result in results if result["changed"])
+    logger.info(
+        "mcp.write user=%s action=classify_entries mode=%s catalog=%s entries=%s categories=%s changed=%s",
+        request.user.pk,
+        mode,
+        catalog.pk,
+        len(entries),
+        len(categories),
+        changed,
+    )
+
+    return {
+        "mode": mode,
+        "changed": changed,
+        "unchanged": len(results) - changed,
+        "results": results,
+    }

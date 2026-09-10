@@ -14,7 +14,8 @@ offers neither.
 Authentication is `SecuredView`'s — the same credentials as the REST API — with
 three deliberate restrictions layered on top, all in `_authenticate` below:
 tokens may not arrive in the query string, the accepted schemes are configurable
-(Bearer only by default), and anonymous access can be switched off entirely.
+(Bearer API keys and Basic username/password, both on by default), and anonymous
+access can be switched off entirely.
 """
 
 import json
@@ -26,7 +27,7 @@ from django.utils.translation import gettext as _
 
 from apps.core.errors import DetailType, ProblemDetailException
 from apps.core.views import SecuredView
-from apps.mcp.metadata import challenge
+from apps.mcp.metadata import challenge, credential_hint, schemes
 from apps.mcp.protocol import (
     ASSUMED_PROTOCOL_VERSION,
     INVALID_REQUEST,
@@ -45,11 +46,13 @@ server = McpServer(registry)
 class McpEndpoint(SecuredView):
     """MCP over Streamable HTTP, authenticated with the catalog's own credentials.
 
-    An MCP client presents exactly what a REST client does:
-    `Authorization: Bearer <api key JWT>`. No header at all is a valid anonymous
-    session limited to public catalogs — that is what makes an open OPDS catalog
-    usable by an agent without provisioning a credential first, and it can be
-    turned off with `EVILFLOWERS_MCP_REQUIRE_AUTHENTICATION`.
+    An MCP client presents exactly what a REST client does: either
+    `Authorization: Bearer <api key JWT>` or `Authorization: Basic <base64
+    username:password>`, the latter resolving through whichever `AuthSource`
+    (database or LDAP) recognises the user. No header at all is a valid
+    anonymous session limited to public catalogs — that is what makes an open
+    OPDS catalog usable by an agent without provisioning a credential first, and
+    it can be turned off with `EVILFLOWERS_MCP_REQUIRE_AUTHENTICATION`.
     """
 
     http_method_names = ["post", "get", "delete", "options"]
@@ -68,7 +71,7 @@ class McpEndpoint(SecuredView):
         if settings.EVILFLOWERS_MCP_REQUIRE_AUTHENTICATION and not user.is_authenticated:
             raise self._unauthorized(
                 request,
-                _("This MCP endpoint requires credentials. Send an `Authorization: Bearer <api key>` header."),
+                _("This MCP endpoint requires credentials. Send %(hint)s.") % {"hint": credential_hint()},
             )
 
         return user
@@ -86,7 +89,7 @@ class McpEndpoint(SecuredView):
             raise ProblemDetailException(
                 _("Credentials must not be passed in the query string"),
                 status=HTTPStatus.BAD_REQUEST,
-                detail=_("Send an `Authorization: Bearer <api key>` header instead."),
+                detail=_("Send %(hint)s as a header instead.") % {"hint": credential_hint()},
             )
 
     def _assert_supported_scheme(self, request) -> None:
@@ -95,17 +98,17 @@ class McpEndpoint(SecuredView):
             return
 
         scheme = header.split(" ")[0]
-        allowed = settings.EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS
+        allowed = schemes()
         if scheme in allowed:
             return
 
-        # Basic is off by default: it would mean an agent's config file holding
-        # a reusable password (and, with an LDAP auth source, the user's
-        # directory password). An API key is revocable on its own.
+        # Both Bearer and Basic ship enabled, but an operator can narrow this to
+        # Bearer alone — Basic means an agent's config file holds a reusable
+        # password, and with an LDAP auth source that is the directory password.
         raise self._unauthorized(
             request,
             _("Unsupported authentication scheme '%(scheme)s'. This endpoint accepts: %(allowed)s.")
-            % {"scheme": scheme, "allowed": ", ".join(allowed)},
+            % {"scheme": scheme, "allowed": ", ".join(allowed) or _("none")},
         )
 
     @staticmethod

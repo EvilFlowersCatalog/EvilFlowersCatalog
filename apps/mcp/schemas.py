@@ -107,6 +107,23 @@ CATALOG_SCHEMA = {
     "required": ["id", "title", "url_name"],
 }
 
+CATALOG_DETAIL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        **CATALOG_SCHEMA["properties"],
+        "access": {
+            "type": "string",
+            "enum": ["read", "write", "manage"],
+            "description": "What the calling credential may do here. Only 'manage' unlocks the curation tools.",
+        },
+        "entry_count": {"type": "integer"},
+        "feed_count": {"type": "integer"},
+        "category_count": {"type": "integer"},
+        "created_at": {"type": "string", "format": "date-time"},
+    },
+    "required": ["id", "title", "url_name"],
+}
+
 AUTHOR_SCHEMA = {
     "type": "object",
     "properties": {
@@ -199,9 +216,37 @@ DELETION_OUTPUT_SCHEMA = {
 }
 
 
+BULK_WRITE_OUTPUT_SCHEMA = {
+    "type": "object",
+    "description": (
+        "The outcome of a bulk write. `changed` counts records this call actually altered; "
+        "`unchanged` counts those that already had the requested state."
+    ),
+    "properties": {
+        "changed": {"type": "integer"},
+        "unchanged": {"type": "integer"},
+        "results": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": UUID_SCHEMA,
+                    "title": {"type": "string"},
+                    "changed": {"type": "boolean"},
+                },
+                "required": ["id", "changed"],
+            },
+        },
+    },
+    "required": ["changed", "unchanged"],
+}
+
+
 __all__ = [
     "AUTHOR_SCHEMA",
     "AVAILABILITY_SCHEMA",
+    "BULK_WRITE_OUTPUT_SCHEMA",
+    "CATALOG_DETAIL_SCHEMA",
     "CATALOG_SCHEMA",
     "CATEGORY_SCHEMA",
     "DELETION_OUTPUT_SCHEMA",

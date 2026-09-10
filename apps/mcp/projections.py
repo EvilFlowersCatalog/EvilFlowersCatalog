@@ -59,6 +59,25 @@ def catalog(instance: Catalog) -> dict:
     )
 
 
+def catalog_detail(instance: Catalog, access: Optional[str] = None) -> dict:
+    """A catalog plus the numbers a curator needs before touching it.
+
+    `access` is what the *calling credential* may do, not a property of the
+    catalog — a model planning curation work should not have to call a tool and
+    read the refusal to find out whether it is allowed.
+    """
+    return _compact(
+        {
+            **catalog(instance),
+            "access": access,
+            "entry_count": instance.entries.count(),
+            "feed_count": instance.feeds.count(),
+            "category_count": instance.category_set.count(),
+            "created_at": _iso(instance.created_at),
+        }
+    )
+
+
 def _entry_count(instance: Feed) -> int:
     """Prefer the list view's annotation; fall back to a COUNT for a single feed.
 
@@ -264,6 +283,7 @@ __all__ = [
     "author_name",
     "availability",
     "catalog",
+    "catalog_detail",
     "category",
     "entry_detail",
     "entry_summary",

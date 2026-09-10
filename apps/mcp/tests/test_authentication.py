@@ -1,10 +1,10 @@
 """IP-014: how the endpoint authenticates, and everything it refuses.
 
 The point of reusing `SecuredView` is that an MCP client presents exactly what a
-REST client does. These go through the URLconf and the real `BearerBackend`, so
-that claim is verified end to end rather than assumed — and so are the three
-restrictions layered on top: no tokens in the query string, Bearer only, and
-optionally no anonymous sessions at all.
+REST client does. These go through the URLconf and the real `BearerBackend` and
+`BasicBackend`, so that claim is verified end to end rather than assumed — and so
+are the three restrictions layered on top: no tokens in the query string, a
+configurable set of accepted schemes, and optionally no anonymous sessions at all.
 """
 
 import json
@@ -83,29 +83,82 @@ class ApiKeyTests(AuthenticationTestCase):
         self.assertEqual(self.call("whoami", token="not-a-jwt").status_code, HTTPStatus.UNAUTHORIZED)
 
 
+def basic(username: str, password: str) -> str:
+    import base64
+
+    return f"Basic {base64.b64encode(f'{username}:{password}'.encode()).decode()}"
+
+
+class BasicAuthenticationTests(AuthenticationTestCase):
+    """Username/password, through the same `AuthSource` chain the REST API uses.
+
+    Many MCP clients can only attach a username and a password, and a librarian
+    curating the catalog through an agent should not have to mint an API key
+    first. Basic therefore ships enabled — and an operator who would rather
+    agents never hold a reusable password can narrow the endpoint back to Bearer.
+    """
+
+    def test_a_username_and_password_authenticate_the_session(self):
+        headers = {"Authorization": basic("agent", "correct-horse-battery-staple")}
+        body = json.loads(self.call("whoami", headers=headers).content)
+
+        self.assertEqual(body["result"]["structuredContent"]["username"], "agent")
+
+    def test_it_unlocks_exactly_what_the_api_key_unlocks(self):
+        headers = {"Authorization": basic("agent", "correct-horse-battery-staple")}
+        body = json.loads(self.call("search_entries", headers=headers).content)
+
+        self.assertEqual([item["title"] for item in body["result"]["structuredContent"]["items"]], ["Members Only"])
+
+    def test_a_wrong_password_is_refused_with_a_challenge(self):
+        response = self.call("whoami", headers={"Authorization": basic("agent", "wrong")})
+
+        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
+        self.assertIn("WWW-Authenticate", response.headers)
+
+    def test_a_malformed_credential_is_refused(self):
+        response = self.call("whoami", headers={"Authorization": "Basic not-base64!!"})
+        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
+
+    def test_management_tools_work_over_basic(self):
+        """The write surface must not quietly depend on which scheme was used."""
+        self.user.catalogs.through.objects.filter(user=self.user, catalog=self.catalog).update(mode="manage")
+        headers = {"Authorization": basic("agent", "correct-horse-battery-staple")}
+
+        body = json.loads(
+            self.call(
+                "create_category",
+                {"catalog_id": str(self.catalog.pk), "term": "over-basic"},
+                headers=headers,
+            ).content
+        )
+
+        self.assertFalse(body["result"]["isError"])
+        self.assertEqual(body["result"]["structuredContent"]["category"]["term"], "over-basic")
+
+
 class SchemeRestrictionTests(AuthenticationTestCase):
-    def test_basic_authentication_is_refused_by_default(self):
-        """An agent config holding a password is a worse credential than an API key.
-
-        `SecuredView` accepts Basic for the REST and OPDS surfaces; this
-        endpoint narrows it to Bearer via `EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS`.
-        """
-        import base64
-
-        encoded = base64.b64encode(b"agent:correct-horse-battery-staple").decode()
-        response = self.call("whoami", headers={"Authorization": f"Basic {encoded}"})
+    @override_settings(EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=["Bearer"])
+    def test_basic_can_be_switched_off(self):
+        response = self.call("whoami", headers={"Authorization": basic("agent", "correct-horse-battery-staple")})
 
         self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
         self.assertIn("Bearer", json.loads(response.content)["detail"])
 
-    @override_settings(EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=["Bearer", "Basic"])
-    def test_basic_can_be_re_enabled_by_configuration(self):
-        import base64
+    @override_settings(EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=["Bearer"])
+    def test_a_refusal_never_suggests_a_scheme_the_endpoint_rejects(self):
+        # The hint a model reads has to track the configuration, or it will
+        # keep retrying with a credential this deployment will never accept.
+        body = json.loads(self.call("get_my_shelf").content)
 
-        encoded = base64.b64encode(b"agent:correct-horse-battery-staple").decode()
-        body = json.loads(self.call("whoami", headers={"Authorization": f"Basic {encoded}"}).content)
+        self.assertNotIn("Basic", body["result"]["content"][0]["text"])
 
-        self.assertEqual(body["result"]["structuredContent"]["username"], "agent")
+    def test_a_refusal_offers_both_schemes_by_default(self):
+        body = json.loads(self.call("get_my_shelf").content)
+        message = body["result"]["content"][0]["text"]
+
+        self.assertIn("Bearer", message)
+        self.assertIn("Basic", message)
 
     def test_an_unknown_scheme_is_rejected(self):
         response = self.call("whoami", headers={"Authorization": "Negotiate abcdef"})
@@ -159,6 +212,24 @@ class ProtectedResourceMetadataTests(AuthenticationTestCase):
         payload = json.loads(response.content)
         self.assertTrue(payload["resource"].endswith("/mcp/v1"))
         self.assertEqual(payload["bearer_methods_supported"], ["header"])
+
+    def test_it_declares_every_accepted_scheme(self):
+        payload = json.loads(self.client.get("/.well-known/oauth-protected-resource/mcp/v1").content)
+        self.assertEqual(payload["authentication_schemes_supported"], ["Bearer", "Basic"])
+
+        with override_settings(EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=["Bearer"]):
+            payload = json.loads(self.client.get("/.well-known/oauth-protected-resource/mcp/v1").content)
+            self.assertEqual(payload["authentication_schemes_supported"], ["Bearer"])
+
+    def test_a_401_challenges_with_every_accepted_scheme(self):
+        response = self.call("whoami", token="not-a-jwt")
+        header = response.headers["WWW-Authenticate"]
+
+        self.assertIn("Bearer realm=", header)
+        self.assertIn("Basic realm=", header)
+        # Bearer first: a client that takes the first challenge it recognises
+        # should land on the revocable credential, not on the password.
+        self.assertLess(header.index("Bearer"), header.index("Basic"))
 
     def test_it_does_not_advertise_an_authorization_server_it_does_not_run(self):
         # Pointing at an AS this deployment has no way to serve would send

@@ -303,6 +303,11 @@ EVILFLOWERS_MCP_DEFAULT_LIMIT = int(os.getenv("EVILFLOWERS_MCP_DEFAULT_LIMIT", 1
 EVILFLOWERS_MCP_MAX_LIMIT = int(os.getenv("EVILFLOWERS_MCP_MAX_LIMIT", 50))
 EVILFLOWERS_MCP_SUMMARY_MAX_CHARS = int(os.getenv("EVILFLOWERS_MCP_SUMMARY_MAX_CHARS", 600))
 EVILFLOWERS_MCP_CONTENT_MAX_CHARS = int(os.getenv("EVILFLOWERS_MCP_CONTENT_MAX_CHARS", 4000))
+# Ceiling on how many records one bulk write may touch (`classify_entries`,
+# `create_categories`, `add_entries_to_feed`, …). Bulk exists so cataloguing a
+# thousand books is not a thousand round-trips; the cap keeps one call bounded
+# and, more importantly, keeps a wrong call small enough to notice and undo.
+EVILFLOWERS_MCP_MAX_BULK_ITEMS = int(os.getenv("EVILFLOWERS_MCP_MAX_BULK_ITEMS", 100))
 # Management tools (create/update/delete feeds and categories). Off unmounts
 # them from `tools/list` entirely, so an agent is never told they exist.
 EVILFLOWERS_MCP_ALLOW_WRITE = bool(int(os.getenv("EVILFLOWERS_MCP_ALLOW_WRITE", "1")))
@@ -311,12 +316,19 @@ EVILFLOWERS_MCP_ALLOW_WRITE = bool(int(os.getenv("EVILFLOWERS_MCP_ALLOW_WRITE", 
 # browsable by an agent that has no credential yet.
 EVILFLOWERS_MCP_REQUIRE_AUTHENTICATION = bool(int(os.getenv("EVILFLOWERS_MCP_REQUIRE_AUTHENTICATION", "0")))
 # Authentication schemes this endpoint accepts, narrowed from
-# SECURED_VIEW_AUTHENTICATION_SCHEMAS. Basic is excluded by default: it would
-# put a reusable password (an LDAP one, for LDAP-backed users) in an agent's
-# config file, whereas an API key is independently revocable.
+# SECURED_VIEW_AUTHENTICATION_SCHEMAS.
+#
+# Both are on by default. Bearer (an API key JWT) is the scheme to prefer: it is
+# revocable on its own and carries no password. Basic is offered because many
+# MCP clients only know how to attach a username and a password, and because a
+# librarian curating the catalog through an agent should not have to mint an API
+# key first. It costs something real, though — with an LDAP-backed user, Basic
+# puts the directory password in an agent's config file, and it cannot be
+# revoked without changing that password. Deployments that care should set
+# `EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=Bearer`.
 EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS = [
     scheme.strip()
-    for scheme in os.getenv("EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS", "Bearer").split(",")
+    for scheme in os.getenv("EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS", "Bearer,Basic").split(",")
     if scheme.strip()
 ]
 # Ceiling on a single JSON-RPC request body.

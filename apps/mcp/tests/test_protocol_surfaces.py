@@ -146,7 +146,16 @@ class PromptTests(SurfaceTestCase):
     def test_prompts_are_listed_with_their_arguments(self):
         result = self.ok("prompts/list", {}, self.member)
         names = {prompt["name"] for prompt in result["prompts"]}
-        self.assertEqual(names, {"reading_list", "availability_report", "organise_catalog", "catalog_overview"})
+        self.assertEqual(
+            names,
+            {
+                "reading_list",
+                "availability_report",
+                "organise_catalog",
+                "classify_collection",
+                "catalog_overview",
+            },
+        )
 
     def test_a_prompt_renders_a_user_message(self):
         result = self.ok("prompts/get", {"name": "reading_list", "arguments": {"topic": "graph theory"}}, self.member)

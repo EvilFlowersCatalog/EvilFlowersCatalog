@@ -17,16 +17,22 @@ from django.db import transaction
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
+from apps.api.filters.entries import EntryFilter
 from apps.api.filters.feeds import FeedFilter
 from apps.api.forms.feeds import FeedForm
-from apps.core.models import Catalog, Feed
+from apps.core.models import Entry, Feed
 from apps.mcp.arguments import Arguments
-from apps.mcp.errors import ToolConflict, ToolNotFound, ToolPermissionDenied, ToolValidationError
+from apps.mcp.errors import ToolConflict, ToolError, ToolNotFound, ToolPermissionDenied, ToolValidationError
 from apps.mcp.pagination import PAGINATION_ARGUMENTS, paginate, pagination_schema, read_pagination
 from apps.mcp.projections import feed as project_feed
 from apps.mcp.registry import ToolAccess, registry
 from apps.mcp.schemas import FEED_SCHEMA, DELETION_OUTPUT_SCHEMA, UUID_SCHEMA, list_output, single_output
-from apps.mcp.tools.common import resolve_catalog_for_management
+from apps.mcp.tools.common import (
+    assert_same_catalog,
+    assert_within_bulk_limit,
+    resolve_all,
+    resolve_catalog_for_management,
+)
 
 logger = logging.getLogger("apps.mcp.audit")
 
@@ -408,3 +414,149 @@ def delete_feed(request, raw_arguments: dict) -> dict:
 
     logger.info("mcp.write user=%s action=delete_feed feed=%s catalog=%s", request.user.pk, identifier, catalog_id)
     return {"deleted": True, "id": identifier, "title": title}
+
+
+def _acquisition_feed_for_management(request, feed_id: str, action: str) -> Feed:
+    feed = _manageable_feed(request, feed_id, action)
+
+    if feed.kind == Feed.FeedKind.NAVIGATION:
+        raise ToolError(
+            _(
+                "Feed '%(title)s' is a navigation feed: it groups other feeds and cannot hold "
+                "publications directly. Add the entries to one of its acquisition children, or "
+                "use `list_feeds` with `parent_id` to find them."
+            )
+            % {"title": feed.title}
+        )
+
+    return feed
+
+
+def _membership_result(feed: Feed, results: list, request) -> dict:
+    changed = sum(1 for result in results if result["changed"])
+    return {
+        "feed": project_feed(feed, request),
+        "changed": changed,
+        "unchanged": len(results) - changed,
+        "results": results,
+    }
+
+
+FEED_MEMBERSHIP_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "feed": FEED_SCHEMA,
+        "changed": {"type": "integer"},
+        "unchanged": {"type": "integer"},
+        "results": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": UUID_SCHEMA,
+                    "title": {"type": "string"},
+                    "changed": {"type": "boolean"},
+                },
+                "required": ["id", "changed"],
+            },
+        },
+    },
+    "required": ["feed", "changed", "unchanged", "results"],
+}
+
+
+@registry.tool(
+    name="add_entries_to_feed",
+    title="Add publications to a feed",
+    description=(
+        "Put publications into an acquisition feed, keeping whatever is already there. Requires "
+        "`manage` access on the catalog, and every publication must belong to the same catalog "
+        "as the feed. This is the incremental counterpart to `update_feed`'s `entry_ids`, which "
+        "replaces the whole set — prefer this one when curating, because it cannot silently drop "
+        "entries somebody else filed. Publications already in the feed are reported as unchanged "
+        "rather than treated as an error."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "feed_id": {**UUID_SCHEMA, "description": "Acquisition feed to add to."},
+            "entry_ids": {
+                "type": "array",
+                "items": UUID_SCHEMA,
+                "description": "Publications to add, from `search_entries`.",
+            },
+        },
+        "required": ["feed_id", "entry_ids"],
+        "additionalProperties": False,
+    },
+    output_schema=FEED_MEMBERSHIP_OUTPUT_SCHEMA,
+    access=ToolAccess.WRITE,
+)
+@transaction.atomic
+def add_entries_to_feed(request, raw_arguments: dict) -> dict:
+    arguments = Arguments(raw_arguments, allowed=("feed_id", "entry_ids"))
+
+    feed = _acquisition_feed_for_management(request, arguments.uuid("feed_id", required=True), "add entries to")
+    entry_ids = assert_within_bulk_limit("entry_ids", arguments.uuid_sequence("entry_ids") or [])
+
+    entries = resolve_all(request, EntryFilter, Entry, entry_ids, label="Entry")
+    assert_same_catalog(feed.catalog, entries, label=_("Entries"))
+
+    present = set(feed.entries.filter(pk__in=[entry.pk for entry in entries]).values_list("pk", flat=True))
+    feed.entries.add(*entries)
+
+    results = [{"id": str(entry.pk), "title": entry.title, "changed": entry.pk not in present} for entry in entries]
+    logger.info(
+        "mcp.write user=%s action=add_entries_to_feed feed=%s catalog=%s entries=%s",
+        request.user.pk,
+        feed.pk,
+        feed.catalog_id,
+        len(entries),
+    )
+    return _membership_result(feed, results, request)
+
+
+@registry.tool(
+    name="remove_entries_from_feed",
+    title="Remove publications from a feed",
+    description=(
+        "Take publications out of an acquisition feed. Requires `manage` access on the catalog. "
+        "The publications themselves are **not** deleted and keep every other feed and category "
+        "they belong to — only this feed's link to them goes. Entries that were not in the feed "
+        "are reported as unchanged."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "feed_id": {**UUID_SCHEMA, "description": "Acquisition feed to remove from."},
+            "entry_ids": {"type": "array", "items": UUID_SCHEMA, "description": "Publications to remove."},
+        },
+        "required": ["feed_id", "entry_ids"],
+        "additionalProperties": False,
+    },
+    output_schema=FEED_MEMBERSHIP_OUTPUT_SCHEMA,
+    access=ToolAccess.WRITE,
+    destructive=True,
+)
+@transaction.atomic
+def remove_entries_from_feed(request, raw_arguments: dict) -> dict:
+    arguments = Arguments(raw_arguments, allowed=("feed_id", "entry_ids"))
+
+    feed = _acquisition_feed_for_management(request, arguments.uuid("feed_id", required=True), "remove entries from")
+    entry_ids = assert_within_bulk_limit("entry_ids", arguments.uuid_sequence("entry_ids") or [])
+
+    entries = resolve_all(request, EntryFilter, Entry, entry_ids, label="Entry")
+    assert_same_catalog(feed.catalog, entries, label=_("Entries"))
+
+    present = set(feed.entries.filter(pk__in=[entry.pk for entry in entries]).values_list("pk", flat=True))
+    feed.entries.remove(*entries)
+
+    results = [{"id": str(entry.pk), "title": entry.title, "changed": entry.pk in present} for entry in entries]
+    logger.info(
+        "mcp.write user=%s action=remove_entries_from_feed feed=%s catalog=%s entries=%s",
+        request.user.pk,
+        feed.pk,
+        feed.catalog_id,
+        len(entries),
+    )
+    return _membership_result(feed, results, request)
