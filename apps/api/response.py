@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Optional, List, Type, TypeVar
+from typing import Callable, Optional, List, Type, TypeVar
 
 from django.conf import settings
 from django.core.paginator import Paginator, EmptyPage
@@ -10,6 +10,7 @@ from django.utils.translation import gettext as _
 from pydantic import BaseModel, RootModel
 
 from apps.api.serializers import Serializer
+from apps.api.utils.parse import parse_int_query
 from apps.core.errors import (
     ProblemDetailException,
     DetailType,
@@ -124,8 +125,15 @@ class PaginationResponse(GeneralResponse):
         serializer: Type[BaseModel],
         serializer_context: dict = None,
         ordering: Ordering = None,
+        context_builder: Optional[Callable[[list], dict]] = None,
         **kwargs,
     ):
+        """
+        :param context_builder: optional callable that receives the materialised page
+            items (a list of ORM instances) and returns a dict that is merged into
+            `serializer_context` before validation. Use this when context values
+            depend on the page itself — for example a per-entry LCP-state mapping.
+        """
         kwargs.setdefault("content_type", "application/json")
 
         # Ordering
@@ -135,8 +143,13 @@ class PaginationResponse(GeneralResponse):
         # Pagination
         paginate = request.GET.get("paginate", "true") == "true"
         if paginate:
-            limit = int(request.GET.get("limit", settings.EVILFLOWERS_PAGINATION_DEFAULT_LIMIT))
-            page = int(request.GET.get("page", 1))
+            limit = parse_int_query(
+                request,
+                "limit",
+                default=settings.EVILFLOWERS_PAGINATION_DEFAULT_LIMIT,
+                min_value=1,
+            )
+            page = parse_int_query(request, "page", default=1, min_value=1)
 
             paginator = Paginator(qs, limit)
 
@@ -161,11 +174,17 @@ class PaginationResponse(GeneralResponse):
             num_pages = 1
             total = qs.count()
 
+        items_list = list(items)
+        merged_context = dict(serializer_context or {})
+        if context_builder is not None:
+            extra = context_builder(items_list) or {}
+            merged_context.update(extra)
+
         super().__init__(
             request,
             PaginationResponseModel(
                 items=RootModel[List[serializer]].model_validate(
-                    list(items), from_attributes=True, context=serializer_context or {}
+                    items_list, from_attributes=True, context=merged_context
                 ),
                 metadata=PaginationModel(page=page, limit=limit, pages=num_pages, total=total),
             ),

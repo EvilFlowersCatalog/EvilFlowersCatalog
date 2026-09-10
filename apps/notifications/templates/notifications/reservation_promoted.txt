@@ -1,0 +1,13 @@
+You've moved up the queue
+=========================
+
+Hello {{ user_name }},
+
+Good news — you've moved up the queue for "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %}.
+
+Your new position in line: #{{ new_position }}{% if old_position %} (previously #{{ old_position }}){% endif %}.
+
+We will email you again as soon as your turn comes up.
+
+--
+This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.

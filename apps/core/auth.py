@@ -1,13 +1,17 @@
 import base64
+import binascii
 import logging
 import uuid
+from datetime import timedelta
 from http import HTTPStatus
 from typing import Optional, TypedDict, Dict
 from urllib.parse import urlparse, urlunparse
 
 import ldap
-from authlib.jose import JsonWebToken, jwt
-from authlib.jose.errors import JoseError
+from joserfc import jwt
+from joserfc.errors import JoseError
+from joserfc.jwk import KeyFlexible, import_key
+from joserfc.jwt import JWTClaimsRegistry
 from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import Group
@@ -18,6 +22,11 @@ from django.utils.translation import gettext as _
 
 from apps.core.errors import ProblemDetailException
 from apps.core.models import ApiKey, User, AuthSource, UserCatalog
+
+
+def _jwt_key() -> KeyFlexible:
+    """Build a joserfc-compatible key object from the configured JWK dict."""
+    return import_key(settings.SECURED_VIEW_JWK)
 
 
 class JWTFactory:
@@ -33,9 +42,9 @@ class JWTFactory:
 
         return jwt.encode(
             header={"alg": settings.SECURED_VIEW_JWT_ALGORITHM},
-            payload={**base_payload, **additional_payload},
-            key=settings.SECURED_VIEW_JWK,
-        ).decode()
+            claims={**base_payload, **additional_payload},
+            key=_jwt_key(),
+        )
 
     def refresh(self) -> tuple:
         jti = str(uuid.uuid4())
@@ -63,11 +72,36 @@ class JWTFactory:
             }
         )
 
+    def scoped(self, scope: str) -> str:
+        """Issue a time-limited JWT scoped to a specific action.
+
+        Used by the notification engine to generate download links
+        that authenticate the user for a specific resource. A unique
+        `jti` claim is always emitted so consumers can implement
+        single-use semantics by writing the `jti` to a deny-list once
+        a state-mutating action has been performed (see IP-011 Phase 1
+        — the reservation_claim flow consumes the token after a
+        successful `ReservationService.claim`).
+        """
+        return self._generate(
+            {
+                "type": "scoped",
+                "scope": scope,
+                "jti": str(uuid.uuid4()),
+                "exp": timezone.now()
+                + timedelta(hours=getattr(settings, "EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS", 72)),
+            }
+        )
+
     @classmethod
     def decode(cls, token: str):
-        claims = JsonWebToken(settings.SECURED_VIEW_JWT_ALGORITHM).decode(token, settings.SECURED_VIEW_JWK)
-        claims.validate()
-        return claims
+        decoded = jwt.decode(
+            token,
+            _jwt_key(),
+            algorithms=[settings.SECURED_VIEW_JWT_ALGORITHM],
+        )
+        JWTClaimsRegistry().validate(decoded.claims)
+        return decoded.claims
 
 
 class BearerBackend(ModelBackend):
@@ -88,6 +122,11 @@ class BearerBackend(ModelBackend):
             setattr(request, "api_key", api_key)
             user = api_key.user
         elif claims["type"] == "access":
+            try:
+                user = User.objects.get(pk=claims["sub"])
+            except User.DoesNotExist:
+                raise ProblemDetailException(_("Inactive user."), status=HTTPStatus.FORBIDDEN)
+        elif claims["type"] == "scoped":
             try:
                 user = User.objects.get(pk=claims["sub"])
             except User.DoesNotExist:
@@ -115,6 +154,7 @@ class BasicBackend(ModelBackend):
         CATALOGS: Optional[Dict[str, str]]
         PROXY_USER_DN: Optional[str]
         PROXY_USER_PASSWORD: Optional[str]
+        NOTIFICATION_CONTACT_MAP: Optional[Dict[str, str]]
 
     @staticmethod
     def _ldap_initialize(config: "BasicBackend.LdapConfig") -> ldap.ldapobject.LDAPObject:
@@ -214,6 +254,18 @@ class BasicBackend(ModelBackend):
                 if ldap_property in attrs:
                     setattr(user, model_property, attrs[ldap_property][0].decode())
 
+            # Notification contacts (NOTIFICATION_CONTACT_MAP)
+            for contact_type, ldap_attr in config.get("NOTIFICATION_CONTACT_MAP", {}).items():
+                if ldap_attr in attrs:
+                    from apps.notifications.models import NotificationContact
+
+                    contact_value = attrs[ldap_attr][0].decode()
+                    NotificationContact.objects.update_or_create(
+                        user=user,
+                        type=contact_type,
+                        defaults={"value": contact_value, "is_primary": True},
+                    )
+
             # LDAP groups
             user.groups.clear()
             for ldap_group in attrs.get(config.get("GROUP_ATTR", "memberOf"), []):
@@ -245,7 +297,33 @@ class BasicBackend(ModelBackend):
         return super().authenticate(request, username=username, password=password)
 
     def authenticate(self, request, basic=None, **kwargs):
-        bits = base64.b64decode(basic).decode().split(":")
+        try:
+            bits = base64.b64decode(basic, validate=True).decode().split(":")
+        except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+            raise ProblemDetailException(
+                _("Invalid credentials"),
+                status=HTTPStatus.UNAUTHORIZED,
+                extra_headers=(
+                    (
+                        "WWW-Authenticate",
+                        f"Basic realm={slugify(settings.INSTANCE_NAME)},"
+                        f' Bearer realm="{slugify(settings.INSTANCE_NAME)}"',
+                    ),
+                ),
+                previous=exc,
+            )
+        if len(bits) < 2:
+            raise ProblemDetailException(
+                _("Invalid credentials"),
+                status=HTTPStatus.UNAUTHORIZED,
+                extra_headers=(
+                    (
+                        "WWW-Authenticate",
+                        f"Basic realm={slugify(settings.INSTANCE_NAME)},"
+                        f' Bearer realm="{slugify(settings.INSTANCE_NAME)}"',
+                    ),
+                ),
+            )
         username = bits[0].lower()
         password = ":".join(bits[1:])
         user = None

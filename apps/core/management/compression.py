@@ -25,4 +25,4 @@ class XZCompressionStrategy(CompressionStrategy):
         return tarfile.open(file_path, "w:xz")
 
     def suffix(self) -> str:
-        return ".xz"
+        return "xz"

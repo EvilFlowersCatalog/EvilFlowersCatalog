@@ -58,10 +58,17 @@ class ContentEncryptionService:
         lcp_content_id = str(uuid.uuid4())
 
         # Determine encrypted file path
-        # Format: catalogs/{catalog}/{entry}/encrypted/{lcp_content_id}.lcp.{ext}
-        original_ext = acquisition.content.name.split(".")[-1]
-        encrypted_filename = f"{lcp_content_id}.lcp.{original_ext}"
-        encrypted_path = f"{acquisition.upload_base_path()}/encrypted/{encrypted_filename}"
+        # lcpencrypt renames output with LCP-specific extensions:
+        # .pdf → .lcpdf, .epub → .epub
+        # (IP-008 Phase 2 B3: audiobook branch dropped — AcquisitionMIME
+        # has no AUDIOBOOK enum value, so the entry was unreachable.
+        # Reintroduce when a real audiobook proposal arrives.)
+        lcp_ext_map = {
+            "application/pdf": ".lcpdf",
+            "application/epub+zip": ".epub",
+        }
+        lcp_ext = lcp_ext_map.get(acquisition.mime, ".lcpdf")
+        encrypted_path = f"{acquisition.upload_base_path()}/encrypted/{lcp_content_id}{lcp_ext}"
 
         # Create EncryptedContent record
         encrypted_content = EncryptedContent.objects.create(
@@ -78,19 +85,42 @@ class ContentEncryptionService:
 
     @staticmethod
     def _queue_encryption_task(encrypted_content: EncryptedContent):
-        """Queue the lcpencrypt worker task."""
+        """Queue the lcpencrypt worker task.
+
+        IP-008 Phase 1 A5: do NOT flip status to REGISTERED here. The
+        previous "optimistic mark" let `is_ready_for_licensing` return
+        True before the encryption job actually wrote the encrypted file
+        and registered it with the LCP server. The webhook
+        (`apps/readium/views/hooks.py`) is the authoritative event for
+        the flip; we stay on PENDING until then.
+        """
         acquisition = encrypted_content.acquisition
 
-        # Update status
-        encrypted_content.status = EncryptedContent.EncryptionStatus.ENCRYPTING
-        encrypted_content.save()
-
-        # Determine output filename with correct extension
-        original_filename = acquisition.content.name
-        extension = original_filename.split(".")[-1] if "." in original_filename else "pdf"
-        output_filename = f"encrypted/{encrypted_content.lcp_content_id}.lcp.{extension}"
+        # The encrypted_url is computed deterministically from the
+        # lcp_content_id and base URL, so we can populate it now even
+        # though the file isn't ready — the URL is only used by the LCP
+        # server once it can fetch the encrypted blob.
+        encrypted_content.encrypted_url = ContentEncryptionService.get_encrypted_content_url(encrypted_content)
+        encrypted_content.save(update_fields=["encrypted_url"])
 
         # Queue worker
+        # storage = catalog-relative dir for encrypted output (worker prepends STORAGE_PATH)
+        # filename = just the lcp_content_id (no extension, lcpencrypt appends .lcpdf/.epub)
+        # url = public base URL → LCP server registers {url}/{filename} as content location
+        # No -notify: the LCP server registration via -lcpsv is sufficient
+        #
+        # title/author: publication display metadata. For the LCP-for-PDF
+        # profile (`.lcpdf`) lcpencrypt wraps the raw PDF into a Readium
+        # package and generates its `manifest.json`; a raw PDF carries no
+        # embedded title/author, so without these the manifest falls back to
+        # the filename (title) and empty authors — which is why Thorium shows
+        # "no title and no authors available" for borrowed PDFs. We forward
+        # the Entry's metadata so the worker can inject it into the package
+        # manifest. (The worker must consume these keys — see
+        # evilflowers-lcpencrypt-worker; unknown keys are ignored by older
+        # workers, so sending them is backwards compatible.)
+        entry = acquisition.entry
+        author_name = entry.first_author_name
         event_broker = get_event_broker()
         event_broker.execute(
             "evilflowers_lcpencrypt_worker.lcpencrypt",
@@ -98,10 +128,12 @@ class ContentEncryptionService:
                 "kwargs": {
                     "input_file": acquisition.content.name,
                     "contentid": encrypted_content.lcp_content_id,
-                    "storage": acquisition.upload_base_path(),
-                    "filename": output_filename,
+                    "storage": f"{acquisition.upload_base_path()}/encrypted",
+                    "filename": encrypted_content.lcp_content_id,
                     "lcpsv": getattr(settings, "EVILFLOWERS_READIUM_LCPSV_URL", None),
-                    "notify": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None),
+                    "url": f"{settings.EVILFLOWERS_READIUM_BASE_URL}/readium/v1/content",
+                    "title": entry.title,
+                    "author": author_name,
                 },
                 "queue": "evilflowers_lcpencrypt_worker",
             },
@@ -154,10 +186,7 @@ class ContentEncryptionService:
 
         This URL is included in LCP licenses so reading apps can download encrypted files.
         """
-        base_url = getattr(
-            settings, "EVILFLOWERS_READIUM_CONTENT_URL", f"{settings.EVILFLOWERS_BASE_URL}/readium/content"
-        )
-        return f"{base_url}/{encrypted_content.lcp_content_id}"
+        return f"{settings.EVILFLOWERS_READIUM_BASE_URL}/readium/v1/content/{encrypted_content.lcp_content_id}"
 
     @staticmethod
     def get_by_lcp_content_id(lcp_content_id: str) -> Optional[EncryptedContent]:
@@ -172,9 +201,16 @@ class ContentEncryptionService:
         """
         Check if an acquisition is ready for license generation.
 
-        Returns True if encrypted and registered with LCP Server.
+        Returns True only when:
+        - The EncryptedContent row exists,
+        - Status is REGISTERED (set by the webhook after lcpencrypt finishes
+          and the LCP server confirms registration), AND
+        - `encrypted_at is not None` (IP-008 Phase 1 A5 defensive check —
+          a misbehaving webhook could in principle PATCH status without
+          setting the timestamp; both must be true).
         """
         if not hasattr(acquisition, "encrypted_content"):
             return False
 
-        return acquisition.encrypted_content.status == EncryptedContent.EncryptionStatus.REGISTERED
+        ec = acquisition.encrypted_content
+        return ec.status == EncryptedContent.EncryptionStatus.REGISTERED and ec.encrypted_at is not None

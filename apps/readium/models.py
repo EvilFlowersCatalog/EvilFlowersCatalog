@@ -1,11 +1,9 @@
 from django.db import models
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from django.utils.translation import gettext_lazy as _
+from django.db.models import Q
 from django.utils import timezone
-from datetime import timedelta
+from django.utils.translation import gettext_lazy as _
 
-from apps.core.models import Entry, User, UserAcquisition, Acquisition
+from apps.core.models import Acquisition, Entry, User
 from apps.core.models.base import BaseModel
 
 
@@ -26,7 +24,6 @@ class EncryptedContent(BaseModel):
 
     class EncryptionStatus(models.TextChoices):
         PENDING = "pending", _("Pending Encryption")
-        ENCRYPTING = "encrypting", _("Encrypting")
         COMPLETED = "completed", _("Encryption Completed")
         FAILED = "failed", _("Encryption Failed")
         REGISTERED = "registered", _("Registered with LCP Server")
@@ -47,7 +44,6 @@ class EncryptedContent(BaseModel):
 
     # Encryption metadata
     encryption_algorithm = models.CharField(max_length=50, default="http://www.w3.org/2001/04/xmlenc#aes256-cbc")
-    content_key_encrypted = models.TextField(null=True, blank=True)  # Encrypted content key from LCP server
 
     # Tracking
     encrypted_at = models.DateTimeField(null=True, blank=True)
@@ -62,7 +58,13 @@ class License(BaseModel):
         default_permissions = ()
         verbose_name = _("License")
         verbose_name_plural = _("Licenses")
-        unique_together = [["entry", "user", "state"]]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["entry", "user"],
+                condition=Q(state__in=["ready", "active"]),
+                name="unique_active_license_per_user_per_entry",
+            ),
+        ]
 
     class LicenseState(models.TextChoices):
         READY = "ready", _("Ready")
@@ -94,6 +96,13 @@ class License(BaseModel):
     passphrase_hash = models.CharField(max_length=64, null=True, blank=True)  # SHA256 hex
     device_count = models.PositiveIntegerField(default=0)
 
+    # IP-009 Phase 5: per-license renewal counter. Incremented inside
+    # the same transaction as the state mutation in
+    # `LicenseService.renew_license`. `evaluate_renew` consults this
+    # plus `EVILFLOWERS_READIUM_MAX_RENEWALS` to enforce the per-loan
+    # renewal cap.
+    renewal_count = models.PositiveIntegerField(default=0)
+
     @property
     def is_active(self):
         return self.state == self.LicenseState.ACTIVE
@@ -109,16 +118,69 @@ class License(BaseModel):
         return self.state == self.LicenseState.READY and not self.is_expired
 
 
-# Signal-based license creation removed - licenses are now created explicitly
-# via LicenseService.create_license() from API views.
-#
-# Previous implementation automatically created licenses on UserAcquisition creation,
-# which was problematic because:
-# 1. Required passphrase is only available at license creation time
-# 2. Implicit behavior made flow hard to understand and debug
-# 3. No way to handle errors or validate availability properly
-#
-# New flow:
-# 1. User requests license via POST /api/licenses/
-# 2. LicenseService.create_license() validates, creates License, generates LCP license
-# 3. License is explicitly managed through service layer
+class Reservation(BaseModel):
+    """
+    A user's place in the queue for a fully-borrowed LCP-enabled entry.
+
+    State machine:
+        queued      -- waiting in line behind active loans
+        available   -- a slot opened up; user has `claim_deadline` to claim
+        claimed     -- user converted reservation to a license (terminal)
+        expired     -- claim window passed without action (terminal)
+        cancelled   -- user-cancelled or admin-cancelled (terminal)
+
+    Transitions are driven by:
+    - `POST /readium/v1/reservations` -> creates with status=queued
+    - `PATCH /readium/v1/reservations/{id}` { status: "cancelled" | "claimed" }
+    - Server-side promotion (queued -> available) on license terminal-state transitions
+    - Server-side expiry (available -> expired) on the Celery sweep job
+
+    The unique constraint enforces "one non-terminal reservation per (entry, user)".
+    """
+
+    class Meta:
+        app_label = "readium"
+        db_table = "reservations"
+        default_permissions = ()
+        verbose_name = _("Reservation")
+        verbose_name_plural = _("Reservations")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["entry", "user"],
+                condition=Q(status__in=["queued", "available"]),
+                name="uniq_active_reservation_per_user_entry",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["entry", "status", "position"]),
+            models.Index(fields=["status", "claim_deadline"]),
+        ]
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", _("Queued")
+        AVAILABLE = "available", _("Available")
+        CLAIMED = "claimed", _("Claimed")
+        EXPIRED = "expired", _("Expired")
+        CANCELLED = "cancelled", _("Cancelled")
+
+    entry = models.ForeignKey(Entry, on_delete=models.CASCADE, related_name="reservations")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="reservations")
+    position = models.PositiveIntegerField()
+    status = models.CharField(choices=Status.choices, default=Status.QUEUED, max_length=16)
+    requested_at = models.DateTimeField(default=timezone.now)
+    available_at = models.DateTimeField(null=True, blank=True)
+    claim_deadline = models.DateTimeField(null=True, blank=True)
+    claimed_license = models.ForeignKey(
+        License,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="from_reservation",
+    )
+
+    TERMINAL_STATUSES = (Status.CLAIMED, Status.EXPIRED, Status.CANCELLED)
+    NON_TERMINAL_STATUSES = (Status.QUEUED, Status.AVAILABLE)
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in self.TERMINAL_STATUSES

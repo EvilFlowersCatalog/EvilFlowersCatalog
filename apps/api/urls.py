@@ -16,7 +16,17 @@ from apps.api.views import (
     categories,
     annotation_items,
     languages,
+    notification_contacts,
 )
+
+# IP-008 Phase 4: the Dataverse integration moved to `apps.dataverse`.
+# The legacy `/api/v1/dataverse-prepublish` and `/api/v1/dataverse-sync`
+# routes remain wired here as one-release shims so Dataverse workflows
+# that hardcoded the path keep working. The `DataverseSync` route was
+# documented but never called by any workflow — kept as a 200 stub for
+# observability so an unexpected POST is visible in logs rather than
+# silently 404ing.
+from apps.dataverse.views import PrepublishView as _DataversePrepublishView
 
 urlpatterns = [
     # API keys
@@ -108,10 +118,26 @@ urlpatterns = [
         annotation_items.AnnotationItemDetail.as_view(),
         name="annotation-item-detail",
     ),
+    # Notification contacts
+    path(
+        "notification-contacts",
+        notification_contacts.NotificationContactManagement.as_view(),
+        name="notification-contact-management",
+    ),
+    path(
+        "notification-contacts/<uuid:contact_id>",
+        notification_contacts.NotificationContactDetail.as_view(),
+        name="notification-contact-detail",
+    ),
     # Status
     path("status", status.StatusManagement.as_view(), name="status"),
     # Tokens
     path("token/refresh", tokens.RefreshTokenManagement.as_view(), name="refresh"),
     path("token", tokens.AccessTokenManagement.as_view(), name="login"),
     path("languages", languages.LanguageManagement.as_view(), name="languages"),
+    # Dataverse (legacy shim path — implementation now in apps.dataverse).
+    # `dataverse-sync` was never called by any Dataverse workflow; we used to
+    # 200-OK the request. Drop the route — a 404 here surfaces the dead
+    # contract in logs. If a workflow ever sends one, we'll know.
+    path("dataverse-prepublish", _DataversePrepublishView.as_view(), name="dataverse-prepublish"),
 ]

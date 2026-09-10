@@ -1,3 +1,8 @@
+try:
+    from opentelemetry import trace
+except ImportError:
+    trace = None
+
 from apps.core.errors import ProblemDetailException, ValidationException
 from apps.api.response import ErrorResponse, ValidationResponse
 
@@ -11,6 +16,13 @@ class ExceptionMiddleware(object):
 
     @staticmethod
     def process_exception(request, exception):
+        # Record exception on the current OTEL span before converting to a response
+        if trace is not None:
+            span = trace.get_current_span()
+            if span.is_recording():
+                span.set_status(trace.StatusCode.ERROR, str(exception))
+                span.record_exception(exception)
+
         if isinstance(exception, ValidationException):
             return ValidationResponse(request, exception.payload, status=exception.status)
         elif isinstance(exception, ProblemDetailException):

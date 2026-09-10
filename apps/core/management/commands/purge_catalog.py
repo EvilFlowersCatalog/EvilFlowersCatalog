@@ -36,7 +36,8 @@ class Command(BaseCommand):
         try:
             catalog = Catalog.objects.get(**conditions)
         except Catalog.DoesNotExist:
-            self.stderr.write(self.style.ERROR(f"Catalog {options['catalog']} does not exists!"))
+            identifier = options.get("id") or options.get("name")
+            self.stderr.write(self.style.ERROR(f"Catalog {identifier} does not exists!"))
             return
 
         # Related files

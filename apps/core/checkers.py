@@ -1,5 +1,11 @@
 from object_checker.base_object_checker import AbacChecker
 
+# IP-008 Phase 3 D1: `LicenseChecker` moved to `apps/readium/checkers.py`
+# so apps.core no longer imports apps.readium. The readium app config
+# imports its checkers in `ready()`; `object_checker` discovers
+# AbacChecker subclasses via `__subclasses__()` so registration is
+# automatic.
+
 from apps.core.models import (
     User,
     Catalog,
@@ -8,7 +14,6 @@ from apps.core.models import (
     UserAcquisition,
     ShelfRecord,
 )
-from apps.readium.models import License
 
 
 class CatalogChecker(AbacChecker):
@@ -68,10 +73,4 @@ class UserAcquisitionChecker(AbacChecker):
 class ShelfRecordChecker(AbacChecker):
     @staticmethod
     def check_shelf_record_access(user: User, obj: ShelfRecord):
-        return obj.user == user
-
-
-class LicenseChecker(AbacChecker):
-    @staticmethod
-    def check_license_manage(user: User, obj: License):
         return obj.user == user

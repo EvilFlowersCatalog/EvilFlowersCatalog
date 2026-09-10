@@ -1,0 +1,1 @@
+Reservation cancelled: "{{ entry_title }}"

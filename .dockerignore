@@ -20,3 +20,5 @@ docs/
 gen/
 static/
 compose.local.yml
+
+/conf/dataverse/data/

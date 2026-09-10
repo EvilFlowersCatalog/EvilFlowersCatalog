@@ -1,10 +1,12 @@
 import base64
+import ipaddress
 import uuid
 from collections import defaultdict
 from http import HTTPStatus
 from mimetypes import guess_extension
 
 from django.conf import settings
+from django.db.models import F
 from django.http import FileResponse
 from django.urls import reverse
 from django.utils.module_loading import import_string
@@ -19,6 +21,37 @@ from apps.core.fields.multirange import depack
 from apps.core.models import Acquisition, Entry, UserAcquisition, AnnotationItem
 from apps.core.modifiers import InvalidPage
 from apps.core.views import SecuredView
+from apps.files.services import AcquisitionStorageError, AcquisitionStorageService
+
+
+def _get_client_ip(request) -> str:
+    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if x_forwarded_for:
+        return x_forwarded_for.split(",")[0].strip()
+    x_real_ip = request.META.get("HTTP_X_REAL_IP")
+    if x_real_ip:
+        return x_real_ip.strip()
+    return request.META.get("REMOTE_ADDR")
+
+
+def _check_ip_block(request, entry: Entry):
+    if not entry.read_config("evilflowers_ip_block"):
+        return
+
+    allowed_ranges = settings.EVILFLOWERS_ALLOWED_IP_RANGES
+    if allowed_ranges is None:
+        return
+
+    client_ip = ipaddress.ip_address(_get_client_ip(request))
+    for cidr in allowed_ranges:
+        if client_ip in ipaddress.ip_network(cidr, strict=False):
+            return
+
+    raise ProblemDetailException(
+        _("Access denied"),
+        status=HTTPStatus.FORBIDDEN,
+        detail=_("Your IP address is not allowed to access this resource"),
+    )
 
 
 class AcquisitionDownload(SecuredView):
@@ -29,14 +62,23 @@ class AcquisitionDownload(SecuredView):
         except Acquisition.DoesNotExist:
             raise ProblemDetailException(_("Acquisition not found"), status=HTTPStatus.NOT_FOUND)
 
-        if not acquisition.content.storage.exists(acquisition.content.name):
-            raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND)
-
-        if acquisition.relation != Acquisition.AcquisitionType.ACQUISITION.OPEN_ACCESS:
+        # IP-008 Phase 5: auth + IP block + UserAcquisition bookkeeping
+        # run FIRST. Only after the requester is allowed do we ask
+        # `AcquisitionStorageService` to dispatch (redirect for
+        # EXTERNAL_URL, FileResponse for LOCAL). The old code had a
+        # `file_url` redirect path that ran BEFORE the auth checks,
+        # which let a UUID-guesser pull Dataverse-backed content from
+        # private catalogs.
+        if acquisition.relation != Acquisition.AcquisitionType.OPEN_ACCESS:
             request.user = self._authenticate(request)
 
         if not has_object_permission("check_entry_read", request.user, acquisition.entry):
             raise AuthorizationException(request)
+
+        _check_ip_block(request, acquisition.entry)
+
+        if not AcquisitionStorageService.exists(acquisition):
+            raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND)
 
         if request.user.is_authenticated and settings.EVILFLOWERS_ENFORCE_USER_ACQUISITIONS:
             if settings.EVILFLOWERS_USER_ACQUISITION_MODE == "single":
@@ -70,13 +112,24 @@ class AcquisitionDownload(SecuredView):
                 + params.urlencode()
             )
 
-        acquisition.entry.popularity = acquisition.entry.popularity + 1
-        sanitized_filename = f"{slugify(acquisition.entry.title.lower())}{guess_extension(acquisition.mime)}"
+        # Atomic popularity increment (IP-010 M8 pattern).
+        Entry.objects.filter(pk=acquisition.entry_id).update(popularity=F("popularity") + 1)
 
         if request.GET.get("format", None) == "base64":
+            if acquisition.storage_backend == Acquisition.StorageBackend.EXTERNAL_URL:
+                raise ProblemDetailException(
+                    _("base64 format is not supported for externally stored content"),
+                    status=HTTPStatus.BAD_REQUEST,
+                )
             return SingleResponse(request, data={"data": base64.b64encode(acquisition.content.read()).decode()})
 
-        return FileResponse(acquisition.content, as_attachment=True, filename=sanitized_filename)
+        try:
+            response = AcquisitionStorageService.download_response(acquisition)
+        except AcquisitionStorageError as exc:
+            raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND) from exc
+
+        response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE
+        return response
 
 
 class UserAcquisitionDownload(SecuredView):
@@ -96,6 +149,8 @@ class UserAcquisitionDownload(SecuredView):
         if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:
             if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
                 raise AuthorizationException(request)
+
+        _check_ip_block(request, user_acquisition.acquisition.entry)
 
         user_acquisition.acquisition.entry.popularity = user_acquisition.acquisition.entry.popularity + 1
         user_acquisition.acquisition.entry.save()
@@ -145,7 +200,9 @@ class UserAcquisitionDownload(SecuredView):
         if request.GET.get("format", None) == "base64":
             return SingleResponse(request, data={"data": base64.b64encode(content.read()).decode()})
 
-        return FileResponse(content, as_attachment=True, filename=sanitized_filename)
+        response = FileResponse(content, as_attachment=True, filename=sanitized_filename)
+        response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE
+        return response
 
 
 class EntryImageDownload(SecuredView):
@@ -161,7 +218,9 @@ class EntryImageDownload(SecuredView):
         if not entry.image.storage.exists(entry.image.name):
             raise ProblemDetailException(_("Entry image file not found"), status=HTTPStatus.NOT_FOUND)
 
-        return FileResponse(entry.image, filename=sanitized_filename)
+        response = FileResponse(entry.image, filename=sanitized_filename)
+        response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC
+        return response
 
 
 class EntryThumbnailDownload(SecuredView):
@@ -172,9 +231,16 @@ class EntryThumbnailDownload(SecuredView):
         except Entry.DoesNotExist:
             raise ProblemDetailException(_("Entry thumbnail not found"), status=HTTPStatus.NOT_FOUND)
 
-        sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime)}"
+        # thumbnail_mime is set when the thumbnail is generated (JPEG for most
+        # covers); legacy rows predate the field and fall back to image_mime.
+        thumbnail_mime = entry.thumbnail_mime or entry.image_mime
+        sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(thumbnail_mime)}"
 
         if not entry.thumbnail.storage.exists(entry.thumbnail.name):
             raise ProblemDetailException(_("Entry thumbnail file not found"), status=HTTPStatus.NOT_FOUND)
 
-        return FileResponse(streaming_content=entry.thumbnail, filename=sanitized_filename)
+        response = FileResponse(
+            streaming_content=entry.thumbnail, filename=sanitized_filename, content_type=thumbnail_mime
+        )
+        response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC
+        return response

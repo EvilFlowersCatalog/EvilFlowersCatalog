@@ -30,7 +30,7 @@ class CategoryManagement(SecuredView):
         if not has_object_permission("check_catalog_manage", request.user, form.cleaned_data["catalog_id"]):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-        if Category.objects.filter(term=form.cleaned_data["term"]).exists():
+        if Category.objects.filter(catalog=form.cleaned_data["catalog_id"], term=form.cleaned_data["term"]).exists():
             raise ProblemDetailException(
                 title=_("Category with term %s is already taken in catalog") % (form.cleaned_data["term"],),
                 status=HTTPStatus.CONFLICT,
@@ -101,7 +101,11 @@ class CategoryDetail(SecuredView):
         if not has_object_permission("check_catalog_manage", request.user, form.cleaned_data["catalog_id"]):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-        if Category.objects.exclude(pk=category.pk).filter(term=form.cleaned_data["term"]).exists():
+        if (
+            Category.objects.exclude(pk=category.pk)
+            .filter(catalog=form.cleaned_data["catalog_id"], term=form.cleaned_data["term"])
+            .exists()
+        ):
             raise ProblemDetailException(
                 title=_("Category with term %s is already taken in catalog") % (form.cleaned_data["term"],),
                 status=HTTPStatus.CONFLICT,

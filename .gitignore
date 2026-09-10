@@ -1,5 +1,6 @@
 .idea/
 .vscode/
+.venv
 venv
 __pycache__
 node_modules/
@@ -24,3 +25,8 @@ node_modules/
 !/static/.gitkeep
 requirements.txt
 compose.local.yml
+conf/dataverse/data/
+.mcp.json
+.playwright-mcp/
+.logfire/
+**/.ipynb_checkpoints/

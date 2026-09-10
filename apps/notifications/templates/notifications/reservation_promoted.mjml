@@ -1,0 +1,19 @@
+{% extends "notifications/base.mjml" %}
+
+{% block content %}
+<mj-section background-color="#ffffff" padding="30px 20px">
+  <mj-column>
+    <mj-text font-size="20px" font-weight="bold" padding-bottom="10px">You've moved up the queue</mj-text>
+    <mj-text>Hello {{ user_name }},</mj-text>
+    <mj-text>
+      Good news — you've moved up the queue for <strong>{{ entry_title }}</strong>{% if entry_author %} by {{ entry_author }}{% endif %}.
+    </mj-text>
+    <mj-text>
+      Your new position in line: <strong>#{{ new_position }}</strong>{% if old_position %} (previously #{{ old_position }}){% endif %}.
+    </mj-text>
+    <mj-text>
+      We will email you again as soon as your turn comes up.
+    </mj-text>
+  </mj-column>
+</mj-section>
+{% endblock %}

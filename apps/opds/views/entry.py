@@ -18,7 +18,7 @@ class EntryView(OpdsCatalogView):
         except Entry.DoesNotExist as e:
             raise ProblemDetailException(_("Entry not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        result = AcquisitionEntry.from_model(entry, True)
+        result = AcquisitionEntry.from_model(entry, True, request=request, user=request.user)
 
         return HttpResponse(
             result.to_xml(

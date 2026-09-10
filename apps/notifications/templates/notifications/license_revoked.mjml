@@ -1,0 +1,16 @@
+{% extends "notifications/base.mjml" %}
+
+{% block content %}
+<mj-section background-color="#ffffff" padding="30px 20px">
+  <mj-column>
+    <mj-text font-size="20px" font-weight="bold" padding-bottom="10px" color="#a94442">License revoked</mj-text>
+    <mj-text>Hello {{ user_name }},</mj-text>
+    <mj-text>
+      Your license for <strong>{{ entry_title }}</strong>{% if entry_author %} by {{ entry_author }}{% endif %}
+      has been revoked. You can no longer open this publication.
+    </mj-text>
+    {% if reason %}<mj-text>Reason: {{ reason }}</mj-text>{% endif %}
+    <mj-text>If you believe this is an error, contact the library.</mj-text>
+  </mj-column>
+</mj-section>
+{% endblock %}

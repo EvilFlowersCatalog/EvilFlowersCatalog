@@ -1,0 +1,20 @@
+{% load notification_extras %}
+Reservation placed
+==================
+
+Hello {{ user_name }},
+
+You have been added to the queue for "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %}.
+
+Your position in line: #{{ position }}
+{% if estimated_available_from and estimated_available_until %}
+Expected to become available between {{ estimated_available_from|isodatetime }} and {{ estimated_available_until|isodatetime }}.
+This is only an estimate: the book may come back earlier if the current reader returns it, or later if the loan is renewed.
+{% elif estimated_available_from %}
+Expected to become available after {{ estimated_available_from|isodatetime }}, when the current loan ends.
+This is only an estimate: the book may come back earlier if the current reader returns it, or later if the loan is renewed.
+{% endif %}
+We will email you again as soon as a slot opens up. You will have {{ claim_window_hours }} hours to claim it.
+
+--
+This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.

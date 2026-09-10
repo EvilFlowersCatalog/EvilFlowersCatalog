@@ -89,7 +89,8 @@ class Command(BaseCommand):
         try:
             catalog = Catalog.objects.get(**conditions)
         except Catalog.DoesNotExist:
-            self.stderr.write(self.style.ERROR(f"Catalog {options['catalog']} does not exist!"))
+            identifier = options.get("id") or options.get("name")
+            self.stderr.write(self.style.ERROR(f"Catalog {identifier} does not exist!"))
             return
 
         self.stdout.write(f"Preparing to backup catalog {catalog.title} ({catalog.pk})")
@@ -108,7 +109,8 @@ class Command(BaseCommand):
         else:
             compressor = PlainCompressionStrategy()
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=compressor.suffix()) as tmp:
+        tempfile_suffix = f".{compressor.suffix()}" if compressor.suffix() else ""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=tempfile_suffix) as tmp:
             tmp_file = tmp.name
 
         with compressor.open_tarfile(tmp_file) as tar:
@@ -140,7 +142,9 @@ class Command(BaseCommand):
                         f"storage/catalogs/{catalog.url_name}",
                     )
 
-        output = options.get("output") or f"{catalog.url_name}.{compressor.suffix()}"
+        output = options.get("output") or (
+            f"{catalog.url_name}.{compressor.suffix()}" if compressor.suffix() else catalog.url_name
+        )
 
         if output.startswith("s3://"):
             try:

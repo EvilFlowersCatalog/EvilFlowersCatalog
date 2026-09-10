@@ -1,0 +1,1 @@
+You've moved up the queue for "{{ entry_title }}"

@@ -1,7 +1,7 @@
 import base64
 from http import HTTPStatus
 
-from authlib.jose import JoseError
+from joserfc.errors import JoseError
 from django.conf import settings
 from django.core.cache import cache
 from django.utils.translation import gettext as _

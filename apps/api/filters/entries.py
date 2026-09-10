@@ -3,12 +3,12 @@ from urllib.parse import urlencode
 
 import django_filters
 from django.core.exceptions import ValidationError
-from django.db.models import Q, Value, CharField, Case, When, IntegerField
+from django.db.models import Q, Value, CharField, Case, When, IntegerField, Count
 from django.db.models.functions import Concat, Lower
 from django.utils.translation import gettext as _
 from partial_date import PartialDate
 
-from apps.core.models import Entry, Language, Category, Author
+from apps.core.models import Entry
 from apps.opds.structures import Facet
 from apps.api.filters.base import BaseSecuredFilter
 
@@ -29,6 +29,15 @@ class EntryFilter(BaseSecuredFilter):
     # OpenSearch template configuration
     # TODO: Implement proper OpenSearch template mapping for better API compatibility
 
+    id = django_filters.CharFilter(
+        method="filter_id",
+        label=_("Entry IDs"),
+        help_text=(
+            "Filter entries by UUID. Accepts a single UUID or a comma-separated list "
+            "(e.g. `?id=<uuid>,<uuid>`). Lets clients resolve many entries in one request "
+            "instead of issuing one detail call per id."
+        ),
+    )
     creator_id = django_filters.UUIDFilter(
         help_text="Filter entries by the UUID of the user who created them. Useful for finding entries added by specific contributors."
     )
@@ -40,19 +49,25 @@ class EntryFilter(BaseSecuredFilter):
         lookup_expr="unaccent__icontains",
         help_text="Filter entries by catalog title using case-insensitive partial matching. Supports Unicode normalization.",
     )
-    author_id = django_filters.UUIDFilter(
+    author_id = django_filters.CharFilter(
         method="filter_author_id",
         label=_("Author"),
-        help_text="Filter entries by author UUID. Returns entries written by the specified author.",
+        help_text=(
+            "Filter entries by author UUID. Accepts a single UUID or a comma-separated list of UUIDs "
+            "(e.g. `?author_id=<uuid>,<uuid>`). Multi-value form expands to an OR/IN lookup."
+        ),
     )
     author = django_filters.CharFilter(
         method="filter_author",
         help_text="Filter entries by author name using intelligent search. Searches across author names, surnames, and combined full names with partial matching.",
     )
-    category_id = django_filters.UUIDFilter(
+    category_id = django_filters.CharFilter(
+        method="filter_category_id",
         label=_("Category"),
-        field_name="categories__id",
-        help_text="Filter entries by category UUID. Returns entries tagged with the specified category.",
+        help_text=(
+            "Filter entries by category UUID. Accepts a single UUID or a comma-separated list "
+            "(e.g. `?category_id=<uuid>,<uuid>`). Multi-value form expands to an OR/IN lookup."
+        ),
     )
     category_term = django_filters.CharFilter(
         field_name="categories__term",
@@ -64,7 +79,11 @@ class EntryFilter(BaseSecuredFilter):
     language_code = django_filters.CharFilter(
         method="filter_language_code",
         label=_("Language"),
-        help_text="Filter entries by ISO language code (e.g., 'en', 'es', 'fr'). Accepts both 2-letter (alpha2) and 3-letter (alpha3) ISO codes.",
+        help_text=(
+            "Filter entries by ISO language code (e.g., 'en', 'es', 'fr'). Accepts both 2-letter (alpha2) "
+            "and 3-letter (alpha3) ISO codes, as a single value or comma-separated list "
+            "(e.g. `?language_code=sk,en`)."
+        ),
     )
     title = django_filters.CharFilter(
         lookup_expr="unaccent__icontains",
@@ -78,9 +97,12 @@ class EntryFilter(BaseSecuredFilter):
         method="filter_query",
         help_text="Perform comprehensive full-text search across all entry fields including title, summary, content, author names, categories, and publisher. Results are ranked by relevance with title matches having highest priority.",
     )
-    feed_id = django_filters.UUIDFilter(
-        field_name="feeds__id",
-        help_text="Filter entries by feed UUID. Returns entries that belong to the specified feed or collection.",
+    feed_id = django_filters.CharFilter(
+        method="filter_feed_id",
+        help_text=(
+            "Filter entries by feed UUID. Accepts a single UUID or a comma-separated list "
+            "(e.g. `?feed_id=<uuid>,<uuid>`). Multi-value form expands to an OR/IN lookup."
+        ),
     )
     published_at__gte = django_filters.CharFilter(
         method="filter_published_at_gte",
@@ -94,6 +116,25 @@ class EntryFilter(BaseSecuredFilter):
         field_name="config__readium_enabled",
         help_text="Filter entries by Readium LCP (Licensed Content Protection) availability. True returns only DRM-protected entries, False returns unprotected entries.",
     )
+    # IP-004 Phase 5: saturation filters. Values are computed per-request by
+    # `lcp_state_mapping(request.user, entries)` and post-filtered in Python.
+    # Intended for paginated admin views; linear in catalog size.
+    lcp_state = django_filters.CharFilter(
+        method="filter_lcp_state",
+        help_text=(
+            "Filter entries by computed LCP availability state. Accepts a single value or "
+            "a comma-separated list of: `not_lcp`, `available_now`, `available_in_days`, "
+            "`active_loan_for_user`, `fully_borrowed` (e.g. `?lcp_state=fully_borrowed,available_in_days`)."
+        ),
+    )
+    over_saturated = django_filters.BooleanFilter(
+        method="filter_over_saturated",
+        help_text=(
+            "Filter entries by whether their active license count exceeds their "
+            "configured `readium_amount`. `true` surfaces legacy over-saturated entries "
+            "that need manual remediation. `false` returns entries within their cap."
+        ),
+    )
 
     @classmethod
     def template(cls) -> str:
@@ -105,50 +146,71 @@ class EntryFilter(BaseSecuredFilter):
 
     @property
     def facets(self) -> List[Facet]:
+        # Evaluate the access-controlled queryset once (the `qs` property
+        # re-applies access control on every access) and compute each
+        # dimension's counts with a single grouped aggregate instead of one
+        # COUNT query per language / category / author.
+        qs = self.qs
         facets = []
 
-        # Language
-        available_languages = Language.objects.filter(entries__in=self.qs).distinct()
-        for language in available_languages:
+        # Language — one grouped COUNT over all present languages.
+        language_rows = (
+            qs.filter(language__isnull=False)
+            .values("language__name", "language__alpha2")
+            .annotate(count=Count("id", distinct=True))
+        )
+        for row in language_rows:
+            alpha2 = row["language__alpha2"]
             url_params = self.request.GET.dict()
-            url_params["language_code"] = language.alpha2
+            url_params["language_code"] = alpha2
             facets.append(
                 Facet(
-                    title=language.name,
+                    title=row["language__name"],
                     href=f"{self.request.path}?{urlencode(url_params)}",
                     group=_("Language"),
-                    count=self.qs.filter(language=language).count(),
-                    is_active=self.request.GET.get("language_code") == language.alpha2,
+                    count=row["count"],
+                    is_active=self.request.GET.get("language_code") == alpha2,
                 )
             )
 
-        # Categories
-        available_categories = Category.objects.filter(entries__in=self.qs).distinct()
-        for category in available_categories:
+        # Categories — one grouped COUNT over all present categories.
+        category_rows = (
+            qs.filter(categories__isnull=False)
+            .values("categories__id", "categories__term", "categories__label")
+            .annotate(count=Count("id", distinct=True))
+        )
+        for row in category_rows:
+            category_id = row["categories__id"]
             url_params = self.request.GET.dict()
-            url_params["category_id"] = category.id
+            url_params["category_id"] = category_id
             facets.append(
                 Facet(
-                    title=category.label or category.term,
+                    title=row["categories__label"] or row["categories__term"],
                     href=f"{self.request.path}?{urlencode(url_params)}",
                     group=_("Category"),
-                    count=self.qs.filter(categories=category).count(),
-                    is_active=self.request.GET.get("category_id") == category.id,
+                    count=row["count"],
+                    is_active=self.request.GET.get("category_id") == str(category_id),
                 )
             )
 
-        # Authors
-        available_authors = Author.objects.filter(entries__in=self.qs).distinct()
-        for author in available_authors:
+        # Authors — one grouped COUNT over all present authors.
+        author_rows = (
+            qs.filter(authors__isnull=False)
+            .values("authors__id", "authors__name", "authors__surname")
+            .annotate(count=Count("id", distinct=True))
+        )
+        for row in author_rows:
+            author_id = row["authors__id"]
+            full_name = f"{row['authors__name']} {row['authors__surname']}".strip()
             url_params = self.request.GET.dict()
-            url_params["author_id"] = author.id
+            url_params["author_id"] = author_id
             facets.append(
                 Facet(
-                    title=author.full_name,
+                    title=full_name,
                     href=f"{self.request.path}?{urlencode(url_params)}",
                     group=_("Author"),
-                    count=self.qs.filter(authors=author).distinct().count(),
-                    is_active=self.request.GET.get("author_id") == author.id,
+                    count=row["count"],
+                    is_active=self.request.GET.get("author_id") == str(author_id),
                 )
             )
 
@@ -175,8 +237,41 @@ class EntryFilter(BaseSecuredFilter):
         )
 
     @staticmethod
-    def filter_author_id(qs, name, value):
-        return qs.filter(authors__id=value)
+    def _split_csv(value):
+        """Split a comma-separated filter value into a list of stripped, non-empty tokens."""
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple)):
+            return [str(v).strip() for v in value if str(v).strip()]
+        return [token.strip() for token in str(value).split(",") if token.strip()]
+
+    @classmethod
+    def filter_id(cls, qs, name, value):
+        ids = cls._split_csv(value)
+        if not ids:
+            return qs
+        return qs.filter(id__in=ids)
+
+    @classmethod
+    def filter_author_id(cls, qs, name, value):
+        ids = cls._split_csv(value)
+        if not ids:
+            return qs
+        return qs.filter(authors__id__in=ids).distinct()
+
+    @classmethod
+    def filter_category_id(cls, qs, name, value):
+        ids = cls._split_csv(value)
+        if not ids:
+            return qs
+        return qs.filter(categories__id__in=ids).distinct()
+
+    @classmethod
+    def filter_feed_id(cls, qs, name, value):
+        ids = cls._split_csv(value)
+        if not ids:
+            return qs
+        return qs.filter(feeds__id__in=ids).distinct()
 
     @staticmethod
     def filter_query(qs, name, value):
@@ -243,7 +338,48 @@ class EntryFilter(BaseSecuredFilter):
         except ValidationError:
             return qs
 
-    @staticmethod
-    def filter_language_code(qs, name, value):
-        """Filter entries by language code, checking both alpha2 and alpha3 fields."""
-        return qs.filter(Q(language__alpha2=value) | Q(language__alpha3=value))
+    @classmethod
+    def filter_language_code(cls, qs, name, value):
+        """Filter entries by language code(s); accepts comma-separated alpha2/alpha3 codes."""
+        codes = cls._split_csv(value)
+        if not codes:
+            return qs
+        return qs.filter(Q(language__alpha2__in=codes) | Q(language__alpha3__in=codes))
+
+    # IP-004 Phase 5: saturation post-filters. These are instance methods so they
+    # have access to `self.request.user`, which `lcp_state_mapping` needs to
+    # compute `active_loan_for_user` correctly.
+
+    def filter_lcp_state(self, qs, name, value):
+        from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
+
+        states = {token for token in self._split_csv(value)}
+        if not states:
+            return qs
+
+        user = self.request.user if self.request is not None else None
+        materialized = list(qs)
+        mapping = lcp_state_mapping(user, materialized)
+        matching_ids = [
+            entry.pk
+            for entry in materialized
+            if (row := mapping.get(entry.pk)) is not None
+            and str(row["lcp_state"].value if hasattr(row["lcp_state"], "value") else row["lcp_state"]) in states
+        ]
+        return qs.filter(pk__in=matching_ids)
+
+    def filter_over_saturated(self, qs, name, value):
+        from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
+
+        if value is None:
+            return qs
+
+        user = self.request.user if self.request is not None else None
+        materialized = list(qs)
+        mapping = lcp_state_mapping(user, materialized)
+        matching_ids = [
+            entry.pk
+            for entry in materialized
+            if (row := mapping.get(entry.pk)) is not None and bool(row.get("over_saturated")) is bool(value)
+        ]
+        return qs.filter(pk__in=matching_ids)

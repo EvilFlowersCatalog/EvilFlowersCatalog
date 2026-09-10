@@ -100,10 +100,28 @@ class Entry(BaseModel):
     image = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=get_storage)
     image_mime = models.CharField(max_length=100, null=True)
     thumbnail = models.ImageField(upload_to=_upload_to_path, null=True, max_length=255, storage=get_storage)
+    # Thumbnail MIME can differ from image_mime: covers are re-encoded to JPEG
+    # for the preview grid. NULL on legacy rows — serving falls back to image_mime.
+    thumbnail_mime = models.CharField(max_length=100, null=True)
     popularity = models.PositiveBigIntegerField(default=0, null=False)
     config = models.JSONField(null=False, default=default_entry_config)
     citation = models.TextField(null=True)
     touched_at = models.DateTimeField(null=True, auto_now=True)
+
+    # Advanced entry details (issue #50; ratings/reviews deferred to #57)
+    page_count = models.PositiveIntegerField(null=True, blank=True)
+    table_of_contents = models.JSONField(null=True, blank=True)
+    related_entries = models.ManyToManyField("self", symmetrical=False, related_name="related_to", blank=True)
+
+    @property
+    def first_author_name(self) -> str:
+        first = self.authors.first()
+        if first is None:
+            return ""
+        return (
+            getattr(first, "full_name", None)
+            or f"{getattr(first, 'name', '')} {getattr(first, 'surname', '')}".strip()
+        )
 
     @property
     def image_url(self) -> Optional[str]:
@@ -124,9 +142,21 @@ class Entry(BaseModel):
 
 @receiver(post_save, sender=Entry)
 def touch_parents(sender, instance: Entry, **kwargs):
-    instance.catalog.touched_at = timezone.now()
-    instance.catalog.save()
-    instance.feeds.update(touched_at=timezone.now())
+    # Bump only the `touched_at` column with a targeted UPDATE instead of a
+    # full `catalog.save()` — the latter rewrites every column, bumps the
+    # catalog's own `updated_at`, and re-fires Catalog's save signals on every
+    # entry write (heavy under bulk imports / batch edits).
+    now = timezone.now()
+    Catalog.objects.filter(pk=instance.catalog_id).update(touched_at=now)
+    instance.feeds.update(touched_at=now)
+
+
+# IP-008 Phase 3 D2: the post-save encryption trigger lived here, which
+# forced `apps.core` to import `apps.readium.services` — the dependency
+# direction was wrong. The receiver now lives in `apps/readium/signals.py`
+# and subscribes to `Entry.post_save` from the readium side. Behavior is
+# unchanged; only the import direction flips so `apps.core` stays free of
+# readium concepts.
 
 
 __all__ = ["Entry", "default_entry_config"]

@@ -53,6 +53,12 @@ class LinkType(str, Enum):
     IMAGE = "http://opds-spec.org/image"
     OPEN_ACCESS = "http://opds-spec.org/acquisition/open-access"
     ACQUISITION = "http://opds-spec.org/acquisition"
+    # LCP borrow (IP-008): a readium-enabled entry advertises this rel so
+    # OPDS 1.2 readers can reach the borrow endpoint. Without the member,
+    # `BorrowLinkResolver` emitting `rel=…/acquisition/borrow` raises a
+    # pydantic ValidationError and 500s every 1.2 feed that contains an
+    # LCP title.
+    BORROW = "http://opds-spec.org/acquisition/borrow"
 
 
 class Link(BaseXmlModel, tag="link", nsmap=NSMAP):
@@ -82,13 +88,33 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
     content: Optional[Content] = element(default=None)
 
     @classmethod
-    def from_model(cls, entry: Entry, complete: bool = False) -> "AcquisitionEntry":
+    def from_model(
+        cls,
+        entry: Entry,
+        complete: bool = False,
+        *,
+        request=None,
+        user=None,
+    ) -> "AcquisitionEntry":
+        """Build an OPDS 1.2 `<entry>` from a domain `Entry`.
+
+        When `request` is provided and the entry is readium-enabled,
+        the LCP-related links (borrow + optional `.lcpl`) are emitted
+        via `apps/opds/services/borrow_link.BorrowLinkResolver` so OPDS
+        1.2 and OPDS 2.0 stay in sync at the link semantics layer
+        (IP-008 Phase 2 B5). The raw download link is suppressed for
+        LCP-protected entries to match OPDS 2.0 behaviour.
+        """
         acquisition_entry = AcquisitionEntry(
             title=entry.title,
             id=f"urn:uuid:{entry.id}",
             updated=entry.updated_at,
             authors=[
-                Author(name=entry_author.author.full_name) for entry_author in entry.entry_authors.order_by("position")
+                Author(name=entry_author.author.full_name)
+                # Sort in Python (not `.order_by`) so a prefetched
+                # `entry_authors__author` cache is reused instead of firing a
+                # fresh per-entry query for every feed row.
+                for entry_author in sorted(entry.entry_authors.all(), key=lambda ea: ea.position)
             ],
             summary=Summary(type="text", value=entry.summary),
         )
@@ -123,18 +149,42 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
                 )
             )
 
-        for acquisition in entry.acquisitions.all():
-            acquisition_entry.links.append(
-                Link(
-                    rel=str(Acquisition.AcquisitionType(acquisition.relation)),  # FIXME: WTF?
-                    href=reverse(
-                        "files:acquisition-download",
-                        kwargs={"acquisition_id": acquisition.pk},
-                    ),
-                    type=acquisition.mime,
-                    checksum=acquisition.checksum if complete else None,
+        readium_enabled = bool(entry.read_config("readium_enabled"))
+
+        # Non-LCP entries: emit the raw acquisition links as before.
+        # LCP-protected entries: skip the raw download link so we don't
+        # leak the unencrypted file URL (Thorium / Readium-toolkit readers
+        # fetch the .lcpl link instead and pull encrypted content from the
+        # LCP-registered URL).
+        if not readium_enabled:
+            for acquisition in entry.acquisitions.all():
+                acquisition_entry.links.append(
+                    Link(
+                        rel=str(Acquisition.AcquisitionType(acquisition.relation)),
+                        href=reverse(
+                            "files:acquisition-download",
+                            kwargs={"acquisition_id": acquisition.pk},
+                        ),
+                        type=acquisition.mime,
+                        checksum=acquisition.checksum if complete else None,
+                    )
                 )
-            )
+
+        # LCP borrow / direct-license links (shared with OPDS 2.0).
+        if readium_enabled and request is not None:
+            from apps.opds.services.borrow_link import BorrowLinkResolver
+
+            resolver = BorrowLinkResolver(request, opds_version="1.2")
+            active_license = resolver.active_license_for(entry, user)
+            for borrow_link in resolver.emit_links(entry, active_license):
+                acquisition_entry.links.append(
+                    Link(
+                        rel=borrow_link.rel,
+                        href=borrow_link.href,
+                        type=borrow_link.type,
+                        title=borrow_link.title,
+                    )
+                )
 
         return acquisition_entry
 
@@ -148,15 +198,26 @@ class OpdsFeed(BaseXmlModel, tag="feed", nsmap=NSMAP):
     entries: List[Union[NavigationEntry, AcquisitionEntry]] = element(tag="entry", default=list())
 
 
-class OpenSearchLink(BaseXmlModel, tag="Url", nsmap=NSMAP):
+OPENSEARCH_NSMAP = {"": "http://a9.com/-/spec/opensearch/1.1/"}
+
+
+class OpenSearchLink(BaseXmlModel, tag="Url", nsmap=OPENSEARCH_NSMAP):
     type: Literal["application/atom+xml;profile=opds-catalog"] = attr(
         name="type", default="application/atom+xml;profile=opds-catalog"
     )
     template: str = attr(name="template")
 
     def __init__(self, base_path: str, template_items: Dict[str, str], **data):
-        template = base_path + "?" + "&".join(f"{k}={{{v}}}" for k, v in template_items.items())
+        from urllib.parse import quote
+
+        template = base_path + "?" + "&".join(f"{quote(k, safe='')}={{{v}}}" for k, v in template_items.items())
         super().__init__(template=template, **data)
 
 
-class OpenSearchQuery(BaseXmlModel, tag="Query", nsmap=NSMAP): ...
+class OpenSearchQuery(BaseXmlModel, tag="Query", nsmap=OPENSEARCH_NSMAP): ...
+
+
+class OpenSearchDescription(BaseXmlModel, tag="OpenSearchDescription", nsmap=OPENSEARCH_NSMAP):
+    short_name: str = element(tag="ShortName")
+    description: str = element(tag="Description")
+    url: OpenSearchLink = element()

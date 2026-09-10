@@ -1,0 +1,11 @@
+{% load notification_extras %}
+Loan renewed
+============
+
+Hello {{ user_name }},
+
+Your loan of "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %} has been renewed.
+New expiration: {{ expires_at|isodatetime }}.
+
+--
+This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.

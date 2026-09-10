@@ -2,8 +2,42 @@
   "permissions": {
     "allow": [
       "Bash(python manage.py openapi:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "mcp__MCP_DOCKER__get_file_contents",
+      "Bash(find:*)",
+      "WebFetch(domain:www.edrlab.org)",
+      "WebFetch(domain:elvira.digital)",
+      "WebFetch(domain:ieeexplore.ieee.org)",
+      "WebSearch",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:dblp.org)",
+      "mcp__github__get_file_contents",
+      "mcp__github__search_code",
+      "mcp__github__search_issues",
+      "mcp__github__search_repositories",
+      "mcp__github__list_branches",
+      "mcp__github__list_commits",
+      "mcp__plugin_figma_figma__get_metadata",
+      "mcp__plugin_figma_figma__get_screenshot",
+      "mcp__github__issue_read",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__github__list_issues",
+      "mcp__github__get_me",
+      "mcp__github-evilflowers__get_file_contents",
+      "mcp__github-evilflowers__list_issues",
+      "mcp__github-evilflowers__search_code"
     ],
     "deny": []
-  }
+  },
+  "enabledMcpjsonServers": [
+    "playwright",
+    "github",
+    "github-evilflowers",
+    "elvira-gateway-ssh",
+    "github-sibyx"
+  ]
 }

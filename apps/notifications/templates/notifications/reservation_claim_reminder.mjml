@@ -1,0 +1,18 @@
+{% extends "notifications/base.mjml" %}
+{% load notification_extras %}
+
+{% block content %}
+<mj-section background-color="#ffffff" padding="30px 20px">
+  <mj-column>
+    <mj-text font-size="20px" font-weight="bold" padding-bottom="10px">Don't forget to claim your reservation</mj-text>
+    <mj-text>Hello {{ user_name }},</mj-text>
+    <mj-text>
+      Your reservation for <strong>{{ entry_title }}</strong>{% if entry_author %} by {{ entry_author }}{% endif %} is still waiting to be claimed.
+    </mj-text>
+    <mj-text>
+      The claim window closes at <strong>{{ claim_deadline|isodatetime }}</strong>. If you don't claim it before then, your slot will pass to the next user in line.
+    </mj-text>
+    <mj-button href="{{ claim_url }}">Claim Your Book</mj-button>
+  </mj-column>
+</mj-section>
+{% endblock %}

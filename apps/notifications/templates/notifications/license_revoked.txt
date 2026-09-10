@@ -1,0 +1,13 @@
+License revoked
+===============
+
+Hello {{ user_name }},
+
+Your license for "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %} has been revoked. You can no longer open this publication.
+{% if reason %}
+Reason: {{ reason }}
+{% endif %}
+If you believe this is an error, contact the library.
+
+--
+This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.

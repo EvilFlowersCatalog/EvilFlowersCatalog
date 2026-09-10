@@ -9,14 +9,16 @@ from .transformers import Transformer
 
 class EventExecutionService:
     executor: Executor
-    transformer: Transformer
+    transformer: Transformer = None
 
     def __init__(self):
-        self.transformer = import_string(settings.EVILFLOWERS_EVENT_BROKER_TRANSFORMER)()
+        if settings.EVILFLOWERS_EVENT_BROKER_TRANSFORMER:
+            self.transformer = import_string(settings.EVILFLOWERS_EVENT_BROKER_TRANSFORMER)()
 
     def execute(self, event: str, payload):
-        transformer_payload = self.transformer.transform(payload)
-        self.executor.send(event, transformer_payload)
+        if self.transformer:
+            payload = self.transformer.transform(payload)
+        self.executor.send(event, payload)
 
 
 class KafkaEventExecutionService(EventExecutionService):

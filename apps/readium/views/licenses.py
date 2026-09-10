@@ -5,12 +5,16 @@ Handles license CRUD operations and state management.
 Uses the new service layer for all business logic.
 """
 
+import logging
+from datetime import datetime
 from http import HTTPStatus
 from uuid import UUID
-from datetime import timedelta
 
+from django.conf import settings
+from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
@@ -18,12 +22,25 @@ from apps import openapi
 from apps.api.response import PaginationResponse, SingleResponse
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.core.views import SecuredView
-from apps.core.models import Entry
+from apps.readium.enums import LicenseAction
 from apps.readium.filters import LicenseFilter
 from apps.readium.forms import CreateLicenseForm, UpdateLicenseForm
 from apps.readium.models import License
 from apps.readium.serializers import LicenseSerializer
-from apps.readium.services import LicenseService
+from apps.readium.services import (
+    AlreadyBorrowedError,
+    BorrowError,
+    LicenseService,
+    NoAvailableSlotsError,
+    NotLendableError,
+    NotReadiumEnabledError,
+    PassphraseRequiredError,
+)
+from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
+from apps.readium.services.renew_policy import evaluate_renew
+from apps.readium.views._license_lookup import LicenseLookupMixin
+
+logger = logging.getLogger(__name__)
 
 
 class LicenseManagement(SecuredView):
@@ -33,10 +50,54 @@ class LicenseManagement(SecuredView):
         summary="List all licenses",
     )
     def get(self, request):
-        # TODO: prefetch entries
-        licenses = LicenseFilter(request.GET, queryset=License.objects.all(), request=request).qs
+        licenses = LicenseFilter(
+            request.GET,
+            queryset=License.objects.select_related("entry").prefetch_related("entry__authors"),
+            request=request,
+        ).qs
 
-        return PaginationResponse(request, licenses, serializer=LicenseSerializer.Detailed)
+        # `LicenseSerializer.Detailed` nests the full entry serializer, whose LCP
+        # availability fields (`lcp_state`, `total_slots`, `available_slots`,
+        # `active_count`, `queue_length`) are only populated from a
+        # `lcp_states` context. Without it every nested entry silently
+        # serialized as `not_lcp` with 0/0 slots — the readium_amount
+        # indicators were wrong on every license response.
+        return PaginationResponse(
+            request,
+            licenses,
+            serializer=LicenseSerializer.Detailed,
+            serializer_context={"request": request},
+            context_builder=lambda items: {
+                "lcp_states": lcp_state_mapping(request.user, [lic.entry for lic in items if lic.entry_id])
+            },
+        )
+
+    @staticmethod
+    def _borrow_conflict_data(request, entry, error: BorrowError) -> dict:
+        """Structured payload for 409 borrow conflicts.
+
+        `no_available_slots` carries the queue snapshot the frontend needs to
+        offer a reservation; `already_borrowed` points at the existing license.
+        """
+        data = {"reason_code": error.reason_code, "entry_id": str(entry.pk)}
+
+        if isinstance(error, AlreadyBorrowedError) and error.availability.get("existing_license"):
+            data["existing_license_id"] = str(error.availability["existing_license"])
+
+        if isinstance(error, NoAvailableSlotsError):
+            state = lcp_state_mapping(request.user, [entry]).get(entry.pk, {})
+            next_available_at = state.get("next_available_at")
+            user_reservation_id = state.get("user_reservation_id")
+            data.update(
+                {
+                    "queue_length": state.get("queue_length", 0),
+                    "next_available_at": next_available_at.isoformat() if next_available_at else None,
+                    "user_reservation_id": str(user_reservation_id) if user_reservation_id else None,
+                    "reservations_url": "/readium/v1/reservations",
+                }
+            )
+
+        return data
 
     @openapi.metadata(
         description="""
@@ -50,68 +111,83 @@ class LicenseManagement(SecuredView):
 
         Required fields:
         - entry_id: UUID of the entry to license
+        - duration: License duration (e.g. "14 00:00:00" for 14 days)
 
         Optional fields:
-        - user_passphrase: User's chosen passphrase for this license (if not provided, uses user's default passphrase)
-        - passphrase_hint: Hint for the passphrase (if not provided, uses user's default hint)
-        - duration_days: License duration in days (default: 14)
-        - start_date: License start date (default: now)
-
-        Note: If user_passphrase is not provided, the user must have a default LCP passphrase set in their profile.
+        - starts_at: License start date (default: now)
         """,
         tags=["Licenses"],
         summary="Create new LCP license",
     )
     def post(self, request):
-        # Extract parameters
-        entry_id = request.data.get("entry_id")
-        user_passphrase = request.data.get("user_passphrase")  # Optional - will use user's default if not provided
-        passphrase_hint = request.data.get("passphrase_hint")
-        duration_days = int(request.data.get("duration_days", 14))
-        start_date_str = request.data.get("start_date")
+        form = CreateLicenseForm.create_from_request(request)
 
-        # Validate required fields
-        if not entry_id:
-            raise ProblemDetailException(
-                _("entry_id is required"),
-                status=HTTPStatus.BAD_REQUEST,
-                detail_type=DetailType.VALIDATION_ERROR,
-            )
+        if not form.is_valid():
+            raise ValidationException(form)
 
-        # Get entry
-        try:
-            entry = Entry.objects.get(pk=entry_id)
-        except Entry.DoesNotExist:
-            raise ProblemDetailException(
-                _("Entry not found"),
-                status=HTTPStatus.NOT_FOUND,
-                detail_type=DetailType.NOT_FOUND,
-            )
-
-        # Parse start date if provided
-        start_date = None
-        if start_date_str:
-            from django.utils.dateparse import parse_datetime
-
-            start_date = parse_datetime(start_date_str)
-
-        # Create license via service
         try:
             license = LicenseService.create_license(
-                entry=entry,
+                entry=form.cleaned_data["entry_id"],
                 user=request.user,
-                user_passphrase=user_passphrase,
-                passphrase_hint=passphrase_hint,
-                start_date=start_date,
-                duration_days=duration_days,
+                start_date=form.cleaned_data.get("starts_at"),
+                duration_days=form.cleaned_data["duration"].days,
             )
 
             return SingleResponse(
                 request,
-                data=LicenseSerializer.Base.model_validate(license),
+                data=LicenseSerializer.Base.model_validate(license, context={"request": request}),
                 status=HTTPStatus.CREATED,
             )
 
+        except PassphraseRequiredError as e:
+            raise ProblemDetailException(
+                _("LCP passphrase required"),
+                detail=str(e),
+                status=HTTPStatus.BAD_REQUEST,
+                detail_type=DetailType.PASSPHRASE_REQUIRED,
+                additional_data={"set_passphrase_url": "/api/v1/users/me"},
+                previous=e,
+            )
+        except NotReadiumEnabledError as e:
+            raise ProblemDetailException(
+                str(e),
+                status=HTTPStatus.BAD_REQUEST,
+                detail_type=DetailType.VALIDATION_ERROR,
+                previous=e,
+            )
+        except NotLendableError as e:
+            # Operator-side readiness problem (no PDF/EPUB, not encrypted, not
+            # registered). Readers used to get the raw technical sentence
+            # ("Entry has no EPUB or PDF acquisition suitable for LCP
+            # protection") — the review round flagged it as unintelligible.
+            logger.warning(
+                "readium.borrow.not_lendable",
+                extra={"entry_id": str(form.cleaned_data["entry_id"].pk), "cause": e.technical_detail},
+            )
+            raise ProblemDetailException(
+                str(e),
+                detail=e.technical_detail,
+                status=HTTPStatus.CONFLICT,
+                detail_type=DetailType.CONFLICT,
+                additional_data={
+                    "reason_code": e.reason_code,
+                    "entry_id": str(form.cleaned_data["entry_id"].pk),
+                    "contact_email": settings.EVILFLOWERS_CONTACT_EMAIL,
+                },
+                previous=e,
+            )
+        except BorrowError as e:
+            # Availability conflicts (fully borrowed, duplicate loan) are 409s
+            # with a machine-readable `reason_code` — the frontend offers the
+            # reservation queue on `no_available_slots` instead of surfacing a
+            # generic validation error.
+            raise ProblemDetailException(
+                str(e),
+                status=HTTPStatus.CONFLICT,
+                detail_type=DetailType.CONFLICT,
+                additional_data=self._borrow_conflict_data(request, form.cleaned_data["entry_id"], e),
+                previous=e,
+            )
         except ValueError as e:
             raise ProblemDetailException(
                 str(e),
@@ -123,16 +199,179 @@ class LicenseManagement(SecuredView):
             raise ProblemDetailException(
                 _("Failed to create license"),
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                detail_type=DetailType.INTERNAL_ERROR,
                 previous=e,
             )
 
 
-class LicenseDetail(SecuredView):
-    @staticmethod
-    def _get_license(request, license_id: UUID) -> License:
+class LicenseDetail(LicenseLookupMixin, SecuredView):
+    # IP-004 Phase 4: state-change operations admit catalog managers and
+    # superusers in addition to the license owner.
+    license_permission = "check_license_state_manage"
+
+    @openapi.metadata(
+        description="Retrieve detailed information about a specific license. Returns comprehensive license data including duration, start/end dates, user information, and current status. Requires license manage permissions for the license owner.",
+        tags=["Licenses"],
+        summary="Get license details",
+    )
+    def get(self, request, license_id: UUID):
+        license = self.get_license_or_404(request, license_id)
+        return SingleResponse(
+            request, data=LicenseSerializer.Base.model_validate(license, context={"request": request})
+        )
+
+    @openapi.metadata(
+        description="Update license state and properties. Supports state transitions like 'active', 'returned', 'renewed' etc. LCP operations are handled automatically based on state changes.",
+        tags=["Licenses"],
+        summary="Update license state",
+    )
+    def put(self, request, license_id: UUID):
+        form = UpdateLicenseForm.create_from_request(request)
+
+        if not form.is_valid():
+            raise ValidationException(form)
+
+        # IP-009 Phase 1 (Q1): emit a single deprecation log per request
+        # for legacy `state`/`duration` payloads. The view layer logs;
+        # the form layer surfaces the booleans without logging itself.
+        if form.cleaned_data.get("_used_legacy_state"):
+            logger.warning(
+                "license_update_legacy_state_field",
+                extra={"license_id": str(license_id)},
+            )
+        if form.cleaned_data.get("_used_legacy_duration"):
+            logger.warning(
+                "license_update_legacy_duration_field",
+                extra={"license_id": str(license_id)},
+            )
+
+        # IP-008 Phase 1 A6: hold the License row lock across state
+        # change + save. Without this, the status-proxy
+        # DeviceRegistrationProxyView (which also writes device_count
+        # and state) can race with this PUT and lose updates.
+        with transaction.atomic():
+            try:
+                license = License.objects.select_for_update().get(pk=license_id)
+            except License.DoesNotExist as e:
+                raise ProblemDetailException(
+                    _("License not found"),
+                    status=HTTPStatus.NOT_FOUND,
+                    previous=e,
+                    detail_type=DetailType.NOT_FOUND,
+                )
+
+            if not has_object_permission("check_license_state_manage", request.user, license):
+                raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+
+            action = form.cleaned_data.get("action")
+            if action:
+                self._dispatch_action(license, action, form.cleaned_data)
+                license.save()
+
+        return SingleResponse(
+            request, data=LicenseSerializer.Base.model_validate(license, context={"request": request})
+        )
+
+    def _dispatch_action(self, license: License, action: str, data: dict):
+        """Dispatch a `LicenseAction` to the service layer (IP-009 Phase 1)."""
+
+        if action == LicenseAction.ACTIVATE and license.state == License.LicenseState.READY:
+            # Device registration is canonically driven by the Status
+            # Server proxy; the PUT path is a UI shortcut.
+            license.state = License.LicenseState.ACTIVE
+            license.device_count += 1
+            return
+
+        if action == LicenseAction.RETURN:
+            try:
+                LicenseService.return_license(license)
+            except Exception as e:
+                raise ProblemDetailException(
+                    _("Failed to return license"),
+                    detail=str(e),
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    previous=e,
+                )
+            return
+
+        if action == LicenseAction.RENEW:
+            # Canonical payload: requested_end (ISO-8601 datetime).
+            # Legacy: duration → translate to requested_end at the
+            # form/view boundary (Q1 resolution).
+            requested_end = data.get("requested_end")
+            if requested_end is None:
+                duration = data.get("duration")
+                if duration is not None:
+                    requested_end = timezone.now() + duration
+
+            decision = evaluate_renew(license, requested_end=requested_end)
+            if not decision.allowed:
+                raise ProblemDetailException(
+                    _("Renewal denied"),
+                    detail=decision.reason,
+                    status=HTTPStatus.FORBIDDEN,
+                    detail_type=DetailType.CONFLICT,
+                )
+
+            try:
+                LicenseService.renew_license(license, new_end_date=decision.new_end)
+            except Exception as e:
+                raise ProblemDetailException(
+                    _("Failed to renew license"),
+                    detail=str(e),
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    previous=e,
+                )
+            return
+
+        if action == LicenseAction.REVOKE:
+            try:
+                LicenseService.revoke_license(license)
+            except Exception as e:
+                raise ProblemDetailException(
+                    _("Failed to revoke license"),
+                    detail=str(e),
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    previous=e,
+                )
+            return
+
+        if action == LicenseAction.CANCEL:
+            try:
+                LicenseService.cancel_license(license)
+            except Exception as e:
+                raise ProblemDetailException(
+                    _("Failed to cancel license"),
+                    detail=str(e),
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    previous=e,
+                )
+
+
+class LicenseRenewalsView(SecuredView):
+    """
+    Renewal sub-resource of License (IP-003 Phase 3e).
+
+    POST /readium/v1/licenses/{license_id}/renewals
+        Body: { "requested_end": "<iso-8601>" }
+        On allow: forwards to LicenseService.renew_license and returns the LSD
+        status document (proxied) on 200.
+        On deny: RFC 7807 problem-details JSON with status 403.
+
+    This endpoint is pointed at by the LCP Status Server's `renew_custom_url`.
+    """
+
+    @openapi.metadata(
+        description=(
+            'Renew a license. Body `{"requested_end": "<iso-8601>"}`. '
+            "STU policy: denied if a reservation queue exists on the entry, if the license is within "
+            "the post-acquisition embargo, or if the requested end exceeds the max renewal window."
+        ),
+        tags=["Licenses"],
+        summary="Create license renewal",
+    )
+    def post(self, request, license_id: UUID):
         try:
-            license = License.objects.get(pk=license_id)
+            license_obj = License.objects.get(pk=license_id)
         except License.DoesNotExist as e:
             raise ProblemDetailException(
                 _("License not found"),
@@ -141,145 +380,51 @@ class LicenseDetail(SecuredView):
                 detail_type=DetailType.NOT_FOUND,
             )
 
-        if not has_object_permission("check_license_manage", request.user, license.user):
-            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+        requested_end_value: datetime = None
+        if request.body:
+            import json
 
-        return license
+            try:
+                payload = json.loads(request.body or b"{}")
+            except json.JSONDecodeError:
+                raise ProblemDetailException(_("Invalid JSON body"), status=HTTPStatus.BAD_REQUEST)
+            raw = payload.get("requested_end") if isinstance(payload, dict) else None
+            if raw:
+                requested_end_value = parse_datetime(raw)
+                if requested_end_value is None:
+                    raise ProblemDetailException(
+                        _("`requested_end` must be an ISO-8601 datetime"),
+                        status=HTTPStatus.BAD_REQUEST,
+                        detail_type=DetailType.VALIDATION_ERROR,
+                    )
 
-    @openapi.metadata(
-        description="Retrieve detailed information about a specific license. Returns comprehensive license data including duration, start/end dates, user information, and current status. Requires license manage permissions for the license owner.",
-        tags=["Licenses"],
-        summary="Get license details",
-    )
-    def get(self, request, license_id: UUID):
-        license = self._get_license(request, license_id)
-        return SingleResponse(request, data=LicenseSerializer.Base.model_validate(license))
-
-    @openapi.metadata(
-        description="""
-        Download the LCP license file (.lcpl) for a specific license.
-
-        This endpoint implements the License Gateway pattern per LCP integration guide.
-        It retrieves fresh license data from the LCP Server and returns it in the
-        standard LCP license format that reading applications can import.
-
-        Reading applications will call this endpoint to:
-        - Get the initial license after acquisition
-        - Fetch updated licenses after renewal/return
-        - Retrieve fresh licenses after modification
-        """,
-        tags=["Licenses"],
-        summary="Download LCP license file (License Gateway)",
-    )
-    def download(self, request, license_id: UUID):
-        """License Gateway implementation."""
-        license = self._get_license(request, license_id)
-
-        # Fetch fresh license via service (validates state internally)
-        try:
-            fresh_license = LicenseService.fetch_fresh_license(license)
-
-            # Return as downloadable LCP license
-            response = JsonResponse(fresh_license, content_type="application/vnd.readium.lcp.license.v1.0+json")
-            response["Content-Disposition"] = f'attachment; filename="{license.entry.title}.lcpl"'
-            return response
-
-        except ValueError as e:
-            # Validation errors (revoked, expired, no lcp_license_id, etc.)
+        decision = evaluate_renew(license_obj, requested_end=requested_end_value)
+        if not decision.allowed:
             raise ProblemDetailException(
-                str(e),
+                _("Renewal denied"),
+                detail=decision.reason,
                 status=HTTPStatus.FORBIDDEN,
-                detail_type=DetailType.FORBIDDEN,
-                previous=e,
+                detail_type=DetailType.CONFLICT,
             )
+
+        # IP-008 Phase 3 C7: pass the exact decision datetime through;
+        # `LicenseService.renew_license` now accepts a `new_end_date`
+        # so the LSD-required sub-day precision is preserved.
+        try:
+            LicenseService.renew_license(license_obj, new_end_date=decision.new_end)
         except Exception as e:
             raise ProblemDetailException(
-                _("Failed to fetch license file"),
+                _("Failed to renew license"),
+                detail=str(e),
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                detail_type=DetailType.INTERNAL_ERROR,
                 previous=e,
             )
 
-    @openapi.metadata(
-        description="Update license state and properties. Supports state transitions like 'active', 'returned', 'renewed' etc. LCP operations are handled automatically based on state changes.",
-        tags=["Licenses"],
-        summary="Update license state",
-    )
-    def put(self, request, license_id: UUID):
-        license = self._get_license(request, license_id)
-
-        # Handle state changes
-        new_state = request.data.get("state")
-        if new_state:
-            self._handle_state_change(license, new_state, request.data)
-
-        # Handle other property updates
-        form = UpdateLicenseForm.create_from_request(request)
-        if form.is_valid():
-            form.populate(license)
-
-        license.save()
-        return SingleResponse(request, data=LicenseSerializer.Base.model_validate(license))
-
-    def _handle_state_change(self, license: License, new_state: str, data: dict):
-        """Handle license state transitions with automatic LCP operations via service layer."""
-
-        if new_state == "active" and license.state == License.LicenseState.READY:
-            # Device registration (device tracking happens in Status Server)
-            license.state = License.LicenseState.ACTIVE
-            license.device_count += 1
-
-        elif new_state == "returned":
-            # Return license via service
-            try:
-                LicenseService.return_license(license)
-                # Note: service updates state to RETURNED
-            except Exception as e:
-                raise ProblemDetailException(
-                    _("Failed to return license"),
-                    detail=str(e),
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                    previous=e,
-                )
-
-        elif new_state == "renewed":
-            # Renew license via service
-            duration_days = data.get("duration_days", 14)
-            try:
-                LicenseService.renew_license(license, new_duration_days=duration_days)
-                # Note: service updates expir es_at
-            except Exception as e:
-                raise ProblemDetailException(
-                    _("Failed to renew license"),
-                    detail=str(e),
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                    previous=e,
-                )
-
-        elif new_state == "revoked":
-            # Revoke license via service
-            reason = data.get("reason", "Revoked by administrator")
-            try:
-                LicenseService.revoke_license(license, reason)
-                # Note: service updates state to REVOKED
-            except Exception as e:
-                raise ProblemDetailException(
-                    _("Failed to revoke license"),
-                    detail=str(e),
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                    previous=e,
-                )
-
-        elif new_state == "cancelled":
-            # Cancel license via service
-            reason = data.get("reason", "Cancelled by user")
-            try:
-                LicenseService.cancel_license(license, reason)
-                # Note: service updates state to CANCELLED
-            except Exception as e:
-                raise ProblemDetailException(
-                    _("Failed to cancel license"),
-                    detail=str(e),
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                    previous=e,
-                )
+        return JsonResponse(
+            {
+                "license_id": str(license_obj.pk),
+                "expires_at": license_obj.expires_at.isoformat() if license_obj.expires_at else None,
+            },
+            status=HTTPStatus.OK,
+            content_type="application/vnd.readium.license.status.v1.0+json",
+        )

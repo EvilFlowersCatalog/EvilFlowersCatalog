@@ -44,7 +44,7 @@ class DoiDriver(IntrospectionDriver):
         try:
             res = urlopen(req, timeout=5)
             data = json.loads(res.read().decode("utf-8"))
-        except urllib.error.HTTPError | json.JSONDecodeError:
+        except (urllib.error.HTTPError, json.JSONDecodeError):
             return None
 
         result = {
@@ -70,7 +70,7 @@ class DoiDriver(IntrospectionDriver):
 
 
 class EntryIntrospectionService:
-    def __init__(self, driver: Literal["isbn", "dio"]):
+    def __init__(self, driver: Literal["isbn", "doi"]):
         if driver == "isbn":
             self._driver = IsbnDriver()
         elif driver == "doi":

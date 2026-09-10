@@ -28,3 +28,25 @@ if settings.EVILFLOWERS_BACKUP_DESTINATION and settings.EVILFLOWERS_BACKUP_SCHED
             minute=minute, hour=hour, day_of_month=day_of_month, month_of_year=month_of_year, day_of_week=day_of_week
         ),
     }
+
+# IP-003: reservation queue + lifecycle notifications.
+app.conf.beat_schedule["readium-sweep-unclaimed-reservations"] = {
+    "task": "apps.readium.tasks.sweep_unclaimed_reservations",
+    "schedule": crontab(minute="*"),
+}
+app.conf.beat_schedule["readium-notify-expiring-licenses"] = {
+    "task": "apps.readium.tasks.notify_expiring_licenses",
+    "schedule": crontab(hour=6, minute=0),
+}
+# IP-009 Phase 2: transition naturally-expired licenses out of
+# READY/ACTIVE so `can_user_borrow` no longer rejects re-borrow.
+app.conf.beat_schedule["readium-expire-lapsed-licenses"] = {
+    "task": "apps.readium.tasks.expire_lapsed_licenses",
+    "schedule": crontab(minute="*/5"),
+}
+# IP-011 Phase 5: nudge users whose claim window is about to close.
+# Dedups via NotificationLog so a single reminder fires per AVAILABLE cycle.
+app.conf.beat_schedule["readium-reservation-claim-reminder"] = {
+    "task": "apps.readium.tasks.reservation_claim_reminder_sweep",
+    "schedule": crontab(minute="*/15"),
+}

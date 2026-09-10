@@ -24,6 +24,7 @@ jobs:
     steps:
       - name: Set lowercase image name
         run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
       - name: Install poetry
         run: |
           sudo apt install -y pipx
@@ -36,7 +37,7 @@ jobs:
 
       - name: Create requirements.txt
         run: |
-          poetry export -f requirements.txt --without-hashes --output requirements.txt --with s3 --with pdf --with apm --with docker --with kafka
+          poetry export -f requirements.txt --without-hashes --output requirements.txt --with s3 --with pdf --with apm --with docker --with kafka --with logfire
 
       - name: Log into registry ${{ env.REGISTRY }}
         uses: docker/login-action@v3

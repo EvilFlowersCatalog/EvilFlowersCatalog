@@ -1,0 +1,14 @@
+{% load notification_extras %}
+Your reservation is ready
+=========================
+
+Hello {{ user_name }},
+
+A slot has opened up for "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %}.
+
+Claim it before {{ claim_deadline|isodatetime }} or it will be passed to the next user in line.
+
+Claim here: {{ claim_url }}
+
+--
+This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.

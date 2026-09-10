@@ -2,6 +2,19 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## 0.14.0 : 2026-09-10
+
+- **Added**: Model Context Protocol server at `POST /mcp/v1` (IP-014) — 25 tools over the catalog for LLM agents, plus resources, prompts and argument completions, authenticated with the existing credentials
+- **Added**: MCP curation tools — catalog create/update/delete, bulk category import (`create_categories`), bulk classification (`classify_entries`), and incremental feed membership (`add_entries_to_feed`, `remove_entries_from_feed`)
+- **Added**: MCP accepts HTTP Basic (username/password) alongside Bearer API keys; `EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS` defaults to `Bearer,Basic`
+- **Added**: `EVILFLOWERS_MCP_MAX_BULK_ITEMS` (default 100) bounding one bulk MCP write
+- **Added**: Proper Readium LCP integration
+- **Added**: OPDS2 support
+- **Added**: Dataverse integration for importing published Dataverse datasets as catalog entries and acquisitions
+- **Added**: Dataverse pre-publish workflow hook, bootstrap script, and local Docker Compose stack
+- **Fixed**: Dataverse publish workflow resume now runs asynchronously so the Dataverse GUI can finish publishing
+- **Fixed**: Solr startup repairs an incomplete `collection1` core before Dataverse indexing
+
 ## 0.13.0 : 2026-03-01
 
 - **Added**: Event broker system with support for Celery and Kafka

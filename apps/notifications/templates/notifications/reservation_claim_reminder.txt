@@ -1,0 +1,14 @@
+{% load notification_extras %}
+Don't forget to claim your reservation
+======================================
+
+Hello {{ user_name }},
+
+Your reservation for "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% endif %} is still waiting to be claimed.
+
+The claim window closes at {{ claim_deadline|isodatetime }}. If you don't claim it before then, your slot will pass to the next user in line.
+
+Claim here: {{ claim_url }}
+
+--
+This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.

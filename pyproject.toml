@@ -1,51 +1,54 @@
 [tool.poetry]
 name = "evil_flowers_catalog"
-version = "0.13.0"
+version = "0.14.0"
 description = "Publication catalog compatible with OPDS"
 authors = ["Jakub Dubec <jakub.dubec@stuba.sk>"]
 
 [tool.poetry.dependencies]
 python = "^3.12"
-django = "^5.0"
+django = "^6.0"
 django_api_forms = "1.0.0rc11"
 python-dotenv = "^1.0"
 argon2-cffi = "^25.1.0"
-psycopg = {version = "^3.1", extras = ["c", "pool"]}
+psycopg = {version = "^3.3", extras = ["c", "pool"]}
 django-imap-backend = "^0"
-django-filter = "^25.1"
-redis = "^5.0"
-Pillow = "^11"
-pycountry = "^24.6.1"
+django-filter = "^25.2"
+Pillow = "^12"
+pycountry = "^26.2"
 django-object-checker = "^1.0.0"
-Authlib = "^1.5"
-tzdata = "^2025.1"
-django-cors-headers = "^4.7"
+joserfc = "^1.6"
+tzdata = "^2026.1"
+django-cors-headers = "^4.9"
 python-ldap = "^3.4.0"
-qrcode = "^8.0"
+qrcode = "^8.2"
 bibtexparser = "^1.4.0"
 isbnlib = { git = "https://github.com/EvilFlowersCatalog/isbnlib.git" }
 django-partial-date = "^1.3.2"
-pydantic = "^2.8"
-pydantic-xml = { version = "^2.11.0", extras = ["lxml"] }
-email-validator = "^2.2"
-hiredis = "^3.0"
-celery = {version = "^5.4.0", extras = ["redis"]}
+pydantic = "^2.12"
+pydantic-xml = { version = "^2.19.0", extras = ["lxml"] }
+email-validator = "^2.3"
+hiredis = "^3.3"
+celery = {version = "^5.6.0", extras = ["redis"]}
 setuptools = "*"
 requests = "^2.32.4"
+mjml-python = "^1.3.7"
 
 [tool.poetry.group.s3.dependencies]
 minio = "^7.2"
 
 [tool.poetry.group.pdf.dependencies]
-pymupdf = "^1.27.1"
+pymupdf = "^1.27"
 
 [tool.poetry.group.apm.dependencies]
 elastic-apm = "^6.23"
 sentry-sdk = "^2.0"
 psutil = "^7.0"
 
+[tool.poetry.group.logfire.dependencies]
+logfire = {version = "^3", extras = ["django", "celery", "redis", "psycopg", "requests", "system-metrics"]}
+
 [tool.poetry.group.docker.dependencies]
-gunicorn = "^23.0.0"
+gunicorn = "^25.0.0"
 gevent = "*"
 wheel = "*"
 

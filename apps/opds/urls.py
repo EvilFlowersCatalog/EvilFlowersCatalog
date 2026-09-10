@@ -9,7 +9,7 @@ from apps.opds.views.feed import (
     CompleteFeedView,
     FeedView,
 )
-from apps.opds.views.search import SearchDescriptorView
+from apps.opds.views.search import SearchDescriptorView, SearchView
 
 urlpatterns = [
     # Feeds
@@ -21,6 +21,7 @@ urlpatterns = [
     path("<str:catalog_name>/feed/<str:feed_name>", FeedView.as_view(), name="feed"),
     # Search
     path("<str:catalog_name>/search.xml", SearchDescriptorView.as_view(), name="search-descriptor"),
+    path("<str:catalog_name>/search", SearchView.as_view(), name="search"),
     # Entries
     path(
         "<str:catalog_name>/entries/<uuid:entry_id>",

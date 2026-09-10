@@ -24,9 +24,19 @@ class UserAcquisitionManagement(SecuredView):
         summary="List all user acquisitions",
     )
     def get(self, request):
-        user_acquisitions = UserAcquisitionFilter(
-            request.GET, queryset=UserAcquisition.objects.all(), request=request
-        ).qs
+        # The Base serializer renders `user`, `acquisition` and a full `entry`
+        # (via the `acquisition.entry` property) for every row, so eager-load
+        # the whole chain to keep the list from fanning out into an N+1.
+        user_acquisitions = (
+            UserAcquisitionFilter(request.GET, queryset=UserAcquisition.objects.all(), request=request)
+            .qs.select_related("user", "acquisition", "acquisition__entry", "acquisition__entry__language")
+            .prefetch_related(
+                "acquisition__entry__entry_authors__author",
+                "acquisition__entry__categories",
+                "acquisition__entry__feeds",
+                "acquisition__entry__acquisitions",
+            )
+        )
 
         return PaginationResponse(
             request,

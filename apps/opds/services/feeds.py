@@ -96,4 +96,14 @@ class NavigationFeed(BaseFeed):
 
 class AcquisitionFeed(BaseFeed):
     def add_entry(self, entry: Entry):
-        self._entries.append(AcquisitionEntry.from_model(entry, self._extras.get("complete", False)))
+        # IP-008 Phase 2 B5: when callers pass `request=` (and optionally
+        # `user=`) through to BaseFeed, forward them so the schema can
+        # emit LCP borrow / .lcpl links for readium-enabled entries.
+        self._entries.append(
+            AcquisitionEntry.from_model(
+                entry,
+                self._extras.get("complete", False),
+                request=self._extras.get("request"),
+                user=self._extras.get("user"),
+            )
+        )

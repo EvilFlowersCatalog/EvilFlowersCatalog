@@ -6,11 +6,16 @@ Responsible for license generation, fetching, and updates.
 """
 
 import hashlib
+import logging
 import requests
 from typing import Dict
 from django.conf import settings
+from django.db import transaction
 
 from apps.readium.models import License
+from apps.readium.services.lsd_transport import _format_error, _split_url_and_auth
+
+logger = logging.getLogger(__name__)
 
 
 class LCPServerClient:
@@ -25,8 +30,13 @@ class LCPServerClient:
     """
 
     def __init__(self):
-        self.license_server_url = settings.EVILFLOWERS_READIUM_LCPSV_URL
-        self.provider_url = getattr(settings, "EVILFLOWERS_READIUM_PROVIDER_URL", settings.EVILFLOWERS_BASE_URL)
+        # Split userinfo out of the configured URL so we (a) log a
+        # redacted URL on failure and (b) keep an explicit auth path
+        # alongside the body-snippet error formatter.
+        self.license_server_url, self.auth = _split_url_and_auth(settings.EVILFLOWERS_READIUM_LCPSV_URL)
+        self.provider_url = getattr(
+            settings, "EVILFLOWERS_READIUM_PROVIDER_URL", settings.EVILFLOWERS_READIUM_BASE_URL
+        )
 
     @staticmethod
     def hash_passphrase(passphrase: str) -> str:
@@ -87,54 +97,87 @@ class LCPServerClient:
         else:
             raise ValueError("Either user_passphrase or passphrase_hash must be provided")
 
-        # Update license with passphrase hash
-        license.passphrase_hash = final_hash
-        license.save()
+        # IP-008 Phase 3 C3: defer persisting `passphrase_hash` / `lcp_license_id`
+        # until AFTER the LCP server responds. The old flow saved the hash before
+        # the POST, leaving the row in an inconsistent state if the LCP call
+        # failed. We compute the payload, call out, then save once.
+        partial_license = self._build_partial_license(
+            license,
+            passphrase_hash_override=final_hash,
+            include_rights=True,
+            print_limit=print_limit,
+            copy_limit=copy_limit,
+        )
 
-        # Prepare partial license payload per LCP spec
-        partial_license = {
-            "provider": self.provider_url,
-            "user": {
-                "id": str(license.user.pk),
-                "email": license.user.email or "",
-                "name": license.user.get_full_name() or license.user.username,
-                "encrypted": ["email"] if license.user.email else [],
-            },
-            "encryption": {
-                "user_key": {
-                    "text_hint": license.passphrase_hint or "Your library password",
-                    "hex_value": final_hash,
-                }
-            },
-            "rights": {
-                "start": license.starts_at.isoformat(),
-                "end": license.expires_at.isoformat(),
-                "print": print_limit,
-                "copy": copy_limit,
-            },
-        }
-
-        # Call LCP License Server: POST /contents/{content_id}/license
         lcp_content_id = license.encrypted_content.lcp_content_id
         try:
             response = requests.post(
                 f"{self.license_server_url}/contents/{lcp_content_id}/license",
                 json=partial_license,
                 timeout=30,
+                auth=self.auth,
             )
             response.raise_for_status()
-
             lcp_license = response.json()
+        except requests.RequestException as e:
+            # Nothing to roll back — we haven't written to the License row yet.
+            raise Exception(_format_error("LCP generate_license", e)) from e
 
-            # Update license with LCP license ID from server
+        with transaction.atomic():
+            license.passphrase_hash = final_hash
             license.lcp_license_id = lcp_license.get("id")
             license.state = License.LicenseState.READY
             license.save()
 
-            return lcp_license
+        return lcp_license
 
-        except requests.RequestException as e:
-            raise Exception(f"Failed to generate LCP license: {str(e)}")
+    def _build_partial_license(
+        self,
+        license: License,
+        *,
+        passphrase_hash_override: str = None,
+        include_rights: bool = False,
+        print_limit: int = 10,
+        copy_limit: int = 2048,
+    ) -> Dict:
+        """Build the partial-license payload used by `generate_license`
+        and `fetch_fresh_license` (IP-008 Phase 3 D5 dedup).
+
+        `passphrase_hash_override` lets `generate_license` pass the
+        freshly-computed hash before it's persisted to the row.
+        Otherwise we read it from the stored row and defensively
+        uppercase (IP-008 Phase 3 C4 — legacy rows may carry lowercase
+        hashes the LCP server rejects).
+        """
+        if passphrase_hash_override is not None:
+            hex_value = passphrase_hash_override.upper()
+        else:
+            stored = license.passphrase_hash or ""
+            hex_value = stored.upper()
+
+        payload: Dict = {
+            "provider": self.provider_url,
+            "user": {
+                "id": str(license.user.pk),
+                "email": getattr(license.user, "email", "") or "",
+                "name": license.user.full_name or license.user.username,
+                "encrypted": ["email"] if getattr(license.user, "email", "") else [],
+            },
+            "encryption": {
+                "user_key": {
+                    "text_hint": license.passphrase_hint or "Your library password",
+                    "hex_value": hex_value,
+                }
+            },
+        }
+        if include_rights:
+            payload["rights"] = {
+                "start": license.starts_at.isoformat(),
+                "end": license.expires_at.isoformat(),
+                "print": print_limit,
+                "copy": copy_limit,
+            }
+        return payload
 
     def fetch_fresh_license(self, license: License) -> Dict:
         """
@@ -157,22 +200,10 @@ class LCPServerClient:
         if not license.lcp_license_id:
             raise ValueError("License does not have an LCP license ID")
 
-        # Prepare partial license payload for fresh fetch
-        # Must include user and encryption info to rebuild license
-        partial_license = {
-            "user": {
-                "id": str(license.user.pk),
-                "email": license.user.email or "",
-                "name": license.user.get_full_name() or license.user.username,
-                "encrypted": ["email"] if license.user.email else [],
-            },
-            "encryption": {
-                "user_key": {
-                    "text_hint": license.passphrase_hint or "Your library password",
-                    "hex_value": license.passphrase_hash,
-                }
-            },
-        }
+        # IP-008 Phase 3 C4 / D5: build via shared helper which defensively
+        # uppercases the stored passphrase hash (legacy rows may be
+        # lowercase from before the `.upper()` change).
+        partial_license = self._build_partial_license(license)
 
         try:
             # POST /licenses/{license_id} to get fresh license
@@ -180,13 +211,14 @@ class LCPServerClient:
                 f"{self.license_server_url}/licenses/{license.lcp_license_id}",
                 json=partial_license,
                 timeout=30,
+                auth=self.auth,
             )
             response.raise_for_status()
 
             return response.json()
 
         except requests.RequestException as e:
-            raise Exception(f"Failed to fetch fresh license: {str(e)}")
+            raise Exception(_format_error("LCP fetch_fresh_license", e)) from e
 
     def update_license_rights(self, license: License, print_limit: int = 10, copy_limit: int = 2048) -> None:
         """
@@ -222,8 +254,9 @@ class LCPServerClient:
                 f"{self.license_server_url}/licenses/{license.lcp_license_id}",
                 json=partial_license,
                 timeout=30,
+                auth=self.auth,
             )
             response.raise_for_status()
 
         except requests.RequestException as e:
-            raise Exception(f"Failed to update license rights: {str(e)}")
+            raise Exception(_format_error("LCP update_license_rights", e)) from e
