@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "5e265c3be93b75c93416f0df2ca327a092e3a91f",
-    "short": "5e265c3",
-    "message": "MCP",
+    "sha": "0a8a4c7ad3ff4af973162d372d496777ecfdb9d2",
+    "short": "0a8a4c7",
+    "message": "Improving MCP",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/5e265c3be93b75c93416f0df2ca327a092e3a91f"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/0a8a4c7ad3ff4af973162d372d496777ecfdb9d2"
   },
-  "deployed_at": "2026-09-10T08:27:31Z",
+  "deployed_at": "2026-09-10T09:49:05Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
