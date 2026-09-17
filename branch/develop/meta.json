@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "32e74cc5d3777f69f76336ee7d871b16f8d27ee1",
-    "short": "32e74cc",
-    "message": "Include label in categories Base serializer",
+    "sha": "69f19ad6d4a4403c06d11ed78f8089db5d2c45f5",
+    "short": "69f19ad",
+    "message": "Merge pull request #77 from EvilFlowersCatalog/feature/ip-015-assistant-fold-in",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/32e74cc5d3777f69f76336ee7d871b16f8d27ee1"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/69f19ad6d4a4403c06d11ed78f8089db5d2c45f5"
   },
-  "deployed_at": "2026-09-10T12:48:26Z",
+  "deployed_at": "2026-09-17T13:50:39Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
