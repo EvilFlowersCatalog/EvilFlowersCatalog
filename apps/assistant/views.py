@@ -13,6 +13,7 @@ from django.http import StreamingHttpResponse
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
+from apps import openapi
 from apps.api.response import Ordering, PaginationResponse, SingleResponse
 from apps.assistant import services, turn
 from apps.assistant.forms import ChatForm, MessageForm
@@ -52,6 +53,16 @@ class AssistantView(SecuredView):
 
 
 class ChatManagement(AssistantView):
+    @openapi.metadata(
+        description=(
+            "Open a new conversation with the library assistant. Optionally pass `entry_id` to start "
+            "the conversation about a specific publication. Returns the chat id used by the message "
+            "endpoint."
+        ),
+        tags=["Assistant"],
+        summary="Start a chat",
+    )
+    @openapi.response(HTTPStatus.CREATED, "The created chat", ChatSerializer.Base)
     def post(self, request):
         """Start a conversation."""
         user = self._require_user(request)
@@ -78,6 +89,13 @@ class ChatManagement(AssistantView):
             status=HTTPStatus.CREATED,
         )
 
+    @openapi.metadata(
+        description=(
+            "List the authenticated user's conversations, newest first. A user only ever sees their " "own chats."
+        ),
+        tags=["Assistant"],
+        summary="List chats",
+    )
     def get(self, request):
         """List the caller's conversations, newest first unless asked otherwise."""
         user = self._require_user(request)
@@ -97,6 +115,16 @@ class ChatManagement(AssistantView):
 
 
 class ChatDetail(AssistantView):
+    @openapi.metadata(
+        description=(
+            "Retrieve one conversation together with its full message history, in chronological "
+            "order. This replaces the resume step of the previous standalone assistant: turns are "
+            "stateless, so a client simply reads the history back."
+        ),
+        tags=["Assistant"],
+        summary="Get a chat",
+    )
+    @openapi.response(HTTPStatus.OK, "The chat and its messages", ChatSerializer.Detailed)
     def get(self, request, chat_id: UUID):
         """One conversation with its full message history."""
         self._require_user(request)
@@ -104,6 +132,11 @@ class ChatDetail(AssistantView):
 
         return SingleResponse(request, data=ChatSerializer.Detailed.model_validate(chat))
 
+    @openapi.metadata(
+        description="Permanently delete one of the authenticated user's conversations and its messages.",
+        tags=["Assistant"],
+        summary="Delete a chat",
+    )
     def delete(self, request, chat_id: UUID):
         self._require_user(request)
         chat = self._chat(request, chat_id)
@@ -113,6 +146,17 @@ class ChatDetail(AssistantView):
 
 
 class ChatMessages(AssistantView):
+    @openapi.metadata(
+        description=(
+            "Send a message and receive the assistant's answer as a Server-Sent Events stream "
+            "(`text/event-stream`). Event names are `chunk` (a fragment of the answer as it is "
+            "generated), `message` (a completed answer), `entries` (publication ids the assistant "
+            "wants rendered as cards), `error`, and `done`. Responds 429 when the caller's daily "
+            "allowance is spent and 403 when their assistant access is blocked."
+        ),
+        tags=["Assistant"],
+        summary="Send a message",
+    )
     def post(self, request, chat_id: UUID):
         """Send a message and stream the answer as Server-Sent Events."""
         user = self._require_user(request)
