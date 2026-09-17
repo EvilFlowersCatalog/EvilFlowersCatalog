@@ -1,0 +1,49 @@
+# IP-003 Phase 6 — production Docker Compose overlay for the LCP stack.
+#
+# Secret material lives in /etc/evilflowers/lcp-secrets/ on the host (Q4=D),
+# mounted read-only into the LCP containers. See production-patching.md for
+# directory layout, permissions, and rotation.
+
+version: "3.9"
+
+services:
+  lcpserver:
+    image: edrlab/lcp-server:${LCP_SERVER_TAG:-latest}
+    restart: unless-stopped
+    networks:
+      - lcp-internal
+    volumes:
+      # Server config (built from a template at deploy time).
+      - /etc/evilflowers/lcpserver.yaml:/lcp/conf/config.yaml:ro
+      # Production patch material from EDRLab.
+      - /etc/evilflowers/lcp-secrets:/lcp/secrets:ro
+      # Encrypted content repository (shared with the Catalog and Nginx).
+      - /var/lib/evilflowers/readium/encrypted:/lcp/files
+    environment:
+      READIUM_LCPSERVER_LCP_PROFILE: "v2"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8989/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  lsdserver:
+    image: edrlab/lsd-server:${LSD_SERVER_TAG:-latest}
+    restart: unless-stopped
+    networks:
+      - lcp-internal
+    volumes:
+      - /etc/evilflowers/lsdserver.yaml:/lcp/conf/config.yaml:ro
+      - /etc/evilflowers/lcp-secrets:/lcp/secrets:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8990/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  # Catalog and Nginx live on this network too; the LCP servers are NOT
+  # accessible from any other network.
+  lcp-internal:
+    driver: bridge
+    internal: true
