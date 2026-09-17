@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.dataverse",
     "apps.mcp",
+    "apps.assistant",
 ]
 
 MIDDLEWARE = [
@@ -337,6 +338,30 @@ EVILFLOWERS_MCP_MAX_REQUEST_BYTES = int(os.getenv("EVILFLOWERS_MCP_MAX_REQUEST_B
 # guard). Unset disables the check — non-browser MCP clients send no `Origin`.
 _mcp_origins = os.getenv("EVILFLOWERS_MCP_ALLOWED_ORIGINS")
 EVILFLOWERS_MCP_ALLOWED_ORIGINS = [o.strip() for o in _mcp_origins.split(",") if o.strip()] if _mcp_origins else None
+
+# Assistant (IP-015)
+# Opt-out like the MCP server: disabled means the route is never mounted.
+EVILFLOWERS_ASSISTANT_ENABLED = bool(int(os.getenv("EVILFLOWERS_ASSISTANT_ENABLED", "1")))
+
+# Ollama. The endpoint is the full chat URL, e.g. https://ollama.com/api/chat
+# or http://localhost:11434/api/chat. The API key is sent as a bearer token
+# when set and omitted when blank, so cloud and local need no code difference.
+EVILFLOWERS_ASSISTANT_OLLAMA_ENDPOINT = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_ENDPOINT")
+EVILFLOWERS_ASSISTANT_OLLAMA_MODEL = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_MODEL")
+EVILFLOWERS_ASSISTANT_OLLAMA_API_KEY = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_API_KEY")
+EVILFLOWERS_ASSISTANT_OLLAMA_TIMEOUT = int(os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_TIMEOUT", 300))
+
+# Daily per-user quota. Overridable per user via `AssistantUserPolicy`.
+EVILFLOWERS_ASSISTANT_DAILY_LIMIT_MESSAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_DAILY_LIMIT_MESSAGES", 100))
+EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS = int(os.getenv("EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS", 50000))
+
+# Context policy (IP-015 D3). While a conversation is warm the full history is
+# replayed unchanged so the prompt prefix stays byte-identical and Ollama can
+# reuse its KV cache. Once the last message is older than the TTL the cache is
+# gone anyway, so the next turn replays only the tail and that becomes the new
+# stable prefix.
+EVILFLOWERS_ASSISTANT_CACHE_TTL = int(os.getenv("EVILFLOWERS_ASSISTANT_CACHE_TTL", 3600))
+EVILFLOWERS_ASSISTANT_TRIM_MESSAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_TRIM_MESSAGES", 20))
 
 # Events
 EVILFLOWERS_EVENT_BROKER_EXECUTOR = os.getenv("EVILFLOWERS_EVENT_BROKER_EXECUTOR")
