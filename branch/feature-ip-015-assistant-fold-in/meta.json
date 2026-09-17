@@ -3,12 +3,12 @@
   "slug": "feature-ip-015-assistant-fold-in",
   "kind": "branch",
   "commit": {
-    "sha": "1c92a2917a9c7518412f8de89f0d8aaa6bfc8dec",
-    "short": "1c92a29",
-    "message": "feat: in-catalog chat assistant on /assistant/v1/ reusing MCP tools",
+    "sha": "8d71dfa16518748896a57249bd2503b65ee8aa1e",
+    "short": "8d71dfa",
+    "message": "chore: openapi docs",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/1c92a2917a9c7518412f8de89f0d8aaa6bfc8dec"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/8d71dfa16518748896a57249bd2503b65ee8aa1e"
   },
-  "deployed_at": "2026-09-17T08:57:13Z",
+  "deployed_at": "2026-09-17T09:03:44Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
