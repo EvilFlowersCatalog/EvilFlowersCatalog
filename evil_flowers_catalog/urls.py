@@ -30,6 +30,11 @@ urlpatterns = [
     path("admin/", admin.site.urls),
 ]
 
+# IP-015: the chat assistant is opt-out, following the MCP pattern above.
+# Disabled means the routes are never mounted at all.
+if settings.EVILFLOWERS_ASSISTANT_ENABLED:
+    urlpatterns.append(path("assistant/v1/", include(("apps.assistant.urls", "assistant"), namespace="assistant")))
+
 # IP-014: the MCP server is opt-out. When disabled the route is not mounted at
 # all, so a probe gets a plain 404 rather than a disabled endpoint to poke at.
 if settings.EVILFLOWERS_MCP_ENABLED:

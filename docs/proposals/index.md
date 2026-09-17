@@ -21,11 +21,17 @@ changes are documented before implementation.
 | IP-012 | [AI-Powered Discovery (Search, Recommendations, Summarization, Assistant)](posts/ip-012-ai-powered-discovery.md) | 📝 Draft (review questions resolved) | 2026-07-18 |
 | IP-013 | [Document Extraction, Classification & Feature Pipeline](posts/ip-013-document-extraction-structure.md) | 📝 Draft (review questions resolved) | 2026-07-18 |
 | IP-014 | [Model Context Protocol Server](posts/ip-014-model-context-protocol-server.md) | 📝 Draft (implemented, awaiting review answers) | 2026-09-10 |
+| IP-015 | [Fold `elvira-ai-agent` into the Catalog as `apps/assistant`](posts/ip-015-assistant-fold-in.md) | 📝 Draft (awaiting review answers) | 2026-09-17 |
 
 **Note on the Readium cluster.** IP-001, IP-003 (feature scope), IP-004, IP-007, IP-008,
 IP-009, and IP-011 together constitute the completed Readium LCP delivery and are all
 Implemented. IP-002 (notifications) and IP-011 (reservation UX) attach to it. Readium LCP
 is considered **done**; remaining certification/deployment items are descoped (see IP-003).
+
+**Note on the AI cluster.** IP-013 (extraction) feeds IP-012 (search, recommendations,
+summarization, assistant); neither is started. IP-015 carves the `elvira-ai-agent`
+consolidation out of IP-012 Phase 5 so the chatbot can move into the catalog without waiting
+on the RAG workstream — see IP-015 Q1 for how the overlap is to be resolved.
 
 
 
