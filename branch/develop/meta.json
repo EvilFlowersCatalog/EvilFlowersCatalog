@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "5a03968b9f95c31ece65b0f3bce8c6d18bcf4c1a",
-    "short": "5a03968",
-    "message": "chore: env example for agent",
+    "sha": "9ca2fb46008967f15a1306a76752dd94bcce690f",
+    "short": "9ca2fb4",
+    "message": "fix: resuming ai chats",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/5a03968b9f95c31ece65b0f3bce8c6d18bcf4c1a"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/9ca2fb46008967f15a1306a76752dd94bcce690f"
   },
-  "deployed_at": "2026-09-19T07:37:49Z",
+  "deployed_at": "2026-09-19T08:16:41Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
