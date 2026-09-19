@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "69f19ad6d4a4403c06d11ed78f8089db5d2c45f5",
-    "short": "69f19ad",
-    "message": "Merge pull request #77 from EvilFlowersCatalog/feature/ip-015-assistant-fold-in",
-    "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/69f19ad6d4a4403c06d11ed78f8089db5d2c45f5"
+    "sha": "5a03968b9f95c31ece65b0f3bce8c6d18bcf4c1a",
+    "short": "5a03968",
+    "message": "chore: env example for agent",
+    "author": "Tomáš Kordoš",
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/5a03968b9f95c31ece65b0f3bce8c6d18bcf4c1a"
   },
-  "deployed_at": "2026-09-17T13:50:39Z",
+  "deployed_at": "2026-09-19T07:37:49Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
