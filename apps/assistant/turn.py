@@ -12,7 +12,7 @@ next time (IP-015 D8).
 
 import json
 import logging
-from typing import Iterator, List
+from typing import Generator, Iterator, List
 
 from django.utils.translation import gettext as _
 
@@ -58,6 +58,10 @@ def run(request, chat: Chat, text: str) -> Iterator[str]:
 def _rounds(request, chat: Chat, client: OllamaClient) -> Iterator[str]:
     specifications = tools.specifications()
 
+    # Publications shown during this turn. They belong to the answer that closes
+    # it, which is the message a reader sees when the chat is read back.
+    displayed: List[str] = []
+
     for _round in range(MAX_TOOL_ROUNDS):
         messages = services.conversation(chat)
 
@@ -69,6 +73,7 @@ def _rounds(request, chat: Chat, client: OllamaClient) -> Iterator[str]:
                 user=chat.user,
                 role=ChatMessage.Role.ASSISTANT,
                 text=content,
+                displayed_entries=displayed or None,
                 tokens_used=tokens,
             )
             return
@@ -86,7 +91,9 @@ def _rounds(request, chat: Chat, client: OllamaClient) -> Iterator[str]:
         )
 
         for call in tool_calls:
-            yield from _run_tool(request, chat, call)
+            for entry_id in (yield from _run_tool(request, chat, call)):
+                if entry_id not in displayed:
+                    displayed.append(entry_id)
 
     # Out of rounds: say so rather than leaving the reader with silence.
     ChatMessage.objects.create(
@@ -94,6 +101,7 @@ def _rounds(request, chat: Chat, client: OllamaClient) -> Iterator[str]:
         user=chat.user,
         role=ChatMessage.Role.ASSISTANT,
         text=str(_("I could not complete that search. Could you rephrase it?")),
+        displayed_entries=displayed or None,
     )
     yield sse("message", {"text": str(_("I could not complete that search. Could you rephrase it?"))})
 
@@ -119,7 +127,8 @@ def _stream(client: OllamaClient, messages: List[dict], specifications: List[dic
     return content, tool_calls, tokens
 
 
-def _run_tool(request, chat: Chat, call: dict) -> Iterator[str]:
+def _run_tool(request, chat: Chat, call: dict) -> Generator[str, None, List[str]]:
+    """Run one tool call, yielding SSE frames; returns publication ids to display."""
     function = call.get("function") or {}
     name = function.get("name") or ""
     arguments = function.get("arguments") or {}
@@ -134,15 +143,16 @@ def _run_tool(request, chat: Chat, call: dict) -> Iterator[str]:
 
     if tools.is_display_books(name):
         entry_ids = [str(entry_id) for entry_id in (arguments.get("entry_ids") or [])]
+        # The tool row answers the call for the model's replay; the ids
+        # themselves are persisted on the turn's final answer (see `_rounds`).
         ChatMessage.objects.create(
             chat=chat,
             user=chat.user,
             role=ChatMessage.Role.TOOL,
             text=f"Displayed {len(entry_ids)} publication(s).",
-            displayed_entries=entry_ids,
         )
         yield sse("entries", {"entry_ids": entry_ids})
-        return
+        return entry_ids
 
     try:
         payload = tools.call(request, name, arguments)
@@ -164,3 +174,4 @@ def _run_tool(request, chat: Chat, call: dict) -> Iterator[str]:
         text=text,
         tool_result=payload,
     )
+    return []

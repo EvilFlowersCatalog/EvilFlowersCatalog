@@ -117,9 +117,11 @@ class ChatManagement(AssistantView):
 class ChatDetail(AssistantView):
     @openapi.metadata(
         description=(
-            "Retrieve one conversation together with its full message history, in chronological "
-            "order. This replaces the resume step of the previous standalone assistant: turns are "
-            "stateless, so a client simply reads the history back."
+            "Retrieve one conversation together with its message history, in chronological order. "
+            "Only `user` and `assistant` messages are returned — tool traffic stays internal — and "
+            "publications shown during a turn are on that turn's answer as `displayed_entries`, "
+            "matching what the `entries` stream event rendered. This replaces the resume step of the "
+            "previous standalone assistant: turns are stateless, so a client simply reads the history back."
         ),
         tags=["Assistant"],
         summary="Get a chat",

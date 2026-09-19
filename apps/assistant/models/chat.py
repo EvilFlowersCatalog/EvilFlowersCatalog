@@ -46,7 +46,8 @@ class Chat(BaseModel):
     is_active = models.BooleanField(default=True)
 
     #: Maintained by `ChatMessage` on insert rather than by a database trigger,
-    #: so the behaviour is visible in Python and testable.
+    #: so the behaviour is visible in Python and testable. `message_count`
+    #: counts only visible messages (`ChatMessage.is_visible`).
     total_tokens = models.BigIntegerField(default=0)
     message_count = models.IntegerField(default=0)
     last_message_at = models.DateTimeField(null=True, blank=True)

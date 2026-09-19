@@ -38,5 +38,6 @@ class ChatSerializer:
         @field_validator("messages", mode="before")
         def _resolve_messages(cls, v):
             # `chat.messages` is a related manager, which pydantic cannot
-            # iterate; the model's Meta orders these by `created_at`.
-            return v.all() if hasattr(v, "all") else v
+            # iterate; the model's Meta orders these by `created_at`. Tool
+            # traffic is internal to the replayed conversation and not shown.
+            return v.visible() if hasattr(v, "visible") else v
