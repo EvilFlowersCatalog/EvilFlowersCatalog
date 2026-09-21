@@ -77,9 +77,7 @@ class Migration(migrations.Migration):
                 "default_permissions": (),
                 "indexes": [
                     models.Index(fields=["user", "-last_occurred_at"], name="user_activities_user_last_idx"),
-                    models.Index(
-                        fields=["user", "entry", "-last_occurred_at"], name="user_activities_entry_last_idx"
-                    ),
+                    models.Index(fields=["user", "entry", "-last_occurred_at"], name="user_activities_entry_last_idx"),
                     models.Index(fields=["last_occurred_at"], name="user_activities_last_idx"),
                 ],
             },
