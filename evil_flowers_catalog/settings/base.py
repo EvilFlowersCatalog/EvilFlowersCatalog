@@ -533,6 +533,9 @@ EVILFLOWERS_BASE_URL = os.getenv("EVILFLOWERS_BASE_URL", EVILFLOWERS_READIUM_BAS
 # Elvíra / Digital Library Elvira" on STU deployments).
 EVILFLOWERS_NOTIFICATION_LIBRARY_NAME = os.getenv("EVILFLOWERS_NOTIFICATION_LIBRARY_NAME", "Evil Flowers Catalog")
 
+# personal activity history retention
+EVILFLOWERS_ACTIVITY_RETENTION_DAYS = int(os.getenv("EVILFLOWERS_ACTIVITY_RETENTION_DAYS", 365))
+
 # OpenAPI
 EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium", "assistant"]
 

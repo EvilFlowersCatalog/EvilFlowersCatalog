@@ -12,7 +12,8 @@ from apps.api.forms.user_acquisitions import UserAcquisitionForm
 from apps.api.response import PaginationResponse, SingleResponse, SeeOtherResponse
 from apps.api.serializers.user_acquisitions import UserAcquisitionSerializer
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
-from apps.core.models import UserAcquisition
+from apps.core.models import UserAcquisition, UserActivity
+from apps.core.services.activity import ActivityService
 from apps.core.views import SecuredView
 from apps.openapi.types import ParameterLocation
 
@@ -84,6 +85,14 @@ class UserAcquisitionManagement(SecuredView):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         user_acquisition.save()
+
+        if user_acquisition.type == UserAcquisition.UserAcquisitionType.SHARED:
+            ActivityService.record(
+                request.user,
+                user_acquisition.acquisition.entry,
+                UserActivity.ActivityAction.ACQUISITION_SHARED,
+                {"user_acquisition_id": str(user_acquisition.pk), "type": user_acquisition.type},
+            )
 
         return SingleResponse(
             request,

@@ -15,7 +15,8 @@ from django.conf import settings
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
-from apps.core.models import Entry, User
+from apps.core.models import Entry, User, UserActivity
+from apps.core.services.activity import ActivityService
 from apps.readium.models import License, Reservation
 
 logger = logging.getLogger(__name__)
@@ -143,6 +144,66 @@ def _notify_reservation_transitions(sender, instance: Reservation, created: bool
         _enqueue("reservation_expired", instance.user, base_context)
     elif instance.status == Reservation.Status.CANCELLED:
         _enqueue("reservation_cancelled", instance.user, base_context)
+
+
+# Personal activity history (IP-016) -----------------------------------------
+#
+# Not gated by EVILFLOWERS_NOTIFICATIONS_ENABLED: history is recorded regardless of whether
+# e-mails go out. Renewals are recorded in `LicenseService.renew_license`, which bumps
+# `renewal_count` via `.update()` and so never reaches post_save.
+
+_LICENSE_ACTIVITY = {
+    License.LicenseState.RETURNED: UserActivity.ActivityAction.LOAN_RETURNED,
+    License.LicenseState.EXPIRED: UserActivity.ActivityAction.LOAN_EXPIRED,
+    License.LicenseState.REVOKED: UserActivity.ActivityAction.LOAN_REVOKED,
+    License.LicenseState.CANCELLED: UserActivity.ActivityAction.LOAN_CANCELLED,
+}
+
+_RESERVATION_ACTIVITY = {
+    Reservation.Status.AVAILABLE: UserActivity.ActivityAction.RESERVATION_AVAILABLE,
+    Reservation.Status.CLAIMED: UserActivity.ActivityAction.RESERVATION_CLAIMED,
+    Reservation.Status.EXPIRED: UserActivity.ActivityAction.RESERVATION_EXPIRED,
+    Reservation.Status.CANCELLED: UserActivity.ActivityAction.RESERVATION_CANCELLED,
+}
+
+
+@receiver(post_save, sender=License)
+def _record_license_activity(sender, instance: License, created: bool, **kwargs):
+    metadata = {"license_id": str(instance.pk), "expires_at": instance.expires_at.isoformat()}
+
+    if created:
+        ActivityService.record(instance.user, instance.entry, UserActivity.ActivityAction.LOAN_CREATED, metadata)
+        return
+
+    if getattr(instance, "_original_state", None) == instance.state:
+        return
+
+    action = _LICENSE_ACTIVITY.get(instance.state)
+    if action:
+        ActivityService.record(instance.user, instance.entry, action, metadata)
+
+
+@receiver(post_save, sender=Reservation)
+def _record_reservation_activity(sender, instance: Reservation, created: bool, **kwargs):
+    metadata = {"reservation_id": str(instance.pk)}
+
+    if created:
+        ActivityService.record(
+            instance.user, instance.entry, UserActivity.ActivityAction.RESERVATION_CREATED, metadata
+        )
+        return
+
+    if getattr(instance, "_original_status", None) == instance.status:
+        return
+
+    action = _RESERVATION_ACTIVITY.get(instance.status)
+    if not action:
+        return
+
+    if action == UserActivity.ActivityAction.RESERVATION_AVAILABLE and instance.claim_deadline:
+        metadata["claim_deadline"] = instance.claim_deadline.isoformat()
+
+    ActivityService.record(instance.user, instance.entry, action, metadata)
 
 
 # Passphrase change ----------------------------------------------------------

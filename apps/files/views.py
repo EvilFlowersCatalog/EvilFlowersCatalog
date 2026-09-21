@@ -18,8 +18,9 @@ from apps import openapi
 from apps.api.response import SingleResponse, SeeOtherResponse
 from apps.core.errors import ProblemDetailException, DetailType, AuthorizationException
 from apps.core.fields.multirange import depack
-from apps.core.models import Acquisition, Entry, UserAcquisition, AnnotationItem
+from apps.core.models import Acquisition, Entry, UserAcquisition, AnnotationItem, UserActivity
 from apps.core.modifiers import InvalidPage
+from apps.core.services.activity import ActivityService
 from apps.core.views import SecuredView
 from apps.files.services import AcquisitionStorageError, AcquisitionStorageService
 
@@ -115,6 +116,13 @@ class AcquisitionDownload(SecuredView):
         # Atomic popularity increment (IP-010 M8 pattern).
         Entry.objects.filter(pk=acquisition.entry_id).update(popularity=F("popularity") + 1)
 
+        ActivityService.record(
+            request.user,
+            acquisition.entry,
+            UserActivity.ActivityAction.ENTRY_DOWNLOADED,
+            {"acquisition_id": str(acquisition.pk), "mime": acquisition.mime, "via": "acquisition"},
+        )
+
         if request.GET.get("format", None) == "base64":
             if acquisition.storage_backend == Acquisition.StorageBackend.EXTERNAL_URL:
                 raise ProblemDetailException(
@@ -154,6 +162,17 @@ class UserAcquisitionDownload(SecuredView):
 
         user_acquisition.acquisition.entry.popularity = user_acquisition.acquisition.entry.popularity + 1
         user_acquisition.acquisition.entry.save()
+
+        ActivityService.record(
+            request.user,
+            user_acquisition.acquisition.entry,
+            UserActivity.ActivityAction.ENTRY_DOWNLOADED,
+            {
+                "acquisition_id": str(user_acquisition.acquisition_id),
+                "mime": user_acquisition.acquisition.mime,
+                "via": "user_acquisition",
+            },
+        )
 
         sanitized_filename = (
             f"{slugify(user_acquisition.acquisition.entry.title.lower())}"

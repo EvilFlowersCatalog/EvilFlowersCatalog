@@ -30,6 +30,8 @@ from django.views import View
 
 from apps import openapi
 from apps.core.errors import ProblemDetailException, DetailType
+from apps.core.models import UserActivity
+from apps.core.services.activity import ActivityService
 from apps.core.services.capability_tokens import CapabilityTokenService
 from apps.readium.capability_scopes import LCPL_DOWNLOAD, LCPL_EMAIL_DOWNLOAD, LCPL_FEED_DOWNLOAD
 from apps.readium.models import License
@@ -119,8 +121,6 @@ class LicenseDownloadView(View):
             fresh_license = LicenseService.fetch_fresh_license(license)
             response = JsonResponse(fresh_license, content_type="application/vnd.readium.lcp.license.v1.0+json")
             response["Content-Disposition"] = f'attachment; filename="{license.entry.title}.lcpl"'
-            return response
-
         except ValueError as e:
             raise ProblemDetailException(
                 str(e),
@@ -135,3 +135,13 @@ class LicenseDownloadView(View):
                 detail_type=DetailType.INTERNAL_ERROR,
                 previous=e,
             )
+
+        # The gateway is capability-token only, so the history belongs to the license holder.
+        ActivityService.record(
+            license.user,
+            license.entry,
+            UserActivity.ActivityAction.LICENSE_DOWNLOADED,
+            {"license_id": str(license.pk)},
+        )
+
+        return response

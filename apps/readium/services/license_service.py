@@ -19,7 +19,8 @@ from django.db.models import Q, Count
 from django.utils import timezone
 from django.conf import settings
 
-from apps.core.models import Entry, User, Acquisition
+from apps.core.models import Entry, User, Acquisition, UserActivity
+from apps.core.services.activity import ActivityService
 from apps.readium.models import License, EncryptedContent
 from .content_encryption_service import ContentEncryptionService
 from .exceptions import NotLendableError, borrow_error_from_availability
@@ -461,6 +462,14 @@ class LicenseService:
         # counter reflects accepted renewals only.
         License.objects.filter(pk=license.pk).update(renewal_count=models.F("renewal_count") + 1)
         license.refresh_from_db(fields=["renewal_count", "state", "expires_at"])
+
+        # IP-016: `.update()` above bypasses post_save, so the history row is written here.
+        ActivityService.record(
+            license.user,
+            license.entry,
+            UserActivity.ActivityAction.LOAN_RENEWED,
+            {"license_id": str(license.pk), "expires_at": license.expires_at.isoformat()},
+        )
 
         if getattr(settings, "EVILFLOWERS_NOTIFICATIONS_ENABLED", False):
             from apps.notifications.tasks import send_notification

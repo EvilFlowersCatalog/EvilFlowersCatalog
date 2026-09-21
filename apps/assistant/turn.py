@@ -149,7 +149,6 @@ def _run_tool(request, chat: Chat, call: dict) -> Generator[str, None, List[str]
             chat=chat,
             user=chat.user,
             role=ChatMessage.Role.TOOL,
-            text=f"Displayed {len(entry_ids)} publication(s).",
         )
         yield sse("entries", {"entry_ids": entry_ids})
         return entry_ids

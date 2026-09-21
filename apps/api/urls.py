@@ -13,6 +13,7 @@ from apps.api.views import (
     user_acquisitions,
     annotations,
     shelf_records,
+    user_activities,
     categories,
     annotation_items,
     languages,
@@ -85,6 +86,12 @@ urlpatterns = [
         "shelf-records/<uuid:shelf_record_id>",
         shelf_records.ShelfRecordDetail.as_view(),
         name="shelf-record-detail",
+    ),
+    # Personal activity history (IP-016)
+    path(
+        "activity",
+        user_activities.UserActivityManagement.as_view(),
+        name="user-activity-management",
     ),
     # User acquisitions
     path(

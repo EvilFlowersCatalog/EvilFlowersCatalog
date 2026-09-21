@@ -14,7 +14,8 @@ from apps.core.errors import (
     UnauthorizedException,
     ProblemDetailException,
 )
-from apps.core.models import ShelfRecord
+from apps.core.models import ShelfRecord, UserActivity
+from apps.core.services.activity import ActivityService
 from apps.core.views import SecuredView
 
 
@@ -63,6 +64,8 @@ class ShelfRecordManagement(SecuredView):
                 status=HTTPStatus.OK,
             )
 
+        ActivityService.record(request.user, shelf_record.entry, UserActivity.ActivityAction.SHELF_ADDED)
+
         return SingleResponse(
             request,
             data=ShelfRecordSerializer.Base.model_validate(shelf_record, context={"request": request}),
@@ -85,6 +88,9 @@ class ShelfRecordDetail(SecuredView):
         if not has_object_permission("check_shelf_record_access", request.user, shelf_record):
             raise ProblemDetailException(title=_("Not found"), status=HTTPStatus.NOT_FOUND)
 
+        entry = shelf_record.entry
         shelf_record.delete()
+
+        ActivityService.record(request.user, entry, UserActivity.ActivityAction.SHELF_REMOVED)
 
         return SingleResponse(request)

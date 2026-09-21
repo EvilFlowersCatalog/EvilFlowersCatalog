@@ -50,3 +50,8 @@ app.conf.beat_schedule["readium-reservation-claim-reminder"] = {
     "task": "apps.readium.tasks.reservation_claim_reminder_sweep",
     "schedule": crontab(minute="*/15"),
 }
+# IP-016: drop personal activity history older than the retention window.
+app.conf.beat_schedule["core-prune-user-activity"] = {
+    "task": "apps.tasks.tasks.prune_user_activity",
+    "schedule": crontab(hour=3, minute=30),
+}
