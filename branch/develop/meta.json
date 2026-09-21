@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "9a40db96fd5eb5da62e89e363d1220a59cc3d88c",
-    "short": "9a40db9",
-    "message": "feat: user activity history",
+    "sha": "77a18d271a52c378bca5e7bd0a30cf9a7554f8e4",
+    "short": "77a18d2",
+    "message": "style: formatted migration",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/9a40db96fd5eb5da62e89e363d1220a59cc3d88c"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/77a18d271a52c378bca5e7bd0a30cf9a7554f8e4"
   },
-  "deployed_at": "2026-09-21T14:18:02Z",
+  "deployed_at": "2026-09-21T14:20:09Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
