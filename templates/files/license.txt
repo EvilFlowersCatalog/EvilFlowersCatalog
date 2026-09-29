@@ -1,15 +1,27 @@
-Document Information
---------------------
+Document Information / Informácie o dokumente
+---------------------------------------------
 
-User: {{ username }} ({{ user_id }})
-Title: {{ title }}
-Document ID: {{ id }}
-Generated at: {{ generated_at }}
+User / Používateľ: {{ username }} ({{ user_id }})
+Title / Názov: {{ title }}
+Document ID / Identifikátor dokumentu: {{ id }}
+Generated at / Vygenerované: {{ generated_at }}
 
-License Terms
--------------
+Copyright Notice
+----------------
 
-LICENSE AND ACCESS. This license grants a non-transferable, non-exclusive, limited license
- to access and use specified documents in compliance with the platform’s terms.
+This e-book is protected by copyright. It is intended solely for personal study, educational and research purposes.
+
+Prohibited activities include, but are not limited to, the bulk or systematic copying or downloading of content, the creation of permanent local copies, and any sharing, distribution, making available to third parties, or sale of the e-book or any part thereof.
+
+By using this e-book, you agree to the terms and conditions of the electronic loan and undertake to use it in accordance with Act No. 185/2015 Coll., Copyright Act, as amended.
+
+Upozornenie o autorských právach
+--------------------------------
+
+Táto e-kniha je chránená autorským právom. Je určená výlučne na účely osobného štúdia, vzdelávania a výskumu.
+
+Medzi zakázané činnosti patrí najmä (okrem iného) hromadné alebo systematické kopírovanie či sťahovanie obsahu, vytváranie trvalých lokálnych kópií, ako aj akékoľvek zdieľanie, šírenie, sprístupňovanie tretím osobám, prípadne predaj e-knihy alebo jej časti.
+
+Používaním tejto e-knihy vyjadrujete súhlas s podmienkami elektronickej výpožičky a zaväzujete sa používať ju v súlade so zákonom č. 185/2015 Z. z. (Autorský zákon) v znení neskorších predpisov.
 
 This document was distributed using open-source project EvilFlowersCatalog part of ELVIRA project.
