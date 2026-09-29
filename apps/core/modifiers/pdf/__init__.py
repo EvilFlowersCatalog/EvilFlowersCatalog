@@ -19,6 +19,8 @@ class PDFModifier:
     # A4 in PostScript points (72 dpi) — geometry of the inserted license page.
     LICENSE_PAGE_WIDTH = 595
     LICENSE_PAGE_HEIGHT = 842
+    LICENSE_PAGE_MARGIN = 56
+    LICENSE_PAGE_FONT_SIZE = 10
 
     # Save options tuned for the downstream consumers of the personalised copy:
     # the EvilFlowers viewer (pdf.js based, see elvira-portal `Viewer.tsx`) and
@@ -110,19 +112,26 @@ class PDFModifier:
         except TemplateDoesNotExist:
             chosen_template = get_template("files/license.txt")
 
-        # Render the chosen template with the provided context data. insert_page
+        # Render the chosen template with the provided context data. new_page
         # automatically shifts existing outline entries to keep bookmarks pointing
         # at the correct pages after the license page is spliced in.
-        document.insert_page(
-            1,
-            text=chosen_template.render(self._context),
-            fontsize=11,
-            width=self.LICENSE_PAGE_WIDTH,
-            height=self.LICENSE_PAGE_HEIGHT,
-            fontname="Helvetica",  # default font
-            fontfile=None,  # any font file name
-            color=(0, 0, 0),
-        )  # text color (RGB)
+        license_page = document.new_page(1, width=self.LICENSE_PAGE_WIDTH, height=self.LICENSE_PAGE_HEIGHT)
+
+        # Embed the font as a Unicode (Type0) font. The simple base-14 Helvetica
+        # used by insert_page is WinAnsi-encoded and drops Slovak diacritics
+        # (č, ľ, ť, ...). fill_textbox also wraps lines to the page width. The
+        # render result is passed as explicit lines: fill_textbox treats any
+        # non-str (including Django's SafeString) as a sequence of lines, and it
+        # drops empty ones, so blank lines are kept as a single space.
+        margin = self.LICENSE_PAGE_MARGIN
+        writer = fitz.TextWriter(license_page.rect, color=(0, 0, 0))
+        writer.fill_textbox(
+            license_page.rect + (margin, margin, -margin, -margin),
+            [line or " " for line in chosen_template.render(self._context).splitlines()],
+            font=fitz.Font("helv"),
+            fontsize=self.LICENSE_PAGE_FONT_SIZE,
+        )
+        writer.write_text(license_page)
 
         # If the source ships an outline, give the reader's contents panel a
         # navigable entry for the license page (1-based page 2). We only augment

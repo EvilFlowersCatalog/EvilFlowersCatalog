@@ -34,7 +34,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--force",
             action="store_true",
-            help="Re-trigger encryption even if EncryptedContent exists (for failed encryptions)",
+            help="Re-queue encryptions stuck in pending or failed (completed/registered are never re-encrypted)",
         )
 
     def handle(self, *args, **options):
@@ -80,15 +80,28 @@ class Command(BaseCommand):
             for acquisition in acquisitions:
                 # Check if already has encrypted content
                 if hasattr(acquisition, "encrypted_content"):
-                    if not force:
-                        status = acquisition.encrypted_content.status
+                    encrypted_content = acquisition.encrypted_content
+                    status = encrypted_content.status
+                    if not force or status not in ContentEncryptionService.REQUEUEABLE_STATUSES:
                         self.stdout.write(
                             self.style.WARNING(f"Already has encrypted content (status: {status}), skipping")
                         )
                         skipped += 1
                         continue
+
+                    # `encrypt_acquisition` returns early for an existing row, so a
+                    # pending/failed job has to be re-sent explicitly.
+                    if dry_run:
+                        self.stdout.write(
+                            self.style.SUCCESS(
+                                f"[DRY RUN] Would re-queue: {encrypted_content.lcp_content_id} ({status})"
+                            )
+                        )
                     else:
-                        self.stdout.write(self.style.WARNING("Force mode: Re-triggering encryption"))
+                        ContentEncryptionService.requeue(encrypted_content)
+                        self.stdout.write(self.style.SUCCESS(f"Re-queued: {encrypted_content.lcp_content_id}"))
+                    processed += 1
+                    continue
 
                 # Check if acquisition has content file
                 if not acquisition.content:

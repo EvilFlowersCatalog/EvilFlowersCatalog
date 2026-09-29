@@ -10,6 +10,7 @@ from apps.mcp.registry import registry
 from apps.mcp.tools import (  # noqa: F401  (registration side effect)
     catalogs,
     categories,
+    encryption,
     entries,
     feeds,
     library,
