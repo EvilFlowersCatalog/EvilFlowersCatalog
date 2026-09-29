@@ -224,6 +224,67 @@ class UpdateEntryTests(PublishingTestCase):
         self.broker.return_value.execute.assert_called_once()
 
 
+class ProtectExistingEntryTests(PublishingTestCase):
+    """Turning LCP on for a publication already in the catalog touches lending and nothing else."""
+
+    def setUp(self):
+        super().setUp()
+        Entry.objects.filter(pk=self.entry.pk).update(publisher="Legacy press", summary="Old blurb.")
+        self.entry.refresh_from_db()
+        self.pdf = Acquisition.objects.create(
+            entry=self.entry,
+            mime=Acquisition.AcquisitionMIME.PDF,
+            relation=Acquisition.AcquisitionType.OPEN_ACCESS,
+            content="catalogs/managed/legacy.pdf",
+        )
+
+    def test_a_legacy_entry_without_language_can_be_protected(self):
+        self.assertIsNone(self.entry.language)
+        before = Entry.objects.filter(pk=self.entry.pk).values(
+            "title", "language_id", "publisher", "summary", "identifiers", "published_at", "created_at"
+        )[0]
+
+        payload = self.ok(
+            "update_entry", {"entry_id": str(self.entry.pk), "lcp_enabled": True, "lcp_copies": 1}, self.manager
+        )
+
+        self.assertTrue(payload["entry"]["readium_enabled"])
+        self.assertEqual(payload["entry"]["readium_amount"], 1)
+        after = Entry.objects.filter(pk=self.entry.pk).values(*before.keys())[0]
+        self.assertEqual(after, before)
+        self.pdf.refresh_from_db()
+        self.assertEqual(self.pdf.relation, Acquisition.AcquisitionType.OPEN_ACCESS)
+        job = EncryptedContent.objects.get(acquisition=self.pdf)
+        self.assertEqual(job.status, EncryptedContent.EncryptionStatus.PENDING)
+        self.broker.return_value.execute.assert_called_once()
+
+    def test_other_config_switches_are_kept(self):
+        Entry.objects.filter(pk=self.entry.pk).update(config={"evilflowers_ocr_enabled": True})
+
+        self.ok("update_entry", {"entry_id": str(self.entry.pk), "lcp_enabled": True, "lcp_copies": 2}, self.manager)
+
+        self.entry.refresh_from_db()
+        self.assertEqual(
+            self.entry.config, {"evilflowers_ocr_enabled": True, "readium_enabled": True, "readium_amount": 2}
+        )
+
+    def test_running_it_twice_queues_one_job(self):
+        arguments = {"entry_id": str(self.entry.pk), "lcp_enabled": True, "lcp_copies": 1}
+        self.ok("update_entry", arguments, self.manager)
+        self.ok("update_entry", arguments, self.manager)
+
+        self.assertEqual(EncryptedContent.objects.filter(acquisition=self.pdf).count(), 1)
+        self.broker.return_value.execute.assert_called_once()
+
+    def test_enabling_without_copies_is_refused_and_nothing_changes(self):
+        message = self.refused("update_entry", {"entry_id": str(self.entry.pk), "lcp_enabled": True}, self.manager)
+
+        self.assertIn("lcp_copies", message)
+        self.entry.refresh_from_db()
+        self.assertFalse(self.entry.read_config("readium_enabled"))
+        self.assertFalse(EncryptedContent.objects.exists())
+
+
 class UploadLinkTests(PublishingTestCase):
     def test_an_lcp_publication_is_encrypted_when_its_file_arrives(self):
         entry = self.create(lcp_enabled=True, lcp_copies=1)

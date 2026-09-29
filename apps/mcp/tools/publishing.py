@@ -29,6 +29,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.http import QueryDict
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
@@ -44,6 +45,7 @@ from apps.mcp.projections import entry_detail
 from apps.mcp.registry import ToolAccess, registry
 from apps.mcp.schemas import ENTRY_DETAIL_SCHEMA, UUID_SCHEMA, single_output
 from apps.mcp.tools.common import resolve_catalog_for_management
+from apps.readium.models import License
 from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
 
 logger = logging.getLogger("apps.mcp.audit")
@@ -290,6 +292,44 @@ def create_entry(request, raw_arguments: dict) -> dict:
     return _entry_payload(request, entry)
 
 
+def _update_lending_only(request, entry: Entry, config: dict) -> dict:
+    """`update_entry` with nothing but `lcp_enabled` / `lcp_copies`.
+
+    Skips `EntryForm`: that path rewrites title and language on every call and
+    refuses an entry with no language, which several legacy records are. Here
+    only the two `config` keys change, saved with `update_fields` so no other
+    column is rewritten. `Entry.post_save` still fires, which is what queues
+    encryption for any PDF/EPUB not yet encrypted when protection is switched on.
+    """
+    # Checked on what the caller sent, not the merged config: stored entries carry a
+    # default `readium_amount`, and DRM should not switch on with a count nobody stated.
+    _assert_lcp_coherent(config)
+    merged = {**(entry.config or {}), **config}
+
+    if merged.get("readium_enabled"):
+        loans = License.objects.filter(
+            entry=entry,
+            state__in=[License.LicenseState.READY, License.LicenseState.ACTIVE],
+            expires_at__gt=timezone.now(),
+        ).count()
+        if merged.get("readium_amount") and merged["readium_amount"] < loans:
+            raise ToolConflict(
+                _("%(loans)d loans of '%(title)s' are out; `lcp_copies` cannot go below that.")
+                % {"loans": loans, "title": entry.title}
+            )
+
+    if merged != (entry.config or {}):
+        entry.config = merged
+        entry.save(update_fields=["config", "updated_at", "touched_at"])
+        logger.info(
+            "mcp.write user=%s action=update_entry entry=%s fields=%s",
+            request.user.pk,
+            entry.pk,
+            ",".join(sorted(config)),
+        )
+    return _entry_payload(request, entry)
+
+
 @registry.tool(
     name="update_entry",
     title="Correct a publication",
@@ -298,7 +338,9 @@ def create_entry(request, raw_arguments: dict) -> dict:
         "Only the arguments you pass change; `identifiers` are merged key by key (null removes "
         "one), while `authors`, `category_ids` and `feed_ids` **replace** the whole set.\n\n"
         "Setting `lcp_enabled: true` on a publication that already has a PDF or EPUB queues its "
-        "encryption immediately. `lcp_copies` cannot go below the number of loans currently out."
+        "encryption immediately. `lcp_copies` cannot go below the number of loans currently out. "
+        "A call that passes only `lcp_enabled` / `lcp_copies` changes those and nothing else — "
+        "the way to protect publications that are already in the catalog."
     ),
     input_schema={
         "type": "object",
@@ -323,11 +365,14 @@ def update_entry(request, raw_arguments: dict) -> dict:
     if len(payload) == 0:
         raise ToolError(_("Nothing to change — pass at least one field besides `entry_id`."))
 
+    if set(payload) == {"config"}:
+        return _update_lending_only(request, entry, payload["config"])
+
     # `EntryForm` requires these two on every write; carry the current values.
     payload.setdefault("title", entry.title)
     if entry.language:
         payload.setdefault("language_code", entry.language.alpha2 or entry.language.alpha3)
-    _assert_lcp_coherent({**(entry.config or {}), **payload.get("config", {})})
+    _assert_lcp_coherent(payload.get("config", {}))
 
     form = _validated_form(payload, entry.catalog)
     _assert_readium_amount_above_active(entry, form)
