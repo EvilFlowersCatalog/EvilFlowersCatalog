@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "cf727c31d602f317d4d3b51d364b77fde1cb28f2",
-    "short": "cf727c3",
-    "message": "Fixing notifications for Readium LCP",
+    "sha": "58bd94a68eabdaa47e57db6c581e2474a2c284e6",
+    "short": "58bd94a",
+    "message": "Extending MCP and preparing for STU import",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/cf727c31d602f317d4d3b51d364b77fde1cb28f2"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/58bd94a68eabdaa47e57db6c581e2474a2c284e6"
   },
-  "deployed_at": "2026-09-29T09:37:47Z",
+  "deployed_at": "2026-09-29T10:04:35Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

@@ -117,7 +117,7 @@ graph LR
 9. **`resources.py` / `prompts.py` / `completions.py`** — the non-tool protocol surfaces.
 10. **`uris.py`** — the `evilflowers://` URI space, shared by resource reads and the
     `resource_link` blocks tool results emit.
-11. **`tools/`** — five modules, seventeen tools.
+11. **`tools/`** — seven modules, thirty tools (Phase 11 added `publishing.py`).
 
 ### The tools
 
@@ -142,17 +142,25 @@ catalog") stays with the handler, because only it knows which object is involved
 | `add_entries_to_feed` / `remove_entries_from_feed` | Move publications in and out of a feed | **manage** |
 | `create_category` / `create_categories` / `update_category` / `delete_category` | Curate the subject vocabulary, singly or as a bulk import | **manage** |
 | `classify_entries` | File a batch of publications under categories | **manage** |
+| `create_entry` / `update_entry` | Add a publication, or correct its metadata and LCP lending settings | **manage** |
+| `create_upload_link` | Signed single-use URL the file is POSTed to (files never travel in JSON-RPC) | **manage** |
+| `list_encryption_jobs` / `requeue_encryption` | Find and retry stuck Readium LCP encryption jobs | **administrators** |
 
 "public" still means access-controlled — an anonymous session sees public catalogs only. It
 describes the *session* requirement, never the data.
 
 ### What the write surface deliberately excludes
 
-`classify_entries` touches the `categories` relation and nothing else. An agent may decide that
-a book belongs under "624 Stavebné inžinierstvo"; it may not rewrite that book's title,
-authors, identifiers, summary or files. Classification is reversible, inspectable and cheap to
-undo in bulk; metadata rewriting is none of those, and a hallucinated ISBN is a much longer-lived
-problem than a misfiled subject. Full entry editing stays a REST/portal operation (Q12).
+`classify_entries` touches the `categories` relation and nothing else. Until Phase 11 that was
+the whole of the entry write surface: classification is reversible, inspectable and cheap to
+undo in bulk, whereas metadata rewriting is none of those, and a hallucinated ISBN is a much
+longer-lived problem than a misfiled subject.
+
+Q12 has since been answered — the STU bulk import needs agents to *create* publications — and
+Phase 11 adds `create_entry`, `update_entry` and `create_upload_link`. They are still narrower
+than `EntryForm`: descriptive metadata, identifiers, categories, feeds and the two LCP lending
+keys (`readium_enabled`, `readium_amount`) only. No other `config` switch (OCR, annotations,
+printing, IP blocking), no cover image, and no inline file.
 
 Nothing here classifies *for* the caller either. There is no model, no embedding and no
 classifier service behind these tools — `classify_entries` records a decision the connected
@@ -417,7 +425,32 @@ what lets an agent reorganise one, and it is the phase the STU MDT classificatio
 - [ ] Rate limiting for the anonymous path (Q4)
 - [ ] Decide whether Readium write tools (borrow / reserve / shelve) follow (Q2)
 - [ ] Decide whether to adopt ASGI + the SDK for sampling/elicitation (Q11)
-- [ ] Decide whether entry metadata editing belongs on this surface at all (Q12)
+- [x] Decide whether entry metadata editing belongs on this surface at all (Q12) — yes, Phase 11
+
+### Phase 11: Publishing — complete (tests pass, not yet deployed)
+
+Driven by the STU bulk import (~500 PDFs, most LCP-protected with one copy each).
+
+- [x] `create_entry` — `EntryForm` + `EntryService.populate`, so validation and the
+      title/ISBN/DOI duplicate check are REST's own. A refusal names the existing entry's id, so
+      an interrupted import resumes instead of retrying blind.
+- [x] `update_entry` — partial; `identifiers` merged key by key (null removes one); `authors`,
+      `category_ids`, `feed_ids` replace their set. Reuses REST's
+      `_assert_readium_amount_above_active`. Annotated `destructiveHint`.
+- [x] `lcp_enabled` / `lcp_copies` → `config.readium_enabled` / `readium_amount`; enabling LCP
+      without a copy count is refused. No other `config` key is reachable.
+- [x] Categories, authors **and feeds** scoped to the entry's catalog (REST leaves feeds unscoped).
+- [x] `create_upload_link` + `POST /mcp/v1/uploads/<token>` (`apps/mcp/uploads.py`): signed with
+      `SECRET_KEY`, 15-minute TTL, single-use via an atomic `cache.add` on its nonce, scoped to one
+      entry and user, `check_entry_manage` re-checked on arrival, magic bytes sniffed. A rejected
+      upload does not burn the link. Refuses a second file unless `allow_additional`.
+- [x] `attach_acquisition()` in `apps/api/services/entry.py`, now shared by the REST acquisition
+      endpoint and the upload link, so both trigger the same `Entry.post_save` LCP encryption and
+      text-service hand-off.
+- [x] `list_encryption_jobs` gains `entry_ids`; `get_entry` reports `readium_amount`.
+- [x] `EVILFLOWERS_MCP_UPLOAD_TTL` (900 s), `EVILFLOWERS_MCP_UPLOAD_MAX_BYTES` (200 MB).
+- [x] `test_publishing.py` (24 tests); both write-surface sweeps extended.
+- [ ] Deploy to elvira.stuba.sk; confirm the reverse proxy's body limit ≥ 200 MB (Q16).
 
 ## Technical Details
 
@@ -981,12 +1014,16 @@ files, images and `config` withheld?
 
 **Answer**:
 ```
-[User fills this in]
+2026-09-29 (jdubec): "Implement missing MCP tooling" — for the STU bulk import, which needs
+agents to create publications, attach their files and trigger LCP encryption.
 ```
 
 **Resolution**:
 ```
-[AI writes this]
+Implemented as C plus creation, files and the two LCP lending keys (Phase 11): create_entry,
+update_entry (title, authors, publisher, published_at, language_code, summary, identifiers,
+category_ids, feed_ids, lcp_enabled, lcp_copies) and create_upload_link. Still withheld:
+every other config switch, cover images, inline files, entry deletion.
 ```
 
 ---
@@ -1093,6 +1130,37 @@ per-record results make the outcome auditable?
 
 ---
 
+### Q16: ⚠️ Medium — is a credential in the upload URL path acceptable?
+
+**Issue**: `create_upload_link` puts a signed token in the URL path
+(`/mcp/v1/uploads/<token>`). The endpoint refuses `?access_token=` for exactly the reason that
+URLs land in access and proxy logs.
+
+**Context**: The token differs from an API key in ways that matter for a log leak: it expires
+after 15 minutes, works once, and is scoped to one publication. By the time anyone reads the log
+it has usually been spent. The alternative is sending it as a header
+(`Authorization: Upload <token>`), which every `curl` user can do but which makes the link less
+self-contained. Separately, the reverse proxy on elvira.stuba.sk must accept bodies up to
+`EVILFLOWERS_MCP_UPLOAD_MAX_BYTES`, or large PDFs fail with a 413 before Django sees them.
+
+**Question**: Keep the token in the path, or move it to a header?
+
+**Options**:
+- [ ] **A**: Keep it in the path; lifetime and single use are the mitigation. **(implemented)**
+- [ ] **B**: Move it to a header and keep only an opaque id in the path.
+
+**Answer**:
+```
+[User fills this in]
+```
+
+**Resolution**:
+```
+[AI writes this]
+```
+
+---
+
 ## Changelog
 
 | Date | Author | Changes |
@@ -1100,3 +1168,4 @@ per-record results make the outcome auditable?
 | 2026-09-09 | jdubec | Initial draft, written alongside a complete implementation in `apps/mcp/`. Phase 1 transport (`protocol.py`, `views.py`, `server.py`), Phase 2 framework (`registry.py`, `arguments.py`, `pagination.py`, `projections.py`), Phase 3 eight read-only tools, Phase 4 wiring + wiki page + 55 tests. Added Review Questions section (Q1–Q7); Q1 records a pre-existing REST inconsistency between `EntryFilter` and `check_entry_read` found while implementing `get_entry`. |
 | 2026-09-10 | jdubec | Wrote out Q8–Q11, which the body referenced but the Review Questions section never defined (the three REST defects the management tools work around, and the ASGI/SDK question). |
 | 2026-09-10 | jdubec | Phase 8 (curation) and Phase 9 (username/password auth). Added `create_catalog` / `update_catalog` / `delete_catalog`, `get_catalog`, `classify_entries`, `create_categories`, `add_entries_to_feed`, `remove_entries_from_feed` — 25 tools, 186 tests. Added `EVILFLOWERS_MCP_MAX_BULK_ITEMS`; `EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS` now defaults to `Bearer,Basic`. Added the `classify_collection` prompt and registry-driven write-surface sweeps. Documented the one-catalog-per-write rule, all-or-nothing bulk semantics and the `confirm_title` guard. New Review Questions Q12–Q15 covering entry metadata editing, the deletion guard, the Basic default and the bulk ceiling. |
+| 2026-09-29 | jdubec | Answered Q12 and added Phase 11 (publishing) for the STU bulk import: `create_entry`, `update_entry`, `create_upload_link` + the signed upload endpoint, shared `attach_acquisition()` service, `entry_ids` on `list_encryption_jobs`, two upload settings, 24 new tests. Rewrote "What the write surface deliberately excludes". Added Review Question Q16 (token in the upload URL path; proxy body limit). |
