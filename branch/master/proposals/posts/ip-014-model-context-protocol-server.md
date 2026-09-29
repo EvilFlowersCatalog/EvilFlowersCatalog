@@ -439,6 +439,10 @@ Driven by the STU bulk import (~500 PDFs, most LCP-protected with one copy each)
       `_assert_readium_amount_above_active`. Annotated `destructiveHint`.
 - [x] `lcp_enabled` / `lcp_copies` → `config.readium_enabled` / `readium_amount`; enabling LCP
       without a copy count is refused. No other `config` key is reachable.
+- [x] Protecting publications already in the catalog: an `update_entry` call carrying only
+      `lcp_enabled` / `lcp_copies` skips `EntryForm` and saves `config` with `update_fields`, so
+      title, language (legacy entries may have none), metadata, files and acquisition relations
+      are untouched; `Entry.post_save` still queues encryption. Idempotent. No separate tool.
 - [x] Categories, authors **and feeds** scoped to the entry's catalog (REST leaves feeds unscoped).
 - [x] `create_upload_link` + `POST /mcp/v1/uploads/<token>` (`apps/mcp/uploads.py`): signed with
       `SECRET_KEY`, 15-minute TTL, single-use via an atomic `cache.add` on its nonce, scoped to one
@@ -449,7 +453,7 @@ Driven by the STU bulk import (~500 PDFs, most LCP-protected with one copy each)
       text-service hand-off.
 - [x] `list_encryption_jobs` gains `entry_ids`; `get_entry` reports `readium_amount`.
 - [x] `EVILFLOWERS_MCP_UPLOAD_TTL` (900 s), `EVILFLOWERS_MCP_UPLOAD_MAX_BYTES` (200 MB).
-- [x] `test_publishing.py` (24 tests); both write-surface sweeps extended.
+- [x] `test_publishing.py` (28 tests); both write-surface sweeps extended.
 - [ ] Deploy to elvira.stuba.sk; confirm the reverse proxy's body limit ≥ 200 MB (Q16).
 
 ## Technical Details
@@ -1169,3 +1173,4 @@ self-contained. Separately, the reverse proxy on elvira.stuba.sk must accept bod
 | 2026-09-10 | jdubec | Wrote out Q8–Q11, which the body referenced but the Review Questions section never defined (the three REST defects the management tools work around, and the ASGI/SDK question). |
 | 2026-09-10 | jdubec | Phase 8 (curation) and Phase 9 (username/password auth). Added `create_catalog` / `update_catalog` / `delete_catalog`, `get_catalog`, `classify_entries`, `create_categories`, `add_entries_to_feed`, `remove_entries_from_feed` — 25 tools, 186 tests. Added `EVILFLOWERS_MCP_MAX_BULK_ITEMS`; `EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS` now defaults to `Bearer,Basic`. Added the `classify_collection` prompt and registry-driven write-surface sweeps. Documented the one-catalog-per-write rule, all-or-nothing bulk semantics and the `confirm_title` guard. New Review Questions Q12–Q15 covering entry metadata editing, the deletion guard, the Basic default and the bulk ceiling. |
 | 2026-09-29 | jdubec | Answered Q12 and added Phase 11 (publishing) for the STU bulk import: `create_entry`, `update_entry`, `create_upload_link` + the signed upload endpoint, shared `attach_acquisition()` service, `entry_ids` on `list_encryption_jobs`, two upload settings, 24 new tests. Rewrote "What the write surface deliberately excludes". Added Review Question Q16 (token in the upload URL path; proxy body limit). |
+| 2026-09-29 | jdubec | `update_entry` lending-only path for protecting existing publications without touching anything else (no new tool); `lcp_copies` now required whenever a call enables LCP, even if the entry stores a default. 4 more tests. |
