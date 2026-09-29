@@ -371,6 +371,12 @@ EVILFLOWERS_EVENT_BROKER_TRANSFORMER = os.getenv("EVILFLOWERS_EVENT_BROKER_TRANS
 EVILFLOWERS_READIUM_DATADIR = str(os.getenv("EVILFLOWERS_READIUM_DATADIR", BASE_DIR / "data/evilflowers/readium"))
 EVILFLOWERS_READIUM_LCPSV_URL = os.getenv("EVILFLOWERS_READIUM_LCPSV_URL", "http://127.0.0.1:8989")
 EVILFLOWERS_READIUM_LSDSV_URL = os.getenv("EVILFLOWERS_READIUM_LSDSV_URL", "http://127.0.0.1:8990")
+# Callback lcpencrypt POSTs to after a successful encryption (`-notify`), i.e.
+# `http://user:pass@<catalog-host>/readium/v1/hooks/encryption`. The webhook is
+# the only thing that flips EncryptedContent to REGISTERED, so without it every
+# encryption stays PENDING. Credentials in the URL are sent as Basic auth and
+# the webhook requires them when present.
+EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL = os.getenv("EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL")
 EVILFLOWERS_READIUM_BASE_URL = os.getenv(
     "EVILFLOWERS_READIUM_BASE_URL",
     f"http://{os.getenv('DJANGO_RUNSERVER_IP', '127.0.0.1')}:{os.getenv('DJANGO_RUNSERVER_PORT', '8000')}",

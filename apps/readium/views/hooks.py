@@ -5,15 +5,33 @@ Handles callbacks from external services:
 - lcpencrypt CMS notification (POST with CMSMsg format)
 """
 
+import base64
 import json
 import logging
+import secrets
+from urllib.parse import unquote, urlsplit
 
+from django.conf import settings
 from django.http import JsonResponse
 from django.views import View
 
 from apps.readium.services import ContentEncryptionService
 
 logger = logging.getLogger(__name__)
+
+
+def _expected_authorization() -> str | None:
+    """Basic auth header lcpencrypt sends, derived from the notify URL credentials.
+
+    lcpencrypt turns `http://user:pass@host/...` into a Basic Authorization
+    header. Returns None when the notify URL carries no credentials, in which
+    case the webhook stays open (network isolation is the only guard).
+    """
+    notify_url = urlsplit(getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None) or "")
+    if not notify_url.username:
+        return None
+    credentials = f"{unquote(notify_url.username)}:{unquote(notify_url.password or '')}"
+    return "Basic " + base64.b64encode(credentials.encode()).decode()
 
 
 class EncryptionWebhook(View):
@@ -36,6 +54,12 @@ class EncryptionWebhook(View):
 
     def post(self, request, *args, **kwargs):
         """Handle POST CMS notification from lcpencrypt."""
+        expected = _expected_authorization()
+        provided = request.headers.get("Authorization", "").encode("latin-1", "replace")
+        if expected and not secrets.compare_digest(provided, expected.encode()):
+            logger.warning("Rejected encryption webhook request with missing or invalid credentials")
+            return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
         try:
             payload = json.loads(request.body)
         except json.JSONDecodeError:
