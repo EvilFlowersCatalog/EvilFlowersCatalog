@@ -83,6 +83,37 @@ class ContentEncryptionService:
 
         return encrypted_content
 
+    #: Statuses `requeue` will act on. COMPLETED/REGISTERED already have an
+    #: encrypted package registered with the LCP server; re-running lcpencrypt
+    #: for those would register a second package under the same content id.
+    REQUEUEABLE_STATUSES = (
+        EncryptedContent.EncryptionStatus.PENDING,
+        EncryptedContent.EncryptionStatus.FAILED,
+    )
+
+    @staticmethod
+    def requeue(encrypted_content: EncryptedContent) -> EncryptedContent:
+        """Send a stuck or failed encryption job to the worker again.
+
+        `encrypt_acquisition` returns early once an `EncryptedContent` row
+        exists, so a job lost in transit (wrong broker, worker without the
+        storage mount) stays PENDING forever — lcpencrypt only reports back on
+        success. This re-sends the task for the existing row, keeping its
+        `lcp_content_id` and `encrypted_path`, and resets it to PENDING.
+
+        Raises:
+            ValueError: If the row is already COMPLETED or REGISTERED.
+        """
+        if encrypted_content.status not in ContentEncryptionService.REQUEUEABLE_STATUSES:
+            raise ValueError(f"Encryption is already {encrypted_content.status}; refusing to re-encrypt")
+
+        encrypted_content.status = EncryptedContent.EncryptionStatus.PENDING
+        encrypted_content.error_message = None
+        encrypted_content.save(update_fields=["status", "error_message", "updated_at"])
+
+        ContentEncryptionService._queue_encryption_task(encrypted_content)
+        return encrypted_content
+
     @staticmethod
     def _queue_encryption_task(encrypted_content: EncryptedContent):
         """Queue the lcpencrypt worker task.

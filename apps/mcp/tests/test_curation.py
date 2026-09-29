@@ -7,6 +7,8 @@ all-or-nothing refusal that stops a bulk write from half-succeeding, and the
 confirmation `delete_catalog` demands before it destroys a collection.
 """
 
+import uuid
+
 from django.contrib.auth.models import AnonymousUser
 from django.test import override_settings
 
@@ -72,6 +74,8 @@ class WriteSurfaceSweepTests(ManagementTestCase):
             "add_entries_to_feed": {"feed_id": str(feed.pk), "entry_ids": entry_ids},
             "remove_entries_from_feed": {"feed_id": str(feed.pk), "entry_ids": entry_ids},
             "classify_entries": {"entry_ids": entry_ids, "category_ids": [str(category.pk)]},
+            # The administrator check runs before any lookup, so no job need exist.
+            "requeue_encryption": {"content_ids": [str(uuid.uuid4())]},
         }
 
     def test_every_write_tool_refuses_a_reader_of_the_catalog(self):

@@ -77,7 +77,11 @@ WRITE_INSTRUCTIONS = (
     "discards classifications you did not name; `add` is the default for that reason. Deletions "
     "cannot be undone: confirm with the user first, note that `delete_category` reports how many "
     "publications lost the classification, and treat `delete_catalog` — which destroys every "
-    "publication and file inside it — as something to propose, never to volunteer."
+    "publication and file inside it — as something to propose, never to volunteer.\n\n"
+    "Administrators also get two operations tools for Readium LCP encryption: "
+    "`list_encryption_jobs` finds jobs stuck in `pending` or `failed` (a publication cannot be "
+    "lent until its job is `registered`), and `requeue_encryption` sends them to the worker again. "
+    "Re-queuing does not fix whatever lost the job — say so if the cause looks like deployment."
 )
 
 READ_ONLY_NOTE = "\n\nThis deployment is read-only: no tool here borrows, reserves, edits or deletes."
