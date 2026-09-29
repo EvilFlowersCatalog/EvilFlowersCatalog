@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "6f41ac76a6e3839cab23e04e8af01b22cc3785fa",
-    "short": "6f41ac7",
-    "message": "Merge remote-tracking branch 'origin/develop' into develop",
+    "sha": "359e2bdb473093503e6798cbb1681efd7fbeddb5",
+    "short": "359e2bd",
+    "message": "License page",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/6f41ac76a6e3839cab23e04e8af01b22cc3785fa"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/359e2bdb473093503e6798cbb1681efd7fbeddb5"
   },
-  "deployed_at": "2026-09-29T08:11:10Z",
+  "deployed_at": "2026-09-29T08:23:52Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
