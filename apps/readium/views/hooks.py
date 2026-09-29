@@ -24,13 +24,15 @@ def _expected_authorization() -> str | None:
     """Basic auth header lcpencrypt sends, derived from the notify URL credentials.
 
     lcpencrypt turns `http://user:pass@host/...` into a Basic Authorization
-    header. Returns None when the notify URL carries no credentials, in which
-    case the webhook stays open (network isolation is the only guard).
+    header. Mirrors lcpencrypt's `getUsernamePassword`: credentials count only
+    when the URL carries both a username and a password. Returns None
+    otherwise, in which case the webhook stays open (network isolation is the
+    only guard).
     """
     notify_url = urlsplit(getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None) or "")
-    if not notify_url.username:
+    if not notify_url.username or notify_url.password is None:
         return None
-    credentials = f"{unquote(notify_url.username)}:{unquote(notify_url.password or '')}"
+    credentials = f"{unquote(notify_url.username)}:{unquote(notify_url.password)}"
     return "Basic " + base64.b64encode(credentials.encode()).decode()
 
 
@@ -48,8 +50,10 @@ class EncryptionWebhook(View):
         ...
     }
 
-    If this webhook returns non-2xx, lcpencrypt rolls back by deleting
-    the content from the LCP server. So we MUST return 2xx on success.
+    If this webhook returns non-2xx (or is unreachable within 15 s),
+    lcpencrypt rolls back by deleting the content from the LCP server — yet
+    still exits 0, so the worker reports success. A credential mismatch here
+    therefore silently un-registers the publication.
     """
 
     def post(self, request, *args, **kwargs):

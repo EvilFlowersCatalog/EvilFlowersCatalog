@@ -94,3 +94,10 @@ class EncryptionWebhookAuthTests(SimpleTestCase):
         response = self._post()
         self.assertEqual(response.status_code, 200)
         service.mark_registered_with_lcp_server.assert_called_once()
+
+    @override_settings(EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL="http://lcpencrypt@172.28.10.1:8000/x")
+    def test_username_without_password_is_ignored_like_lcpencrypt(self, service):
+        # lcpencrypt only extracts credentials when both parts are present, and
+        # then sends an empty Basic header — the webhook must not demand one.
+        response = self._post(authorization=_basic("", ""))
+        self.assertEqual(response.status_code, 200)
