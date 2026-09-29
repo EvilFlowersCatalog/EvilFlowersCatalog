@@ -75,6 +75,28 @@ PLACEHOLDER_PALETTE = (
 )
 
 
+# Pillow's bundled default (Aileron) has no Latin Extended glyphs, so Slovak
+# titles and names ("Krivá", "Štatistika") rendered as boxes. DejaVu Sans covers
+# them; the image installs `fonts-dejavu-core`. The macOS paths keep local runs
+# correct, and the bundled font stays as the last resort.
+PLACEHOLDER_FONT_CANDIDATES = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+)
+
+
+def _placeholder_font(size: int) -> ImageFont.FreeTypeFont:
+    for path in (getattr(settings, "EVILFLOWERS_PLACEHOLDER_FONT", None), *PLACEHOLDER_FONT_CANDIDATES):
+        if path:
+            try:
+                return ImageFont.truetype(path, size=size)
+            except OSError:
+                continue
+    return ImageFont.load_default(size=size)
+
+
 def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
     """Greedy word-wrap ``text`` to lines no wider than ``max_width`` pixels."""
     lines: list[str] = []
@@ -96,8 +118,8 @@ def build_placeholder_thumbnail(title: str, subtitle: str, size: tuple[int, int]
 
     Produces a portrait JPEG with a deterministic muted background (a given entry
     always gets the same colour) and the wrapped title over it, with the author
-    beneath. Uses Pillow's bundled scalable default font, so it renders
-    identically on the Linux container and needs no font assets.
+    beneath. Uses DejaVu Sans when available (see `_placeholder_font`) so
+    diacritics render; Pillow's bundled font is only the fallback.
     """
     title = (title or "").strip() or "Untitled"
     subtitle = (subtitle or "").strip()
@@ -115,8 +137,8 @@ def build_placeholder_thumbnail(title: str, subtitle: str, size: tuple[int, int]
 
     padding = round(width * 0.12)
     text_width = width - 2 * padding
-    title_font = ImageFont.load_default(size=max(18, round(width * 0.11)))
-    subtitle_font = ImageFont.load_default(size=max(12, round(width * 0.06)))
+    title_font = _placeholder_font(max(18, round(width * 0.11)))
+    subtitle_font = _placeholder_font(max(12, round(width * 0.06)))
 
     # Wrap the title and cap the number of lines so very long titles do not
     # overflow the cover; the last kept line gets an ellipsis.
@@ -152,6 +174,22 @@ def build_placeholder_thumbnail(title: str, subtitle: str, size: tuple[int, int]
     image.save(buffer, format="JPEG", quality=82, optimize=True, progressive=True)
     buffer.seek(0)
     return buffer, "image/jpeg"
+
+
+def set_cover(entry: Entry, uploaded_image, *, mime: str) -> Entry:
+    """Store `uploaded_image` as the entry's cover and derive its thumbnail.
+
+    Shared by `EntryService.populate` (REST `image`) and the MCP cover upload
+    link, so both produce the same `cover.*` + `thumbnail.*` pair.
+    """
+    entry.image_mime = mime
+    entry.image.save(f"cover{mimetypes.guess_extension(mime)}", uploaded_image)
+
+    uploaded_image.seek(0)
+    buffer, thumbnail_mime = build_thumbnail(Image.open(uploaded_image), settings.EVILFLOWERS_IMAGE_THUMBNAIL)
+    entry.thumbnail_mime = thumbnail_mime
+    entry.thumbnail.save(f"thumbnail{mimetypes.guess_extension(thumbnail_mime)}", File(buffer))
+    return entry
 
 
 def attach_acquisition(entry: Entry, uploaded_file, *, mime: str, relation: str = None) -> Acquisition:
@@ -289,21 +327,6 @@ class EntryService:
                 entry.thumbnail = None
                 entry.thumbnail_mime = None
             else:
-                entry.image_mime = form.cleaned_data["image"].content_type
-
-                entry.image.save(
-                    f"cover{mimetypes.guess_extension(entry.image_mime)}",
-                    form.cleaned_data["image"],
-                )
-
-                buffer, thumbnail_mime = build_thumbnail(
-                    form.cleaned_data["image"].image, settings.EVILFLOWERS_IMAGE_THUMBNAIL
-                )
-                entry.thumbnail_mime = thumbnail_mime
-
-                entry.thumbnail.save(
-                    f"thumbnail{mimetypes.guess_extension(thumbnail_mime)}",
-                    File(buffer),
-                )
+                set_cover(entry, form.cleaned_data["image"], mime=form.cleaned_data["image"].content_type)
 
         return entry
