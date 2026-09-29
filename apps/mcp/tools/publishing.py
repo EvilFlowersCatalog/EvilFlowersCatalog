@@ -273,6 +273,9 @@ def create_entry(request, raw_arguments: dict) -> dict:
     )
 
     payload = _payload(arguments, raw_arguments)
+    # The portal renders `summary` as a string and crashes on null (elvira-portal
+    # `SummaryText`), and every portal-created entry stores "" — so do the same.
+    payload.setdefault("summary", "")
     _assert_lcp_coherent(payload.get("config", {}))
     form = _validated_form(payload, catalog)
 
