@@ -66,3 +66,29 @@ class LsdLinkRewriteTests(SimpleTestCase):
 
         self.assertIn("/register", register_href)
         self.assertNotEqual(register_href, license_href)
+
+    def test_uri_templates_survive_the_rewrite(self):
+        """Readers expand `{?id,name}` with their device id; dropping it made the
+        LSD reject every device registration (Thorium, 2026-09-29)."""
+        data = self._rewrite(
+            [
+                {
+                    "rel": "register",
+                    "href": "http://127.0.0.1:8990/licenses/abc/register{?id,name}",
+                    "templated": True,
+                },
+                {"rel": "renew", "href": "http://127.0.0.1:8990/licenses/abc/renew{?end,id,name}", "templated": True},
+                {"rel": "return", "href": "http://127.0.0.1:8990/licenses/abc/return{?id,name}", "templated": True},
+            ]
+        )
+        register, renew, ret = (link["href"] for link in data["links"])
+
+        self.assertTrue(register.startswith("https://catalog.example.test/readium/v1/licenses/"), register)
+        self.assertTrue(register.endswith(f"{self.license.pk}/register{{?id,name}}"), register)
+        self.assertTrue(renew.endswith(f"{self.license.pk}/renew{{?end,id,name}}"), renew)
+        self.assertTrue(ret.endswith(f"{self.license.pk}/return{{?id,name}}"), ret)
+        self.assertNotIn("127.0.0.1", register + renew + ret)
+
+    def test_an_untemplated_link_gets_no_suffix(self):
+        data = self._rewrite([{"rel": "register", "href": "http://127.0.0.1:8990/licenses/abc/register"}])
+        self.assertTrue(data["links"][0]["href"].endswith("/register"))

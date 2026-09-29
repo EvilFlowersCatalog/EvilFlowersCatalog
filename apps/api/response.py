@@ -4,6 +4,7 @@ from http import HTTPStatus
 from typing import Callable, Optional, List, Type, TypeVar
 
 from django.conf import settings
+from django.core.exceptions import FieldError
 from django.core.paginator import Paginator, EmptyPage
 from django.http import HttpResponse, HttpResponseRedirect
 from django.utils.translation import gettext as _
@@ -138,7 +139,18 @@ class PaginationResponse(GeneralResponse):
 
         # Ordering
         ordering = ordering if ordering else Ordering.create_from_request(request)
-        qs = qs.order_by(*ordering.columns)
+        try:
+            qs = qs.order_by(*ordering.columns)
+        except FieldError as e:
+            # `order_by` comes straight from the query string; an unknown column is
+            # a client error, not a 500 (e.g. `order_by=-created_at?access_token=…`
+            # when a client appends a second `?` to the URL).
+            raise ProblemDetailException(
+                _("Invalid order_by"),
+                status=HTTPStatus.BAD_REQUEST,
+                detail=_("Cannot sort by '%(order_by)s'.") % {"order_by": str(ordering)},
+                previous=e,
+            )
 
         # Pagination
         paginate = request.GET.get("paginate", "true") == "true"
