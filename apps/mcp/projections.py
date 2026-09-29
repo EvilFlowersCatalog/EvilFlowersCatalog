@@ -242,6 +242,9 @@ def entry_detail(
                 "cover_url": request.build_absolute_uri(instance.image_url) if instance.image_url else None,
                 "acquisitions": [acquisition(item, request) for item in instance.acquisitions.all()],
                 "readium_enabled": bool(instance.read_config("readium_enabled")) or None,
+                "readium_amount": (
+                    instance.read_config("readium_amount") if instance.read_config("readium_enabled") else None
+                ),
                 "created_at": _iso(instance.created_at),
                 "updated_at": _iso(instance.updated_at),
             }

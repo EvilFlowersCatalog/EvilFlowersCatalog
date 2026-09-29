@@ -1,7 +1,6 @@
 import json
-import mimetypes
 from http import HTTPStatus
-from uuid import uuid4, UUID
+from uuid import UUID
 
 from django.conf import settings
 from django.db import transaction
@@ -13,13 +12,12 @@ from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
 from apps.api.services.entry_introspection_service import EntryIntrospectionService
-from apps.dataverse.services.text_publish import TextServiceClient
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.api.filters.entries import EntryFilter
 from apps.api.forms.entries import EntryForm, AcquisitionMetaForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer
-from apps.api.services.entry import EntryService
+from apps.api.services.entry import EntryService, attach_acquisition
 from apps.core.models import Entry, Acquisition, Price, Catalog, ShelfRecord, User
 from apps.core.views import SecuredView
 from apps.readium.models import License
@@ -242,31 +240,15 @@ class EntryDetail(SecuredView):
         if not form.is_valid():
             raise ValidationException(form)
 
-        acquisition = Acquisition(
-            entry=entry,
-            relation=form.cleaned_data.get("relation", Acquisition.AcquisitionType.ACQUISITION),
+        if "content" not in request.FILES:
+            raise ProblemDetailException(_("Missing `content` file"), status=HTTPStatus.BAD_REQUEST)
+
+        acquisition = attach_acquisition(
+            entry,
+            request.FILES["content"],
             mime=request.FILES["content"].content_type,
+            relation=form.cleaned_data.get("relation"),
         )
-
-        if "content" in request.FILES.keys():
-            # Save acquisition first to get the PK
-            acquisition.save()
-
-            acquisition.content.save(
-                f"{uuid4()}{mimetypes.guess_extension(acquisition.mime)}",
-                request.FILES["content"],
-            )
-
-            # Process file with text service via Celery (non-blocking)
-            if acquisition.content and acquisition.mime == Acquisition.AcquisitionMIME.PDF:
-                try:
-                    text_client = TextServiceClient()
-                    source = acquisition.content.name
-                    entry_id = str(acquisition.entry.pk)
-                    text_client.process_acquisition(source, entry_id)
-                except Exception:
-                    # Log error but don't fail the upload
-                    logger.exception(f"Failed to enqueue text processing task for acquisition_id={acquisition.pk}")
 
         for price in form.cleaned_data.get("prices", []):
             Price.objects.create(

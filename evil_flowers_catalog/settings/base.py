@@ -334,6 +334,11 @@ EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS = [
 ]
 # Ceiling on a single JSON-RPC request body.
 EVILFLOWERS_MCP_MAX_REQUEST_BYTES = int(os.getenv("EVILFLOWERS_MCP_MAX_REQUEST_BYTES", 1024 * 1024))
+# Upload links issued by `create_upload_link`: lifetime in seconds, and the
+# largest file one link accepts. The reverse proxy's body limit must be at least
+# this large or big PDFs fail there with a 413 before Django sees them.
+EVILFLOWERS_MCP_UPLOAD_TTL = int(os.getenv("EVILFLOWERS_MCP_UPLOAD_TTL", 15 * 60))
+EVILFLOWERS_MCP_UPLOAD_MAX_BYTES = int(os.getenv("EVILFLOWERS_MCP_UPLOAD_MAX_BYTES", 200 * 1024 * 1024))
 # Comma-separated browser origins allowed to reach the MCP endpoint (DNS-rebinding
 # guard). Unset disables the check — non-browser MCP clients send no `Origin`.
 _mcp_origins = os.getenv("EVILFLOWERS_MCP_ALLOWED_ORIGINS")
@@ -371,6 +376,12 @@ EVILFLOWERS_EVENT_BROKER_TRANSFORMER = os.getenv("EVILFLOWERS_EVENT_BROKER_TRANS
 EVILFLOWERS_READIUM_DATADIR = str(os.getenv("EVILFLOWERS_READIUM_DATADIR", BASE_DIR / "data/evilflowers/readium"))
 EVILFLOWERS_READIUM_LCPSV_URL = os.getenv("EVILFLOWERS_READIUM_LCPSV_URL", "http://127.0.0.1:8989")
 EVILFLOWERS_READIUM_LSDSV_URL = os.getenv("EVILFLOWERS_READIUM_LSDSV_URL", "http://127.0.0.1:8990")
+# Callback lcpencrypt POSTs to after a successful encryption (`-notify`), i.e.
+# `http://user:pass@<catalog-host>/readium/v1/hooks/encryption`. The webhook is
+# the only thing that flips EncryptedContent to REGISTERED, so without it every
+# encryption stays PENDING. Credentials in the URL are sent as Basic auth and
+# the webhook requires them when present.
+EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL = os.getenv("EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL")
 EVILFLOWERS_READIUM_BASE_URL = os.getenv(
     "EVILFLOWERS_READIUM_BASE_URL",
     f"http://{os.getenv('DJANGO_RUNSERVER_IP', '127.0.0.1')}:{os.getenv('DJANGO_RUNSERVER_PORT', '8000')}",

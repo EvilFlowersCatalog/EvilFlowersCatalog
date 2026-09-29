@@ -154,6 +154,39 @@ def build_placeholder_thumbnail(title: str, subtitle: str, size: tuple[int, int]
     return buffer, "image/jpeg"
 
 
+def attach_acquisition(entry: Entry, uploaded_file, *, mime: str, relation: str = None) -> Acquisition:
+    """Store `uploaded_file` as a new acquisition of `entry`.
+
+    Shared by `POST /api/v1/catalogs/{c}/entries/{e}` and the MCP upload link so
+    both paths trigger the same side effects: saving the content fires
+    `touch_entry` → `Entry.post_save`, which queues Readium LCP encryption when
+    the entry has `readium_enabled`, and a PDF is handed to the text service.
+    """
+    import logging
+
+    from apps.dataverse.services.text_publish import TextServiceClient
+
+    acquisition = Acquisition(
+        entry=entry,
+        relation=relation or Acquisition.AcquisitionType.ACQUISITION,
+        mime=mime,
+    )
+    # Saved first so `upload_to_path` has a primary key to work with.
+    acquisition.save()
+    acquisition.content.save(f"{uuid.uuid4()}{mimetypes.guess_extension(mime)}", uploaded_file)
+
+    if acquisition.mime == Acquisition.AcquisitionMIME.PDF:
+        try:
+            TextServiceClient().process_acquisition(acquisition.content.name, str(entry.pk))
+        except Exception:
+            # Text extraction is best-effort; it must never fail the upload.
+            logging.getLogger("apps.api.services.entry").exception(
+                "Failed to enqueue text processing task for acquisition_id=%s", acquisition.pk
+            )
+
+    return acquisition
+
+
 class EntryService:
     class AlreadyExists(Exception):
         pass

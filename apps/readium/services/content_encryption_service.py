@@ -138,7 +138,9 @@ class ContentEncryptionService:
         # storage = catalog-relative dir for encrypted output (worker prepends STORAGE_PATH)
         # filename = just the lcp_content_id (no extension, lcpencrypt appends .lcpdf/.epub)
         # url = public base URL → LCP server registers {url}/{filename} as content location
-        # No -notify: the LCP server registration via -lcpsv is sufficient
+        # notify = callback URL lcpencrypt POSTs to on success; the webhook
+        # (`apps/readium/views/hooks.py`) is what flips the row to REGISTERED.
+        # The worker drops the flag when it is None.
         #
         # title/author: publication display metadata. For the LCP-for-PDF
         # profile (`.lcpdf`) lcpencrypt wraps the raw PDF into a Readium
@@ -162,6 +164,7 @@ class ContentEncryptionService:
                     "storage": f"{acquisition.upload_base_path()}/encrypted",
                     "filename": encrypted_content.lcp_content_id,
                     "lcpsv": getattr(settings, "EVILFLOWERS_READIUM_LCPSV_URL", None),
+                    "notify": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None),
                     "url": f"{settings.EVILFLOWERS_READIUM_BASE_URL}/readium/v1/content",
                     "title": entry.title,
                     "author": author_name,

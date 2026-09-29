@@ -89,6 +89,7 @@ ENTRY_DETAIL_SCHEMA = {
             },
         },
         "readium_enabled": {"type": "boolean"},
+        "readium_amount": {"type": "integer", "description": "Concurrent LCP loans allowed."},
         "created_at": {"type": "string", "format": "date-time"},
         "updated_at": {"type": "string", "format": "date-time"},
     },

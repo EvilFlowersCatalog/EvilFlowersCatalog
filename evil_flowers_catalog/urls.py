@@ -39,8 +39,12 @@ if settings.EVILFLOWERS_ASSISTANT_ENABLED:
 # all, so a probe gets a plain 404 rather than a disabled endpoint to poke at.
 if settings.EVILFLOWERS_MCP_ENABLED:
     from apps.mcp.metadata import ProtectedResourceMetadata
+    from apps.mcp.uploads import McpUploadEndpoint
 
     urlpatterns.append(path("mcp/v1", include(("apps.mcp.urls", "mcp"), namespace="mcp")))
+    # Files cannot travel inside JSON-RPC; `create_upload_link` issues a signed,
+    # single-use URL here instead (see `apps/mcp/uploads.py`).
+    urlpatterns.append(path("mcp/v1/uploads/<str:token>", McpUploadEndpoint.as_view(), name="mcp-upload"))
     # RFC 9728 discovery. Both spellings are served: the path-inserted form the
     # MCP authorization spec derives from the resource URL, and the bare
     # well-known that clients probe when they do not implement path insertion.

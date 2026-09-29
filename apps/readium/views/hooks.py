@@ -5,15 +5,35 @@ Handles callbacks from external services:
 - lcpencrypt CMS notification (POST with CMSMsg format)
 """
 
+import base64
 import json
 import logging
+import secrets
+from urllib.parse import unquote, urlsplit
 
+from django.conf import settings
 from django.http import JsonResponse
 from django.views import View
 
 from apps.readium.services import ContentEncryptionService
 
 logger = logging.getLogger(__name__)
+
+
+def _expected_authorization() -> str | None:
+    """Basic auth header lcpencrypt sends, derived from the notify URL credentials.
+
+    lcpencrypt turns `http://user:pass@host/...` into a Basic Authorization
+    header. Mirrors lcpencrypt's `getUsernamePassword`: credentials count only
+    when the URL carries both a username and a password. Returns None
+    otherwise, in which case the webhook stays open (network isolation is the
+    only guard).
+    """
+    notify_url = urlsplit(getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None) or "")
+    if not notify_url.username or notify_url.password is None:
+        return None
+    credentials = f"{unquote(notify_url.username)}:{unquote(notify_url.password)}"
+    return "Basic " + base64.b64encode(credentials.encode()).decode()
 
 
 class EncryptionWebhook(View):
@@ -30,12 +50,20 @@ class EncryptionWebhook(View):
         ...
     }
 
-    If this webhook returns non-2xx, lcpencrypt rolls back by deleting
-    the content from the LCP server. So we MUST return 2xx on success.
+    If this webhook returns non-2xx (or is unreachable within 15 s),
+    lcpencrypt rolls back by deleting the content from the LCP server — yet
+    still exits 0, so the worker reports success. A credential mismatch here
+    therefore silently un-registers the publication.
     """
 
     def post(self, request, *args, **kwargs):
         """Handle POST CMS notification from lcpencrypt."""
+        expected = _expected_authorization()
+        provided = request.headers.get("Authorization", "").encode("latin-1", "replace")
+        if expected and not secrets.compare_digest(provided, expected.encode()):
+            logger.warning("Rejected encryption webhook request with missing or invalid credentials")
+            return JsonResponse({"status": "error", "message": "Unauthorized"}, status=401)
+
         try:
             payload = json.loads(request.body)
         except json.JSONDecodeError:

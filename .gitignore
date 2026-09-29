@@ -30,3 +30,4 @@ conf/dataverse/data/
 .playwright-mcp/
 .logfire/
 **/.ipynb_checkpoints/
+tmp/
