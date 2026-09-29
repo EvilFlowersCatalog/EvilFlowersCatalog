@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "e41a4c914996d9eb5ac78688099e8c6a45ef295f",
-    "short": "e41a4c9",
+    "sha": "cf727c31d602f317d4d3b51d364b77fde1cb28f2",
+    "short": "cf727c3",
     "message": "Fixing notifications for Readium LCP",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e41a4c914996d9eb5ac78688099e8c6a45ef295f"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/cf727c31d602f317d4d3b51d364b77fde1cb28f2"
   },
-  "deployed_at": "2026-09-29T09:28:20Z",
+  "deployed_at": "2026-09-29T09:37:47Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
