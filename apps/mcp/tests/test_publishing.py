@@ -78,6 +78,11 @@ class CreateEntryTests(PublishingTestCase):
         self.assertEqual(entry["identifiers"], {"isbn": "978-80-227-5078-3"})
         self.assertEqual(Entry.objects.get(pk=entry["id"]).creator, self.manager)
 
+    def test_a_missing_summary_is_stored_as_an_empty_string(self):
+        """The portal's entry detail crashes on a null summary (`html.length`)."""
+        entry = self.create()
+        self.assertEqual(Entry.objects.get(pk=entry["id"]).summary, "")
+
     def test_lcp_settings_map_to_readium_config(self):
         entry = self.create(lcp_enabled=True, lcp_copies=1)
 
