@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "ba0c7cb3c27623c3c556956104fbbccfbae74913",
-    "short": "ba0c7cb",
-    "message": "Extending MCP and preparing for STU import",
+    "sha": "282fb812a80fcb33bf0d01047344191f4a01faba",
+    "short": "282fb81",
+    "message": "Extending MCP and preparing for STU import (summary with proper default)",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/ba0c7cb3c27623c3c556956104fbbccfbae74913"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/282fb812a80fcb33bf0d01047344191f4a01faba"
   },
-  "deployed_at": "2026-09-29T10:12:38Z",
+  "deployed_at": "2026-09-29T10:30:45Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
