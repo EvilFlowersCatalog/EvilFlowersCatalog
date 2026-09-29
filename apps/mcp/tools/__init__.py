@@ -14,6 +14,7 @@ from apps.mcp.tools import (  # noqa: F401  (registration side effect)
     entries,
     feeds,
     library,
+    publishing,
 )
 
 __all__ = ["registry"]

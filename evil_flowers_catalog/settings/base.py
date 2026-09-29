@@ -334,6 +334,11 @@ EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS = [
 ]
 # Ceiling on a single JSON-RPC request body.
 EVILFLOWERS_MCP_MAX_REQUEST_BYTES = int(os.getenv("EVILFLOWERS_MCP_MAX_REQUEST_BYTES", 1024 * 1024))
+# Upload links issued by `create_upload_link`: lifetime in seconds, and the
+# largest file one link accepts. The reverse proxy's body limit must be at least
+# this large or big PDFs fail there with a 413 before Django sees them.
+EVILFLOWERS_MCP_UPLOAD_TTL = int(os.getenv("EVILFLOWERS_MCP_UPLOAD_TTL", 15 * 60))
+EVILFLOWERS_MCP_UPLOAD_MAX_BYTES = int(os.getenv("EVILFLOWERS_MCP_UPLOAD_MAX_BYTES", 200 * 1024 * 1024))
 # Comma-separated browser origins allowed to reach the MCP endpoint (DNS-rebinding
 # guard). Unset disables the check — non-browser MCP clients send no `Origin`.
 _mcp_origins = os.getenv("EVILFLOWERS_MCP_ALLOWED_ORIGINS")

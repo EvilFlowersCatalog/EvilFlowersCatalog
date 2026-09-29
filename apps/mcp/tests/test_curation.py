@@ -74,6 +74,9 @@ class WriteSurfaceSweepTests(ManagementTestCase):
             "add_entries_to_feed": {"feed_id": str(feed.pk), "entry_ids": entry_ids},
             "remove_entries_from_feed": {"feed_id": str(feed.pk), "entry_ids": entry_ids},
             "classify_entries": {"entry_ids": entry_ids, "category_ids": [str(category.pk)]},
+            "create_entry": {"catalog_id": catalog_id, "title": "Sweep book", "language_code": "sk"},
+            "update_entry": {"entry_id": entry_ids[0], "title": "Sweep book"},
+            "create_upload_link": {"entry_id": entry_ids[0]},
             # The administrator check runs before any lookup, so no job need exist.
             "requeue_encryption": {"content_ids": [str(uuid.uuid4())]},
         }

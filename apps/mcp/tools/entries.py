@@ -7,10 +7,8 @@ through it means MCP cannot drift from REST on who may see what — there is one
 implementation, not two.
 
 `classify_entries` is the one write here. It touches only the `categories`
-relation: an agent may decide that a book belongs under "624 Stavebné
-inžinierstvo", but it may not rewrite the book's title, authors, files or
-identifiers. That line is deliberate — classification is reversible and
-inspectable in a way that metadata rewriting is not.
+relation. Creating and correcting publications — metadata, LCP settings and
+files — lives in `publishing.py` (IP-014 Q12), behind the same `manage` check.
 """
 
 import logging

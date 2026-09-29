@@ -44,7 +44,9 @@ WRITE_TOOLS = {
     "create_catalog",
     "create_categories",
     "create_category",
+    "create_entry",
     "create_feed",
+    "create_upload_link",
     "delete_catalog",
     "delete_category",
     "delete_feed",
@@ -52,6 +54,7 @@ WRITE_TOOLS = {
     "requeue_encryption",
     "update_catalog",
     "update_category",
+    "update_entry",
     "update_feed",
 }
 

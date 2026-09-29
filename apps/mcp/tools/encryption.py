@@ -106,6 +106,11 @@ def _jobs_queryset():
                 "description": "Statuses to include. Defaults to ['pending', 'failed'].",
             },
             "catalog_id": {**UUID_SCHEMA, "description": "Only jobs for publications in this catalog."},
+            "entry_ids": {
+                "type": "array",
+                "items": UUID_SCHEMA,
+                "description": "Only jobs for these publications — e.g. the ones just uploaded.",
+            },
             **pagination_schema(),
         },
         "additionalProperties": False,
@@ -114,18 +119,21 @@ def _jobs_queryset():
     access=ToolAccess.USER,
 )
 def list_encryption_jobs(request, raw_arguments: dict) -> dict:
-    arguments = Arguments(raw_arguments, allowed=("status", "catalog_id", *PAGINATION_ARGUMENTS))
+    arguments = Arguments(raw_arguments, allowed=("status", "catalog_id", "entry_ids", *PAGINATION_ARGUMENTS))
     _require_administrator(request)
 
     requested = read_pagination(arguments)
     statuses = arguments.enum_list("status", ENCRYPTION_STATUSES)
     catalog_id = arguments.uuid("catalog_id")
+    entry_ids = arguments.uuid_sequence("entry_ids")
 
     queryset = _jobs_queryset().filter(
         status__in=statuses.split(",") if statuses else ContentEncryptionService.REQUEUEABLE_STATUSES
     )
     if catalog_id:
         queryset = queryset.filter(acquisition__entry__catalog_id=catalog_id)
+    if entry_ids:
+        queryset = queryset.filter(acquisition__entry_id__in=entry_ids)
 
     page = paginate(queryset.order_by("created_at"), requested)
     return {"items": [_job(ec) for ec in page.items], "metadata": page.metadata()}
