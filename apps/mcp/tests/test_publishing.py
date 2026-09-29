@@ -377,3 +377,76 @@ class UploadLinkTests(PublishingTestCase):
         self.assertIn("already has a file", message)
 
         self.ok("create_upload_link", {"entry_id": entry["id"], "allow_additional": True}, self.manager)
+
+
+def _png(size=(60, 90), colour=(200, 30, 30)) -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGB", size, colour).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+class CoverUploadTests(PublishingTestCase):
+    def cover_link(self, entry_id, **extra) -> dict:
+        return self.ok("create_upload_link", {"entry_id": entry_id, "kind": "cover", **extra}, self.manager)
+
+    def test_a_cover_is_stored_with_a_thumbnail(self):
+        entry = self.create()
+        link = self.cover_link(entry["id"])
+        self.assertEqual(link["kind"], "cover")
+        self.assertIn("image/png", link["accepted_mime_types"])
+
+        response = self.upload(link["upload_url"], content=_png(), name="cover.png", content_type="image/png")
+
+        self.assertEqual(response.status_code, 201, response.content)
+        stored = Entry.objects.get(pk=entry["id"])
+        self.assertTrue(stored.image.name.endswith(".png"))
+        self.assertEqual(stored.image_mime, "image/png")
+        self.assertTrue(stored.thumbnail.name)
+        self.assertEqual(stored.thumbnail_mime, "image/jpeg")
+        self.assertIn("cover_url", self.ok("get_entry", {"entry_id": entry["id"]}, self.manager)["entry"])
+        # A cover never becomes a publication file.
+        self.assertFalse(Acquisition.objects.filter(entry_id=entry["id"]).exists())
+
+    def test_a_cover_link_refuses_a_pdf_and_a_file_link_refuses_an_image(self):
+        entry = self.create()
+        cover_url = self.cover_link(entry["id"])["upload_url"]
+        self.assertEqual(self.upload(cover_url).status_code, 415)
+
+        file_url = self.ok("create_upload_link", {"entry_id": entry["id"]}, self.manager)["upload_url"]
+        response = self.upload(file_url, content=_png(), name="cover.png", content_type="image/png")
+        self.assertEqual(response.status_code, 415)
+
+    def test_a_truncated_image_is_refused(self):
+        entry = self.create()
+        url = self.cover_link(entry["id"])["upload_url"]
+        response = self.upload(url, content=b"\x89PNG\r\n\x1a\n-broken", name="c.png", content_type="image/png")
+        self.assertEqual(response.status_code, 415)
+        self.assertFalse(Entry.objects.get(pk=entry["id"]).image)
+
+    def test_the_cover_link_works_once(self):
+        entry = self.create()
+        url = self.cover_link(entry["id"])["upload_url"]
+        self.assertEqual(self.upload(url, content=_png(), name="c.png", content_type="image/png").status_code, 201)
+        self.assertEqual(self.upload(url, content=_png(), name="c.png", content_type="image/png").status_code, 410)
+
+    def test_an_existing_cover_is_replaced_only_on_request(self):
+        entry = self.create()
+        first = self.cover_link(entry["id"])["upload_url"]
+        self.upload(first, content=_png(), name="c.png", content_type="image/png")
+        old_name = Entry.objects.get(pk=entry["id"]).image.name
+
+        self.assertIn(
+            "already has a cover",
+            self.refused("create_upload_link", {"entry_id": entry["id"], "kind": "cover"}, self.manager),
+        )
+
+        url = self.cover_link(entry["id"], allow_additional=True)["upload_url"]
+        response = self.upload(url, content=_png(colour=(0, 0, 255)), name="c.png", content_type="image/png")
+        self.assertEqual(response.status_code, 201, response.content)
+        stored = Entry.objects.get(pk=entry["id"])
+        self.assertNotEqual(stored.image.name, old_name)
+        self.assertFalse(stored.image.storage.exists(old_name))

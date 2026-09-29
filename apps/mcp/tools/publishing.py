@@ -411,21 +411,30 @@ def update_entry(request, raw_arguments: dict) -> dict:
         "`encryption` job (`pending` at first). The publication can be lent once "
         "`list_encryption_jobs` reports it `registered`.\n\n"
         "Refused when the publication already has a file, so a retried import does not attach "
-        "the same PDF twice; pass `allow_additional: true` to add a second file on purpose."
+        "the same PDF twice; pass `allow_additional: true` to add a second file on purpose.\n\n"
+        'With `kind: "cover"` the link accepts a JPEG/PNG cover image instead; the thumbnail is '
+        "derived from it. Refused when the publication already has a cover unless "
+        "`allow_additional: true`, which replaces it."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "entry_id": {**UUID_SCHEMA, "description": "Publication the file belongs to."},
+            "kind": {
+                "type": "string",
+                "enum": list(uploads.KINDS),
+                "default": "file",
+                "description": "'file' (PDF/EPUB, the default) or 'cover' (JPEG/PNG cover image).",
+            },
             "relation": {
                 "type": "string",
                 "enum": list(RELATIONS),
-                "description": "OPDS acquisition relation. Omit for the default 'acquisition'.",
+                "description": "OPDS acquisition relation for a file. Omit for the default 'acquisition'.",
             },
             "allow_additional": {
                 "type": "boolean",
                 "default": False,
-                "description": "Allow a link for a publication that already has a file.",
+                "description": "Allow a link for a publication that already has a file (or, for kind 'cover', replace the cover).",
             },
         },
         "required": ["entry_id"],
@@ -437,6 +446,7 @@ def update_entry(request, raw_arguments: dict) -> dict:
             "entry_id": UUID_SCHEMA,
             "entry_title": {"type": "string"},
             "lcp_enabled": {"type": "boolean"},
+            "kind": {"type": "string"},
             "upload_url": {"type": "string"},
             "method": {"type": "string"},
             "field": {"type": "string"},
@@ -452,11 +462,19 @@ def update_entry(request, raw_arguments: dict) -> dict:
     idempotent=False,
 )
 def create_upload_link(request, raw_arguments: dict) -> dict:
-    arguments = Arguments(raw_arguments, allowed=("entry_id", "relation", "allow_additional"))
+    arguments = Arguments(raw_arguments, allowed=("entry_id", "kind", "relation", "allow_additional"))
     entry = _manageable_entry(request, arguments.uuid("entry_id", required=True), "upload a file to")
+    kind = arguments.enum("kind", uploads.KINDS, default="file")
     relation = arguments.enum("relation", RELATIONS)
+    allow_additional = arguments.boolean("allow_additional", default=False)
 
-    if not arguments.boolean("allow_additional", default=False):
+    if kind == "cover":
+        if entry.image and not allow_additional:
+            raise ToolConflict(
+                _("Publication '%(title)s' already has a cover. Pass `allow_additional: true` to replace it.")
+                % {"title": entry.title}
+            )
+    elif not allow_additional:
         existing = [item for item in entry.acquisitions.all() if item.content]
         if existing:
             raise ToolConflict(
@@ -467,8 +485,8 @@ def create_upload_link(request, raw_arguments: dict) -> dict:
                 % {"title": entry.title, "id": existing[0].pk, "mime": existing[0].mime}
             )
 
-    link = uploads.issue(request, entry, request.user, relation=relation)
-    logger.info("mcp.write user=%s action=create_upload_link entry=%s", request.user.pk, entry.pk)
+    link = uploads.issue(request, entry, request.user, relation=relation, kind=kind)
+    logger.info("mcp.write user=%s action=create_upload_link entry=%s kind=%s", request.user.pk, entry.pk, kind)
     return {
         "entry_id": str(entry.pk),
         "entry_title": entry.title,

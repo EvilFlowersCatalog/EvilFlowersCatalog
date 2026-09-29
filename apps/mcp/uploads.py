@@ -47,6 +47,9 @@ logger = logging.getLogger("apps.mcp.audit")
 
 SALT = "evilflowers.mcp.upload"
 UPLOADABLE_MIMES = (Acquisition.AcquisitionMIME.PDF, Acquisition.AcquisitionMIME.EPUB)
+COVER_MIMES = tuple(settings.EVILFLOWERS_IMAGE_MIME)
+KINDS = ("file", "cover")
+_IMAGE_MAGIC = {"image/jpeg": b"\xff\xd8\xff", "image/png": b"\x89PNG", "image/gif": b"GIF8"}
 
 
 class UploadRefused(Exception):
@@ -55,24 +58,36 @@ class UploadRefused(Exception):
         self.status = status
 
 
-def issue(request, entry: Entry, user: User, *, relation: Optional[str] = None) -> dict:
-    """Mint an upload link for `entry` and describe how to use it."""
+def issue(request, entry: Entry, user: User, *, relation: Optional[str] = None, kind: str = "file") -> dict:
+    """Mint an upload link for `entry` and describe how to use it.
+
+    `kind` is signed into the token, so a link issued for a cover cannot be used
+    to attach a publication file, and vice versa.
+    """
     ttl = settings.EVILFLOWERS_MCP_UPLOAD_TTL
     token = signing.dumps(
-        {"e": str(entry.pk), "u": str(user.pk), "n": uuid.uuid4().hex, "r": relation},
+        {"e": str(entry.pk), "u": str(user.pk), "n": uuid.uuid4().hex, "r": relation, "k": kind},
         salt=SALT,
         compress=True,
     )
     url = request.build_absolute_uri(reverse("mcp-upload", kwargs={"token": token}))
+    cover = kind == "cover"
     return {
+        "kind": kind,
         "upload_url": url,
         "method": "POST",
         "field": "content",
-        "accepted_mime_types": list(UPLOADABLE_MIMES),
-        "max_bytes": settings.EVILFLOWERS_MCP_UPLOAD_MAX_BYTES,
+        "accepted_mime_types": list(COVER_MIMES if cover else UPLOADABLE_MIMES),
+        "max_bytes": (
+            settings.EVILFLOWERS_IMAGE_UPLOAD_MAX_SIZE if cover else settings.EVILFLOWERS_MCP_UPLOAD_MAX_BYTES
+        ),
         "expires_at": (timezone.now() + timedelta(seconds=ttl)).isoformat(),
         "single_use": True,
-        "example": f"curl -sS -F 'content=@/path/to/file.pdf;type=application/pdf' '{url}'",
+        "example": (
+            f"curl -sS -F 'content=@\"/path/to/cover.jpg\";type=image/jpeg' '{url}'"
+            if cover
+            else f"curl -sS -F 'content=@\"/path/to/file.pdf\";type=application/pdf' '{url}'"
+        ),
     }
 
 
@@ -155,6 +170,8 @@ class McpUploadEndpoint(View):
             raise UploadRefused(
                 HTTPStatus.BAD_REQUEST, _("Send the file as multipart/form-data in a field named `content`.")
             )
+        if claims.get("k") == "cover":
+            return self._accept_cover(entry, user, uploaded, claims)
         if uploaded.size > settings.EVILFLOWERS_MCP_UPLOAD_MAX_BYTES:
             raise UploadRefused(
                 HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
@@ -195,5 +212,60 @@ class McpUploadEndpoint(View):
             status=HTTPStatus.CREATED,
         )
 
+    @staticmethod
+    def _accept_cover(entry: Entry, user: User, uploaded, claims: dict) -> JsonResponse:
+        if uploaded.size > settings.EVILFLOWERS_IMAGE_UPLOAD_MAX_SIZE:
+            raise UploadRefused(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                _("Cover exceeds %(limit)d bytes.") % {"limit": settings.EVILFLOWERS_IMAGE_UPLOAD_MAX_SIZE},
+            )
+        declared = (uploaded.content_type or "").split(";")[0].strip().lower()
+        mime = declared if declared in COVER_MIMES else (mimetypes.guess_type(uploaded.name or "")[0] or "")
+        if mime not in COVER_MIMES:
+            raise UploadRefused(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                _("Unsupported cover type '%(type)s'. Accepted: %(accepted)s.")
+                % {"type": declared or "unknown", "accepted": ", ".join(COVER_MIMES)},
+            )
+        head = uploaded.read(4)
+        uploaded.seek(0)
+        if not head.startswith(_IMAGE_MAGIC[mime]):
+            raise UploadRefused(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE, _("The file does not look like %(type)s.") % {"type": mime}
+            )
+        try:
+            from PIL import Image
 
-__all__ = ["McpUploadEndpoint", "UPLOADABLE_MIMES", "issue"]
+            Image.open(uploaded).verify()
+        except Exception:
+            raise UploadRefused(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, _("The cover image could not be decoded."))
+        uploaded.seek(0)
+
+        if not cache.add(f"mcp:upload:{claims['n']}", "used", timeout=settings.EVILFLOWERS_MCP_UPLOAD_TTL + 60):
+            raise UploadRefused(HTTPStatus.GONE, _("This upload link has already been used."))
+
+        from apps.api.services.entry import set_cover
+
+        old = (entry.image.name, entry.thumbnail.name)
+        set_cover(entry, uploaded, mime=mime)  # FieldFile.save() persists the entry, as the REST path does
+        # A replaced cover can land on a new path (e.g. cover.png → cover.jpg).
+        for previous, current in zip(old, (entry.image.name, entry.thumbnail.name)):
+            if previous and previous != current:
+                entry.image.storage.delete(previous)
+
+        logger.info(
+            "mcp.write user=%s action=upload_cover entry=%s mime=%s bytes=%s", user.pk, entry.pk, mime, uploaded.size
+        )
+        return JsonResponse(
+            {
+                "entry_id": str(entry.pk),
+                "kind": "cover",
+                "mime": mime,
+                "bytes": uploaded.size,
+                "thumbnail_mime": entry.thumbnail_mime,
+            },
+            status=HTTPStatus.CREATED,
+        )
+
+
+__all__ = ["COVER_MIMES", "KINDS", "McpUploadEndpoint", "UPLOADABLE_MIMES", "issue"]
