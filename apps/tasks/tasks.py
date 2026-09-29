@@ -10,3 +10,10 @@ def backup():
             "backup",
             destination=settings.EVILFLOWERS_BACKUP_DESTINATION,
         )
+
+
+@shared_task
+def prune_user_activity() -> int:
+    from apps.core.services.activity import ActivityService
+
+    return ActivityService.prune()
