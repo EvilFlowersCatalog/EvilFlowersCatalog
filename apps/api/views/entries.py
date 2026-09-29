@@ -71,6 +71,11 @@ logger = logging.getLogger("apps.api.views.entries")
 
 
 def shelf_record_mapping(user: User) -> dict[UUID, UUID]:
+    # An anonymous caller has no shelf. Filtering by `AnonymousUser` raises a
+    # ValidationError (500) — reachable when a client's token fails to parse,
+    # e.g. the portal appending `?access_token=` to a URL that already has a query.
+    if not user.is_authenticated:
+        return {}
     return {
         shelf_record["entry_id"]: shelf_record["id"]
         for shelf_record in ShelfRecord.objects.filter(user=user).values("entry_id", "id")

@@ -31,6 +31,12 @@ from apps.readium.views._license_lookup import resolve_license
 logger = logging.getLogger(__name__)
 
 
+def _uri_template_suffix(href: str) -> str:
+    """The RFC 6570 query expression at the end of an LSD link, e.g. `{?id,name}`, or ''."""
+    start = href.find("{?")
+    return href[start:] if start != -1 and href.endswith("}") else ""
+
+
 class StatusProxyView(SecuredView):
     """Base for all LSD proxy endpoints."""
 
@@ -104,8 +110,17 @@ class StatusProxyView(SecuredView):
             internal_host = self._internal_lsd_host()
             for link in data["links"]:
                 rel = link.get("rel", "")
+                # LSD marks register/renew/return as RFC 6570 templates
+                # (`…/register{?id,name}`, `…/renew{?end,id,name}`) and the reader
+                # expands them with its device id and name. Keep that suffix on
+                # the proxied URL — without it the reader sends no `id`, and the
+                # LSD rejects the registration (400 → our 502 "Failed to
+                # register device"; seen from Thorium 2026-09-29).
+                template = _uri_template_suffix(link.get("href", ""))
                 if rel == "register":
-                    link["href"] = f"{base_url}{reverse('readium:lsd-register', kwargs={'license_id': license_id})}"
+                    link["href"] = (
+                        f"{base_url}{reverse('readium:lsd-register', kwargs={'license_id': license_id})}{template}"
+                    )
                     continue
                 if rel == "license":
                     # The License Document link — NOT the device-register
@@ -114,10 +129,14 @@ class StatusProxyView(SecuredView):
                     link["href"] = self._license_gateway_url(base_url, license_obj)
                     continue
                 if rel == "return":
-                    link["href"] = f"{base_url}{reverse('readium:lsd-return', kwargs={'license_id': license_id})}"
+                    link["href"] = (
+                        f"{base_url}{reverse('readium:lsd-return', kwargs={'license_id': license_id})}{template}"
+                    )
                     continue
                 if rel == "renew":
-                    link["href"] = f"{base_url}{reverse('readium:lsd-renew', kwargs={'license_id': license_id})}"
+                    link["href"] = (
+                        f"{base_url}{reverse('readium:lsd-renew', kwargs={'license_id': license_id})}{template}"
+                    )
                     continue
                 if rel == "hint":
                     # Carry the license through: without it the page can only
