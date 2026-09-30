@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "6db7f28fd6919ddbdbae52f236502b67faf6dd1c",
-    "short": "6db7f28",
-    "message": "fix: facets year range on PartialDateField",
+    "sha": "7518afdf43b056ae8775971474ef9dcc26c06ebf",
+    "short": "7518afd",
+    "message": "fix(assistant): attach the referenced publication to messages",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/6db7f28fd6919ddbdbae52f236502b67faf6dd1c"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/7518afdf43b056ae8775971474ef9dcc26c06ebf"
   },
-  "deployed_at": "2026-09-30T12:22:24Z",
+  "deployed_at": "2026-09-30T12:33:50Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
