@@ -6,7 +6,6 @@ from uuid import UUID
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Max, Min
-from django.db.models.functions import ExtractYear
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -165,9 +164,12 @@ class EntryFacets(SecuredView):
         states.pop(LcpState.NOT_LCP.value, None)
         facets["availability"] = [{"state": state, "count": count} for state, count in states.most_common() if count]
 
-        facets["years"] = self._entries_without(request, "published_at__gte", "published_at__lte").aggregate(
-            min=Min(ExtractYear("published_at")), max=Max(ExtractYear("published_at"))
+        # `published_at` is a PartialDateField (a plain Field, so ExtractYear rejects it);
+        # Min/Max come back as PartialDate via the field's converter.
+        bounds = self._entries_without(request, "published_at__gte", "published_at__lte").aggregate(
+            min=Min("published_at"), max=Max("published_at")
         )
+        facets["years"] = {key: value.date.year if value else None for key, value in bounds.items()}
 
         return SingleResponse(request, data=EntryFacetSerializer.Base.model_validate(facets))
 
