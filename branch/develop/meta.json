@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "380c487972814a5ee60130d35c5f828e6d4304c0",
-    "short": "380c487",
-    "message": "feat: entry facet counts endpoint and reserved availability filter",
+    "sha": "77dbbb10839b5d6e1ba39252a4322aec96d12a43",
+    "short": "77dbbb1",
+    "message": "feat: availability counts and year range in entry facets",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/380c487972814a5ee60130d35c5f828e6d4304c0"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/77dbbb10839b5d6e1ba39252a4322aec96d12a43"
   },
-  "deployed_at": "2026-09-30T11:57:56Z",
+  "deployed_at": "2026-09-30T12:14:17Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
