@@ -8,6 +8,7 @@ from typing import List, Optional
 from django.conf import settings
 from django.db.models import Sum
 from django.utils import timezone
+from django.utils.html import strip_tags
 
 from apps.assistant.models import Chat, ChatMessage
 from apps.assistant.tools import DISPLAY_BOOKS
@@ -115,7 +116,8 @@ def assert_within_quota(user) -> Usage:
 
 
 def _history_queryset(chat: Chat):
-    return chat.messages.order_by("created_at")
+    # `entry` is read for every user message that carries one (see `_as_message`).
+    return chat.messages.select_related("entry").order_by("created_at")
 
 
 def conversation(chat: Chat) -> List[dict]:
@@ -156,12 +158,24 @@ def _is_cold(chat: Chat) -> bool:
     return age > settings.EVILFLOWERS_ASSISTANT_CACHE_TTL
 
 
-def entry_note(entry_id) -> str:
-    """Tells the model which publication the reader means; it resolves the id with `get_entry`."""
-    return (
-        f"The reader is asking about the publication with id {entry_id}. "
-        "Look it up with the get_entry tool before answering."
-    )
+#: How much of a publication's summary is inlined into the note about it.
+ENTRY_NOTE_SUMMARY_CHARS = 500
+
+
+def entry_note(entry) -> str:
+    """Tells the model which publication the reader attached.
+
+    Title and a short plain-text summary are inlined so the model can answer
+    straight away; `get_entry` stays available when it needs more.
+    """
+    summary = " ".join(strip_tags(entry.summary or "").split())
+    if len(summary) > ENTRY_NOTE_SUMMARY_CHARS:
+        summary = summary[:ENTRY_NOTE_SUMMARY_CHARS].rsplit(" ", 1)[0] + "…"
+
+    note = f'The reader is attaching the publication {entry.pk}: "{entry.title}"'
+    if summary:
+        note += f" — {summary}"
+    return note + "\nAnswer from this when it is enough; use the get_entry tool for more detail."
 
 
 def _as_message(row: ChatMessage) -> dict:
@@ -169,9 +183,9 @@ def _as_message(row: ChatMessage) -> dict:
         return {"role": "tool", "content": row.text}
 
     text = row.text
-    if row.role == ChatMessage.Role.USER and row.entry_id is not None:
-        # Derived from the stored row only, so the replayed prefix stays identical.
-        text = f"[{entry_note(row.entry_id)}]\n\n{text}"
+    if row.role == ChatMessage.Role.USER and row.entry is not None:
+        # Derived from the stored rows only, so the replayed prefix stays identical.
+        text = f"[{entry_note(row.entry)}]\n\n{text}"
 
     message: dict = {"role": row.role, "content": text}
     if row.tool_calls:
@@ -185,6 +199,6 @@ def opening_context(chat: Chat) -> Optional[str]:
     Added once, right after the system prompt, so it stays part of the stable
     prefix rather than being re-injected on every request.
     """
-    if chat.entry_id is None:
+    if chat.entry is None:
         return None
-    return entry_note(chat.entry_id)
+    return entry_note(chat.entry)
