@@ -63,6 +63,13 @@ class ChatMessage(BaseModel):
     role = models.CharField(max_length=10, choices=Role.choices)
     text = models.TextField(blank=True, default="")
 
+    #: Publication the reader attached to this message ("ask about this book").
+    #: Replayed to the model as a note on the message. SET_NULL so removing a
+    #: publication does not rewrite the conversation around it.
+    entry = models.ForeignKey(
+        "core.Entry", on_delete=models.SET_NULL, null=True, blank=True, related_name="assistant_messages"
+    )
+
     #: Tool calls the model asked for on this turn, as issued. Empty for plain
     #: user and assistant messages.
     tool_calls = models.JSONField(null=True, blank=True)

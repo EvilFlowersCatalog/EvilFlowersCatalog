@@ -185,7 +185,7 @@ class ChatMessages(AssistantView):
             ) from error
 
         response = StreamingHttpResponse(
-            turn.run(request, chat, form.cleaned_data["message"]),
+            turn.run(request, chat, form.cleaned_data["message"], entry=form.cleaned_data.get("entry_id")),
             content_type="text/event-stream",
         )
         response["Cache-Control"] = "no-cache"

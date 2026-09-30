@@ -132,6 +132,10 @@ def conversation(chat: Chat) -> List[dict]:
     """
     messages: List[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
+    opening = opening_context(chat)
+    if opening:
+        messages.append({"role": "system", "content": opening})
+
     rows = _history_queryset(chat)
 
     if _is_cold(chat):
@@ -152,11 +156,24 @@ def _is_cold(chat: Chat) -> bool:
     return age > settings.EVILFLOWERS_ASSISTANT_CACHE_TTL
 
 
+def entry_note(entry_id) -> str:
+    """Tells the model which publication the reader means; it resolves the id with `get_entry`."""
+    return (
+        f"The reader is asking about the publication with id {entry_id}. "
+        "Look it up with the get_entry tool before answering."
+    )
+
+
 def _as_message(row: ChatMessage) -> dict:
     if row.role == ChatMessage.Role.TOOL:
         return {"role": "tool", "content": row.text}
 
-    message: dict = {"role": row.role, "content": row.text}
+    text = row.text
+    if row.role == ChatMessage.Role.USER and row.entry_id is not None:
+        # Derived from the stored row only, so the replayed prefix stays identical.
+        text = f"[{entry_note(row.entry_id)}]\n\n{text}"
+
+    message: dict = {"role": row.role, "content": text}
     if row.tool_calls:
         message["tool_calls"] = row.tool_calls
     return message
@@ -165,9 +182,9 @@ def _as_message(row: ChatMessage) -> dict:
 def opening_context(chat: Chat) -> Optional[str]:
     """A note pinning the conversation to a publication, when it started from one.
 
-    Added once, as the first user-visible turn, so it stays part of the stable
+    Added once, right after the system prompt, so it stays part of the stable
     prefix rather than being re-injected on every request.
     """
     if chat.entry_id is None:
         return None
-    return f"The reader is asking about the publication with id {chat.entry_id}."
+    return entry_note(chat.entry_id)

@@ -30,17 +30,18 @@ def sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
-def run(request, chat: Chat, text: str) -> Iterator[str]:
+def run(request, chat: Chat, text: str, entry=None) -> Iterator[str]:
     """Drive one turn, yielding SSE frames.
 
     The generator body runs while the response streams, so anything raised here
     surfaces as an `error` frame rather than an HTTP status — the status line is
-    long gone by then.
+    long gone by then. `entry` is the publication the reader attached to this
+    message, if any.
     """
     user = request.user
     client = OllamaClient()
 
-    ChatMessage.objects.create(chat=chat, user=user, role=ChatMessage.Role.USER, text=text)
+    ChatMessage.objects.create(chat=chat, user=user, role=ChatMessage.Role.USER, text=text, entry=entry)
 
     try:
         for frame in _rounds(request, chat, client):
