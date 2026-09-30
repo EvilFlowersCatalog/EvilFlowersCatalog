@@ -213,8 +213,20 @@ class EntryFacetItem(Serializer):
     count: int
 
 
+class EntryFacetAvailability(Serializer):
+    state: str
+    count: int
+
+
+class EntryFacetYears(Serializer):
+    min: Optional[int]
+    max: Optional[int]
+
+
 class EntryFacetSerializer:
     class Base(Serializer):
         languages: List[EntryFacetLanguage]
         categories: List[EntryFacetItem]
         feeds: List[EntryFacetItem]
+        availability: List[EntryFacetAvailability]
+        years: EntryFacetYears
