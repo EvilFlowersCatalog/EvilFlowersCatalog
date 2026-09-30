@@ -15,3 +15,7 @@ class ChatForm(Form):
 
 class MessageForm(Form):
     message = forms.CharField(max_length=8000, strip=True)
+
+    #: Publication the reader is asking about with this message, when they picked
+    #: one ("ask about this book"). Can differ from message to message.
+    entry_id = forms.ModelChoiceField(queryset=Entry.objects.all(), required=False)

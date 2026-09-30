@@ -8,6 +8,7 @@ from typing import List, Optional
 from django.conf import settings
 from django.db.models import Sum
 from django.utils import timezone
+from django.utils.html import strip_tags
 
 from apps.assistant.models import Chat, ChatMessage
 from apps.assistant.tools import DISPLAY_BOOKS
@@ -20,6 +21,10 @@ SYSTEM_PROMPT = (
     "Use `search_entries` to find publications. It filters by title, author, category, language, "
     "publication date and borrowing availability — use the `lcp_states` filter when the reader "
     "asks what they can borrow right now. Use `get_entry` for details about one publication.\n\n"
+    "Most publications are catalogued in English. When a search with the reader's own words finds "
+    "nothing, translate the key terms to English and search again before saying nothing was found.\n\n"
+    "Always reply in the language the reader writes in. A reader writing in Slovak must get Slovak, "
+    "never Czech.\n\n"
     f"Whenever you mention specific publications, call `{DISPLAY_BOOKS}` with their ids so the "
     "reader sees them as cards, and keep your own reply brief instead of repeating titles and "
     "authors in prose.\n\n"
@@ -115,7 +120,8 @@ def assert_within_quota(user) -> Usage:
 
 
 def _history_queryset(chat: Chat):
-    return chat.messages.order_by("created_at")
+    # `entry` is read for every user message that carries one (see `_as_message`).
+    return chat.messages.select_related("entry").order_by("created_at")
 
 
 def conversation(chat: Chat) -> List[dict]:
@@ -131,6 +137,10 @@ def conversation(chat: Chat) -> List[dict]:
     or the cache is invalidated on every turn.
     """
     messages: List[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    opening = opening_context(chat)
+    if opening:
+        messages.append({"role": "system", "content": opening})
 
     rows = _history_queryset(chat)
 
@@ -152,11 +162,36 @@ def _is_cold(chat: Chat) -> bool:
     return age > settings.EVILFLOWERS_ASSISTANT_CACHE_TTL
 
 
+#: How much of a publication's summary is inlined into the note about it.
+ENTRY_NOTE_SUMMARY_CHARS = 500
+
+
+def entry_note(entry) -> str:
+    """Tells the model which publication the reader attached.
+
+    Title and a short plain-text summary are inlined so the model can answer
+    straight away; `get_entry` stays available when it needs more.
+    """
+    summary = " ".join(strip_tags(entry.summary or "").split())
+    if len(summary) > ENTRY_NOTE_SUMMARY_CHARS:
+        summary = summary[:ENTRY_NOTE_SUMMARY_CHARS].rsplit(" ", 1)[0] + "…"
+
+    note = f'The reader is attaching the publication {entry.pk}: "{entry.title}"'
+    if summary:
+        note += f" — {summary}"
+    return note + "\nAnswer from this when it is enough; use the get_entry tool for more detail."
+
+
 def _as_message(row: ChatMessage) -> dict:
     if row.role == ChatMessage.Role.TOOL:
         return {"role": "tool", "content": row.text}
 
-    message: dict = {"role": row.role, "content": row.text}
+    text = row.text
+    if row.role == ChatMessage.Role.USER and row.entry is not None:
+        # Derived from the stored rows only, so the replayed prefix stays identical.
+        text = f"[{entry_note(row.entry)}]\n\n{text}"
+
+    message: dict = {"role": row.role, "content": text}
     if row.tool_calls:
         message["tool_calls"] = row.tool_calls
     return message
@@ -165,9 +200,9 @@ def _as_message(row: ChatMessage) -> dict:
 def opening_context(chat: Chat) -> Optional[str]:
     """A note pinning the conversation to a publication, when it started from one.
 
-    Added once, as the first user-visible turn, so it stays part of the stable
+    Added once, right after the system prompt, so it stays part of the stable
     prefix rather than being re-injected on every request.
     """
-    if chat.entry_id is None:
+    if chat.entry is None:
         return None
-    return f"The reader is asking about the publication with id {chat.entry_id}."
+    return entry_note(chat.entry)

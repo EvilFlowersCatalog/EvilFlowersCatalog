@@ -23,24 +23,26 @@ from apps.assistant.models import Chat, ChatMessage
 logger = logging.getLogger(__name__)
 
 #: How many times the model may call tools before it must produce an answer.
-MAX_TOOL_ROUNDS = 4
+#: search → refine → get_entry → display is already four, so leave headroom.
+MAX_TOOL_ROUNDS = 6
 
 
 def sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
-def run(request, chat: Chat, text: str) -> Iterator[str]:
+def run(request, chat: Chat, text: str, entry=None) -> Iterator[str]:
     """Drive one turn, yielding SSE frames.
 
     The generator body runs while the response streams, so anything raised here
     surfaces as an `error` frame rather than an HTTP status — the status line is
-    long gone by then.
+    long gone by then. `entry` is the publication the reader attached to this
+    message, if any.
     """
     user = request.user
     client = OllamaClient()
 
-    ChatMessage.objects.create(chat=chat, user=user, role=ChatMessage.Role.USER, text=text)
+    ChatMessage.objects.create(chat=chat, user=user, role=ChatMessage.Role.USER, text=text, entry=entry)
 
     try:
         for frame in _rounds(request, chat, client):
@@ -78,14 +80,22 @@ def _rounds(request, chat: Chat, client: OllamaClient) -> Iterator[str]:
             )
             return
 
+        # Showing cards is the answer, not a lookup: when displayBooks is all the
+        # model asked for, its text and the cards close the turn. Asking it again
+        # only made it call more tools until the rounds ran out.
+        only_display = all(
+            tools.is_display_books((call.get("function") or {}).get("name") or "") for call in tool_calls
+        )
+
         # The assistant turn that requested the tools has to be recorded before
         # their results, or the replayed conversation would show results with
-        # nothing asking for them.
+        # nothing asking for them. When it closes the turn, its text moves to the
+        # closing answer below so the reader sees it when the chat is read back.
         ChatMessage.objects.create(
             chat=chat,
             user=chat.user,
             role=ChatMessage.Role.ASSISTANT,
-            text=content,
+            text="" if only_display else content,
             tool_calls=tool_calls,
             tokens_used=tokens,
         )
@@ -95,13 +105,32 @@ def _rounds(request, chat: Chat, client: OllamaClient) -> Iterator[str]:
                 if entry_id not in displayed:
                     displayed.append(entry_id)
 
-    # Out of rounds: say so rather than leaving the reader with silence.
+        if only_display:
+            ChatMessage.objects.create(
+                chat=chat,
+                user=chat.user,
+                role=ChatMessage.Role.ASSISTANT,
+                text=content,
+                displayed_entries=displayed or None,
+            )
+            return
+
+    if displayed:
+        # Out of rounds, but publications were already shown — that is an answer.
+        ChatMessage.objects.create(
+            chat=chat,
+            user=chat.user,
+            role=ChatMessage.Role.ASSISTANT,
+            displayed_entries=displayed,
+        )
+        return
+
+    # Out of rounds with nothing to show: say so rather than leaving the reader with silence.
     ChatMessage.objects.create(
         chat=chat,
         user=chat.user,
         role=ChatMessage.Role.ASSISTANT,
         text=str(_("I could not complete that search. Could you rephrase it?")),
-        displayed_entries=displayed or None,
     )
     yield sse("message", {"text": str(_("I could not complete that search. Could you rephrase it?"))})
 

@@ -1,9 +1,11 @@
 import json
+from collections import Counter
 from http import HTTPStatus
 from uuid import UUID
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Count, Max, Min
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -16,7 +18,7 @@ from apps.core.errors import ValidationException, ProblemDetailException, Detail
 from apps.api.filters.entries import EntryFilter
 from apps.api.forms.entries import EntryForm, AcquisitionMetaForm
 from apps.api.response import SingleResponse, PaginationResponse
-from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer
+from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer, EntryFacetSerializer, LcpState
 from apps.api.services.entry import EntryService, attach_acquisition
 from apps.core.models import Entry, Acquisition, Price, Catalog, ShelfRecord, User
 from apps.core.views import SecuredView
@@ -110,6 +112,66 @@ class EntryPaginator(SecuredView):
             serializer_context={"shelf_entries": shelf_record_mapping(request.user), "request": request},
             context_builder=lambda items: {"lcp_states": lcp_state_mapping(request.user, items)},
         )
+
+
+class EntryFacets(SecuredView):
+    # Facet key -> (EntryFilter param that filters on that dimension, grouped field, output key).
+    DIMENSIONS = {
+        "languages": ("language_code", "language__alpha2", "code"),
+        "categories": ("category_id", "categories__id", "id"),
+        "feeds": ("feed_id", "feeds__id", "id"),
+    }
+
+    @staticmethod
+    def _entries_without(request, *params):
+        """Entries matching every active filter except the given params (a facet ignores its own filter)."""
+        query = request.GET.copy()
+        for param in params:
+            query.pop(param, None)
+        matching = EntryFilter(query, queryset=Entry.objects.all(), request=request).qs.order_by().values("pk")
+        return Entry.objects.filter(pk__in=matching)
+
+    @openapi.metadata(
+        description=(
+            "Per-value entry counts for the language, category, feed and availability (`lcp_state`) filters, "
+            "plus the publication year range. Accepts the same query parameters as `GET /api/v1/entries`. "
+            "Each dimension is computed with every active filter applied except its own, so selecting a "
+            "language still shows the other languages that could be OR-ed in. Only values with at least one "
+            "entry are returned, sorted by count. Availability counts use the `lcp_state` values plus the "
+            "`reserved` pseudo-state (an entry the user has reserved is also counted under its LCP state)."
+        ),
+        tags=["Entries"],
+        summary="Facet counts for entry filters",
+    )
+    def get(self, request):
+        facets = {}
+        for dimension, (param, field, key) in self.DIMENSIONS.items():
+            rows = (
+                self._entries_without(request, param)
+                .filter(**{f"{field}__isnull": False})
+                .values(field)
+                .annotate(count=Count("pk", distinct=True))
+                .order_by("-count")
+            )
+            facets[dimension] = [{key: row[field], "count": row["count"]} for row in rows]
+
+        states = Counter()
+        for row in lcp_state_mapping(request.user, self._entries_without(request, "lcp_state")).values():
+            state = row["lcp_state"]
+            states[state.value if hasattr(state, "value") else str(state)] += 1
+            if row.get("user_reservation_id") is not None:
+                states["reserved"] += 1
+        states.pop(LcpState.NOT_LCP.value, None)
+        facets["availability"] = [{"state": state, "count": count} for state, count in states.most_common() if count]
+
+        # `published_at` is a PartialDateField (a plain Field, so ExtractYear rejects it);
+        # Min/Max come back as PartialDate via the field's converter.
+        bounds = self._entries_without(request, "published_at__gte", "published_at__lte").aggregate(
+            min=Min("published_at"), max=Max("published_at")
+        )
+        facets["years"] = {key: value.date.year if value else None for key, value in bounds.items()}
+
+        return SingleResponse(request, data=EntryFacetSerializer.Base.model_validate(facets))
 
 
 class EntryIntrospection(SecuredView):

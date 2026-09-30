@@ -12,6 +12,8 @@ class ChatMessageSerializer:
         id: UUID
         role: str
         text: str
+        #: Publication the reader attached to this message, if any.
+        entry_id: Optional[UUID]
         displayed_entries: Optional[list]
         tokens_used: int
         created_at: datetime
