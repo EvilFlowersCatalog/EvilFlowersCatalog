@@ -201,3 +201,20 @@ class EntrySerializer:
             if hasattr(v, "values_list"):
                 return list(v.values_list("id", flat=True))
             return list(v) if v else []
+
+
+class EntryFacetLanguage(Serializer):
+    code: str
+    count: int
+
+
+class EntryFacetItem(Serializer):
+    id: UUID
+    count: int
+
+
+class EntryFacetSerializer:
+    class Base(Serializer):
+        languages: List[EntryFacetLanguage]
+        categories: List[EntryFacetItem]
+        feeds: List[EntryFacetItem]

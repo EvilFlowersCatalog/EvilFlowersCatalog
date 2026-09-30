@@ -4,6 +4,7 @@ from uuid import UUID
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Count
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -16,7 +17,7 @@ from apps.core.errors import ValidationException, ProblemDetailException, Detail
 from apps.api.filters.entries import EntryFilter
 from apps.api.forms.entries import EntryForm, AcquisitionMetaForm
 from apps.api.response import SingleResponse, PaginationResponse
-from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer
+from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer, EntryFacetSerializer
 from apps.api.services.entry import EntryService, attach_acquisition
 from apps.core.models import Entry, Acquisition, Price, Catalog, ShelfRecord, User
 from apps.core.views import SecuredView
@@ -110,6 +111,50 @@ class EntryPaginator(SecuredView):
             serializer_context={"shelf_entries": shelf_record_mapping(request.user), "request": request},
             context_builder=lambda items: {"lcp_states": lcp_state_mapping(request.user, items)},
         )
+
+
+class EntryFacets(SecuredView):
+    # Facet key -> the EntryFilter param that filters on that dimension.
+    DIMENSIONS = {
+        "languages": "language_code",
+        "categories": "category_id",
+        "feeds": "feed_id",
+    }
+
+    @openapi.metadata(
+        description=(
+            "Per-value entry counts for the language, category and feed filters. Accepts the same query "
+            "parameters as `GET /api/v1/entries`. Each dimension is counted with every active filter applied "
+            "except its own, so selecting a language still shows the other languages that could be OR-ed in. "
+            "Only values with at least one entry are returned, sorted by count."
+        ),
+        tags=["Entries"],
+        summary="Facet counts for entry filters",
+    )
+    def get(self, request):
+        facets = {}
+        for dimension, param in self.DIMENSIONS.items():
+            params = request.GET.copy()
+            params.pop(param, None)
+            matching = EntryFilter(params, queryset=Entry.objects.all(), request=request).qs.order_by().values("pk")
+            entries = Entry.objects.filter(pk__in=matching)
+
+            if dimension == "languages":
+                field, key = "language__alpha2", "code"
+            elif dimension == "categories":
+                field, key = "categories__id", "id"
+            else:
+                field, key = "feeds__id", "id"
+
+            rows = (
+                entries.filter(**{f"{field}__isnull": False})
+                .values(field)
+                .annotate(count=Count("pk", distinct=True))
+                .order_by("-count")
+            )
+            facets[dimension] = [{key: row[field], "count": row["count"]} for row in rows]
+
+        return SingleResponse(request, data=EntryFacetSerializer.Base.model_validate(facets))
 
 
 class EntryIntrospection(SecuredView):

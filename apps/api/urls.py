@@ -59,6 +59,7 @@ urlpatterns = [
     ),
     # Entries
     path("entries", entries.EntryPaginator.as_view()),
+    path("entries/facets", entries.EntryFacets.as_view()),
     path("entry-introspection", entries.EntryIntrospection.as_view()),
     path("catalogs/<uuid:catalog_id>/entries", entries.EntryManagement.as_view()),
     path(

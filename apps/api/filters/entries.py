@@ -124,7 +124,9 @@ class EntryFilter(BaseSecuredFilter):
         help_text=(
             "Filter entries by computed LCP availability state. Accepts a single value or "
             "a comma-separated list of: `not_lcp`, `available_now`, `available_in_days`, "
-            "`active_loan_for_user`, `fully_borrowed` (e.g. `?lcp_state=fully_borrowed,available_in_days`)."
+            "`active_loan_for_user`, `fully_borrowed` (e.g. `?lcp_state=fully_borrowed,available_in_days`). "
+            "The pseudo-state `reserved` matches entries the requesting user holds a queued or "
+            "ready reservation on; values are OR-ed."
         ),
     )
     over_saturated = django_filters.BooleanFilter(
@@ -364,7 +366,10 @@ class EntryFilter(BaseSecuredFilter):
             entry.pk
             for entry in materialized
             if (row := mapping.get(entry.pk)) is not None
-            and str(row["lcp_state"].value if hasattr(row["lcp_state"], "value") else row["lcp_state"]) in states
+            and (
+                str(row["lcp_state"].value if hasattr(row["lcp_state"], "value") else row["lcp_state"]) in states
+                or ("reserved" in states and row.get("user_reservation_id") is not None)
+            )
         ]
         return qs.filter(pk__in=matching_ids)
 
