@@ -25,6 +25,7 @@ from http import HTTPStatus
 from uuid import UUID
 
 from django.http import JsonResponse
+from django.utils.http import content_disposition_header
 from django.utils.translation import gettext as _
 from django.views import View
 
@@ -120,7 +121,7 @@ class LicenseDownloadView(View):
         try:
             fresh_license = LicenseService.fetch_fresh_license(license)
             response = JsonResponse(fresh_license, content_type="application/vnd.readium.lcp.license.v1.0+json")
-            response["Content-Disposition"] = f'attachment; filename="{license.entry.title}.lcpl"'
+            response["Content-Disposition"] = content_disposition_header(True, f"{license.entry.title}.lcpl")
         except ValueError as e:
             raise ProblemDetailException(
                 str(e),
