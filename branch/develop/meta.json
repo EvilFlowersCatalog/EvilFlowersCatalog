@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "0296202f1dbf11d41363d26dda68546dc12463e3",
-    "short": "0296202",
-    "message": "fix(assistant): end the turn when displayBooks answers it",
+    "sha": "eef970befff2f2d79eb61e11f4612a9fcdea9331",
+    "short": "eef970b",
+    "message": "fix(readium): do not promote reservations on entries with lending switched off",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/0296202f1dbf11d41363d26dda68546dc12463e3"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/eef970befff2f2d79eb61e11f4612a9fcdea9331"
   },
-  "deployed_at": "2026-09-30T12:42:59Z",
+  "deployed_at": "2026-10-08T09:35:24Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
