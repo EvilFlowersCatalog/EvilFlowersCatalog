@@ -5416,155 +5416,6 @@
           "items"
         ]
       },
-      "Base": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "role": {
-            "title": "Role",
-            "type": "string"
-          },
-          "text": {
-            "title": "Text",
-            "type": "string"
-          },
-          "entry_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Entry Id"
-          },
-          "displayed_entries": {
-            "anyOf": [
-              {
-                "items": {},
-                "type": "array"
-              }
-            ],
-            "nullable": true,
-            "title": "Displayed Entries"
-          },
-          "tokens_used": {
-            "title": "Tokens Used",
-            "type": "integer"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "role",
-          "text",
-          "entry_id",
-          "displayed_entries",
-          "tokens_used",
-          "created_at"
-        ],
-        "title": "ChatMessageSerializer.Base",
-        "type": "object"
-      },
-      "apps__assistant__serializers__ChatSerializer__Detailed": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "entry_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Entry Id"
-          },
-          "catalog_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Catalog Id"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "is_active": {
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "message_count": {
-            "title": "Message Count",
-            "type": "integer"
-          },
-          "total_tokens": {
-            "title": "Total Tokens",
-            "type": "integer"
-          },
-          "last_message_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Last Message At"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "messages": {
-            "items": {
-              "$ref": "#/components/schemas/Base"
-            },
-            "title": "Messages",
-            "type": "array"
-          }
-        },
-        "required": [
-          "id",
-          "user_id",
-          "entry_id",
-          "catalog_id",
-          "title",
-          "is_active",
-          "message_count",
-          "total_tokens",
-          "last_message_at",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "ChatSerializer.Detailed",
-        "type": "object"
-      },
       "PaginationModel": {
         "properties": {
           "page": {
@@ -5993,96 +5844,6 @@
         "title": "LcpState",
         "type": "string"
       },
-      "LicenseState": {
-        "enum": [
-          "ready",
-          "active",
-          "returned",
-          "expired",
-          "revoked",
-          "cancelled"
-        ],
-        "title": "LicenseState",
-        "type": "string"
-      },
-      "apps__readium__serializers__LicenseSerializer__Detailed": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "entry_id": {
-            "format": "uuid",
-            "title": "Entry Id",
-            "type": "string"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "state": {
-            "$ref": "#/components/schemas/LicenseState"
-          },
-          "starts_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Starts At"
-          },
-          "expires_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Expires At"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "renewal_count": {
-            "default": 0,
-            "title": "Renewal Count",
-            "type": "integer"
-          },
-          "download_url": {
-            "default": "",
-            "title": "Download Url",
-            "type": "string"
-          },
-          "entry": {
-            "$ref": "#/components/schemas/apps__api__serializers__entries__EntrySerializer__Base"
-          }
-        },
-        "required": [
-          "id",
-          "entry_id",
-          "user_id",
-          "state",
-          "starts_at",
-          "expires_at",
-          "created_at",
-          "updated_at",
-          "entry"
-        ],
-        "title": "LicenseSerializer.Detailed",
-        "type": "object"
-      },
       "apps__api__serializers__entries__EntrySerializer__Detailed": {
         "properties": {
           "id": {
@@ -6434,6 +6195,148 @@
         "title": "UserCatalog",
         "type": "object"
       },
+      "apps__assistant__serializers__ChatSerializer__Base": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "entry_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Entry Id"
+          },
+          "catalog_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Catalog Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "message_count": {
+            "title": "Message Count",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "last_message_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Last Message At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "entry_id",
+          "catalog_id",
+          "title",
+          "is_active",
+          "message_count",
+          "total_tokens",
+          "last_message_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ChatSerializer.Base",
+        "type": "object"
+      },
+      "apps__assistant__serializers__ChatMessageSerializer__Base": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "entry_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Entry Id"
+          },
+          "displayed_entries": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "nullable": true,
+            "title": "Displayed Entries"
+          },
+          "tokens_used": {
+            "title": "Tokens Used",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "text",
+          "entry_id",
+          "displayed_entries",
+          "tokens_used",
+          "created_at"
+        ],
+        "title": "ChatMessageSerializer.Base",
+        "type": "object"
+      },
       "apps__api__serializers__catalogs__CatalogSerializer__Base": {
         "properties": {
           "id": {
@@ -6664,6 +6567,96 @@
         "title": "EntryFacetLanguage",
         "type": "object"
       },
+      "LicenseState": {
+        "enum": [
+          "ready",
+          "active",
+          "returned",
+          "expired",
+          "revoked",
+          "cancelled"
+        ],
+        "title": "LicenseState",
+        "type": "string"
+      },
+      "apps__readium__serializers__LicenseSerializer__Detailed": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "entry_id": {
+            "format": "uuid",
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/LicenseState"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Starts At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Expires At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "renewal_count": {
+            "default": 0,
+            "title": "Renewal Count",
+            "type": "integer"
+          },
+          "download_url": {
+            "default": "",
+            "title": "Download Url",
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/apps__api__serializers__entries__EntrySerializer__Base"
+          }
+        },
+        "required": [
+          "id",
+          "entry_id",
+          "user_id",
+          "state",
+          "starts_at",
+          "expires_at",
+          "created_at",
+          "updated_at",
+          "entry"
+        ],
+        "title": "LicenseSerializer.Detailed",
+        "type": "object"
+      },
       "apps__api__serializers__entries__AcquisitionSerializer__Detailed": {
         "properties": {
           "relation": {
@@ -6775,6 +6768,24 @@
           "message"
         ],
         "title": "ValidationErrorItem",
+        "type": "object"
+      },
+      "apps__api__serializers__entries__EntryFacetAvailability": {
+        "properties": {
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "count"
+        ],
+        "title": "EntryFacetAvailability",
         "type": "object"
       },
       "apps__api__serializers__entries__EntrySerializer__Base": {
@@ -7012,24 +7023,6 @@
         "title": "EntrySerializer.Base",
         "type": "object"
       },
-      "apps__api__serializers__entries__EntryFacetAvailability": {
-        "properties": {
-          "state": {
-            "title": "State",
-            "type": "string"
-          },
-          "count": {
-            "title": "Count",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "state",
-          "count"
-        ],
-        "title": "EntryFacetAvailability",
-        "type": "object"
-      },
       "apps__api__serializers__entries__AuthorSerializer__Base": {
         "properties": {
           "id": {
@@ -7088,6 +7081,108 @@
           "updated_at"
         ],
         "title": "ShelfRecordSerializer.Base",
+        "type": "object"
+      },
+      "Status": {
+        "enum": [
+          "queued",
+          "available",
+          "claimed",
+          "expired",
+          "cancelled"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "apps__readium__serializers__ReservationSerializer__Detailed": {
+        "description": "Reservation list/detail for the portal: embeds the entry so the queue\nUI can render title/author/thumbnail without an N+1 fetch per row.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "entry_id": {
+            "format": "uuid",
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "available_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Available At"
+          },
+          "claim_deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Claim Deadline"
+          },
+          "claimed_license_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Claimed License Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/apps__api__serializers__entries__EntrySerializer__Base"
+          }
+        },
+        "required": [
+          "id",
+          "entry_id",
+          "user_id",
+          "position",
+          "status",
+          "requested_at",
+          "created_at",
+          "updated_at",
+          "entry"
+        ],
+        "title": "ReservationSerializer.Detailed",
         "type": "object"
       },
       "Detailed": {
@@ -7408,6 +7503,92 @@
           "last_occurred_at"
         ],
         "title": "UserActivitySerializer.Base",
+        "type": "object"
+      },
+      "apps__readium__serializers__ReservationSerializer__Base": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "entry_id": {
+            "format": "uuid",
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "available_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Available At"
+          },
+          "claim_deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Claim Deadline"
+          },
+          "claimed_license_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              }
+            ],
+            "default": null,
+            "nullable": true,
+            "title": "Claimed License Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "entry_id",
+          "user_id",
+          "position",
+          "status",
+          "requested_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ReservationSerializer.Base",
         "type": "object"
       },
       "apps__api__serializers__notification_contacts__NotificationContactSerializer__Base": {
@@ -7787,103 +7968,6 @@
         "title": "UserAcquisitionSerializer.Base",
         "type": "object"
       },
-      "Status": {
-        "enum": [
-          "queued",
-          "available",
-          "claimed",
-          "expired",
-          "cancelled"
-        ],
-        "title": "Status",
-        "type": "string"
-      },
-      "apps__readium__serializers__ReservationSerializer__Base": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "entry_id": {
-            "format": "uuid",
-            "title": "Entry Id",
-            "type": "string"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "position": {
-            "title": "Position",
-            "type": "integer"
-          },
-          "status": {
-            "$ref": "#/components/schemas/Status"
-          },
-          "requested_at": {
-            "format": "date-time",
-            "title": "Requested At",
-            "type": "string"
-          },
-          "available_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Available At"
-          },
-          "claim_deadline": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Claim Deadline"
-          },
-          "claimed_license_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Claimed License Id"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "entry_id",
-          "user_id",
-          "position",
-          "status",
-          "requested_at",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "ReservationSerializer.Base",
-        "type": "object"
-      },
       "UserCatalog": {
         "properties": {
           "mode": {
@@ -7962,97 +8046,6 @@
         "title": "CatalogSerializer.Detailed",
         "type": "object"
       },
-      "apps__readium__serializers__ReservationSerializer__Detailed": {
-        "description": "Reservation list/detail for the portal: embeds the entry so the queue\nUI can render title/author/thumbnail without an N+1 fetch per row.",
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "entry_id": {
-            "format": "uuid",
-            "title": "Entry Id",
-            "type": "string"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "position": {
-            "title": "Position",
-            "type": "integer"
-          },
-          "status": {
-            "$ref": "#/components/schemas/Status"
-          },
-          "requested_at": {
-            "format": "date-time",
-            "title": "Requested At",
-            "type": "string"
-          },
-          "available_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Available At"
-          },
-          "claim_deadline": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Claim Deadline"
-          },
-          "claimed_license_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              }
-            ],
-            "default": null,
-            "nullable": true,
-            "title": "Claimed License Id"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "entry": {
-            "$ref": "#/components/schemas/apps__api__serializers__entries__EntrySerializer__Base"
-          }
-        },
-        "required": [
-          "id",
-          "entry_id",
-          "user_id",
-          "position",
-          "status",
-          "requested_at",
-          "created_at",
-          "updated_at",
-          "entry"
-        ],
-        "title": "ReservationSerializer.Detailed",
-        "type": "object"
-      },
       "apps__api__serializers__users__UserSerializer__Minimal": {
         "properties": {
           "id": {
@@ -8080,180 +8073,6 @@
           "surname"
         ],
         "title": "UserSerializer.Minimal",
-        "type": "object"
-      },
-      "apps__api__serializers__entries__EntryFacetItem": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "count": {
-            "title": "Count",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "count"
-        ],
-        "title": "EntryFacetItem",
-        "type": "object"
-      },
-      "apps__api__serializers__status__StatusStatistics": {
-        "properties": {
-          "catalogs": {
-            "title": "Catalogs",
-            "type": "integer"
-          },
-          "entries": {
-            "title": "Entries",
-            "type": "integer"
-          },
-          "acquisitions": {
-            "title": "Acquisitions",
-            "type": "integer"
-          },
-          "users": {
-            "title": "Users",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "catalogs",
-          "entries",
-          "acquisitions",
-          "users"
-        ],
-        "title": "StatusStatistics",
-        "type": "object"
-      },
-      "apps__api__serializers__annotation__AnnotationItemSerializer__Base": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "annotation_id": {
-            "format": "uuid",
-            "title": "Annotation Id",
-            "type": "string"
-          },
-          "page": {
-            "title": "Page",
-            "type": "integer"
-          },
-          "content": {
-            "title": "Content",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "annotation_id",
-          "page",
-          "content",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "AnnotationItemSerializer.Base",
-        "type": "object"
-      },
-      "apps__assistant__serializers__ChatSerializer__Base": {
-        "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "entry_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Entry Id"
-          },
-          "catalog_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Catalog Id"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "is_active": {
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "message_count": {
-            "title": "Message Count",
-            "type": "integer"
-          },
-          "total_tokens": {
-            "title": "Total Tokens",
-            "type": "integer"
-          },
-          "last_message_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Last Message At"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "user_id",
-          "entry_id",
-          "catalog_id",
-          "title",
-          "is_active",
-          "message_count",
-          "total_tokens",
-          "last_message_at",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "ChatSerializer.Base",
         "type": "object"
       },
       "apps__readium__serializers__LicenseSerializer__Base": {
@@ -8328,6 +8147,244 @@
           "updated_at"
         ],
         "title": "LicenseSerializer.Base",
+        "type": "object"
+      },
+      "apps__api__serializers__entries__EntryFacetItem": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "count"
+        ],
+        "title": "EntryFacetItem",
+        "type": "object"
+      },
+      "Base": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "entry_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Entry Id"
+          },
+          "displayed_entries": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "nullable": true,
+            "title": "Displayed Entries"
+          },
+          "tokens_used": {
+            "title": "Tokens Used",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "text",
+          "entry_id",
+          "displayed_entries",
+          "tokens_used",
+          "created_at"
+        ],
+        "title": "ChatMessageSerializer.Base",
+        "type": "object"
+      },
+      "apps__assistant__serializers__ChatSerializer__Detailed": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "entry_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Entry Id"
+          },
+          "catalog_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Catalog Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "message_count": {
+            "title": "Message Count",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "last_message_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "title": "Last Message At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/Base"
+            },
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "entry_id",
+          "catalog_id",
+          "title",
+          "is_active",
+          "message_count",
+          "total_tokens",
+          "last_message_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ChatSerializer.Detailed",
+        "type": "object"
+      },
+      "apps__api__serializers__status__StatusStatistics": {
+        "properties": {
+          "catalogs": {
+            "title": "Catalogs",
+            "type": "integer"
+          },
+          "entries": {
+            "title": "Entries",
+            "type": "integer"
+          },
+          "acquisitions": {
+            "title": "Acquisitions",
+            "type": "integer"
+          },
+          "users": {
+            "title": "Users",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "catalogs",
+          "entries",
+          "acquisitions",
+          "users"
+        ],
+        "title": "StatusStatistics",
+        "type": "object"
+      },
+      "apps__api__serializers__annotation__AnnotationItemSerializer__Base": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "annotation_id",
+          "page",
+          "content",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AnnotationItemSerializer.Base",
         "type": "object"
       },
       "ValidationErrorItem": {
@@ -8569,105 +8626,41 @@
         "title": "TokenSerializer.Refresh",
         "type": "object"
       },
-      "apps__assistant__serializers__ChatMessageSerializer__Base": {
+      "CreateReservationForm": {
+        "type": "object",
+        "title": "CreateReservationForm",
         "properties": {
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "role": {
-            "title": "Role",
-            "type": "string"
-          },
-          "text": {
-            "title": "Text",
-            "type": "string"
-          },
           "entry_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              }
-            ],
-            "nullable": true,
-            "title": "Entry Id"
-          },
-          "displayed_entries": {
-            "anyOf": [
-              {
-                "items": {},
-                "type": "array"
-              }
-            ],
-            "nullable": true,
-            "title": "Displayed Entries"
-          },
-          "tokens_used": {
-            "title": "Tokens Used",
-            "type": "integer"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
+            "title": "entry_id",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
-          "id",
-          "role",
-          "text",
-          "entry_id",
-          "displayed_entries",
-          "tokens_used",
-          "created_at"
-        ],
-        "title": "ChatMessageSerializer.Base",
-        "type": "object"
+          "entry_id"
+        ]
       },
-      "UpdateLicenseForm": {
+      "MessageForm": {
         "type": "object",
-        "title": "UpdateLicenseForm",
+        "title": "MessageForm",
         "properties": {
-          "action": {
-            "title": "action",
+          "message": {
+            "title": "message",
             "description": "",
             "type": "string",
-            "enum": [
-              "active",
-              "returned",
-              "renewed",
-              "revoked",
-              "cancelled"
-            ]
+            "maxLength": 8000
           },
-          "state": {
-            "title": "state",
+          "entry_id": {
+            "title": "entry_id",
             "description": "",
             "type": "string",
-            "enum": [
-              "active",
-              "returned",
-              "renewed",
-              "revoked",
-              "cancelled"
-            ]
-          },
-          "requested_end": {
-            "title": "requested_end",
-            "description": "",
-            "type": "string",
-            "format": "date-time"
-          },
-          "duration": {
-            "title": "duration",
-            "description": "Duration in ISO 8601 format. Example: \"PT1H30M\" for 1 hour and 30 minutes.\nThe format is defined as follows:\n- \"P\" indicates the period.\n- \"Y\" for years, \"M\" for months, \"D\" for days.\n- \"T\" indicates the start of the time section.\n- \"H\" for hours, \"M\" for minutes, \"S\" for seconds.\n- Valid examples include:\n  - \"PT30M\" (30 minutes)\n  - \"P1Y2M10DT5H30M\" (1 year, 2 months, 10 days, 5 hours, and 30 minutes)",
-            "type": "string",
-            "example": "P14D",
-            "pattern": "^P(?!P)(?:(\\d+Y)?(\\d+M)?(\\d+D)?(T(?:(\\d+H)?(\\d+M)?(\\d+S)?))?)?$"
+            "format": "uuid"
           }
-        }
+        },
+        "required": [
+          "message"
+        ]
       },
       "CategoryForm": {
         "type": "object",
@@ -8722,27 +8715,6 @@
         "required": [
           "name",
           "surname"
-        ]
-      },
-      "MessageForm": {
-        "type": "object",
-        "title": "MessageForm",
-        "properties": {
-          "message": {
-            "title": "message",
-            "description": "",
-            "type": "string",
-            "maxLength": 8000
-          },
-          "entry_id": {
-            "title": "entry_id",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "message"
         ]
       },
       "CreateUserForm": {
@@ -8832,21 +8804,14 @@
           "content"
         ]
       },
-      "ChatForm": {
+      "EncryptionTriggerForm": {
         "type": "object",
-        "title": "ChatForm",
+        "title": "EncryptionTriggerForm",
         "properties": {
-          "entry_id": {
-            "title": "entry_id",
+          "force": {
+            "title": "force",
             "description": "",
-            "type": "string",
-            "format": "uuid"
-          },
-          "catalog_id": {
-            "title": "catalog_id",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
+            "type": "boolean"
           }
         }
       },
@@ -8931,6 +8896,49 @@
             "items": {
               "$ref": "#/components/schemas/PriceForm"
             }
+          }
+        }
+      },
+      "UpdateLicenseForm": {
+        "type": "object",
+        "title": "UpdateLicenseForm",
+        "properties": {
+          "action": {
+            "title": "action",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "active",
+              "returned",
+              "renewed",
+              "revoked",
+              "cancelled"
+            ]
+          },
+          "state": {
+            "title": "state",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "active",
+              "returned",
+              "renewed",
+              "revoked",
+              "cancelled"
+            ]
+          },
+          "requested_end": {
+            "title": "requested_end",
+            "description": "",
+            "type": "string",
+            "format": "date-time"
+          },
+          "duration": {
+            "title": "duration",
+            "description": "Duration in ISO 8601 format. Example: \"PT1H30M\" for 1 hour and 30 minutes.\nThe format is defined as follows:\n- \"P\" indicates the period.\n- \"Y\" for years, \"M\" for months, \"D\" for days.\n- \"T\" indicates the start of the time section.\n- \"H\" for hours, \"M\" for minutes, \"S\" for seconds.\n- Valid examples include:\n  - \"PT30M\" (30 minutes)\n  - \"P1Y2M10DT5H30M\" (1 year, 2 months, 10 days, 5 hours, and 30 minutes)",
+            "type": "string",
+            "example": "P14D",
+            "pattern": "^P(?!P)(?:(\\d+Y)?(\\d+M)?(\\d+D)?(T(?:(\\d+H)?(\\d+M)?(\\d+S)?))?)?$"
           }
         }
       },
@@ -9031,24 +9039,6 @@
           "mode"
         ]
       },
-      "UpdateReservationForm": {
-        "type": "object",
-        "title": "UpdateReservationForm",
-        "properties": {
-          "status": {
-            "title": "status",
-            "description": "",
-            "type": "string",
-            "enum": [
-              "cancelled",
-              "claimed"
-            ]
-          }
-        },
-        "required": [
-          "status"
-        ]
-      },
       "PriceForm": {
         "type": "object",
         "title": "PriceForm",
@@ -9129,21 +9119,6 @@
             ]
           }
         }
-      },
-      "CreateReservationForm": {
-        "type": "object",
-        "title": "CreateReservationForm",
-        "properties": {
-          "entry_id": {
-            "title": "entry_id",
-            "description": "",
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "entry_id"
-        ]
       },
       "FeedForm": {
         "type": "object",
@@ -9427,17 +9402,6 @@
           }
         }
       },
-      "EncryptionTriggerForm": {
-        "type": "object",
-        "title": "EncryptionTriggerForm",
-        "properties": {
-          "force": {
-            "title": "force",
-            "description": "",
-            "type": "boolean"
-          }
-        }
-      },
       "NotificationContactForm": {
         "type": "object",
         "title": "NotificationContactForm",
@@ -9466,6 +9430,24 @@
           "value"
         ]
       },
+      "UpdateReservationForm": {
+        "type": "object",
+        "title": "UpdateReservationForm",
+        "properties": {
+          "status": {
+            "title": "status",
+            "description": "",
+            "type": "string",
+            "enum": [
+              "cancelled",
+              "claimed"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
       "UpdateAnnotationForm": {
         "type": "object",
         "title": "UpdateAnnotationForm",
@@ -9479,6 +9461,24 @@
         "required": [
           "title"
         ]
+      },
+      "ChatForm": {
+        "type": "object",
+        "title": "ChatForm",
+        "properties": {
+          "entry_id": {
+            "title": "entry_id",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
+          },
+          "catalog_id": {
+            "title": "catalog_id",
+            "description": "",
+            "type": "string",
+            "format": "uuid"
+          }
+        }
       },
       "AccessTokenForm": {
         "type": "object",

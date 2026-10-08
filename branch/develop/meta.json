@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "eef970befff2f2d79eb61e11f4612a9fcdea9331",
-    "short": "eef970b",
-    "message": "fix(readium): do not promote reservations on entries with lending switched off",
+    "sha": "5f6f9fc7ece033f081a7338ab8bdde3096fca379",
+    "short": "5f6f9fc",
+    "message": "download hedears",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/eef970befff2f2d79eb61e11f4612a9fcdea9331"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/5f6f9fc7ece033f081a7338ab8bdde3096fca379"
   },
-  "deployed_at": "2026-10-08T09:35:24Z",
+  "deployed_at": "2026-10-08T10:04:55Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
