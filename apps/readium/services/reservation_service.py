@@ -292,6 +292,12 @@ class ReservationService:
         # for the same entry block here.
         Entry.objects.select_for_update().get(pk=entry.pk)
 
+        # Lending switched off since the queue formed: a promoted reservation
+        # could never be claimed (`create_license` refuses the entry), so the
+        # reader would be e-mailed about a book they cannot pick up.
+        if not entry.read_config("readium_enabled"):
+            return None
+
         occupied, total_slots = ReservationService._slots_in_use(entry)
         if occupied >= total_slots:
             return None
