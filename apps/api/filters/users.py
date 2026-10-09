@@ -1,4 +1,5 @@
 import django_filters
+from django.db.models import Q
 
 from apps.core.models import User
 
@@ -27,8 +28,20 @@ class UserFilter(django_filters.FilterSet):
         lookup_expr="unaccent__icontains",
         help_text="Filter users by surname/last name using case-insensitive partial matching. Supports Unicode normalization for international names.",
     )
+    query = django_filters.CharFilter(
+        method="filter_query",
+        help_text="Search users by username, first name or surname at once (case-insensitive, accent-insensitive). "
+        "Several words must all match, so `jan novak` finds Ján Novák.",
+    )
     is_active = django_filters.BooleanFilter(
         help_text="Filter users by account status. True returns active users, False returns deactivated accounts."
+    )
+    is_superuser = django_filters.BooleanFilter(
+        help_text="Filter users by role. True returns administrators, False returns regular users."
+    )
+    catalog_id = django_filters.UUIDFilter(
+        field_name="user_catalogs__catalog_id",
+        help_text="Filter users by catalog membership. Returns users with an explicit access grant to the catalog.",
     )
     last_login_gte = django_filters.DateTimeFilter(
         field_name="last_login",
@@ -44,6 +57,14 @@ class UserFilter(django_filters.FilterSet):
     class Meta:
         model = User
         fields = []
+
+    @staticmethod
+    def filter_query(qs, name, value):
+        for word in value.split():
+            qs = qs.filter(
+                Q(username__icontains=word) | Q(name__unaccent__icontains=word) | Q(surname__unaccent__icontains=word)
+            )
+        return qs
 
     @property
     def qs(self):
