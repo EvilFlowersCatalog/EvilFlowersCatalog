@@ -1,4 +1,5 @@
 import django_filters
+from django.db.models import Q
 
 from apps.core.models import UserAcquisition
 
@@ -27,6 +28,10 @@ class UserAcquisitionFilter(django_filters.FilterSet):
         field_name="acquisition__entry__title",
         help_text="Filter user acquisitions by content title using case-insensitive partial matching. Searches within entry titles.",
     )
+    query = django_filters.CharFilter(
+        method="filter_query",
+        help_text="Search user acquisitions by entry title or by the user's username, first name or surname.",
+    )
     expire_at__gte = django_filters.DateTimeFilter(
         field_name="expire_at",
         lookup_expr="gte",
@@ -51,6 +56,15 @@ class UserAcquisitionFilter(django_filters.FilterSet):
     class Meta:
         model = UserAcquisition
         fields = []
+
+    @staticmethod
+    def filter_query(qs, name, value):
+        return qs.filter(
+            Q(acquisition__entry__title__unaccent__icontains=value)
+            | Q(user__username__icontains=value)
+            | Q(user__name__unaccent__icontains=value)
+            | Q(user__surname__unaccent__icontains=value)
+        )
 
     @property
     def qs(self):

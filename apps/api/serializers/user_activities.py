@@ -9,6 +9,7 @@ from apps.core.models import UserActivity
 class UserActivitySerializer:
     class Base(Serializer):
         id: UUID
+        user_id: UUID
         action: UserActivity.ActivityAction
         count: int
         metadata: dict

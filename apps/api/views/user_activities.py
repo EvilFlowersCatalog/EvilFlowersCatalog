@@ -18,7 +18,8 @@ class UserActivityManagement(SecuredView):
         "`reservation_available`, `reservation_claimed`, `reservation_expired`, `reservation_cancelled`). "
         "Repeating the same action on the same entry does not add a row: `count` grows and `last_occurred_at` "
         "moves forward, while `created_at` keeps the first occurrence. Rows are kept for "
-        "`EVILFLOWERS_ACTIVITY_RETENTION_DAYS` (365 by default) after their last occurrence.",
+        "`EVILFLOWERS_ACTIVITY_RETENTION_DAYS` (365 by default) after their last occurrence. "
+        "Administrators can pass `user_id` to read another user's history; each row carries `user_id`.",
         tags=["Activity"],
         summary="List user's activity history",
     )

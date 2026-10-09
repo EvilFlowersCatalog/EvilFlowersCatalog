@@ -19,6 +19,20 @@ from apps.core.models import User, AuthSource
 from apps.core.views import SecuredView
 
 
+def _apply_role(request, form, user: User) -> None:
+    """Grant or revoke the administrator role. Only superusers may do it, and never on themselves."""
+    if "is_superuser" not in form.cleaned_data or form.cleaned_data["is_superuser"] == user.is_superuser:
+        return
+
+    if not request.user.is_superuser:
+        raise ProblemDetailException(_("Only administrators can change roles"), status=HTTPStatus.FORBIDDEN)
+
+    if user.pk == request.user.pk:
+        raise ProblemDetailException(_("You cannot change your own role"), status=HTTPStatus.CONFLICT)
+
+    user.is_superuser = form.cleaned_data["is_superuser"]
+
+
 class UserManagement(SecuredView):
     @openapi.metadata(
         description="Create a new user account with authentication credentials and profile information. The user will be able to authenticate and access catalogs based on assigned permissions.",
@@ -40,6 +54,7 @@ class UserManagement(SecuredView):
         user = User(auth_source=AuthSource.objects.filter(driver=AuthSource.Driver.DATABASE).first())
         form.populate(user)
         user.set_password(form.cleaned_data["password"])
+        _apply_role(request, form, user)
         user.save()
 
         return SingleResponse(request, data=UserSerializer.Base.model_validate(user), status=HTTPStatus.CREATED)
@@ -95,8 +110,9 @@ class UserDetail(SecuredView):
             raise ValidationException(form)
 
         form.populate(user)
-        if "password" in form.cleaned_data.keys():
+        if form.cleaned_data.get("password"):
             user.set_password(form.cleaned_data["password"])
+        _apply_role(request, form, user)
 
         # Handle LCP passphrase - hash before storing
         if "lcp_passphrase" in form.cleaned_data and form.cleaned_data["lcp_passphrase"]:

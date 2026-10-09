@@ -7,6 +7,16 @@ from apps.core.models import UserCatalog
 from apps.readium.models import License, Reservation
 
 
+def _search_entry_or_user(qs, value):
+    """Shared `query` search for the admin loan and reservation tables."""
+    return qs.filter(
+        Q(entry__title__unaccent__icontains=value)
+        | Q(user__username__icontains=value)
+        | Q(user__name__unaccent__icontains=value)
+        | Q(user__surname__unaccent__icontains=value)
+    )
+
+
 class LicenseFilter(FilterSet):
     """
     License filtering system for Readium LCP (Licensed Content Protection) management.
@@ -27,6 +37,12 @@ class LicenseFilter(FilterSet):
         field_name="entry_id",
         label="Entry UUID",
         help_text="Filter licenses by entry UUID. Returns licenses for the specified catalog entry or content item.",
+    )
+    query = django_filters.CharFilter(
+        method="filter_query",
+        label="Search by entry title or borrower",
+        help_text="Search licenses by entry title or by the borrower's username, first name or surname "
+        "(case-insensitive, accent-insensitive).",
     )
     state = django_filters.ChoiceFilter(
         choices=License.LicenseState.choices,
@@ -87,6 +103,10 @@ class LicenseFilter(FilterSet):
         fields = []
 
     @classmethod
+    def filter_query(cls, qs, name, value):
+        return _search_entry_or_user(qs, value)
+
+    @classmethod
     def filter_active(cls, qs, name, value):
         if value is None:
             return qs
@@ -128,6 +148,10 @@ class ReservationFilter(FilterSet):
     entry_id = django_filters.UUIDFilter(field_name="entry_id")
     user_id = django_filters.UUIDFilter(field_name="user_id")
     status = django_filters.CharFilter(method="filter_status")
+    query = django_filters.CharFilter(
+        method="filter_query",
+        help_text="Search reservations by entry title or by the user's username, first name or surname.",
+    )
     scope = django_filters.ChoiceFilter(
         method="filter_scope",
         choices=((SCOPE_OWN, "Own reservations"), (SCOPE_MANAGED, "Reservations on managed catalogs")),
@@ -145,6 +169,10 @@ class ReservationFilter(FilterSet):
     def filter_scope(cls, qs, name, value):
         # Applied in `qs` below, where the request user is available.
         return qs
+
+    @classmethod
+    def filter_query(cls, qs, name, value):
+        return _search_entry_or_user(qs, value)
 
     @classmethod
     def filter_status(cls, qs, name, value):
