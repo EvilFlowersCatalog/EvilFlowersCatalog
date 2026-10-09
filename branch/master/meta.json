@@ -3,12 +3,12 @@
   "slug": "master",
   "kind": "branch",
   "commit": {
-    "sha": "643e2a0b34478f66c1f6e1162316d6184666f679",
-    "short": "643e2a0",
-    "message": "Merge pull request #84 from EvilFlowersCatalog/develop",
-    "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/643e2a0b34478f66c1f6e1162316d6184666f679"
+    "sha": "970677c124bbac6c7d8bcaf86c6c11bd4740f067",
+    "short": "970677c",
+    "message": "Merge pull request #85 from EvilFlowersCatalog/develop",
+    "author": "Tomáš Kordoš",
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/970677c124bbac6c7d8bcaf86c6c11bd4740f067"
   },
-  "deployed_at": "2026-09-30T13:22:56Z",
+  "deployed_at": "2026-10-09T15:18:41Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
