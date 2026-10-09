@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "5f6f9fc7ece033f081a7338ab8bdde3096fca379",
-    "short": "5f6f9fc",
-    "message": "download hedears",
+    "sha": "d37c00a9ffd870078bec5cee672a57974fb3577c",
+    "short": "d37c00a",
+    "message": "chore: admin user search",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/5f6f9fc7ece033f081a7338ab8bdde3096fca379"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/d37c00a9ffd870078bec5cee672a57974fb3577c"
   },
-  "deployed_at": "2026-10-08T10:04:55Z",
+  "deployed_at": "2026-10-09T14:29:56Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
