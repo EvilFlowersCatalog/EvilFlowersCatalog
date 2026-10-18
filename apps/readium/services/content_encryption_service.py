@@ -5,14 +5,21 @@ Handles all encryption-related operations for Readium LCP.
 Uses per-publication encryption (Standard LCP approach).
 """
 
+import logging
+import os
+
 from django.conf import settings
 from django.utils import timezone
+from django.utils.module_loading import import_string
 from typing import Optional
 import uuid
 
 from apps.core.models import Acquisition
-from apps.readium.models import EncryptedContent
+from apps.files.storage import get_storage
+from apps.readium.models import EncryptedContent, License
 from apps.events.services import get_event_broker
+
+logger = logging.getLogger(__name__)
 
 
 class ContentEncryptionService:
@@ -84,8 +91,8 @@ class ContentEncryptionService:
         return encrypted_content
 
     #: Statuses `requeue` will act on. COMPLETED/REGISTERED already have an
-    #: encrypted package registered with the LCP server; re-running lcpencrypt
-    #: for those would register a second package under the same content id.
+    #: encrypted package registered with the LCP server; replacing it changes
+    #: the content key under live licenses, which is `reencrypt`'s job.
     REQUEUEABLE_STATUSES = (
         EncryptedContent.EncryptionStatus.PENDING,
         EncryptedContent.EncryptionStatus.FAILED,
@@ -115,6 +122,102 @@ class ContentEncryptionService:
         return encrypted_content
 
     @staticmethod
+    def active_licenses(encrypted_content: EncryptedContent):
+        return encrypted_content.licenses.filter(state__in=[License.LicenseState.READY, License.LicenseState.ACTIVE])
+
+    @staticmethod
+    def reencrypt(encrypted_content: EncryptedContent, force: bool = False) -> EncryptedContent:
+        """Replace an already registered package, e.g. after the source pipeline changed.
+
+        Re-runs lcpencrypt under the same `lcp_content_id`; the LCP server's
+        `PUT /contents/{id}` updates the stored content key and the package is
+        overwritten in place. Licenses issued before that carry the old key:
+        a reader keeps working from its cached package until it refreshes the
+        license (renewal, status check) or downloads the publication again, and
+        then fails to open it. Hence the active-loan guard; `force` skips it.
+
+        The publication is not lendable until the webhook confirms the new
+        package (`is_ready_for_licensing` needs REGISTERED).
+
+        Raises:
+            ValueError: If the entry still has loans in READY/ACTIVE state and
+                `force` is not set.
+        """
+        if not force and ContentEncryptionService.active_licenses(encrypted_content).exists():
+            raise ValueError("Publication has active loans; re-encrypting would break them")
+
+        encrypted_content.status = EncryptedContent.EncryptionStatus.PENDING
+        encrypted_content.error_message = None
+        encrypted_content.encrypted_at = None
+        encrypted_content.registered_at = None
+        encrypted_content.save(
+            update_fields=["status", "error_message", "encrypted_at", "registered_at", "updated_at"]
+        )
+
+        ContentEncryptionService._queue_encryption_task(encrypted_content)
+        return encrypted_content
+
+    @staticmethod
+    def _source_dir(encrypted_content: EncryptedContent) -> str:
+        return (
+            f"{encrypted_content.acquisition.upload_base_path()}/encrypted/source/{encrypted_content.lcp_content_id}"
+        )
+
+    @staticmethod
+    def _prepare_source(encrypted_content: EncryptedContent) -> str:
+        """Return the storage name of the file lcpencrypt should encrypt.
+
+        Formats with a modifier (PDF) get the license page inserted, the same
+        page personal downloads get, written next to the encrypted output. The
+        original acquisition file is left untouched — the download path stamps
+        it on the fly, so stamping it here would print the page twice.
+
+        The copy keeps the acquisition's basename: lcpencrypt derives the
+        package's file name from it, and the worker only adds the title/author
+        manifest when the input ends in `.pdf`.
+        """
+        acquisition = encrypted_content.acquisition
+        if acquisition.mime not in settings.EVILFLOWERS_MODIFIERS:
+            return acquisition.content.name
+
+        entry = acquisition.entry
+        modifier = import_string(settings.EVILFLOWERS_MODIFIERS[acquisition.mime])(
+            context={
+                "title": entry.title,
+                "authors": ", ".join([a.full_name for a in entry.authors.all()]),
+                "language": entry.language.alpha2 if entry.language else None,
+            },
+            pages=None,
+        )
+
+        acquisition.content.open("rb")
+        try:
+            licensed = modifier.license_copy(acquisition.content)
+        finally:
+            acquisition.content.close()
+
+        storage = get_storage()
+        name = (
+            f"{ContentEncryptionService._source_dir(encrypted_content)}/{os.path.basename(acquisition.content.name)}"
+        )
+        if storage.exists(name):
+            storage.delete(name)
+        return storage.save(name, licensed)
+
+    @staticmethod
+    def _cleanup_source(encrypted_content: EncryptedContent):
+        """Delete the stamped source copy once the package is registered."""
+        storage = get_storage()
+        source_dir = ContentEncryptionService._source_dir(encrypted_content)
+        try:
+            _dirs, files = storage.listdir(source_dir)
+        except (FileNotFoundError, NotImplementedError):
+            return
+
+        for name in files:
+            storage.delete(f"{source_dir}/{name}")
+
+    @staticmethod
     def _queue_encryption_task(encrypted_content: EncryptedContent):
         """Queue the lcpencrypt worker task.
 
@@ -133,6 +236,17 @@ class ContentEncryptionService:
         # server once it can fetch the encrypted blob.
         encrypted_content.encrypted_url = ContentEncryptionService.get_encrypted_content_url(encrypted_content)
         encrypted_content.save(update_fields=["encrypted_url"])
+
+        # Refuse to ship a package without the license page rather than fall
+        # back to the raw file; the job surfaces as FAILED for `requeue`.
+        try:
+            input_file = ContentEncryptionService._prepare_source(encrypted_content)
+        except Exception as e:
+            logger.exception("Failed to prepare LCP source for %s", encrypted_content.lcp_content_id)
+            encrypted_content.status = EncryptedContent.EncryptionStatus.FAILED
+            encrypted_content.error_message = f"Failed to insert license page: {e}"
+            encrypted_content.save(update_fields=["status", "error_message", "updated_at"])
+            return
 
         # Queue worker
         # storage = catalog-relative dir for encrypted output (worker prepends STORAGE_PATH)
@@ -159,7 +273,7 @@ class ContentEncryptionService:
             "evilflowers_lcpencrypt_worker.lcpencrypt",
             {
                 "kwargs": {
-                    "input_file": acquisition.content.name,
+                    "input_file": input_file,
                     "contentid": encrypted_content.lcp_content_id,
                     "storage": f"{acquisition.upload_base_path()}/encrypted",
                     "filename": encrypted_content.lcp_content_id,
@@ -212,6 +326,12 @@ class ContentEncryptionService:
         encrypted_content.status = EncryptedContent.EncryptionStatus.REGISTERED
         encrypted_content.registered_at = timezone.now()
         encrypted_content.save()
+
+        # lcpencrypt has read its input by the time it notifies us.
+        try:
+            ContentEncryptionService._cleanup_source(encrypted_content)
+        except Exception:
+            logger.exception("Failed to clean up LCP source for %s", encrypted_content.lcp_content_id)
 
     @staticmethod
     def get_encrypted_content_url(encrypted_content: EncryptedContent) -> str:

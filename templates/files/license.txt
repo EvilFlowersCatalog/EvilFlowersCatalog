@@ -1,11 +1,11 @@
 Document Information / Informácie o dokumente
 ---------------------------------------------
 
-User / Používateľ: {{ username }} ({{ user_id }})
-Title / Názov: {{ title }}
-Document ID / Identifikátor dokumentu: {{ id }}
-Generated at / Vygenerované: {{ generated_at }}
-
+{% if username %}User / Používateľ: {{ username }} ({{ user_id }})
+{% endif %}Title / Názov: {{ title }}
+{% if id %}Document ID / Identifikátor dokumentu: {{ id }}
+{% endif %}{% if generated_at %}Generated at / Vygenerované: {{ generated_at }}
+{% endif %}
 Copyright Notice
 ----------------
 

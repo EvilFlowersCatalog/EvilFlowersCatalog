@@ -29,6 +29,17 @@ class EncryptionToolTests(ManagementTestCase):
         cls.failed = cls._job(EncryptedContent.EncryptionStatus.FAILED, error_message="lcpencrypt exited 1")
         cls.registered = cls._job(EncryptedContent.EncryptionStatus.REGISTERED)
 
+    def setUp(self):
+        super().setUp()
+        # The jobs' acquisition files never exist on disk; inserting the
+        # license page is covered by apps.readium.tests.test_lcp_license_page.
+        patcher = patch(
+            "apps.readium.services.content_encryption_service.ContentEncryptionService._prepare_source",
+            side_effect=lambda encrypted_content: encrypted_content.acquisition.content.name,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     @classmethod
     def _job(cls, status, **kwargs) -> EncryptedContent:
         acquisition = Acquisition.objects.create(

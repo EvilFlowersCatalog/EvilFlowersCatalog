@@ -34,7 +34,25 @@ class Command(BaseCommand):
         parser.add_argument(
             "--force",
             action="store_true",
-            help="Re-queue encryptions stuck in pending or failed (completed/registered are never re-encrypted)",
+            help="Re-queue encryptions stuck in pending or failed (completed/registered need --reencrypt)",
+        )
+        parser.add_argument(
+            "--reencrypt",
+            action="store_true",
+            help=(
+                "Re-encrypt completed/registered content under the same content id (implies --force). "
+                "Entries with active loans are skipped unless --break-active-loans is given"
+            ),
+        )
+        parser.add_argument(
+            "--break-active-loans",
+            action="store_true",
+            help="With --reencrypt: also re-encrypt entries with active loans (their readers lose access)",
+        )
+        parser.add_argument(
+            "--limit",
+            type=int,
+            help="Stop after queueing this many jobs",
         )
 
     def handle(self, *args, **options):
@@ -42,6 +60,9 @@ class Command(BaseCommand):
 
         dry_run = options.get("dry_run", False)
         force = options.get("force", False)
+        reencrypt = options.get("reencrypt", False)
+        break_active_loans = options.get("break_active_loans", False)
+        limit = options.get("limit")
         catalog_id = options.get("catalog")
         entry_id = options.get("entry")
 
@@ -67,6 +88,12 @@ class Command(BaseCommand):
         errors = 0
 
         for entry in entries:
+            # Every queued job makes its title unlendable until the worker
+            # reports back, so large runs go in waves.
+            if limit and processed >= limit:
+                self.stdout.write(self.style.WARNING(f"Reached --limit {limit}, stopping"))
+                break
+
             self.stdout.write(f"Processing: {entry.title} ({entry.pk})")
 
             # Get EPUB and PDF acquisitions (both supported for LCP)
@@ -82,7 +109,28 @@ class Command(BaseCommand):
                 if hasattr(acquisition, "encrypted_content"):
                     encrypted_content = acquisition.encrypted_content
                     status = encrypted_content.status
-                    if not force or status not in ContentEncryptionService.REQUEUEABLE_STATUSES:
+
+                    if reencrypt and status not in ContentEncryptionService.REQUEUEABLE_STATUSES:
+                        active = ContentEncryptionService.active_licenses(encrypted_content).count()
+                        if active and not break_active_loans:
+                            self.stdout.write(self.style.WARNING(f"{active} active loan(s), skipping re-encryption"))
+                            skipped += 1
+                            continue
+
+                        if dry_run:
+                            self.stdout.write(
+                                self.style.SUCCESS(
+                                    f"[DRY RUN] Would re-encrypt: {encrypted_content.lcp_content_id} "
+                                    f"({status}, {active} active loan(s))"
+                                )
+                            )
+                        else:
+                            ContentEncryptionService.reencrypt(encrypted_content, force=break_active_loans)
+                            self.stdout.write(self.style.SUCCESS(f"Re-encrypting: {encrypted_content.lcp_content_id}"))
+                        processed += 1
+                        continue
+
+                    if not (force or reencrypt) or status not in ContentEncryptionService.REQUEUEABLE_STATUSES:
                         self.stdout.write(
                             self.style.WARNING(f"Already has encrypted content (status: {status}), skipping")
                         )
