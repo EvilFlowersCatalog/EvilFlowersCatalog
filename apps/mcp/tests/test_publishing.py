@@ -11,7 +11,9 @@ import tempfile
 from unittest.mock import patch
 from urllib.parse import urlparse
 
+import fitz
 from django.core import signing
+from django.core.files.base import ContentFile
 from django.test import Client, override_settings
 
 from apps.core.models import Acquisition, Category, Entry, Feed, Language, UserCatalog
@@ -20,7 +22,17 @@ from apps.readium.models import EncryptedContent
 
 BROKER = "apps.readium.services.content_encryption_service.get_event_broker"
 TEXT_SERVICE = "apps.dataverse.services.text_publish.TextServiceClient"
-PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+
+
+def _one_page_pdf() -> bytes:
+    # LCP encryption inserts the license page first, so the file must be a PDF
+    # PyMuPDF can open, not just the magic bytes the upload check looks for.
+    document = fitz.open()
+    document.new_page()
+    return document.tobytes()
+
+
+PDF = _one_page_pdf()
 
 LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "mcp-uploads"}}
 
@@ -236,11 +248,16 @@ class ProtectExistingEntryTests(PublishingTestCase):
         super().setUp()
         Entry.objects.filter(pk=self.entry.pk).update(publisher="Legacy press", summary="Old blurb.")
         self.entry.refresh_from_db()
+        # The FileField binds its storage at import, so the file has to go
+        # through that storage for LCP encryption to find it.
+        storage = Acquisition.content.field.storage
+        legacy = storage.save("catalogs/managed/legacy.pdf", ContentFile(PDF))
+        self.addCleanup(storage.delete, legacy)
         self.pdf = Acquisition.objects.create(
             entry=self.entry,
             mime=Acquisition.AcquisitionMIME.PDF,
             relation=Acquisition.AcquisitionType.OPEN_ACCESS,
-            content="catalogs/managed/legacy.pdf",
+            content=legacy,
         )
 
     def test_a_legacy_entry_without_language_can_be_protected(self):

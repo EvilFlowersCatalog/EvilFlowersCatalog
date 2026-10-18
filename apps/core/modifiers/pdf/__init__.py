@@ -22,6 +22,9 @@ class PDFModifier:
     LICENSE_PAGE_MARGIN = 56
     LICENSE_PAGE_FONT_SIZE = 10
 
+    # Context describing one personal copy; unknown when a shared LCP package is built.
+    PERSONAL_KEYS = ("id", "user_id", "username", "generated_at")
+
     # Save options tuned for the downstream consumers of the personalised copy:
     # the EvilFlowers viewer (pdf.js based, see elvira-portal `Viewer.tsx`) and
     # Readium readers. The viewer downloads the *entire* file into memory before
@@ -80,6 +83,20 @@ class PDFModifier:
 
         return stream.getvalue()
 
+    def license_copy(self, file: File) -> File:
+        """Return the publication with only the license page inserted.
+
+        Used as the source for Readium LCP encryption. The encrypted package is
+        shared by every borrower, so it carries no per-user QR watermark and no
+        per-copy details on the license page (borrower, document ID, generation
+        time) — the borrower's identity lives in the LCP license instead.
+        """
+        self._context = {key: value for key, value in self._context.items() if key not in self.PERSONAL_KEYS}
+        document = fitz.open(stream=file.read())
+        self._set_metadata(document)
+        self._insert_license_page(document)
+        return File(io.BytesIO(document.tobytes(**self.SAVE_OPTIONS)))
+
     def generate(
         self, file: File, page_num: Optional[int] = None, annotation_map: dict[int, list[str]] = None
     ) -> File:
@@ -88,59 +105,14 @@ class PDFModifier:
         if not annotation_map:
             annotation_map = {}
 
-        document.set_metadata(
-            document.metadata
-            | {
-                "author": self._context.get("authors") or "",
-                "title": self._context.get("title") or "",
-                "subject": f"{self._context.get('username')} ({self._context.get('user_id')})",
-                "creator": f"EvilFlowers/{settings.INSTANCE_NAME}",
-                # Identify the producing pipeline; helps when debugging files in
-                # the wild and shows sensible provenance in reader "Properties".
-                "producer": f"PyMuPDF/{fitz.VersionBind} EvilFlowers/{settings.INSTANCE_NAME}",
-            }
-        )
+        self._set_metadata(document)
 
         if self._pages:
             # PyMuPDF re-maps the outline (TOC) across select(), dropping entries
             # that point outside the retained range — no manual fix-up needed.
             document.select([i - 1 for i in self._pages])
 
-        # Attempt to load the language-specific template, falling back to default if not found
-        try:
-            chosen_template = get_template(f"files/license_{self._context['language']}.html")
-        except TemplateDoesNotExist:
-            chosen_template = get_template("files/license.txt")
-
-        # Render the chosen template with the provided context data. new_page
-        # automatically shifts existing outline entries to keep bookmarks pointing
-        # at the correct pages after the license page is spliced in.
-        license_page = document.new_page(1, width=self.LICENSE_PAGE_WIDTH, height=self.LICENSE_PAGE_HEIGHT)
-
-        # Embed the font as a Unicode (Type0) font. The simple base-14 Helvetica
-        # used by insert_page is WinAnsi-encoded and drops Slovak diacritics
-        # (č, ľ, ť, ...). fill_textbox also wraps lines to the page width. The
-        # render result is passed as explicit lines: fill_textbox treats any
-        # non-str (including Django's SafeString) as a sequence of lines, and it
-        # drops empty ones, so blank lines are kept as a single space.
-        margin = self.LICENSE_PAGE_MARGIN
-        writer = fitz.TextWriter(license_page.rect, color=(0, 0, 0))
-        writer.fill_textbox(
-            license_page.rect + (margin, margin, -margin, -margin),
-            [line or " " for line in chosen_template.render(self._context).splitlines()],
-            font=fitz.Font("helv"),
-            fontsize=self.LICENSE_PAGE_FONT_SIZE,
-        )
-        writer.write_text(license_page)
-
-        # If the source ships an outline, give the reader's contents panel a
-        # navigable entry for the license page (1-based page 2). We only augment
-        # an existing TOC to avoid manufacturing a one-item outline for PDFs that
-        # never had one.
-        toc = document.get_toc(simple=True)
-        if toc:
-            toc.append([1, "License / Access terms", 2])
-            document.set_toc(toc)
+        self._insert_license_page(document)
 
         # Add QR codes to rest of pages. The watermark image is embedded once and
         # every subsequent page references the same xref, avoiding a fresh PNG
@@ -176,3 +148,57 @@ class PDFModifier:
                 raise InvalidPage()
 
         return File(io.BytesIO(document.tobytes(**self.SAVE_OPTIONS)))
+
+    def _set_metadata(self, document: fitz.Document):
+        username = self._context.get("username")
+        document.set_metadata(
+            document.metadata
+            | {
+                "author": self._context.get("authors") or "",
+                "title": self._context.get("title") or "",
+                "subject": f"{username} ({self._context.get('user_id')})" if username else "",
+                "creator": f"EvilFlowers/{settings.INSTANCE_NAME}",
+                # Identify the producing pipeline; helps when debugging files in
+                # the wild and shows sensible provenance in reader "Properties".
+                "producer": f"PyMuPDF/{fitz.VersionBind} EvilFlowers/{settings.INSTANCE_NAME}",
+            }
+        )
+
+    def _insert_license_page(self, document: fitz.Document):
+        # Attempt to load the language-specific template, falling back to default if not found
+        try:
+            chosen_template = get_template(f"files/license_{self._context.get('language')}.html")
+        except TemplateDoesNotExist:
+            chosen_template = get_template("files/license.txt")
+
+        # Render the chosen template with the provided context data. new_page
+        # automatically shifts existing outline entries to keep bookmarks pointing
+        # at the correct pages after the license page is spliced in.
+        license_page = document.new_page(
+            min(1, len(document)), width=self.LICENSE_PAGE_WIDTH, height=self.LICENSE_PAGE_HEIGHT
+        )
+
+        # Embed the font as a Unicode (Type0) font. The simple base-14 Helvetica
+        # used by insert_page is WinAnsi-encoded and drops Slovak diacritics
+        # (č, ľ, ť, ...). fill_textbox also wraps lines to the page width. The
+        # render result is passed as explicit lines: fill_textbox treats any
+        # non-str (including Django's SafeString) as a sequence of lines, and it
+        # drops empty ones, so blank lines are kept as a single space.
+        margin = self.LICENSE_PAGE_MARGIN
+        writer = fitz.TextWriter(license_page.rect, color=(0, 0, 0))
+        writer.fill_textbox(
+            license_page.rect + (margin, margin, -margin, -margin),
+            [line or " " for line in chosen_template.render(self._context).splitlines()],
+            font=fitz.Font("helv"),
+            fontsize=self.LICENSE_PAGE_FONT_SIZE,
+        )
+        writer.write_text(license_page)
+
+        # If the source ships an outline, give the reader's contents panel a
+        # navigable entry for the license page (1-based page 2). We only augment
+        # an existing TOC to avoid manufacturing a one-item outline for PDFs that
+        # never had one.
+        toc = document.get_toc(simple=True)
+        if toc:
+            toc.append([1, "License / Access terms", 2])
+            document.set_toc(toc)
