@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "d37c00a9ffd870078bec5cee672a57974fb3577c",
-    "short": "d37c00a",
-    "message": "chore: admin user search",
-    "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/d37c00a9ffd870078bec5cee672a57974fb3577c"
+    "sha": "715ee92fdee549041a57d472a4a719fe3b8c020e",
+    "short": "715ee92",
+    "message": "Fixing license pages",
+    "author": "Jakub Dubec",
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/715ee92fdee549041a57d472a4a719fe3b8c020e"
   },
-  "deployed_at": "2026-10-09T14:29:56Z",
+  "deployed_at": "2026-10-18T15:10:42Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
