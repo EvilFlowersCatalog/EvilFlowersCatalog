@@ -42,7 +42,7 @@ SYSTEM_PROMPT = (
     "The reader is in the middle of reading and wants to understand what the passage means in "
     "context — what it refers to, what the terms mean and why it matters at this point.\n\n"
     "You are given the page the passage is on. When it refers to something defined elsewhere "
-    f"(\"this method\", \"the theorem above\", an abbreviation), find it: use `{SEARCH_PDF}` to "
+    f'("this method", "the theorem above", an abbreviation), find it: use `{SEARCH_PDF}` to '
     f"locate where a term is introduced and `{READ_PDF_PAGE}` to read earlier pages. Read only "
     "what you need. Base the explanation on what the book says; never invent its content.\n\n"
     "When you are done reading, answer with a single JSON object and nothing else:\n"
