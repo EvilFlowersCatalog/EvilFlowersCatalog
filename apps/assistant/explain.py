@@ -132,7 +132,12 @@ def explain(
             messages.append({"role": "tool", "content": _run_tool(document, call, pages_read)})
 
     # Out of rounds: ask for the answer from what has been read so far.
-    messages.append({"role": "user", "content": "Stop reading now and answer with the JSON object."})
+    messages.append(
+        {
+            "role": "user",
+            "content": f"Stop reading now and answer with the JSON object. {_language_instruction(language)}",
+        }
+    )
     content, _tool_calls, used = _complete(client, messages, None)
     return _parse(content, pages_read, tokens + used)
 
@@ -151,12 +156,29 @@ def _opening(document, text, page, title, authors, language, pages_read) -> str:
         parts.append(f"The page of the passage is unknown; use `{SEARCH_PDF}` to find it.")
 
     parts.append(f'The reader selected:\n"""\n{text}\n"""')
-    parts.append(
-        f"Write the explanation in the language with code `{language}`."
-        if language
-        else "Write the explanation in the language of the selected passage."
-    )
+    parts.append(_language_instruction(language))
     return "\n\n".join(parts)
+
+
+#: UI languages the reader can switch between, by code.
+LANGUAGE_NAMES = {"sk": "Slovak", "en": "English"}
+
+
+def _language_instruction(language: Optional[str]) -> str:
+    """Pins the answer to the reader's UI language, whatever the book is written in.
+
+    A bare code is not enough: asked for `sk`, small models drift into Czech, so
+    the language is named and Czech is ruled out explicitly.
+    """
+    code = (language or "").split("-")[0].lower()
+    name = LANGUAGE_NAMES.get(code)
+    if name is None:
+        return "Write the explanation in the language of the selected passage."
+
+    instruction = f"Write `simple` and every example in {name}, even when the publication is in another language."
+    if code == "sk":
+        instruction += " It must be Slovak, never Czech."
+    return instruction
 
 
 def _complete(client: OllamaClient, messages: List[dict], specifications: Optional[List[dict]]):
