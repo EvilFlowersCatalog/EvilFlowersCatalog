@@ -48,7 +48,8 @@ SYSTEM_PROMPT = (
     "When you are done reading, answer with a single JSON object and nothing else:\n"
     '{"simple": "<a short plain-language explanation, 2-5 sentences>", '
     '"examples": [{"label": "<short title>", "description": "<a concrete example or analogy>"}]}\n'
-    "Give 1-3 examples. Mention the page numbers you relied on in `simple` when they help."
+    "Give 1-3 examples. Do not mention page numbers: the viewer's numbering differs from the "
+    "numbers printed in the book, and small raised numbers in the text are footnote markers."
 )
 
 TOOL_SPECIFICATIONS = [
