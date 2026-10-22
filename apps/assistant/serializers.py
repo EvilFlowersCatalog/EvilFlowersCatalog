@@ -43,3 +43,16 @@ class ChatSerializer:
             # iterate; the model's Meta orders these by `created_at`. Tool
             # traffic is internal to the replayed conversation and not shown.
             return v.visible() if hasattr(v, "visible") else v
+
+
+class ExplanationExampleSerializer(Serializer):
+    label: str
+    description: str
+
+
+class ExplanationSerializer:
+    class Base(Serializer):
+        simple: str
+        examples: List[ExplanationExampleSerializer]
+        #: Pages the explanation was drawn from, in the order they were read.
+        pages: List[int]
