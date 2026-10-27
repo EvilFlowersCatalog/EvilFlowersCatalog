@@ -46,9 +46,7 @@ class CategoryFilter(django_filters.FilterSet):
     @staticmethod
     def filter_query(qs, name, value):
         return (
-            qs.annotate(
-                search_query=Concat("term", Value(";"), LocalizedValues("label"), output_field=CharField())
-            )
+            qs.annotate(search_query=Concat("term", Value(";"), LocalizedValues("label"), output_field=CharField()))
             .filter(search_query__unaccent__icontains=value)
             .distinct()
         )

@@ -217,8 +217,12 @@ class ClassificationTests(ManagementTestCase):
     def setUpTestData(cls):
         super().setUpTestData()
         cls.second_entry = Entry.objects.create(creator=cls.manager, catalog=cls.catalog, title="Another Book")
-        cls.mathematics = Category.objects.create(creator=cls.manager, catalog=cls.catalog, term="51", label={"sk": "Math"})
-        cls.physics = Category.objects.create(creator=cls.manager, catalog=cls.catalog, term="53", label={"sk": "Physics"})
+        cls.mathematics = Category.objects.create(
+            creator=cls.manager, catalog=cls.catalog, term="51", label={"sk": "Math"}
+        )
+        cls.physics = Category.objects.create(
+            creator=cls.manager, catalog=cls.catalog, term="53", label={"sk": "Physics"}
+        )
         cls.foreign = Category.objects.create(creator=cls.outsider, catalog=cls.other_catalog, term="99")
 
     def test_a_manager_can_file_publications_under_categories(self):
