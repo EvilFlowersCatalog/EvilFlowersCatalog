@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "cae46640c801d8fe84ec69ccffeb6e1048b95da6",
-    "short": "cae4664",
-    "message": "feat: localization of categories, feeds",
+    "sha": "2032e1809c1fbb099bc834dee24c9c8f9fccafe7",
+    "short": "2032e18",
+    "message": "style: formatting",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/cae46640c801d8fe84ec69ccffeb6e1048b95da6"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/2032e1809c1fbb099bc834dee24c9c8f9fccafe7"
   },
-  "deployed_at": "2026-10-27T20:06:17Z",
+  "deployed_at": "2026-10-27T20:09:56Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
