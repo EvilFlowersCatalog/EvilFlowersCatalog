@@ -9,10 +9,11 @@ can act on instead of a 500.
 """
 
 import uuid as uuid_module
-from typing import Any, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from django.utils.translation import gettext as _
 
+from apps.core.fields.localized import normalize_localized
 from apps.mcp.errors import ToolError
 
 
@@ -46,6 +47,25 @@ class Arguments:
         if len(value) > max_length:
             raise ToolError(_("`%(name)s` must be at most %(max)d characters.") % {"name": name, "max": max_length})
         return value.strip()
+
+    def localized(self, name: str, *, max_length: int = 1000) -> Optional[Dict[str, str]]:
+        """A localized text: a plain string (stored in the default language) or {"sk": "...", "en": "..."}."""
+        if not self._present(name):
+            return None
+
+        value = self._raw[name]
+        if isinstance(value, dict):
+            if not all(isinstance(code, str) and isinstance(text, str) for code, text in value.items()):
+                raise ToolError(_("`%(name)s` must map language codes to strings.") % {"name": name})
+            texts = value.values()
+        elif isinstance(value, str):
+            texts = [value]
+        else:
+            raise ToolError(_("`%(name)s` must be a string or an object of translations.") % {"name": name})
+
+        if any(len(text) > max_length for text in texts):
+            raise ToolError(_("`%(name)s` must be at most %(max)d characters.") % {"name": name, "max": max_length})
+        return normalize_localized(value)
 
     def boolean(self, name: str, *, default: Optional[bool] = None) -> Optional[bool]:
         if name not in self._raw or self._raw[name] is None:

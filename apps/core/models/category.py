@@ -17,16 +17,15 @@ class Category(BaseModel):
         indexes = [
             models.Index(fields=["catalog_id"]),
             models.Index(fields=["term"]),
-            models.Index(fields=["label"]),
             models.Index(fields=["scheme"]),
             models.Index(fields=["catalog_id", "term"]),
-            models.Index(fields=["catalog_id", "label"]),
         ]
 
     creator = models.ForeignKey(User, on_delete=models.CASCADE)
     catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE)
     term = models.CharField(max_length=255)
-    label = models.CharField(max_length=255, null=True)
+    # Localized text, e.g. {"sk": "Informatika", "en": "Computer science"}
+    label = models.JSONField(default=dict, blank=True)
     scheme = models.CharField(max_length=255, null=True)
 
     def __str__(self):

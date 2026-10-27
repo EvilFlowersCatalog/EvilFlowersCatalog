@@ -143,6 +143,7 @@ urlpatterns = [
     path("token/refresh", tokens.RefreshTokenManagement.as_view(), name="refresh"),
     path("token", tokens.AccessTokenManagement.as_view(), name="login"),
     path("languages", languages.LanguageManagement.as_view(), name="languages"),
+    path("languages/<uuid:language_id>", languages.LanguageDetail.as_view(), name="language-detail"),
     # Dataverse (legacy shim path — implementation now in apps.dataverse).
     # `dataverse-sync` was never called by any Dataverse workflow; we used to
     # 200-OK the request. Drop the route — a 404 here surfaces the dead

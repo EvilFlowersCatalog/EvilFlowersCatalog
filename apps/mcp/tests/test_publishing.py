@@ -165,7 +165,7 @@ class CreateEntryTests(PublishingTestCase):
         feed = Feed.objects.create(
             creator=self.outsider,
             catalog=self.other_catalog,
-            title="F",
+            title={"sk": "F"},
             url_name="f",
             kind=Feed.FeedKind.ACQUISITION,
             content="…",

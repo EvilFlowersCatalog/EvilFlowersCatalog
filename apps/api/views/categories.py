@@ -9,7 +9,8 @@ from apps.api.filters.categories import CategoryFilter
 from apps.api.forms.category import CategoryForm
 from apps.api.serializers.entries import CategorySerializer
 from apps.core.errors import ValidationException, ProblemDetailException
-from apps.api.response import SingleResponse, PaginationResponse
+from apps.api.response import SingleResponse, PaginationResponse, Ordering
+from apps.core.fields.localized import localized_sort_key, sort_language
 from apps.core.models import Category
 from apps.core.views import SecuredView
 
@@ -52,9 +53,18 @@ class CategoryManagement(SecuredView):
         summary="List all categories",
     )
     def get(self, request):
-        catalogs = CategoryFilter(request.GET, queryset=Category.objects.all(), request=request).qs
+        categories = CategoryFilter(request.GET, queryset=Category.objects.all(), request=request).qs
+        # `order_by=label` sorts by the translation in `?language=`, categories without a label by term
+        categories = categories.annotate(
+            label_sort=localized_sort_key("label", sort_language(request), fallback="term")
+        )
 
-        return PaginationResponse(request, catalogs, serializer=CategorySerializer.Detailed)
+        return PaginationResponse(
+            request,
+            categories,
+            serializer=CategorySerializer.Detailed,
+            ordering=Ordering.create_from_request(request, aliases={"label": "label_sort"}),
+        )
 
 
 class CategoryDetail(SecuredView):

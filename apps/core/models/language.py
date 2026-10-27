@@ -20,6 +20,10 @@ class Language(BaseModel):
     name = models.CharField(max_length=100)
     alpha2 = models.CharField(max_length=2, unique=True)
     alpha3 = models.CharField(max_length=3, null=True)
+    translatable = models.BooleanField(
+        default=False,
+        help_text=_("Feed titles and category labels can be entered in this language"),
+    )
 
 
 __all__ = ["Language"]

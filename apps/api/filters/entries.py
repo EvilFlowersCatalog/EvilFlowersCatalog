@@ -8,6 +8,7 @@ from django.db.models.functions import Concat, Lower
 from django.utils.translation import gettext as _
 from partial_date import PartialDate
 
+from apps.core.fields.localized import localize
 from apps.core.models import Entry
 from apps.opds.structures import Facet
 from apps.api.filters.base import BaseSecuredFilter
@@ -187,7 +188,7 @@ class EntryFilter(BaseSecuredFilter):
             url_params["category_id"] = category_id
             facets.append(
                 Facet(
-                    title=row["categories__label"] or row["categories__term"],
+                    title=localize(row["categories__label"]) or row["categories__term"],
                     href=f"{self.request.path}?{urlencode(url_params)}",
                     group=_("Category"),
                     count=row["count"],

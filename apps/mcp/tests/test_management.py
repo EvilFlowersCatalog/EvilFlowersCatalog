@@ -79,7 +79,7 @@ class FeedCreationTests(ManagementTestCase):
             self.manager,
         )
 
-        self.assertEqual(payload["feed"]["title"], "Browse by faculty")
+        self.assertEqual(payload["feed"]["title"], {"sk": "Browse by faculty"})
         self.assertEqual(payload["feed"]["kind"], "navigation")
         self.assertTrue(payload["feed"]["opds_url"].endswith("/managed/feed/faculty"), payload["feed"]["opds_url"])
 
@@ -201,7 +201,7 @@ class FeedPermissionTests(ManagementTestCase):
         MCP inherits it exactly as REST does.
         """
         payload = self.ok("create_feed", self._create_arguments(self.catalog), self.superuser)
-        self.assertEqual(payload["feed"]["title"], "Attempt")
+        self.assertEqual(payload["feed"]["title"], {"sk": "Attempt"})
 
     @override_settings(EVILFLOWERS_MCP_ALLOW_WRITE=False)
     def test_the_kill_switch_hides_the_tool_entirely(self):
@@ -217,7 +217,7 @@ class FeedUpdateTests(ManagementTestCase):
         self.feed = Feed.objects.create(
             creator=self.manager,
             catalog=self.catalog,
-            title="Original",
+            title={"sk": "Original"},
             url_name="original",
             kind=Feed.FeedKind.ACQUISITION,
             source=Feed.FeedSource.RELATION,
@@ -227,7 +227,7 @@ class FeedUpdateTests(ManagementTestCase):
     def test_a_partial_update_leaves_other_fields_alone(self):
         payload = self.ok("update_feed", {"feed_id": str(self.feed.pk), "title": "Renamed"}, self.manager)
 
-        self.assertEqual(payload["feed"]["title"], "Renamed")
+        self.assertEqual(payload["feed"]["title"], {"sk": "Renamed"})
         self.assertEqual(payload["feed"]["url_name"], "original")
         self.assertEqual(payload["feed"]["content"], "Original description.")
 
@@ -276,7 +276,7 @@ class FeedDeletionTests(ManagementTestCase):
         self.feed = Feed.objects.create(
             creator=self.manager,
             catalog=self.catalog,
-            title="Doomed",
+            title={"sk": "Doomed"},
             url_name="doomed",
             kind=Feed.FeedKind.ACQUISITION,
             source=Feed.FeedSource.RELATION,
@@ -304,7 +304,7 @@ class FeedReadTests(ManagementTestCase):
         self.feed = Feed.objects.create(
             creator=self.manager,
             catalog=self.catalog,
-            title="Visible",
+            title={"sk": "Visible"},
             url_name="visible",
             kind=Feed.FeedKind.NAVIGATION,
             source=Feed.FeedSource.RELATION,
@@ -313,7 +313,7 @@ class FeedReadTests(ManagementTestCase):
 
     def test_a_member_can_list_feeds(self):
         payload = self.ok("list_feeds", {}, self.reader)
-        self.assertEqual([item["title"] for item in payload["items"]], ["Visible"])
+        self.assertEqual([item["title"] for item in payload["items"]], [{"sk": "Visible"}])
 
     def test_an_outsider_sees_none(self):
         self.assertEqual(self.ok("list_feeds", {}, self.outsider)["items"], [])
@@ -333,7 +333,7 @@ class CategoryManagementTests(ManagementTestCase):
             self.manager,
         )
         self.assertEqual(payload["category"]["term"], "informatics")
-        self.assertEqual(payload["category"]["label"], "Informatics")
+        self.assertEqual(payload["category"]["label"], {"sk": "Informatics"})
 
     def test_a_duplicate_term_is_a_conflict(self):
         arguments = {"catalog_id": str(self.catalog.pk), "term": "maths"}
@@ -359,7 +359,7 @@ class CategoryManagementTests(ManagementTestCase):
 
         payload = self.ok("update_category", {"category_id": created["id"], "label": "Applied Physics"}, self.manager)
 
-        self.assertEqual(payload["category"]["label"], "Applied Physics")
+        self.assertEqual(payload["category"]["label"], {"sk": "Applied Physics"})
         self.assertEqual(payload["category"]["term"], "physics")
         self.assertEqual(payload["category"]["scheme"], "http://x")
 

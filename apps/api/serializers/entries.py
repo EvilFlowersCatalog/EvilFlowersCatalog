@@ -35,7 +35,7 @@ class CategorySerializer:
     class Base(Serializer):
         id: UUID
         term: str
-        label: Optional[str]
+        label: Dict[str, str]
 
     class Detailed(Base):
         catalog_id: UUID
@@ -48,6 +48,7 @@ class LanguageSerializer:
         name: str
         alpha2: str
         alpha3: str
+        translatable: bool
 
 
 class AcquisitionSerializer:

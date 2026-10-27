@@ -269,7 +269,7 @@ class EntryService:
                     term=record["term"],
                     defaults={
                         "creator": self._creator,
-                        "label": record.get("label"),
+                        "label": record.get("label") or {},
                         "scheme": record.get("scheme"),
                     },
                 )

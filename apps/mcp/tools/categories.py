@@ -15,6 +15,7 @@ from object_checker.base_object_checker import has_object_permission
 
 from apps.api.filters.categories import CategoryFilter
 from apps.api.forms.category import CategoryForm
+from apps.core.fields.localized import normalize_localized
 from apps.core.models import Category
 from apps.mcp.arguments import Arguments
 from apps.mcp.errors import ToolConflict, ToolError, ToolNotFound, ToolPermissionDenied, ToolValidationError
@@ -32,7 +33,17 @@ CATEGORY_FIELDS = {
         "maxLength": 255,
         "description": "The machine-readable subject token, unique within the catalog (e.g. 'applied-informatics').",
     },
-    "label": {"type": "string", "maxLength": 255, "description": "Human-readable name shown to readers."},
+    "label": {
+        "oneOf": [
+            {"type": "string", "maxLength": 255},
+            {"type": "object", "additionalProperties": {"type": "string", "maxLength": 255}},
+        ],
+        "description": (
+            "Human-readable name shown to readers. Either translations keyed by ISO 639-1 code "
+            '({"sk": "...", "en": "..."}) or a plain string stored in the default language. '
+            "When set, the default-language (Slovak) translation is required. Updating replaces all translations."
+        ),
+    },
     "scheme": {
         "type": "string",
         "maxLength": 255,
@@ -74,6 +85,15 @@ def _assert_term_free(catalog, term: str, *, exclude_pk=None) -> None:
             _("Catalog '%(catalog)s' already has a category with the term '%(term)s'.")
             % {"catalog": catalog.title, "term": term}
         )
+
+
+def _record_label(value, index: int) -> dict:
+    """`label` of one bulk record: a string, an object of translations or nothing."""
+    if value is not None and not isinstance(value, (str, dict)):
+        raise ToolError(
+            _("`categories[%(index)d].label` must be a string or an object of translations.") % {"index": index}
+        )
+    return normalize_localized(value)
 
 
 def _validated_form(payload: dict) -> CategoryForm:
@@ -128,7 +148,7 @@ def _read_category_list(raw) -> list:
         records.append(
             {
                 "term": term,
-                "label": (item.get("label") or "").strip() or None,
+                "label": _record_label(item.get("label"), index),
                 "scheme": (item.get("scheme") or "").strip() or None,
             }
         )
@@ -188,7 +208,7 @@ def create_category(request, raw_arguments: dict) -> dict:
         {
             "catalog_id": str(catalog.pk),
             "term": arguments.string("term", max_length=255),
-            "label": arguments.string("label", max_length=255),
+            "label": arguments.localized("label", max_length=255),
             "scheme": arguments.string("scheme", max_length=255),
         }
     )
@@ -250,7 +270,7 @@ def update_category(request, raw_arguments: dict) -> dict:
             "term": arguments.string("term", max_length=255) or category.term,
             # `label` and `scheme` are nullable, so an explicitly-passed empty
             # string means "clear it" while omission means "leave it".
-            "label": arguments.string("label", max_length=255) if "label" in raw_arguments else category.label,
+            "label": arguments.localized("label", max_length=255) if "label" in raw_arguments else category.label,
             "scheme": arguments.string("scheme", max_length=255) if "scheme" in raw_arguments else category.scheme,
         }
     )

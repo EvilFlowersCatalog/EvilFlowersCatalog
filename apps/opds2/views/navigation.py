@@ -2,6 +2,7 @@ from http import HTTPStatus
 
 from django.utils.translation import gettext as _
 
+from apps.core.fields.localized import localize, request_language
 from apps.api.utils.parse import parse_int_query
 from apps.core.errors import ProblemDetailException
 from apps.core.models import Entry, Feed
@@ -30,7 +31,7 @@ class FeedView(Opds2CatalogView):
             entries = custom_feed.entries.order_by("-created_at")
             page = parse_int_query(request, "page", default=1, min_value=1)
             feed = FeedBuilder.build_publication_feed(
-                entries, self.catalog, request, page=page, title=custom_feed.title
+                entries, self.catalog, request, page=page, title=localize(custom_feed.title, request_language(request))
             )
 
         return self.opds_response(feed.model_dump(exclude_none=True, by_alias=True))

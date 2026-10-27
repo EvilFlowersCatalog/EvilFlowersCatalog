@@ -4,6 +4,7 @@ import django_filters
 from django.core.exceptions import ValidationError
 from django.forms import UUIDField
 
+from apps.core.fields.localized import LocalizedValues
 from apps.core.models import Feed
 
 
@@ -23,8 +24,8 @@ class FeedFilter(django_filters.FilterSet):
         help_text="Filter feeds by catalog UUID. Returns only feeds belonging to the specified catalog."
     )
     title = django_filters.CharFilter(
-        lookup_expr="unaccent__icontains",
-        help_text="Filter feeds by title using case-insensitive partial matching. Searches within feed names and descriptions.",
+        method="filter_title",
+        help_text="Filter feeds by title using case-insensitive partial matching in any of its translations.",
     )
     kind = django_filters.ChoiceFilter(
         choices=Feed.FeedKind.choices,
@@ -38,6 +39,10 @@ class FeedFilter(django_filters.FilterSet):
     class Meta:
         model = Feed
         fields = []
+
+    @staticmethod
+    def filter_title(qs, name, value):
+        return qs.annotate(title_text=LocalizedValues("title")).filter(title_text__unaccent__icontains=value)
 
     @staticmethod
     def filter_parent_id(qs, name, value):

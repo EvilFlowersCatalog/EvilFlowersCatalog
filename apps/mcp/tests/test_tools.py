@@ -31,7 +31,7 @@ class ToolTestCase(TestCase):
 
         cls.author = Author.objects.create(catalog=cls.public_catalog, name="Ada", surname="Lovelace")
         cls.category = Category.objects.create(
-            creator=cls.owner, catalog=cls.public_catalog, term="analytical-engine", label="Analytical Engine"
+            creator=cls.owner, catalog=cls.public_catalog, term="analytical-engine", label={"sk": "Analytical Engine"}
         )
 
         cls.public_entry = cls._entry(cls.public_catalog, "Notes on the Analytical Engine", publisher="Taylor")
@@ -174,7 +174,7 @@ class VocabularyTests(ToolTestCase):
     def test_list_categories_returns_terms_and_labels(self):
         payload = self.ok("list_categories", {}, self.owner)
         self.assertEqual(payload["items"][0]["term"], "analytical-engine")
-        self.assertEqual(payload["items"][0]["label"], "Analytical Engine")
+        self.assertEqual(payload["items"][0]["label"], {"sk": "Analytical Engine"})
 
 
 class PersonalLibraryTests(ToolTestCase):

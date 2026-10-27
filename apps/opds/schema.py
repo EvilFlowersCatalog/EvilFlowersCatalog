@@ -6,6 +6,7 @@ from django.urls import reverse
 from pydantic import EmailStr, Field
 from pydantic_xml import BaseXmlModel, attr, element
 
+from apps.core.fields.localized import localize
 from apps.core.models import Entry, Acquisition
 
 NSMAP = {
@@ -136,7 +137,7 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
                 Category(
                     term=category.term,
                     scheme=category.scheme,
-                    label=category.label,
+                    label=localize(category.label),
                 )
             )
 

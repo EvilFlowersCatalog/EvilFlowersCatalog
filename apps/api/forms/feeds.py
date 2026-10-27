@@ -3,12 +3,13 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
 from django_api_forms import Form
 
+from apps.core.fields.localized import LocalizedTextFormField
 from apps.core.models import Catalog, Feed, Entry
 
 
 class FeedForm(Form):
     catalog_id = forms.ModelChoiceField(queryset=Catalog.objects.all())
-    title = forms.CharField(max_length=100)
+    title = LocalizedTextFormField(max_length=100)
     url_name = forms.SlugField(max_length=50)
     kind = forms.ChoiceField(choices=Feed.FeedKind.choices)
     content = forms.CharField()

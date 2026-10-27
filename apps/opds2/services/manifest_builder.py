@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.urls import reverse
 
+from apps.core.fields.localized import localize
 from apps.core.models import Entry
 from apps.opds2.schema.opds import Availability, Copies
 from apps.opds2.schema.rwpm import Contributor, Link, Metadata, Properties, Publication, Subject
@@ -123,7 +124,7 @@ class ManifestBuilder:
         for category in entry.categories.all():
             subjects.append(
                 Subject(
-                    name=category.label or category.term,
+                    name=localize(category.label) or category.term,
                     scheme=category.scheme,
                     code=category.term,
                 )

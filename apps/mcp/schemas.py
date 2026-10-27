@@ -12,6 +12,12 @@ from typing import Optional
 
 UUID_SCHEMA = {"type": "string", "format": "uuid"}
 
+LOCALIZED_TEXT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": {"type": "string"},
+    "description": 'Translations keyed by ISO 639-1 language code, e.g. {"sk": "Informatika", "en": "Computer science"}.',
+}
+
 PAGINATION_METADATA_SCHEMA = {
     "type": "object",
     "properties": {
@@ -143,7 +149,7 @@ CATEGORY_SCHEMA = {
         "id": UUID_SCHEMA,
         "catalog_id": UUID_SCHEMA,
         "term": {"type": "string"},
-        "label": {"type": "string"},
+        "label": LOCALIZED_TEXT_SCHEMA,
         "scheme": {"type": "string"},
     },
     "required": ["id", "catalog_id", "term"],
@@ -155,7 +161,7 @@ FEED_SCHEMA = {
         "id": UUID_SCHEMA,
         "catalog_id": UUID_SCHEMA,
         "creator_id": UUID_SCHEMA,
-        "title": {"type": "string"},
+        "title": LOCALIZED_TEXT_SCHEMA,
         "url_name": {"type": "string"},
         "kind": {"type": "string", "enum": ["navigation", "acquisition"]},
         "content": {"type": "string"},

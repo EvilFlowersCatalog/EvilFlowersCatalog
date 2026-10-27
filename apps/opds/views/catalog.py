@@ -3,6 +3,7 @@ from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.translation import gettext as _
 
+from apps.core.fields.localized import localize, request_language
 from apps.opds.schema import OpdsFeed, Link, Author, NavigationEntry, Content, LinkType
 from apps.opds.views.base import OpdsCatalogView
 
@@ -149,7 +150,7 @@ class RootView(OpdsCatalogView):
                             },
                         )
                     ),
-                    title=feed.title,
+                    title=localize(feed.title, request_language(request)),
                     links=[
                         Link(
                             rel=LinkType.SUBSECTION,
