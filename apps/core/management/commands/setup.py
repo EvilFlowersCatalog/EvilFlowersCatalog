@@ -1,5 +1,4 @@
 import pycountry
-from django.conf import settings
 from django.core.management import BaseCommand
 
 from apps.core.models import Language, Currency
@@ -30,11 +29,7 @@ class Command(BaseCommand):
             try:
                 language = Language.objects.get(alpha2=item.alpha_2)
             except Language.DoesNotExist:
-                # New installations offer translations in the default language and English
-                language = Language(
-                    alpha2=item.alpha_2,
-                    translatable=item.alpha_2 in (settings.EVILFLOWERS_DEFAULT_LANGUAGE, "en"),
-                )
+                language = Language(alpha2=item.alpha_2)
 
             language.name = item.name
             language.alpha3 = item.alpha_3

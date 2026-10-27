@@ -48,7 +48,6 @@ class LanguageSerializer:
         name: str
         alpha2: str
         alpha3: str
-        translatable: bool
 
 
 class AcquisitionSerializer:
