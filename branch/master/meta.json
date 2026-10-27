@@ -3,12 +3,12 @@
   "slug": "master",
   "kind": "branch",
   "commit": {
-    "sha": "cb1256ce2de1a64f43384457f7b27db83f630a30",
-    "short": "cb1256c",
-    "message": "#87 from develop - Expalin in viewer",
+    "sha": "dd0428e0591b33102bd24e912bd201a64e2bf5b6",
+    "short": "dd0428e",
+    "message": "Merge pull request #88 from EvilFlowersCatalog/develop",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/cb1256ce2de1a64f43384457f7b27db83f630a30"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/dd0428e0591b33102bd24e912bd201a64e2bf5b6"
   },
-  "deployed_at": "2026-10-26T14:17:57Z",
+  "deployed_at": "2026-10-27T20:36:30Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
