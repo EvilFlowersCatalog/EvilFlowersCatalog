@@ -2,7 +2,7 @@
 draft: true
 date: 2026-09-21
 authors:
-  - tomikjetu
+  - kordostomas
 categories:
   - Feature
 tags:
@@ -522,7 +522,7 @@ Read-only endpoint; deletion stays under Future Considerations.
 
 | Date | Author | Changes |
 |------|--------|---------|
-| 2026-09-21 | tomikjetu | Initial draft: event list, collapse rule, model, API, 12-month retention; annotations excluded |
-| 2026-09-21 | tomikjetu | Added Review Questions section |
-| 2026-09-21 | tomikjetu | Resolved all review questions (all option A); status → Accepted |
-| 2026-09-21 | tomikjetu | Implemented backend (model, migration 0041, service, hooks, signals, `GET /api/v1/activity`, retention task) and elvira-portal History page; `loan_renewed` moved from signal to `LicenseService.renew_license`; `acquisition_shared` limited to `type=shared`; dropped admin registration |
+| 2026-09-21 | kordostomas | Initial draft: event list, collapse rule, model, API, 12-month retention; annotations excluded |
+| 2026-09-21 | kordostomas | Added Review Questions section |
+| 2026-09-21 | kordostomas | Resolved all review questions (all option A); status → Accepted |
+| 2026-09-21 | kordostomas | Implemented backend (model, migration 0041, service, hooks, signals, `GET /api/v1/activity`, retention task) and elvira-portal History page; `loan_renewed` moved from signal to `LicenseService.renew_license`; `acquisition_shared` limited to `type=shared`; dropped admin registration |

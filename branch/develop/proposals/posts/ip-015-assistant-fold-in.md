@@ -2,7 +2,7 @@
 draft: true
 date: 2026-09-17
 authors:
-  - tomikjetu
+  - kordostomas
 categories:
   - Architecture
   - Feature
@@ -511,7 +511,7 @@ external MCP clients both pick them up.
 
 | Date | Author | Changes |
 |------|--------|---------|
-| 2026-09-17 | tomikjetu | Initial draft: in-catalog chat assistant carved out of IP-012 Phase 5 |
-| 2026-09-17 | tomikjetu | Reframed as new build with `elvira-ai-agent` as reference only; removed all data-migration scope; moved old-database and nginx decommissioning out of scope; expanded Review Questions to 14 |
-| 2026-09-17 | tomikjetu | Assistant now reuses the `apps/mcp` tool registry in-process instead of defining its own tools; added Q15–Q17 on tool subset, write access and shared access enforcement |
-| 2026-09-17 | tomikjetu | Resolved all review questions into binding Decisions (D1-D12); tool set fixed at three read-only tools; daily-limits table dropped in favour of derived usage; KV-cache-preserving context policy; single-catalog simplification |
+| 2026-09-17 | kordostomas | Initial draft: in-catalog chat assistant carved out of IP-012 Phase 5 |
+| 2026-09-17 | kordostomas | Reframed as new build with `elvira-ai-agent` as reference only; removed all data-migration scope; moved old-database and nginx decommissioning out of scope; expanded Review Questions to 14 |
+| 2026-09-17 | kordostomas | Assistant now reuses the `apps/mcp` tool registry in-process instead of defining its own tools; added Q15–Q17 on tool subset, write access and shared access enforcement |
+| 2026-09-17 | kordostomas | Resolved all review questions into binding Decisions (D1-D12); tool set fixed at three read-only tools; daily-limits table dropped in favour of derived usage; KV-cache-preserving context policy; single-catalog simplification |
