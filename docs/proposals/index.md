@@ -24,6 +24,7 @@ changes are documented before implementation.
 | IP-015 | [Fold `elvira-ai-agent` into the Catalog as `apps/assistant`](posts/ip-015-assistant-fold-in.md) | 📝 Draft (awaiting review answers) | 2026-09-17 |
 | IP-016 | [Personal Activity History](posts/ip-016-user-activity-history.md) | ✅ Accepted (implemented, tests not yet run) | 2026-09-21 |
 | IP-017 | [Multilingual Feed Titles and Category Labels](posts/ip-017-multilingual-titles.md) | 📝 Draft (implemented, awaiting review answers) | 2026-10-27 |
+| IP-018 | [Intelligent Viewer](posts/ip-018-intelligent-viewer.md) | 📝 Draft (awaiting review answers) | 2026-10-27 |
 
 **Note on the Readium cluster.** IP-001, IP-003 (feature scope), IP-004, IP-007, IP-008,
 IP-009, and IP-011 together constitute the completed Readium LCP delivery and are all
@@ -34,6 +35,9 @@ is considered **done**; remaining certification/deployment items are descoped (s
 summarization, assistant); neither is started. IP-015 carves the `elvira-ai-agent`
 consolidation out of IP-012 Phase 5 so the chatbot can move into the catalog without waiting
 on the RAG workstream — see IP-015 Q1 for how the overlap is to be resolved.
+IP-018 runs in parallel with IP-012, IP-013 and IP-015: whichever implements a shared piece first
+owns it. It reverses IP-013's "no highlighting" non-goal for the viewer, and records that none of
+the `evilflowers-*-service` containers run in production (2026-10-27).
 
 
 
