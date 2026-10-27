@@ -36,14 +36,14 @@ class SurfaceTestCase(TestCase):
         cls.private_feed = Feed.objects.create(
             creator=cls.member,
             catalog=cls.private_catalog,
-            title="Secret Shelf",
+            title={"sk": "Secret Shelf"},
             url_name="secret",
             kind=Feed.FeedKind.NAVIGATION,
             source=Feed.FeedSource.RELATION,
             content="x",
         )
         Category.objects.create(
-            creator=cls.member, catalog=cls.public_catalog, term="mathematics", label="Mathematics"
+            creator=cls.member, catalog=cls.public_catalog, term="mathematics", label={"sk": "Mathematics"}
         )
         Category.objects.create(creator=cls.member, catalog=cls.private_catalog, term="classified")
 
@@ -118,7 +118,7 @@ class ResourceReadTests(SurfaceTestCase):
 
     def test_reading_a_feed_works(self):
         payload = self._read(uris.feed_uri(self.private_feed.pk), self.member)
-        self.assertEqual(payload["title"], "Secret Shelf")
+        self.assertEqual(payload["title"], {"sk": "Secret Shelf"})
 
     def test_a_resource_cannot_reveal_what_a_tool_would_refuse(self):
         """The whole point of routing reads through the same filters."""

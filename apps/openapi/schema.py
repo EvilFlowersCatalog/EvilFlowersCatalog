@@ -24,6 +24,7 @@ from django_filters import UUIDFilter, DateTimeFilter, CharFilter, BooleanFilter
 from pydantic import Field, BaseModel
 
 from apps.api.response import PaginationModel
+from apps.core.fields.localized import LocalizedTextFormField
 from apps.api.serializers import Serializer
 from apps.openapi.analyzers import MethodAnalyzer
 from apps.openapi.types import (
@@ -236,6 +237,15 @@ class OpenApiDocument(OpenApiBaseModel):
                 case EnumField():
                     self.components["schemas"][name]["properties"][field_name]["type"] = "string"
                     self.components["schemas"][name]["properties"][field_name]["enum"] = field.enum.values
+                case LocalizedTextFormField():
+                    self.components["schemas"][name]["properties"][field_name].update(
+                        {
+                            "type": "object",
+                            "additionalProperties": {"type": "string"},
+                            "description": "Translations keyed by ISO 639-1 language code",
+                            "example": {"sk": "Informatika", "en": "Computer science"},
+                        }
+                    )
                 case DictionaryField():
                     self.components["schemas"][name]["properties"][field_name]["type"] = "string"
                 case ImageField() | FileField():

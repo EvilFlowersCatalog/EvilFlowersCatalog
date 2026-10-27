@@ -29,7 +29,8 @@ class Feed(BaseModel):
 
     catalog = models.ForeignKey(Catalog, on_delete=models.CASCADE, related_name="feeds")
     creator = models.ForeignKey(User, on_delete=models.CASCADE)
-    title = models.CharField(max_length=100)
+    # Localized text, e.g. {"sk": "Nové knihy", "en": "New books"}
+    title = models.JSONField(default=dict)
     url_name = models.SlugField()
     kind = models.CharField(max_length=20, choices=FeedKind.choices)
     source = models.CharField(max_length=20, choices=FeedSource.choices)

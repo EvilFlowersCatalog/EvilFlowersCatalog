@@ -2,6 +2,7 @@ import django_filters
 from django.db.models import Value, CharField, Q
 from django.db.models.functions import Concat
 
+from apps.core.fields.localized import LocalizedValues
 from apps.core.models import Category
 
 
@@ -22,8 +23,8 @@ class CategoryFilter(django_filters.FilterSet):
         help_text="Filter categories by exact term match. Terms are the unique identifiers for categories, typically using standardized vocabulary (e.g., 'fiction', 'science').",
     )
     label = django_filters.CharFilter(
-        lookup_expr="unaccent__icontains",
-        help_text="Filter categories by label using case-insensitive partial matching. Labels are human-readable descriptions of category terms.",
+        method="filter_label",
+        help_text="Filter categories by label using case-insensitive partial matching in any of its translations. Labels are human-readable descriptions of category terms.",
     )
     scheme = django_filters.CharFilter(
         lookup_expr="unaccent__icontains",
@@ -39,9 +40,13 @@ class CategoryFilter(django_filters.FilterSet):
         fields = []
 
     @staticmethod
+    def filter_label(qs, name, value):
+        return qs.annotate(label_text=LocalizedValues("label")).filter(label_text__unaccent__icontains=value)
+
+    @staticmethod
     def filter_query(qs, name, value):
         return (
-            qs.annotate(search_query=Concat("term", Value(";"), "label", output_field=CharField()))
+            qs.annotate(search_query=Concat("term", Value(";"), LocalizedValues("label"), output_field=CharField()))
             .filter(search_query__unaccent__icontains=value)
             .distinct()
         )

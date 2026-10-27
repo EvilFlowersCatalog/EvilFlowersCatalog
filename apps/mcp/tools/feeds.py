@@ -20,6 +20,7 @@ from object_checker.base_object_checker import has_object_permission
 from apps.api.filters.entries import EntryFilter
 from apps.api.filters.feeds import FeedFilter
 from apps.api.forms.feeds import FeedForm
+from apps.core.fields.localized import localize, localized_sort_key
 from apps.core.models import Entry, Feed
 from apps.mcp.arguments import Arguments
 from apps.mcp.errors import ToolConflict, ToolError, ToolNotFound, ToolPermissionDenied, ToolValidationError
@@ -42,9 +43,15 @@ FEED_KINDS = tuple(kind.value for kind in Feed.FeedKind)
 # differently — a model reading both should see one vocabulary.
 FEED_FIELDS = {
     "title": {
-        "type": "string",
-        "maxLength": 100,
-        "description": "Human-readable feed name, unique within the catalog.",
+        "oneOf": [
+            {"type": "string", "maxLength": 100},
+            {"type": "object", "additionalProperties": {"type": "string", "maxLength": 100}},
+        ],
+        "description": (
+            "Human-readable feed name, unique within the catalog. Either translations keyed by ISO 639-1 "
+            'code ({"sk": "...", "en": "..."}) or a plain string stored in the default language. '
+            "The default-language (Slovak) translation is required. Updating replaces all translations."
+        ),
     },
     "url_name": {
         "type": "string",
@@ -103,11 +110,11 @@ def _manageable_feed(request, feed_id: str, action: str) -> Feed:
     """
     feed = _readable_feed(request, feed_id)
     if not has_object_permission("check_catalog_manage", request.user, feed.catalog):
-        raise ToolPermissionDenied(action, f"feed '{feed.title}'")
+        raise ToolPermissionDenied(action, f"feed '{localize(feed.title)}'")
     return feed
 
 
-def _assert_unique(catalog, title: str, url_name: str, *, exclude_pk=None) -> None:
+def _assert_unique(catalog, title: dict, url_name: str, *, exclude_pk=None) -> None:
     """Both halves of `Feed.Meta.unique_together`.
 
     The REST endpoint checks `url_name` only, so a duplicate title reaches the
@@ -126,7 +133,7 @@ def _assert_unique(catalog, title: str, url_name: str, *, exclude_pk=None) -> No
     if clashes.filter(title=title).exists():
         raise ToolConflict(
             _("A feed titled '%(title)s' already exists in catalog '%(catalog)s'.")
-            % {"title": title, "catalog": catalog.title}
+            % {"title": localize(title), "catalog": catalog.title}
         )
 
 
@@ -187,8 +194,8 @@ def list_feeds(request, raw_arguments: dict) -> dict:
     feeds = (
         FeedFilter(params, queryset=Feed.objects.all(), request=request)
         .qs.select_related("catalog")
-        .annotate(entry_count=Count("entries", distinct=True))
-        .order_by("title")
+        .annotate(entry_count=Count("entries", distinct=True), title_sort=localized_sort_key("title"))
+        .order_by("title_sort")
         .distinct()
     )
     page = paginate(feeds, requested_page)
@@ -255,7 +262,7 @@ def create_feed(request, raw_arguments: dict) -> dict:
     form = _validated_form(
         {
             "catalog_id": str(catalog.pk),
-            "title": arguments.string("title"),
+            "title": arguments.localized("title", max_length=100),
             "url_name": arguments.string("url_name"),
             "kind": arguments.enum("kind", FEED_KINDS),
             "content": arguments.string("content", max_length=20_000),
@@ -352,7 +359,7 @@ def update_feed(request, raw_arguments: dict) -> dict:
     # validating through the same all-fields-required form as REST.
     payload = {
         "catalog_id": str(catalog.pk),
-        "title": arguments.string("title") or feed.title,
+        "title": arguments.localized("title", max_length=100) or feed.title,
         "url_name": arguments.string("url_name") or feed.url_name,
         "kind": arguments.enum("kind", FEED_KINDS) or feed.kind,
         "content": arguments.string("content", max_length=20_000) or feed.content,
@@ -409,7 +416,7 @@ def delete_feed(request, raw_arguments: dict) -> dict:
     arguments = Arguments(raw_arguments, allowed=("feed_id",))
     feed = _manageable_feed(request, arguments.uuid("feed_id", required=True), "delete")
 
-    identifier, title, catalog_id = str(feed.pk), feed.title, feed.catalog_id
+    identifier, title, catalog_id = str(feed.pk), localize(feed.title), feed.catalog_id
     feed.delete()
 
     logger.info("mcp.write user=%s action=delete_feed feed=%s catalog=%s", request.user.pk, identifier, catalog_id)
@@ -426,7 +433,7 @@ def _acquisition_feed_for_management(request, feed_id: str, action: str) -> Feed
                 "publications directly. Add the entries to one of its acquisition children, or "
                 "use `list_feeds` with `parent_id` to find them."
             )
-            % {"title": feed.title}
+            % {"title": localize(feed.title)}
         )
 
     return feed

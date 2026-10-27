@@ -3,6 +3,7 @@ from django.db.models import QuerySet
 from django.http import HttpRequest
 from django.urls import reverse
 
+from apps.core.fields.localized import localize, request_language
 from apps.core.models import Catalog, Entry, Feed
 from apps.readium.models import License
 from apps.opds2.schema.opds import NavigationEntry, OpdsFeed
@@ -14,6 +15,10 @@ OPDS_JSON = "application/opds+json"
 
 class FeedBuilder:
     """Builds OPDS 2.0 JSON feeds from Django models."""
+
+    @staticmethod
+    def _sorted_by_title(feeds: QuerySet, language: str) -> list:
+        return sorted(feeds, key=lambda feed: (localize(feed.title, language) or "").casefold())
 
     @classmethod
     def _base_url(cls, request: HttpRequest) -> str:
@@ -60,11 +65,12 @@ class FeedBuilder:
             )
 
         # Add custom feeds
-        for feed in catalog.feeds.filter(parents__isnull=True).order_by("title"):
+        language = request_language(request)
+        for feed in cls._sorted_by_title(catalog.feeds.filter(parents__isnull=True), language):
             navigation.append(
                 NavigationEntry(
                     href=cls._opds2_url(request, "feed", catalog_name=cn, feed_name=feed.url_name),
-                    title=feed.title,
+                    title=localize(feed.title, language),
                     type=OPDS_JSON,
                     rel="subsection",
                 )
@@ -152,11 +158,12 @@ class FeedBuilder:
         cn = catalog.url_name
 
         navigation = []
-        for feed in feeds.order_by("title"):
+        language = request_language(request)
+        for feed in cls._sorted_by_title(feeds, language):
             navigation.append(
                 NavigationEntry(
                     href=cls._opds2_url(request, "feed", catalog_name=cn, feed_name=feed.url_name),
-                    title=feed.title,
+                    title=localize(feed.title, language),
                     type=OPDS_JSON,
                     rel="subsection",
                 )

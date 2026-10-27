@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from pydantic import field_validator, Field
@@ -16,7 +16,7 @@ class FeedSerializer:
         parents: List[UUID] = Field(default=[], validate_default=True)
         children: List[UUID] = Field(default=[], validate_default=True)
         creator_id: UUID
-        title: str
+        title: Dict[str, str]
         kind: Feed.FeedKind
         url_name: str
         url: str = Field(default=None, validate_default=True)

@@ -45,7 +45,7 @@ class WriteSurfaceSweepTests(ManagementTestCase):
         feed = Feed.objects.create(
             creator=self.manager,
             catalog=self.catalog,
-            title="Sweep",
+            title={"sk": "Sweep"},
             url_name="sweep",
             kind=Feed.FeedKind.ACQUISITION,
             content="…",
@@ -217,8 +217,12 @@ class ClassificationTests(ManagementTestCase):
     def setUpTestData(cls):
         super().setUpTestData()
         cls.second_entry = Entry.objects.create(creator=cls.manager, catalog=cls.catalog, title="Another Book")
-        cls.mathematics = Category.objects.create(creator=cls.manager, catalog=cls.catalog, term="51", label="Math")
-        cls.physics = Category.objects.create(creator=cls.manager, catalog=cls.catalog, term="53", label="Physics")
+        cls.mathematics = Category.objects.create(
+            creator=cls.manager, catalog=cls.catalog, term="51", label={"sk": "Math"}
+        )
+        cls.physics = Category.objects.create(
+            creator=cls.manager, catalog=cls.catalog, term="53", label={"sk": "Physics"}
+        )
         cls.foreign = Category.objects.create(creator=cls.outsider, catalog=cls.other_catalog, term="99")
 
     def test_a_manager_can_file_publications_under_categories(self):
@@ -487,7 +491,7 @@ class FeedMembershipTests(ManagementTestCase):
         cls.shelf = Feed.objects.create(
             creator=cls.manager,
             catalog=cls.catalog,
-            title="Recommended",
+            title={"sk": "Recommended"},
             url_name="recommended",
             kind=Feed.FeedKind.ACQUISITION,
             content="Picks",
@@ -496,7 +500,7 @@ class FeedMembershipTests(ManagementTestCase):
         cls.navigation = Feed.objects.create(
             creator=cls.manager,
             catalog=cls.catalog,
-            title="Browse",
+            title={"sk": "Browse"},
             url_name="browse",
             kind=Feed.FeedKind.NAVIGATION,
             content="Tree",

@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
+from apps.core.fields.localized import localize, request_language
 from apps.core.errors import ProblemDetailException, AuthorizationException
 from apps.core.models import Feed, Entry
 from apps.opds.schema import (
@@ -46,7 +47,7 @@ class FeedView(OpdsCatalogView):
                         kwargs={"catalog_name": catalog_name, "feed_name": feed_name},
                     )
                 ),
-                title=feed.title,
+                title=localize(feed.title, request_language(request)),
                 author=feed.creator,
                 updated_at=feed.touched_at,
                 qs=_with_acquisition_prefetch(feed.entries.all()),
@@ -89,10 +90,11 @@ class FeedView(OpdsCatalogView):
                         kwargs={"catalog_name": catalog_name, "feed_name": feed_name},
                     )
                 ),
-                title=feed.title,
+                title=localize(feed.title, request_language(request)),
                 author=feed.creator,
                 updated_at=feed.touched_at,
                 qs=feed.children.all(),
+                language=request_language(request),
             )
 
             result.add_link(

@@ -263,6 +263,10 @@ EVILFLOWERS_IMAGE_THUMBNAIL = (768, 480)
 
 EVILFLOWERS_FEEDS_NEW_LIMIT = os.getenv("EVILFLOWERS_FEEDS_NEW_LIMIT", 20)
 
+# Language of localized texts (feed titles, category labels) used when a client sends a plain string
+# and as the fallback when a requested translation is missing
+EVILFLOWERS_DEFAULT_LANGUAGE = os.getenv("EVILFLOWERS_DEFAULT_LANGUAGE", "sk")
+
 EVILFLOWERS_IDENTIFIERS = ["isbn", "google", "doi", "dataverse_pid", "dataverse_dataset_id"]
 
 EVILFLOWERS_ENFORCE_USER_ACQUISITIONS = bool(int(os.getenv("EVILFLOWERS_ENFORCE_USER_ACQUISITIONS", "0")))

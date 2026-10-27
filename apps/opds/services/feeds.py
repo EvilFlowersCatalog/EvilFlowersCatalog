@@ -6,6 +6,7 @@ from django.conf import settings
 from django.db.models import QuerySet
 from django.urls import reverse
 
+from apps.core.fields.localized import localize
 from apps.core.models import Entry, Acquisition, Feed, User
 from apps.opds.schema import (
     OpdsFeed,
@@ -74,7 +75,7 @@ class NavigationFeed(BaseFeed):
         self._entries.append(
             NavigationEntry(
                 id=f"urn:uuid:{feed.pk}",
-                title=feed.title,
+                title=localize(feed.title, self._extras.get("language")),
                 links=[
                     Link(
                         rel=LinkType.SUBSECTION,

@@ -8,7 +8,8 @@ from apps import openapi
 from apps.core.errors import ValidationException, ProblemDetailException
 from apps.api.filters.feeds import FeedFilter
 from apps.api.forms.feeds import FeedForm
-from apps.api.response import SingleResponse, PaginationResponse
+from apps.api.response import SingleResponse, PaginationResponse, Ordering
+from apps.core.fields.localized import localized_sort_key, sort_language
 from apps.api.serializers.feeds import FeedSerializer
 from apps.core.models import Feed
 from apps.core.views import SecuredView
@@ -62,9 +63,15 @@ class FeedManagement(SecuredView):
     )
     def get(self, request):
         feeds = FeedFilter(request.GET, queryset=Feed.objects.all(), request=request).qs
+        # `order_by=title` sorts by the translation in `?language=` (falling back like `localize`)
+        feeds = feeds.annotate(title_sort=localized_sort_key("title", sort_language(request)))
 
         return PaginationResponse(
-            request, feeds, serializer=FeedSerializer.Base, serializer_context={"request": request}
+            request,
+            feeds,
+            serializer=FeedSerializer.Base,
+            serializer_context={"request": request},
+            ordering=Ordering.create_from_request(request, aliases={"title": "title_sort"}),
         )
 
 
