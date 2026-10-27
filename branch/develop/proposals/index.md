@@ -23,6 +23,7 @@ changes are documented before implementation.
 | IP-014 | [Model Context Protocol Server](posts/ip-014-model-context-protocol-server.md) | 📝 Draft (implemented, awaiting review answers) | 2026-09-10 |
 | IP-015 | [Fold `elvira-ai-agent` into the Catalog as `apps/assistant`](posts/ip-015-assistant-fold-in.md) | 📝 Draft (awaiting review answers) | 2026-09-17 |
 | IP-016 | [Personal Activity History](posts/ip-016-user-activity-history.md) | ✅ Accepted (implemented, tests not yet run) | 2026-09-21 |
+| IP-017 | [Multilingual Feed Titles and Category Labels](posts/ip-017-multilingual-titles.md) | 📝 Draft (implemented, awaiting review answers) | 2026-10-27 |
 
 **Note on the Readium cluster.** IP-001, IP-003 (feature scope), IP-004, IP-007, IP-008,
 IP-009, and IP-011 together constitute the completed Readium LCP delivery and are all
