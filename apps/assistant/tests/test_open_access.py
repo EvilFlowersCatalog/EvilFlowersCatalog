@@ -36,7 +36,7 @@ class OpenAccessDocumentTests(SimpleTestCase):
 
     def test_an_entry_without_an_open_access_pdf_is_not_read(self):
         acquisitions = mock.MagicMock()
-        acquisitions.filter.return_value.exclude.return_value.exclude.return_value.order_by.return_value.first.return_value = (
+        acquisitions.filter.return_value.exclude.return_value.exclude.return_value.exclude.return_value.order_by.return_value.first.return_value = (
             None
         )
         with self.assertRaises(DocumentUnavailable):

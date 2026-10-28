@@ -71,17 +71,20 @@ class ReaderDocument:
 
         acquisition = (
             entry.acquisitions.filter(
-                relation=Acquisition.AcquisitionType.OPEN_ACCESS,
                 mime=Acquisition.AcquisitionMIME.PDF,
                 storage_backend=Acquisition.StorageBackend.LOCAL,
             )
+            # What the portal opens with "Read": any stored PDF of a non-Readium
+            # entry (most keep the default relation `acquisition`). Copies only
+            # lent or listed as restricted are not open to read.
+            .exclude(relation__in=[Acquisition.AcquisitionType.BORROW, Acquisition.AcquisitionType.RESTRICTED_ACCESS])
             .exclude(content="")
             .exclude(content__isnull=True)
             .order_by("created_at")
             .first()
         )
         if acquisition is None:
-            raise DocumentUnavailable("no open-access PDF")
+            raise DocumentUnavailable("no readable PDF")
         return cls._cached(acquisition, None)
 
     @classmethod
