@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "fef01dbb05ddbcb9e882471aea7f81d7fcc90978",
-    "short": "fef01db",
-    "message": "Merge pull request #89 from EvilFlowersCatalog/ai-update",
+    "sha": "8eb0a30ea08f45b18b61fbc6c35995877794d884",
+    "short": "8eb0a30",
+    "message": "Merge remote-tracking branch 'origin/develop' into ai-update",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/fef01dbb05ddbcb9e882471aea7f81d7fcc90978"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/8eb0a30ea08f45b18b61fbc6c35995877794d884"
   },
-  "deployed_at": "2026-10-28T18:21:13Z",
+  "deployed_at": "2026-10-28T18:34:11Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
