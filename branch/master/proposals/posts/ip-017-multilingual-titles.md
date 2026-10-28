@@ -2,7 +2,7 @@
 draft: true
 date: 2026-10-27
 authors:
-  - tomikjetu
+  - kordostomas
 categories:
   - Feature
 tags:
@@ -334,7 +334,7 @@ the reader's language. OPDS 2.0 navigation was changed to sort in Python; the RE
 
 **Answer**:
 ```
-B — sorting must work. (tomikjetu, 2026-10-27: "for sure we want sorting working")
+B — sorting must work. (kordostomas, 2026-10-27: "for sure we want sorting working")
 ```
 
 **Resolution**:
@@ -409,7 +409,7 @@ it still finds a value, but the editor lists `sk` first.
 
 **Answer**:
 ```
-A — Slovak is primary; never allow English without Slovak. (tomikjetu, 2026-10-27)
+A — Slovak is primary; never allow English without Slovak. (kordostomas, 2026-10-27)
 ```
 
 **Resolution**:
@@ -513,6 +513,6 @@ so a search for "en" or "sk" matches every category with that key.
 
 | Date | Author | Changes |
 |------|--------|---------|
-| 2026-10-27 | tomikjetu | Initial draft documenting the implemented change: jsonb `Feed.title` / `Category.label`, migration 0042, `Language.translatable` + admin page, OPDS/MCP localization, elvira-portal display and editors |
-| 2026-10-27 | tomikjetu | Added Review Questions section |
-| 2026-10-27 | tomikjetu | Resolved Q2 (sort by requested language, implemented) and Q5 (Slovak required and cannot be disabled, implemented) |
+| 2026-10-27 | kordostomas | Initial draft documenting the implemented change: jsonb `Feed.title` / `Category.label`, migration 0042, `Language.translatable` + admin page, OPDS/MCP localization, elvira-portal display and editors |
+| 2026-10-27 | kordostomas | Added Review Questions section |
+| 2026-10-27 | kordostomas | Resolved Q2 (sort by requested language, implemented) and Q5 (Slovak required and cannot be disabled, implemented) |
