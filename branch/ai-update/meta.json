@@ -1,0 +1,14 @@
+{
+  "ref": "ai-update",
+  "slug": "ai-update",
+  "kind": "branch",
+  "commit": {
+    "sha": "2c8f706798ce6a4d7c77f03bdc3a0ad2d3a435a2",
+    "short": "2c8f706",
+    "message": "feat(assistant): store viewer chat references, read the open book",
+    "author": "Tomáš Kordoš",
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/2c8f706798ce6a4d7c77f03bdc3a0ad2d3a435a2"
+  },
+  "deployed_at": "2026-10-28T15:29:24Z",
+  "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
+}
