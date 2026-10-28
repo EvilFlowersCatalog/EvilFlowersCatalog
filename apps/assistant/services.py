@@ -185,8 +185,9 @@ def entry_note(entry) -> str:
         # Lent through Readium LCP: its text is never given to the model (IP-018 Q5 follow-up).
         note += (
             "\nThis publication is lent through Readium LCP, so you cannot read its text. If the reader asks "
-            "about its content, say so and tell them to borrow it in the library (the Borrow button on the "
-            "publication) and read it in Thorium; you can still answer from its catalogue description."
+            "about its content, say so and tell them to borrow it in the library (the button on the "
+            'publication is labelled "Vypožičať" in Slovak and "Borrow" in English) and read it in Thorium; '
+            "you can still answer from its catalogue description."
         )
     return note
 
@@ -220,15 +221,41 @@ def reader_notes(row: ChatMessage) -> str:
     return "\n".join(notes)
 
 
+#: UI languages the reader can switch between, by code.
+LANGUAGE_NAMES = {"sk": "Slovak", "en": "English"}
+
+
+def language_instruction(language: Optional[str]) -> Optional[str]:
+    """Pins the answer to the reader's UI language.
+
+    Sent as the last message of every request, after the history, so it never
+    changes the cached prefix. Small models drift (Slovak into Czech, a DRM
+    notice into Russian), so the language is named and Czech is ruled out.
+    """
+    code = (language or "").split("-")[0].lower()
+    name = LANGUAGE_NAMES.get(code)
+    if name is None:
+        return None
+    instruction = (
+        f"Write your answer in {name}, whatever language the reader's message, the publication or a tool "
+        "result is in."
+    )
+    if code == "sk":
+        instruction += " It must be Slovak, never Czech."
+    return instruction
+
+
 def reading_note(document) -> str:
     """Tells the model it can read the publication's PDF and how to cite it."""
     return (
         f"You can read this publication's PDF, numbered as the reader's viewer numbers it. It has "
         f"{document.page_count} pages. "
         "Use `read_pdf_page` to read pages and `search_pdf` to find where something is discussed; base "
-        "answers about the publication on what it says and never invent its content.\n"
-        "Whenever you refer to a page, write it as [[page:N]] with the viewer's page number, for example "
-        "[[page:12]], so the reader can jump there. A figure, table or equation the reader attached can be "
+        "answers about the publication on what it says and never invent its content. Answer in your own "
+        "words and briefly: never paste the text of a page back to the reader, quote at most a sentence.\n"
+        "Cite the page of everything you take from the publication as [[page:N]] with the viewer's page "
+        "number, for example [[page:12]], right after the sentence it supports; the reader clicks it to "
+        "jump there. A figure, table or equation the reader attached can be "
         "cited as [[region:ID]] with its id. Never use page numbers printed in the book itself; they differ "
         "from the viewer's."
     )

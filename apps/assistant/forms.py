@@ -40,6 +40,9 @@ class MessageForm(Form):
     #: viewer later re-binds to it.
     user_acquisition_id = forms.ModelChoiceField(queryset=_user_acquisitions(), required=False)
 
+    #: The reader's UI language (`sk`, `en`). The answer is written in it.
+    language = forms.CharField(max_length=10, required=False)
+
     def clean_contexts(self):
         try:
             return contexts.normalize(self.cleaned_data.get("contexts"))

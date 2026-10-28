@@ -36,7 +36,7 @@ class OpenAccessDocumentTests(SimpleTestCase):
 
     def test_an_entry_without_an_open_access_pdf_is_not_read(self):
         acquisitions = mock.MagicMock()
-        acquisitions.filter.return_value.exclude.return_value.exclude.return_value.order_by.return_value.first.return_value = (
+        acquisitions.filter.return_value.exclude.return_value.exclude.return_value.exclude.return_value.order_by.return_value.first.return_value = (
             None
         )
         with self.assertRaises(DocumentUnavailable):
@@ -54,3 +54,18 @@ class OpenAccessDocumentTests(SimpleTestCase):
         with mock.patch.object(ReaderDocument, "for_open_access", return_value=document) as read:
             self.assertIs(ChatMessages()._chat_document(request, chat, _entry(readium=False)), document)
         read.assert_called_once()
+
+
+class LanguageAndReadableTests(SimpleTestCase):
+    def test_the_answer_is_pinned_to_the_ui_language(self):
+        self.assertIn("Slovak, never Czech", services.language_instruction("sk"))
+        self.assertIn("English", services.language_instruction("en-GB"))
+        self.assertIsNone(services.language_instruction(None))
+        self.assertIsNone(services.language_instruction("ru"))
+
+    def test_the_chat_entry_says_whether_it_is_lent_through_readium(self):
+        from apps.assistant.serializers import ChatEntrySerializer
+
+        entry = _entry(readium=True, catalog_id="00000000-0000-0000-0000-000000000001")
+        entry.pk = "00000000-0000-0000-0000-000000000002"
+        self.assertTrue(ChatEntrySerializer.model_validate(entry).readium_enabled)

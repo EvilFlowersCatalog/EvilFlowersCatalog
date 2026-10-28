@@ -32,7 +32,9 @@ def sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
-def run(request, chat: Chat, text: str, entry=None, contexts=None, page=None, document=None) -> Iterator[str]:
+def run(
+    request, chat: Chat, text: str, entry=None, contexts=None, page=None, document=None, language=None
+) -> Iterator[str]:
     """Drive one turn, yielding SSE frames.
 
     The generator body runs while the response streams, so anything raised here
@@ -56,7 +58,7 @@ def run(request, chat: Chat, text: str, entry=None, contexts=None, page=None, do
     )
 
     try:
-        for frame in _rounds(request, chat, client, document):
+        for frame in _rounds(request, chat, client, document, language):
             yield frame
     except LLMUnavailable as error:
         logger.warning("Assistant backend unavailable: %s", error)
@@ -68,7 +70,7 @@ def run(request, chat: Chat, text: str, entry=None, contexts=None, page=None, do
         yield sse("done", {"chat_id": str(chat.pk)})
 
 
-def _rounds(request, chat: Chat, client: OllamaClient, document=None) -> Iterator[str]:
+def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=None) -> Iterator[str]:
     specifications = tools.specifications()
     if document is not None:
         specifications = specifications + explain.TOOL_SPECIFICATIONS
@@ -81,6 +83,10 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None) -> Iterato
 
     for _round in range(MAX_TOOL_ROUNDS):
         messages = services.conversation(chat, document)
+        instruction = services.language_instruction(language)
+        if instruction:
+            # Last, after the history: the cached prefix stays the same.
+            messages.append({"role": "system", "content": instruction})
 
         content, tool_calls, tokens = yield from _stream(client, messages, specifications)
 

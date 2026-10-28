@@ -280,6 +280,7 @@ class ChatMessages(AssistantView):
                 contexts=form.cleaned_data.get("contexts"),
                 page=form.cleaned_data.get("page"),
                 document=self._chat_document(request, chat, form.cleaned_data.get("entry_id")),
+                language=form.cleaned_data.get("language") or None,
             ),
             content_type="text/event-stream",
         )
