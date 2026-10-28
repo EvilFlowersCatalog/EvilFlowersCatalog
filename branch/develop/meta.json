@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "8eb0a30ea08f45b18b61fbc6c35995877794d884",
-    "short": "8eb0a30",
-    "message": "Merge remote-tracking branch 'origin/develop' into ai-update",
+    "sha": "b075758a3a4c535f48107eedc7a58c3fa1ccb9af",
+    "short": "b075758",
+    "message": "fix(assistant): answer in the UI language; flag Readium books on chats",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/8eb0a30ea08f45b18b61fbc6c35995877794d884"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/b075758a3a4c535f48107eedc7a58c3fa1ccb9af"
   },
-  "deployed_at": "2026-10-28T18:34:11Z",
+  "deployed_at": "2026-10-28T18:47:13Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
