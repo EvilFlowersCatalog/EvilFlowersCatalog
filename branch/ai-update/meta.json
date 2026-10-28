@@ -3,12 +3,12 @@
   "slug": "ai-update",
   "kind": "branch",
   "commit": {
-    "sha": "1e6690884d356befc088dd573f453533f14ef911",
-    "short": "1e66908",
-    "message": "docs(ip-018): answer schema questions Q2, Q4, Q7, Q9",
+    "sha": "4ec1178f063f1633bdb991edf3de5ea8c749be7f",
+    "short": "4ec1178",
+    "message": "feat(assistant): read open-access PDFs, budget pages, not tool calls",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/1e6690884d356befc088dd573f453533f14ef911"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/4ec1178f063f1633bdb991edf3de5ea8c749be7f"
   },
-  "deployed_at": "2026-10-28T17:49:52Z",
+  "deployed_at": "2026-10-28T18:04:31Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
