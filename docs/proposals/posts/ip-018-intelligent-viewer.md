@@ -31,7 +31,7 @@ their text, position and order, so they can be searched and stepped through.
 ## Status
 
 **Status**: Draft
-**Last Updated**: 2026-10-27
+**Last Updated**: 2026-10-28
 **Implementation**: Not started
 
 This is a **parallel proposal**. It overlaps with [IP-012](ip-012-ai-powered-discovery.md),
@@ -45,8 +45,8 @@ statements this proposal directly contradicts.
 
 ### Parallel rule
 
-- A shared piece (the extraction app, its models, the worker, the storage layout) is defined by
-  whichever proposal implements it first.
+- A shared piece (the extraction models, the service task contracts, the storage layout) is
+  defined by whichever proposal implements it first.
 - The later proposal updates its own text to build on what exists instead of re-specifying it, and
   logs that in its Changelog.
 - Contradictions listed below are resolved in favour of this proposal **for the viewer use case
@@ -56,15 +56,23 @@ statements this proposal directly contradicts.
 
 | Proposal | What it says | What IP-018 says | Kind |
 |---|---|---|---|
-| IP-013 [Scope & non-goals](ip-013-document-extraction-structure.md#scope-non-goals) | "Explicit non-goal: read-time PDF highlight/anchoring … no per-passage highlight quads, no anchor resolver … and no new Viewer highlight render path." | Agent highlights are stored as positioned areas on the page and shown in the viewer. Quotes are resolved to page positions. | **Contradiction** |
-| IP-013 [Review Q2](ip-013-document-extraction-structure.md#q2-read-time-anchoring-deferred-text-based-stored-bboxes-or-hybrid) | Answered "do NOT build monad-knowledge-style highlighting". | Builds exactly that, limited to agent highlight layers. | **Contradiction** |
+| IP-013 [Scope & non-goals](ip-013-document-extraction-structure.md#scope-non-goals) | "Explicit non-goal: read-time PDF highlight/anchoring … no per-passage highlight quads, no anchor resolver … and no new Viewer highlight render path." | Agent highlights are stored as positioned areas on the page and shown in the viewer. Quotes are resolved to page positions. | **Deprecated** (see below) |
+| IP-013 [Review Q2](ip-013-document-extraction-structure.md#q2-read-time-anchoring-deferred-text-based-stored-bboxes-or-hybrid) | Answered "do NOT build monad-knowledge-style highlighting". | Builds exactly that, limited to agent highlight layers. | **Deprecated** (see below) |
 | IP-013 [Scope & non-goals](ip-013-document-extraction-structure.md#scope-non-goals) | "Feature bounding boxes are kept only for cropping/display of figures/tables." | Feature positions are a first-class output: the viewer uses them to locate each figure, table and equation on the reader's page. | **Contradiction** (narrow) |
-| IP-013 [Proposed Solution](ip-013-document-extraction-structure.md#proposed-solution) | `apps/extraction` runs on the IP-012 `discovery` worker image. | `apps/extraction` runs in an extra container from the **unchanged catalog image**, on its own `extraction` queue. | Overlap (where it runs) |
+| IP-013 [Proposed Solution](ip-013-document-extraction-structure.md#proposed-solution) | `apps/extraction` runs on the IP-012 `discovery` worker image, folded into the catalog. | No extraction code is folded into the catalog. Extraction runs in the `evilflowers-*-service` repositories, each building its own image; the catalog compose only pulls pinned builds. | **Contradiction** (where the code lives) |
+| IP-012 [Phase 1](ip-012-ai-powered-discovery.md#phase-1-event-driven-indexing-pipeline-replaces-61) | Retire `text-service` and `search-service`. | Both are **updated**, not retired: they stay in compose, are refactored in their own repositories and brought back to a running state. | **Contradiction** |
 | IP-013 [Data Model Changes](ip-013-document-extraction-structure.md#data-model-changes) | Separate `extraction_figure`, `extraction_table`, `extraction_equation` tables. | One `extraction_region` table with a `kind`. Whichever lands first decides. | Overlap (schema) |
 | IP-013 [Phase 2](ip-013-document-extraction-structure.md#phase-2-feature-extraction-docling-figures-tables-math-images) and [Phase 3](ip-013-document-extraction-structure.md#phase-3-classification-captioning) | Docling feature extraction, then VLM captions and classification. | Same tools and steps, but triggered on upload for the viewer. Sections, passages and subject classification stay with IP-013. | Overlap (shared work) |
-| IP-012 [Phase 1](ip-012-ai-powered-discovery.md#phase-1-event-driven-indexing-pipeline-replaces-61) | Retire `text-service` and `search-service`. | Agrees. Neither runs in production today (see [Production state](#production-state-2026-10-27)). | Agreement, with new evidence |
 | IP-015 [D1](ip-015-assistant-fold-in.md#d1-tool-set-exactly-three-read-only) | The chat assistant has exactly three read-only tools. | Adds region tools for the viewer context, and an agent that **writes** an annotation. | **Contradiction** (tool set) |
 | IP-015 [D12](ip-015-assistant-fold-in.md#d12-relationship-to-ip-012) | The assistant has no retrieval work. | Unchanged. IP-018 tools read one publication the reader has open, which is not catalog-wide retrieval. | Compatible |
+
+### Deprecated: IP-013's highlighting non-goal
+
+IP-013 ruled out read-time highlighting by pointing at monad-knowledge's `highlights.py` as the
+machinery to avoid. That module has changed in monad-knowledge since IP-013 was resolved, so the
+reasoning behind the non-goal no longer holds. **The non-goal and the IP-013 Q2 answer are
+deprecated** as far as highlighting is concerned; IP-018 owns highlighting. IP-013 itself is
+amended in a separate change (see [Q3](#q3-should-ip-013-be-amended-now-or-after-this-proposal-is-accepted)).
 
 ## Problem Statement
 
@@ -90,7 +98,10 @@ Asking it to "teach me X from this book" gets a summary, not a path through the 
 - **The catalog only talks to two of them.** `apps/dataverse/services/text_publish.py` enqueues
   `evilflowers_text_worker.process_pdf` on every PDF upload (`apps/api/services/entry.py`), and
   `apps/api/services/search_service_client.py` lets OPDS 2.0 search query `search-service`. Both
-  are in the development `compose.yml` only.
+  are in the development `compose.yml` only, which pulls `ghcr.io/evilflowerscatalog/evilflowers-text-service:main`
+  and `ghcr.io/evilflowerscatalog/evilflowers-search-service:main`. Both images are out of date, and
+  the containers are not running. Text-service already receives `CATALOG_API_URL` and
+  `CATALOG_SECRET_KEY`, so a service writing back to the catalog over HTTP is an existing pattern.
 - **The assistant can already read a reader's copy.** `apps/assistant/pdf.py` (`ReaderDocument`)
   rebuilds the viewer's page numbering over the original file, and `apps/assistant/explain.py`
   uses it with the `read_pdf_page` and `search_pdf` tools.
@@ -124,8 +135,8 @@ Consequences:
 
 - Every PDF upload still enqueues `evilflowers_text_worker.process_pdf`, and nothing consumes that
   queue. Tasks are expected to accumulate in Redis. This needs checking in Flower.
-- No production feature depends on any of the service repositories, so retiring them breaks
-  nothing.
+- No production feature depends on any of the service repositories, so refactoring them, changing
+  their task contracts or dropping Kafka breaks nothing in production.
 - PostgreSQL and Redis are not containers on this host. Where they run is not yet recorded here.
 
 Production storage is confirmed as `FileSystemStorage`, mounted from
@@ -135,10 +146,11 @@ Production storage is confirmed as `FileSystemStorage`, mounted from
 
 ### Overview
 
-1. **Extract on upload.** When a PDF acquisition is stored, the catalog queues an extraction task.
-   A worker finds every figure, table and equation, records its page and position, crops it to an
-   image, and describes it: a caption and category for figures, markdown for tables, LaTeX for
-   equations.
+1. **Extract on upload.** When a PDF acquisition is stored, the catalog queues an extraction task
+   for the service containers. They find every figure, table and equation, record its page and
+   position, crop it to an image, and describe it: a caption and category for figures, markdown for
+   tables, LaTeX for equations. Results are written back to the catalog, which owns the schema.
+   The extraction code lives in the `evilflowers-*-service` repositories, not in the catalog.
 2. **Expose it per reader.** An API returns the regions on a given page **in the reader's own page
    numbering**, only for pages the reader may see, with an authorized route for each crop.
 3. **Give the assistant the same view.** The explain agent and the chat assistant, when opened for
@@ -160,7 +172,13 @@ Production storage is confirmed as `FileSystemStorage`, mounted from
 - Assistant tools for regions; explain accepts a region.
 - Agent annotations: new fields on `Annotation` and `AnnotationItem`, generation, API.
 - Storage, versioning and clean-up of extraction output.
-- One extraction worker container in production.
+- Refactoring the service repositories (image, equation, analyzer, text, search) in place: drop
+  Kafka for Celery on the existing broker, keep positions, fix the known defects, publish images
+  from each repository's own CI.
+- Updating `text-service` and `search-service`, which are in compose but down and out of date, and
+  running the whole compose end to end.
+- Compose changes only on the catalog side: service entries pulling pinned image builds, in the
+  development compose and the production compose.
 
 **Out of scope**
 
@@ -169,65 +187,123 @@ Production storage is confirmed as `FileSystemStorage`, mounted from
   ([IP-013](ip-013-document-extraction-structure.md) Phases 1 and 3).
 - Chunking, embeddings, search, recommendations ([IP-012](ip-012-ai-powered-discovery.md)).
 - EPUB and other formats. PDF only.
+- Folding any extraction code into the catalog repository or the catalog image.
+- `evilflowers-video-service` and `evilflowers-text-service-tp2025`.
 - Adding text and positions to existing reader annotations. They keep only their SVG.
 
 ### How it runs
 
-The extraction code lives in the catalog repository as `apps/extraction`. Production runs it as
-**one additional container from the same catalog image**, with a different command:
+**No extraction code is folded into the catalog.** Each piece of extraction stays in its own
+`EvilFlowersCatalog/evilflowers-*-service` repository, is refactored there, and is published as an
+image by that repository's CI to `ghcr.io/evilflowerscatalog/<repo>`. The catalog repository
+changes only its compose files, which pull the correct, pinned build of each service.
+
+| Repository | Role after the refactor |
+|---|---|
+| `evilflowers-analyzer-service` | Entry point for a document: opens the PDF, records page count and sizes, runs layout detection once and hands regions to the other services by kind (see [Q11](#q11-where-does-layout-detection-run)) |
+| `evilflowers-image-service` | Figures: crop, size/aspect/coverage gates, caption and category. Keeps the bounding box |
+| `evilflowers-equation-service` | Equations: LaTeX for each detected region, sympy normalization, crop |
+| `evilflowers-text-service` | Text as today, plus tables: markdown, caption, crop and position instead of dropping them |
+| `evilflowers-search-service` | Updated dependencies and image; stays the OPDS 2.0 search backend behind `SEARCH_SERVICE_URL` |
+
+What the catalog keeps:
+
+- The schema: `ExtractionRun`, `Region` and the annotation fields, in a small `apps/extraction`
+  app with models, dispatch and ingestion only, no pipeline code.
+- Dispatch: `app.send_task(...)` by task name and queue, exactly like
+  `apps/dataverse/services/text_publish.py` does today.
+- Ingestion: an internal endpoint the services post their results to, authenticated with a service
+  credential (see [Q12](#q12-how-do-services-hand-results-back-to-the-catalog)).
+- All reader-facing APIs, the assistant tools and agent annotations.
 
 ```yaml
-evilflowers-extraction:
-  image: <the evilflowers image>
-  command: celery -A evil_flowers_catalog.celery worker -Q extraction --concurrency=1
+# catalog compose (development and production): image references only
+evilflowers-analyzer-service:
+  image: ghcr.io/evilflowerscatalog/evilflowers-analyzer-service:<pinned tag>
+  environment:
+    REDIS_URL: redis://redis:6379/7
+    STORAGE_PATH: /mnt/data
+    CATALOG_API_URL: http://django:8000
+    CATALOG_SERVICE_TOKEN: ${EXTRACTION_SERVICE_TOKEN}
   volumes:
-    - /opt/elvira-devops/environments/production/storage:/var/local/evilflowers
+    - <catalog storage>:/mnt/data
     - extraction-models:/models
+# ...same shape for image-, equation-, text- and search-service
 ```
 
-- The `evilflowers` container's own Celery worker does not listen on `extraction`, so heavy work
-  never runs next to gunicorn.
-- Docling and torch become dependencies of the catalog image. The pipeline modules are imported
-  only inside the extraction task, so the web process never loads them.
-- Model weights are kept in a volume, not in the image.
-- The worker writes to the same database through the same Django models. There is no HTTP hop and
-  no second copy of the schema.
-- The extraction container runs as the same user as `evilflowers`, so files it writes can be
-  deleted by the catalog.
-- Flower, already in production, shows the `extraction` queue and the backfill progress.
+- Services talk to each other and to the catalog over Celery on the existing Redis broker. Kafka is
+  removed from every service, because production does not run it.
+- The catalog's own Celery worker does not listen on any service queue, so heavy work never runs
+  next to gunicorn, and the catalog image gains no Docling or torch dependency.
+- Services read the original PDF and write crops through the same storage mount as the catalog
+  (`/var/local/evilflowers` in production). They run with the catalog's UID so the catalog can
+  delete what they write.
+- Model weights are kept in a volume, not in the images.
+- Flower, already in production, shows every service queue and the backfill progress.
+- The catalog records which service image tags produced a run (`provenance`), and
+  `EVILFLOWERS_EXTRACTION_PIPELINE_VERSION` is bumped whenever the pinned tags change output.
 
 ## Implementation Plan
 
-### Phase 1: Extraction app and storage
+Work happens in the repository that owns it. Catalog phases change this repository; service phases
+are done in each `evilflowers-*-service` repository, end with a published image, and touch the
+catalog only through a compose image reference.
+
+### Phase 1: Catalog schema, dispatch and ingestion (catalog repository)
 
 - [ ] Create `apps/extraction` with `ExtractionRun` and `Region` models and migrations
-      (see [Data Model Changes](#data-model-changes)).
-- [ ] Storage helper for `catalogs/<catalog>/<entry>/extraction/<acquisition_id>/v<N>/`, written
-      through `apps.files.storage.get_storage()`.
+      (see [Data Model Changes](#data-model-changes)). No pipeline code, no new dependencies.
+- [ ] Storage layout `catalogs/<catalog>/<entry>/extraction/<acquisition_id>/v<N>/`, documented as
+      the contract the services write to.
 - [ ] Remove the acquisition's `extraction/` folder in `AcquisitionStorageService.delete`.
-- [ ] Add an `extraction` Poetry dependency group and install it in the catalog image.
-- [ ] Route `extraction.*` tasks to the `extraction` queue in the Celery configuration.
+- [ ] Dispatch client next to `text_publish.py`: `send_task` to the entry service's queue with task
+      id `extract:<acquisition_id>:v<pipeline_version>`, so duplicate sends are dropped. Creates the
+      `ExtractionRun` with `status = queued`.
+- [ ] Internal ingestion endpoint for runs and regions, authenticated with a service credential
+      (mechanism per Q12). Rejects regions for runs that are not `running`.
+- [ ] When every service has reported, make the run active in one transaction and delete the
+      previous run's files.
 
-### Phase 2: Pipeline
+### Phase 2: Service refactor (service repositories)
 
-- [ ] `process_acquisition(acquisition_id)` task with task id
-      `extract:<acquisition_id>:v<pipeline_version>`, so duplicate sends are dropped.
-- [ ] Source step: open the original file from storage with PyMuPDF, record page count and
-      page sizes.
-- [ ] Docling pass: layout, figures (`generate_picture_images`), tables (`do_table_structure`),
-      formulas (`do_formula_enrichment`). `do_ocr` only when the page has no text layer.
-- [ ] Figures: crop, store as WebP, apply size and aspect gates (reject under 80 px, extreme
-      aspect ratios, and anything covering over 90% of the page).
-- [ ] Tables: markdown, caption if found, crop.
-- [ ] Equations: LaTeX, normalized with sympy where it parses; crop.
-- [ ] Captions and categories for figures with a local vision-language model, behind a setting so
-      it can be switched off when no GPU is available.
-- [ ] Write a new `ExtractionRun`, then make it the acquisition's active run in one transaction
-      and delete the previous run's files.
+Common to every service:
+
+- [ ] Replace Kafka consumers and producers with Celery workers on named queues over Redis.
+- [ ] Read the original PDF and write crops through the shared storage mount, using the catalog's
+      storage layout.
+- [ ] Report results to the catalog ingestion endpoint; never write to the catalog database.
+- [ ] Load models once per worker process, not per item.
 - [ ] Failures on one page or one region are logged and skipped. A document never fails as a whole
       because of one bad region.
+- [ ] CI builds and publishes a tagged image to `ghcr.io/evilflowerscatalog/<repo>`.
 
-### Phase 3: Triggers and backfill
+Per service:
+
+- [ ] `evilflowers-analyzer-service`: open the PDF with PyMuPDF, record page count and page sizes,
+      run the Docling layout pass (`do_ocr` only when a page has no text layer), and fan regions
+      out by kind (subject to Q11).
+- [ ] `evilflowers-image-service`: keep the bounding box it already computes instead of discarding
+      it; convert to page fractions with a top-left origin; crop to WebP; apply gates (reject under
+      80 px, extreme aspect ratios, anything covering over 90% of the page); captions and categories
+      behind a setting so they can be switched off without a GPU (model per Q8).
+- [ ] `evilflowers-equation-service`: implement region detection (currently a `TODO`), remove the
+      `pages[1:2]` test limit, LaTeX per region, sympy normalization where it parses, crop.
+- [ ] `evilflowers-text-service`: keep the tables it extracts (markdown, caption, crop, position)
+      and report them as regions; keep text processing working against `search-service`.
+
+### Phase 3: Text and search services back up
+
+- [ ] `evilflowers-text-service`: update dependencies and base image, fix whatever keeps the
+      container down, publish a new build.
+- [ ] `evilflowers-search-service`: update dependencies and base image, fix whatever keeps the
+      container down, publish a new build; `apps/api/services/search_service_client.py` keeps
+      working against it.
+- [ ] Catalog `compose.yml`: replace the `:main` references with pinned tags (Q13) and add the
+      analyzer, image and equation services.
+- [ ] Run the full development compose end to end: upload a PDF, see the text task consumed, the
+      extraction run reach `done`, regions and crops present, and OPDS 2.0 search answering.
+
+### Phase 3b: Triggers and backfill (catalog repository)
 
 - [ ] Queue extraction wherever a PDF acquisition file is stored: `apps/api/services/entry.py`
       next to the existing text-service publish, and `apps/dataverse/services/sync.py`.
@@ -279,14 +355,16 @@ evilflowers-extraction:
 
 ### Phase 7: Production
 
-- [ ] Add `evilflowers-extraction` to the production compose.
-- [ ] Decide GPU or CPU for the worker (see Review Questions).
-- [ ] Run the backfill, watching the queue in Flower.
+- [ ] Add the analyzer, image, equation, text and search services to the production compose
+      (`elvira-devops`), each pulling its pinned build and mounting production storage.
+- [ ] Decide GPU or CPU for the services (see Review Questions).
+- [ ] Run the backfill, watching the queues in Flower.
 
 ### Prerequisites
 
 - A PostgreSQL migration window for the new tables.
-- A host for the extraction worker that can mount production storage.
+- A host for the service containers that can mount production storage.
+- Push access to the `evilflowers-*-service` repositories and their `ghcr.io` packages.
 
 ## Technical Details
 
@@ -298,7 +376,8 @@ evilflowers-extraction:
 - **sympy** for LaTeX normalization.
 - A local **vision-language model** for figure captions and categories. The same choice as
   IP-013 Phase 3 if that lands first.
-- **Celery** on a dedicated `extraction` queue, broker as today.
+- **Celery** on one named queue per service, broker as today. Kafka is removed from the services.
+- **GitHub Actions + ghcr.io** in each service repository for image builds.
 - The existing **Ollama** endpoint (`EVILFLOWERS_ASSISTANT_OLLAMA_*`) for the highlight agent.
 
 ### Coordinates
@@ -329,7 +408,8 @@ evilflowers-extraction:
 ```
 
 - Keyed by acquisition id, because all acquisitions of an entry share the entry folder.
-- Only crops are files. Positions, captions, markdown and LaTeX live in PostgreSQL.
+- Only crops are files, written by the services. Positions, captions, markdown and LaTeX are posted
+  to the catalog and live in PostgreSQL.
 - A new version is written completely before it becomes active, so readers never see a partial run.
 - Crops are never served as public media. They are parts of restricted publications.
 
@@ -366,18 +446,18 @@ CREATE TABLE extraction_region (
     provenance  jsonb                          -- model names, versions, generated_at
 );
 
--- Agent annotations reuse the existing tables (apps/core/models/annotation.py, annotation_item.py)
-ALTER TABLE annotations
-    ADD COLUMN kind             text NOT NULL DEFAULT 'drawing', -- drawing | highlight | agent | bookmarks
-    ADD COLUMN status           text,                          -- agent only: pending | done | failed
-    ADD COLUMN prompt           text,                          -- agent only
-    ADD COLUMN summary          text,                          -- agent only
-    ADD COLUMN model            text,                          -- agent only
-    ADD COLUMN unresolved_count int;                           -- agent only: quotes not found
+  -- Agent annotations reuse the existing tables (apps/core/models/annotation.py, annotation_item.py)
+  ALTER TABLE annotations
+      ADD COLUMN kind             text NOT NULL DEFAULT 'drawing', -- drawing | highlight | agent | bookmarks
+      ADD COLUMN status           text,                          -- agent only: pending | done | failed
+      ADD COLUMN prompt           text,                          -- agent only
+      ADD COLUMN summary          text,                          -- agent only
+      ADD COLUMN model            text,                          -- agent only
+      ADD COLUMN unresolved_count int;                           -- agent only: quotes not found
 
-ALTER TABLE annotation_items
-    ADD COLUMN seq   int,                                      -- agent only: reading order in the annotation
-    ADD COLUMN quads jsonb,                                    -- agent only: [{x0, y0, x1, y1}, ...] page fractions
+  ALTER TABLE annotation_items
+      ADD COLUMN seq   int,                                      -- agent only: reading order in the annotation
+      ADD COLUMN quads jsonb,                                    -- agent only: [{x0, y0, x1, y1}, ...] page fractions
     ADD COLUMN text  text,                                     -- agent only: the highlighted sentence
     ADD COLUMN note  text;                                     -- agent only
 -- page:    unchanged meaning, the reader's page number, as the viewer already stores it
@@ -426,26 +506,39 @@ All tools are bound to one user acquisition and inherit its access check and pag
 ### Configuration
 
 ```
+# catalog
 EVILFLOWERS_EXTRACTION_ENABLED=1
-EVILFLOWERS_EXTRACTION_PIPELINE_VERSION=1
-EVILFLOWERS_EXTRACTION_CAPTIONS_ENABLED=1        # off on CPU-only hosts
-EVILFLOWERS_EXTRACTION_CAPTION_MODEL=...
+EVILFLOWERS_EXTRACTION_PIPELINE_VERSION=1          # bumped when pinned service tags change output
+EVILFLOWERS_EXTRACTION_QUEUE=evilflowers_analyzer  # entry service queue
+EVILFLOWERS_EXTRACTION_SERVICE_TOKEN=...           # credential the services present on ingestion
+
+# services (set in compose)
+REDIS_URL=redis://redis:6379/7
+STORAGE_PATH=/mnt/data
+CATALOG_API_URL=http://django:8000
+CATALOG_SERVICE_TOKEN=...
+CAPTIONS_ENABLED=1                                 # image-service; off on CPU-only hosts
+CAPTION_MODEL=...
 HF_HOME=/models
 ```
 
 ## Alternatives Considered
 
-### Alternative 1: Run the existing service repositories as containers
+### Alternative 1: Run the existing service repositories unchanged
 
-**Pros:** code exists. **Cons:** none of them run in production today, image-service throws away
-positions, equation-service never finds regions, all of them speak Kafka, which production does not
-run, and results would need a second copy of the schema or a write-back API. **Not chosen.**
+**Pros:** no work in the services. **Cons:** none of them run today, image-service throws away
+positions, equation-service never finds regions, and they speak Kafka, which production does not
+run. **Not chosen.** The repositories are kept, but refactored (Phase 2).
 
-### Alternative 2: A separate extraction service with its own image
+### Alternative 2: Fold extraction into the catalog as `apps/extraction`, run from the catalog image
 
-**Pros:** web image stays smaller. **Cons:** a second build, a second deploy, and the Django models
-duplicated or replaced by an HTTP API. **Not chosen.** The same image with a different command gives
-the same isolation at runtime.
+This was the original IP-018 design (and IP-013's): extraction code in the catalog repository, a
+second container from the same image on an `extraction` queue, writing through the Django models.
+
+**Pros:** one build, one schema, no write-back API. **Cons:** Docling and torch in the catalog image,
+extraction releases tied to catalog releases, and the existing service repositories thrown away.
+**Not chosen** at review on 2026-10-28: images are built in their own repositories and the catalog
+compose only pulls them.
 
 ### Alternative 3: Extract on demand when a reader opens a page
 
@@ -475,7 +568,8 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 
 ### Trade-offs
 
-- **Heavier catalog image** in exchange for one codebase, one schema and one build.
+- **Several repositories, builds and deploys** and an ingestion API, in exchange for a catalog image
+  without ML dependencies and services that release on their own.
 - **Extraction at upload** costs storage and compute for books nobody opens, in exchange for
   instant results in the viewer.
 - **Positions against the original file** require a page mapping on every response, in exchange
@@ -491,8 +585,11 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 | Agent quotes not found verbatim | Medium | Whitespace and hyphenation normalization before search; `unresolved_count` stored on the annotation |
 | Agent item SVG and quads disagree | Medium | Server generates SVG from quads; agent annotations are read-only |
 | Reader page mapping differs from the downloaded file | High | One shared mapping used by downloads, regions and the assistant; tests over ranged acquisitions |
-| Upload queue grows during backfill | Low | Separate queue; rate-limited command; Flower |
-| Contradicts IP-013's no-highlighting decision | Medium | Recorded in [Relationship to other proposals](#overlaps-and-contradictions); limited to the viewer |
+| Upload queue grows during backfill | Low | Separate queues; rate-limited command; Flower |
+| Service output drifts from the catalog schema | High | Ingestion endpoint validates payloads; pinned image tags; `provenance` records the tags; pipeline version bumped with tag changes |
+| A service is down and a run never completes | Medium | Run stays `running` and is visible in extraction status; backfill `--outdated`/`--missing` re-queues; timeout marks it `failed` |
+| Crops written with a different UID than the catalog | Medium | Services run with the catalog's UID; checked in the end-to-end run |
+| IP-012 plans to retire text- and search-service | Low | Recorded in [Overlaps and contradictions](#overlaps-and-contradictions); IP-012 adapts to what ships |
 
 ## Success Criteria
 
@@ -508,7 +605,10 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 - [ ] Agent annotations appear through the existing annotation endpoints and in PDF downloads with
       `?annotations=true`, with no change to how reader annotations behave.
 - [ ] Deleting an acquisition removes its extraction files.
-- [ ] `evilflowers-extraction` runs in production from the unchanged catalog image.
+- [ ] The catalog image has no extraction dependencies; the catalog repository only changed its
+      compose files to run the services.
+- [ ] Every service image is built in its own repository and pulled by a pinned tag.
+- [ ] The full development compose, including text- and search-service, runs end to end.
 
 ## Future Considerations
 
@@ -526,7 +626,8 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 - Catalog: `apps/assistant/explain.py`, `apps/assistant/pdf.py`, `apps/files/views.py`,
   `apps/files/services.py`, `apps/api/services/entry.py`, `apps/dataverse/services/text_publish.py`,
   `apps/core/models/annotation.py`, `apps/core/models/annotation_item.py`,
-  `apps/core/modifiers/pdf/annotations.py`, `apps/api/filters/annotations.py`, `conf/supervisor.conf`
+  `apps/core/modifiers/pdf/annotations.py`, `apps/api/filters/annotations.py`, `conf/supervisor.conf`,
+  `apps/api/services/search_service_client.py`, `compose.yml`
 - Viewer: `EvilFlowersViewer` `src/components/pdf-viewer-page/pdf-edit/EditCanvas.vue` (`addHighlight`),
   `src/assets/utils/interfaces.ts` (`IEditPackage`)
 - Service repositories: `EvilFlowersCatalog/evilflowers-image-service`, `-text-service`,
@@ -536,7 +637,8 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 
 ## Review Questions
 
-**Status**: ⏳ Awaiting Answers
+**Status**: ⏳ Partially answered (Q3, Q6 answered 2026-10-28; Q11–Q14 added after the
+service-repository decision)
 **Review Date**: 2026-10-27
 **Reviewer**: Claude AI
 
@@ -544,15 +646,15 @@ The following questions must be answered before implementation:
 
 ---
 
-### Q1: 🔴 Where does the extraction worker run, and does it have a GPU?
+### Q1: 🔴 Where do the extraction services run, and do they have a GPU?
 
-**Issue**: [How it runs](#how-it-runs) assumes the worker mounts production storage. Production has
-four containers and no confirmed GPU. IP-013 tracks T4 placement as an open item (#65).
+**Issue**: [How it runs](#how-it-runs) assumes the service containers mount production storage.
+Production has four containers and no confirmed GPU. IP-013 tracks T4 placement as an open item (#65).
 
 **Context**: Without a GPU, Docling layout still works but figure captions and formula recognition
 become slow enough to stall the backfill.
 
-**Question**: Where does `evilflowers-extraction` run?
+**Question**: Where do the extraction service containers run?
 
 **Options**:
 - [ ] **A**: On the production host, CPU only, captions switched off until a GPU is available (recommended)
@@ -604,15 +706,21 @@ proposal contradicts both.
 
 **Options**:
 - [ ] **A**: Add a note and Changelog entry to IP-013 pointing here, leave its body unchanged (recommended)
-- [ ] **B**: Edit IP-013's non-goal to exclude the viewer use case
+- [x] **B**: Edit IP-013's non-goal to exclude the viewer use case
 - [ ] **C**: Leave IP-013 untouched until one of the two is accepted
 
 **Answer**:
 ```
+Deprecate the explicitly disallowed highlighting in IP-013. It was based on monad-knowledge's
+highlights.py, which has changed since.
 ```
 
 **Resolution**:
 ```
+Added "Deprecated: IP-013's highlighting non-goal" under Relationship to other proposals, and
+re-labelled the two IP-013 highlighting rows in the overlaps table from Contradiction to Deprecated.
+IP-013's non-goal, its Alternative 4 and its Q2 answer are to be marked deprecated in IP-013 itself
+in a separate change; this update touches IP-018 only.
 ```
 
 ---
@@ -680,13 +788,20 @@ publication, and an agent that writes annotations.
 - [ ] **A**: Put it behind a setting that is off in production, as part of Phase 3 here (recommended)
 - [ ] **B**: Remove it now, outside any proposal
 - [ ] **C**: Leave it until IP-012 replaces it
+- [x] **D**: Bring text-service back so the queue has a consumer
 
 **Answer**:
 ```
+Update text-service and search-service. Both are down but still in compose, and both are old.
+Refactor everything and try running it.
 ```
 
 **Resolution**:
 ```
+The publish call stays. Phase 3 ("Text and search services back up") updates both services in
+their own repositories, publishes new builds, pins them in compose and runs the full development
+compose end to end. Production gets both services in Phase 7, which gives the queue a consumer.
+The IP-012 row in the overlaps table now records this as a contradiction (IP-012 retires them).
 ```
 
 ---
@@ -731,8 +846,8 @@ setting.
 **Question**: Where do captions come from?
 
 **Options**:
-- [ ] **A**: The existing Ollama endpoint with a vision model, so no model runs inside the worker (recommended)
-- [ ] **B**: Qwen2-VL loaded inside the extraction worker
+- [ ] **A**: The existing Ollama endpoint with a vision model, so no model runs inside image-service (recommended)
+- [ ] **B**: Qwen2-VL loaded inside image-service (replacing PaliGemma)
 - [ ] **C**: Docling's built-in picture description
 
 **Answer**:
@@ -793,6 +908,104 @@ title, so the generated SVG never disagrees with `quads` and `text`.
 
 ---
 
+### Q11: 🔴 Where does layout detection run?
+
+**Issue**: [How it runs](#how-it-runs) gives figures, equations and tables to three different
+services. Docling finds all three in one layout pass, which is the expensive part on CPU.
+
+**Context**: Running layout in each service triples the cost per document. Running it once creates
+a dependency between services.
+
+**Question**: Which service finds the regions?
+
+**Options**:
+- [ ] **A**: analyzer-service runs Docling layout once and sends each region to the service for its kind; image, equation and text services only enrich (recommended)
+- [ ] **B**: Each service runs its own detection for its own kind; the catalog dispatches to all three in parallel
+- [ ] **C**: One new `evilflowers-extraction-service` repository replaces analyzer, image and equation services
+
+**Answer**:
+```
+```
+
+**Resolution**:
+```
+```
+
+---
+
+### Q12: 🔴 How do services hand results back to the catalog?
+
+**Issue**: The catalog owns `ExtractionRun` and `Region`, but no service may write to its database
+directly.
+
+**Context**: text-service already has `CATALOG_API_URL` and `CATALOG_SECRET_KEY`. Sharing the
+catalog's Django `SECRET_KEY` with every service is broader than needed.
+
+**Question**: What is the write-back channel and credential?
+
+**Options**:
+- [ ] **A**: HTTP POST to an internal catalog endpoint with a dedicated service token (`EVILFLOWERS_EXTRACTION_SERVICE_TOKEN`), not the Django secret (recommended)
+- [ ] **B**: Services send a Celery task to a catalog queue (`catalog.ingest_regions`), and the catalog worker writes the rows
+- [ ] **C**: HTTP POST authenticated with the existing `CATALOG_SECRET_KEY`
+
+**Answer**:
+```
+```
+
+**Resolution**:
+```
+```
+
+---
+
+### Q13: ⚠️ What does "the correct build" mean in compose?
+
+**Issue**: `compose.yml` pulls `:main` for text- and search-service. A moving tag can change output
+without the catalog's `pipeline_version` changing.
+
+**Context**: The catalog records provenance per run and decides when to re-extract by version.
+
+**Question**: How are service images referenced?
+
+**Options**:
+- [ ] **A**: Semver release tags from each repository's CI, pinned in both composes; bumping a tag that changes output also bumps `EVILFLOWERS_EXTRACTION_PIPELINE_VERSION` (recommended)
+- [ ] **B**: `:main` in development, release tags in production
+- [ ] **C**: Image digests (`@sha256:...`) everywhere
+
+**Answer**:
+```
+```
+
+**Resolution**:
+```
+```
+
+---
+
+### Q14: ℹ️ What does "updating" search-service cover?
+
+**Issue**: Phase 3 brings search-service back up. It is a FastAPI service over Milvus Lite and
+Elasticsearch, and IP-012 plans to replace it.
+
+**Context**: Only OPDS 2.0 search uses it through `search_service_client.py`.
+
+**Question**: How far does the update go?
+
+**Options**:
+- [ ] **A**: Dependencies, base image and whatever is needed to run and pass the client's calls; no new features (recommended)
+- [ ] **B**: Also add region search (figure captions, table markdown) to it
+- [ ] **C**: Also move it off Milvus Lite to the store IP-012 picks
+
+**Answer**:
+```
+```
+
+**Resolution**:
+```
+```
+
+---
+
 ## Changelog
 
 | Date | Author | Changes |
@@ -801,3 +1014,4 @@ title, so the generated SVG never disagrees with `quads` and `text`.
 | 2026-10-27 | kordostomas | Added Review Questions section |
 | 2026-10-27 | kordostomas | Dropped `highlight_layer`/`highlight`: agent highlights extend `Annotation` and `AnnotationItem` with nullable columns and server-generated SVG in `content`; existing annotation endpoints reused; replaced Q7 (ownership already enforced by `AnnotationFilter`) with the SVG coordinate question; added Q9 (item per highlight or per page) and Q10 (editing agent annotations) |
 | 2026-10-27 | kordostomas | Aligned `Annotation.kind` with the viewer's layers: `drawing`, `highlight`, `agent` (third layer), plus `bookmarks` replacing the `__page_bookmarks__` title convention; manual highlights may also fill `text` and `quads` |
+| 2026-10-28 | kordostomas | Review answers: IP-013's highlighting non-goal deprecated (monad-knowledge `highlights.py` has changed); no fold-in of extraction code — services are refactored in their own `evilflowers-*-service` repositories, images built there, catalog only changes compose to pull pinned builds; text- and search-service updated instead of retired and the full compose run end to end. Rewrote How it runs, Phases 1–3 and 7, Alternatives 1–2, risks, configuration and success criteria; answered Q3 and Q6; added Q11 (layout detection placement), Q12 (result write-back), Q13 (image pinning), Q14 (search-service update scope) |
