@@ -7,6 +7,7 @@ readable only by that user.
 """
 
 from http import HTTPStatus
+from typing import Optional
 from uuid import UUID
 
 from django.http import StreamingHttpResponse
@@ -43,10 +44,51 @@ class AssistantView(SecuredView):
         forbidden, so the endpoint cannot be used to discover that a given id
         exists.
         """
-        chat = Chat.objects.filter(pk=chat_id, user=request.user, is_active=True).first()
+        chat = (
+            Chat.objects.filter(pk=chat_id, user=request.user, is_active=True)
+            .select_related("entry", "user_acquisition__acquisition__entry")
+            .first()
+        )
         if chat is None:
             raise ProblemDetailException(_("Chat not found"), status=HTTPStatus.NOT_FOUND)
         return chat
+
+    def _reader_copy(self, request, user_acquisition: UserAcquisition) -> UserAcquisition:
+        """The same checks the download of this copy makes.
+
+        The model reads exactly what the reader is allowed to open, and nothing more.
+        """
+        if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:
+            if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
+                raise AuthorizationException(request)
+        _check_ip_block(request, user_acquisition.acquisition.entry)
+        return user_acquisition
+
+    def _chat_document(self, request, chat: Chat, entry=None) -> Optional[ReaderDocument]:
+        """The publication the model may read this turn, or None.
+
+        `entry` is the publication attached to this message, else the chat's.
+        Entries lent through Readium LCP are never read: the model is told to
+        send the reader to borrow them (`services.entry_note`). Otherwise the
+        reader's copy the chat is bound to (opened in the viewer), or the
+        entry's open-access PDF. Anything that is not readable — no PDF, an
+        expired copy, an IP block — turns the reading tools off; the
+        conversation itself continues.
+        """
+        entry = entry or chat.entry
+        if entry is not None and entry.read_config("readium_enabled"):
+            return None
+        try:
+            copy = chat.user_acquisition
+            if copy is not None and (entry is None or copy.acquisition.entry_id == entry.pk):
+                self._reader_copy(request, copy)
+                return ReaderDocument.for_user_acquisition(copy)
+            if entry is not None:
+                _check_ip_block(request, entry)
+                return ReaderDocument.for_open_access(entry)
+        except (AuthorizationException, ProblemDetailException, DocumentUnavailable):
+            pass
+        return None
 
     @staticmethod
     def _blocked(error: services.UserBlocked) -> ProblemDetailException:
@@ -81,10 +123,17 @@ class ChatManagement(AssistantView):
         if not form.is_valid():
             raise ValidationException(form)
 
+        user_acquisition = form.cleaned_data.get("user_acquisition_id")
+        entry = form.cleaned_data.get("entry_id")
+        if user_acquisition is not None:
+            self._reader_copy(request, user_acquisition)
+            entry = entry or user_acquisition.acquisition.entry
+
         chat = Chat(
             user=user,
-            entry=form.cleaned_data.get("entry_id"),
+            entry=entry,
             catalog=form.cleaned_data.get("catalog_id"),
+            user_acquisition=user_acquisition,
         )
         chat.save()
 
@@ -96,7 +145,8 @@ class ChatManagement(AssistantView):
 
     @openapi.metadata(
         description=(
-            "List the authenticated user's conversations, newest first. A user only ever sees their " "own chats."
+            "List the authenticated user's conversations, newest first. A user only ever sees their own "
+            "chats. Pass `entry_id` to list only the conversations about one publication."
         ),
         tags=["Assistant"],
         summary="List chats",
@@ -111,9 +161,17 @@ class ChatManagement(AssistantView):
         # a client override it with `?order_by=`.
         ordering = Ordering.create_from_request(request) if "order_by" in request.GET else Ordering(["-created_at"])
 
+        chats = Chat.objects.filter(user=user, is_active=True).select_related("entry", "user_acquisition")
+        # The viewer can ask for the chats about the open publication only.
+        if request.GET.get("entry_id"):
+            try:
+                chats = chats.filter(entry_id=UUID(request.GET["entry_id"]))
+            except ValueError:
+                chats = chats.none()
+
         return PaginationResponse(
             request,
-            Chat.objects.filter(user=user, is_active=True),
+            chats,
             serializer=ChatSerializer.Base,
             ordering=ordering,
         )
@@ -164,7 +222,10 @@ class ChatMessages(AssistantView):
             "Send a message and receive the assistant's answer as a Server-Sent Events stream "
             "(`text/event-stream`). Event names are `chunk` (a fragment of the answer as it is "
             "generated), `message` (a completed answer), `entries` (publication ids the assistant "
-            "wants rendered as cards), `error`, and `done`. Responds 429 when the caller's daily "
+            "wants rendered as cards), `pages` (viewer pages the answer was drawn from), `error`, and "
+            "`done`. Pass `contexts` (what the reader attached in the viewer), `page` (the viewer page "
+            "they are on) and `user_acquisition_id` (their copy, which lets the assistant read it and "
+            "cite pages as `[[page:N]]`); all are stored on the message and returned with the chat. Responds 429 when the caller's daily "
             "allowance is spent and 403 when their assistant access is blocked."
         ),
         tags=["Assistant"],
@@ -184,6 +245,21 @@ class ChatMessages(AssistantView):
         if not form.is_valid():
             raise ValidationException(form)
 
+        # The portal issues a new copy each time the viewer opens; a chat about
+        # this publication continued from there is re-bound to the newest one.
+        user_acquisition = form.cleaned_data.get("user_acquisition_id")
+        if user_acquisition is not None and user_acquisition.pk != chat.user_acquisition_id:
+            self._reader_copy(request, user_acquisition)
+            if chat.entry_id not in (None, user_acquisition.acquisition.entry_id):
+                raise ProblemDetailException(
+                    _("This chat is about another publication"),
+                    status=HTTPStatus.UNPROCESSABLE_ENTITY,
+                    detail=_("Start a new chat to ask about this publication."),
+                )
+            chat.user_acquisition = user_acquisition
+            chat.entry_id = user_acquisition.acquisition.entry_id
+            chat.save(update_fields=["user_acquisition", "entry", "updated_at"])
+
         try:
             services.assert_within_quota(user)
         except services.QuotaExceeded as error:
@@ -196,7 +272,15 @@ class ChatMessages(AssistantView):
             ) from error
 
         response = StreamingHttpResponse(
-            turn.run(request, chat, form.cleaned_data["message"], entry=form.cleaned_data.get("entry_id")),
+            turn.run(
+                request,
+                chat,
+                form.cleaned_data["message"],
+                entry=form.cleaned_data.get("entry_id"),
+                contexts=form.cleaned_data.get("contexts"),
+                page=form.cleaned_data.get("page"),
+                document=self._chat_document(request, chat, form.cleaned_data.get("entry_id")),
+            ),
             content_type="text/event-stream",
         )
         response["Cache-Control"] = "no-cache"
@@ -241,14 +325,8 @@ class Explain(AssistantView):
                 extra_headers=(("Retry-After", str(retry_after)),),
             ) from error
 
-        # The same checks the download of this copy makes: the model reads
-        # exactly what the reader is allowed to open, and nothing more.
-        user_acquisition = form.cleaned_data["user_acquisition_id"]
-        if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:
-            if not has_object_permission("check_user_acquisition_read", user, user_acquisition):
-                raise AuthorizationException(request)
+        user_acquisition = self._reader_copy(request, form.cleaned_data["user_acquisition_id"])
         entry = user_acquisition.acquisition.entry
-        _check_ip_block(request, entry)
 
         try:
             document = ReaderDocument.for_user_acquisition(user_acquisition)

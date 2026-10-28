@@ -70,12 +70,26 @@ class ChatMessage(BaseModel):
         "core.Entry", on_delete=models.SET_NULL, null=True, blank=True, related_name="assistant_messages"
     )
 
+    #: What the reader attached to this message in the viewer: selections,
+    #: explanations, figures/tables/equations and agent highlights, in the
+    #: shape `apps.assistant.contexts.normalize` returns. Stored so the
+    #: conversation can be replayed to the model and shown again everywhere it
+    #: is read back (viewer and portal alike).
+    contexts = models.JSONField(null=True, blank=True)
+
+    #: Viewer page the reader was on when they sent this message.
+    page = models.PositiveIntegerField(null=True, blank=True)
+
     #: Tool calls the model asked for on this turn, as issued. Empty for plain
     #: user and assistant messages.
     tool_calls = models.JSONField(null=True, blank=True)
 
     #: The result handed back for a `role=tool` message.
     tool_result = models.JSONField(null=True, blank=True)
+
+    #: Pages of the publication the assistant read while answering, in reading
+    #: order. Set on the answer that closes the turn, like `displayed_entries`.
+    pages_read = models.JSONField(null=True, blank=True)
 
     #: Publications the assistant asked the UI to render, in display order.
     #: This is the persisted form of the `displayBooks` tool, set on the answer

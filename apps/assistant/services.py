@@ -10,6 +10,7 @@ from django.db.models import Sum
 from django.utils import timezone
 from django.utils.html import strip_tags
 
+from apps.assistant import contexts
 from apps.assistant.models import Chat, ChatMessage
 from apps.assistant.tools import DISPLAY_BOOKS
 
@@ -124,7 +125,7 @@ def _history_queryset(chat: Chat):
     return chat.messages.select_related("entry").order_by("created_at")
 
 
-def conversation(chat: Chat) -> List[dict]:
+def conversation(chat: Chat, document=None) -> List[dict]:
     """Rebuild the message array to send to the model.
 
     IP-015 D3. While a conversation is warm the entire history is replayed
@@ -138,7 +139,7 @@ def conversation(chat: Chat) -> List[dict]:
     """
     messages: List[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    opening = opening_context(chat)
+    opening = opening_context(chat, document)
     if opening:
         messages.append({"role": "system", "content": opening})
 
@@ -179,7 +180,15 @@ def entry_note(entry) -> str:
     note = f'The reader is attaching the publication {entry.pk}: "{entry.title}"'
     if summary:
         note += f" — {summary}"
-    return note + "\nAnswer from this when it is enough; use the get_entry tool for more detail."
+    note += "\nAnswer from this when it is enough; use the get_entry tool for more detail."
+    if entry.read_config("readium_enabled"):
+        # Lent through Readium LCP: its text is never given to the model (IP-018 Q5 follow-up).
+        note += (
+            "\nThis publication is lent through Readium LCP, so you cannot read its text. If the reader asks "
+            "about its content, say so and tell them to borrow it in the library (the Borrow button on the "
+            "publication) and read it in Thorium; you can still answer from its catalogue description."
+        )
+    return note
 
 
 def _as_message(row: ChatMessage) -> dict:
@@ -187,9 +196,11 @@ def _as_message(row: ChatMessage) -> dict:
         return {"role": "tool", "content": row.text}
 
     text = row.text
-    if row.role == ChatMessage.Role.USER and row.entry is not None:
+    if row.role == ChatMessage.Role.USER:
         # Derived from the stored rows only, so the replayed prefix stays identical.
-        text = f"[{entry_note(row.entry)}]\n\n{text}"
+        notes = reader_notes(row)
+        if notes:
+            text = f"[{notes}]\n\n{text}"
 
     message: dict = {"role": row.role, "content": text}
     if row.tool_calls:
@@ -197,12 +208,43 @@ def _as_message(row: ChatMessage) -> dict:
     return message
 
 
-def opening_context(chat: Chat) -> Optional[str]:
+def reader_notes(row: ChatMessage) -> str:
+    """What came with a user message: the attached publication, the page and the viewer contexts."""
+    notes = []
+    if row.entry is not None:
+        notes.append(entry_note(row.entry))
+    if row.page:
+        notes.append(f"The reader is on page {row.page} of the viewer.")
+    if row.contexts:
+        notes.append("The reader attached:\n" + "\n".join(f"- {contexts.describe(c)}" for c in row.contexts))
+    return "\n".join(notes)
+
+
+def reading_note(document) -> str:
+    """Tells the model it can read the publication's PDF and how to cite it."""
+    return (
+        f"You can read this publication's PDF, numbered as the reader's viewer numbers it. It has "
+        f"{document.page_count} pages. "
+        "Use `read_pdf_page` to read pages and `search_pdf` to find where something is discussed; base "
+        "answers about the publication on what it says and never invent its content.\n"
+        "Whenever you refer to a page, write it as [[page:N]] with the viewer's page number, for example "
+        "[[page:12]], so the reader can jump there. A figure, table or equation the reader attached can be "
+        "cited as [[region:ID]] with its id. Never use page numbers printed in the book itself; they differ "
+        "from the viewer's."
+    )
+
+
+def opening_context(chat: Chat, document=None) -> Optional[str]:
     """A note pinning the conversation to a publication, when it started from one.
 
     Added once, right after the system prompt, so it stays part of the stable
-    prefix rather than being re-injected on every request.
+    prefix rather than being re-injected on every request. `document` is the
+    reader's copy when the chat is bound to one; its page count does not change,
+    so the note stays stable too.
     """
-    if chat.entry is None:
-        return None
-    return entry_note(chat.entry)
+    notes = []
+    if chat.entry is not None:
+        notes.append(entry_note(chat.entry))
+    if document is not None:
+        notes.append(reading_note(document))
+    return "\n\n".join(notes) or None

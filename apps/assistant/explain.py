@@ -18,14 +18,17 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from django.conf import settings
+
 from apps.assistant.llm import OllamaClient
 from apps.assistant.pdf import ReaderDocument
 
 logger = logging.getLogger(__name__)
 
-#: How many times the model may call tools before it must answer. Each read is
-#: one page, so this bounds how much of the book a single explanation reads.
-MAX_TOOL_ROUNDS = 8
+#: Runaway guard only. Tool calls are not what is limited (IP-018 Q5); reading
+#: is, by `EVILFLOWERS_ASSISTANT_MAX_PAGES_READ`, and this sits well above what
+#: that budget allows so it never cuts a legitimate explanation short.
+MAX_TOOL_ROUNDS = 25
 
 #: Pages a single `read_pdf_page` call may return.
 MAX_PAGES_PER_READ = 3
@@ -130,7 +133,7 @@ def explain(
 
         messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
         for call in tool_calls:
-            messages.append({"role": "tool", "content": _run_tool(document, call, pages_read)})
+            messages.append({"role": "tool", "content": run_document_tool(document, call, pages_read)})
 
     # Out of rounds: ask for the answer from what has been read so far.
     messages.append(
@@ -194,7 +197,15 @@ def _complete(client: OllamaClient, messages: List[dict], specifications: Option
     return content, tool_calls, tokens
 
 
-def _run_tool(document: ReaderDocument, call: dict, pages_read: List[int]) -> str:
+def run_document_tool(document: ReaderDocument, call: dict, pages_read: List[int]) -> str:
+    """Run `read_pdf_page` or `search_pdf`; also used by chat turns bound to a reader's copy.
+
+    `pages_read` is the request's reading so far. Distinct pages are capped by
+    `EVILFLOWERS_ASSISTANT_MAX_PAGES_READ` (IP-018 Q5): a page already read is
+    free to read again, a new one past the budget is refused so the model answers
+    from what it has. Searching does not count.
+    """
+    budget = settings.EVILFLOWERS_ASSISTANT_MAX_PAGES_READ
     function = call.get("function") or {}
     name = function.get("name") or ""
     arguments = function.get("arguments") or {}
@@ -211,13 +222,24 @@ def _run_tool(document: ReaderDocument, call: dict, pages_read: List[int]) -> st
             start = int(arguments.get("page"))
             count = max(1, min(int(arguments.get("count") or 1), MAX_PAGES_PER_READ))
             pages = []
+            over_budget = False
             for number in range(start, start + count):
                 page_text = document.page(number)
                 if page_text is None:
                     break
-                pages.append({"page": number, "text": _clip(page_text)})
                 if number not in pages_read:
+                    if len(pages_read) >= budget:
+                        over_budget = True
+                        break
                     pages_read.append(number)
+                pages.append({"page": number, "text": _clip(page_text)})
+            if over_budget and not pages:
+                return json.dumps(
+                    {
+                        "error": f"Reading budget of {budget} pages reached. Answer from the pages you have read, "
+                        "and say if something you would need is on a page you could not read."
+                    }
+                )
             if not pages:
                 return json.dumps({"error": f"No such page. The publication has {document.page_count} pages."})
             return json.dumps({"pages": pages}, ensure_ascii=False)

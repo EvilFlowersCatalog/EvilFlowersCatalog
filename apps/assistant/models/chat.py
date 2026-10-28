@@ -42,6 +42,14 @@ class Chat(BaseModel):
         "core.Catalog", on_delete=models.SET_NULL, null=True, blank=True, related_name="assistant_chats"
     )
 
+    #: The reader's copy of the publication when the chat was opened in the
+    #: viewer. While it is set the assistant can read the document's pages and
+    #: cite them. The portal issues a new copy each time the viewer opens, so a
+    #: chat continued later is re-bound to the newest one (see `turn.bind`).
+    user_acquisition = models.ForeignKey(
+        "core.UserAcquisition", on_delete=models.SET_NULL, null=True, blank=True, related_name="assistant_chats"
+    )
+
     title = models.CharField(max_length=500, blank=True, default="")
     is_active = models.BooleanField(default=True)
 
@@ -51,6 +59,11 @@ class Chat(BaseModel):
     total_tokens = models.BigIntegerField(default=0)
     message_count = models.IntegerField(default=0)
     last_message_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def acquisition_id(self):
+        """The acquisition (file) the chat is about, so clients can reopen it in the viewer."""
+        return self.user_acquisition.acquisition_id if self.user_acquisition_id else None
 
     def __str__(self):
         return self.title or str(self.pk)
