@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "055d7ff2101bc9c972e1d9410114605dec1b3f6c",
-    "short": "055d7ff",
-    "message": "chore: intelligent viewer proposal, extraction services fold-in review",
+    "sha": "917ba47a75b822a2e7dc6cff9e33025152335027",
+    "short": "917ba47",
+    "message": "chore: intelligent viewer spec update",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/055d7ff2101bc9c972e1d9410114605dec1b3f6c"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/917ba47a75b822a2e7dc6cff9e33025152335027"
   },
-  "deployed_at": "2026-10-27T22:01:14Z",
+  "deployed_at": "2026-10-28T13:32:38Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
