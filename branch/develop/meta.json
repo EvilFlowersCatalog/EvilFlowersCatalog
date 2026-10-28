@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "917ba47a75b822a2e7dc6cff9e33025152335027",
-    "short": "917ba47",
-    "message": "chore: intelligent viewer spec update",
+    "sha": "fef01dbb05ddbcb9e882471aea7f81d7fcc90978",
+    "short": "fef01db",
+    "message": "Merge pull request #89 from EvilFlowersCatalog/ai-update",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/917ba47a75b822a2e7dc6cff9e33025152335027"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/fef01dbb05ddbcb9e882471aea7f81d7fcc90978"
   },
-  "deployed_at": "2026-10-28T13:32:38Z",
+  "deployed_at": "2026-10-28T18:21:13Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

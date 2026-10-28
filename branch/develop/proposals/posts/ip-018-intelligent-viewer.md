@@ -63,7 +63,7 @@ statements this proposal directly contradicts.
 | IP-012 [Phase 1](ip-012-ai-powered-discovery.md#phase-1-event-driven-indexing-pipeline-replaces-61) | Retire `text-service` and `search-service`. | Both are **updated**, not retired: they stay in compose, are refactored in their own repositories and brought back to a running state. | **Contradiction** |
 | IP-013 [Data Model Changes](ip-013-document-extraction-structure.md#data-model-changes) | Separate `extraction_figure`, `extraction_table`, `extraction_equation` tables. | One `extraction_region` table with a `kind`. Whichever lands first decides. | Overlap (schema) |
 | IP-013 [Phase 2](ip-013-document-extraction-structure.md#phase-2-feature-extraction-docling-figures-tables-math-images) and [Phase 3](ip-013-document-extraction-structure.md#phase-3-classification-captioning) | Docling feature extraction, then VLM captions and classification. | Same tools and steps, but triggered on upload for the viewer. Sections, passages and subject classification stay with IP-013. | Overlap (shared work) |
-| IP-015 [D1](ip-015-assistant-fold-in.md#d1-tool-set-exactly-three-read-only) | The chat assistant has exactly three read-only tools. | Adds region tools for the viewer context, and an agent that **writes** an annotation. | **Contradiction** (tool set) |
+| IP-015 [D1](ip-015-assistant-fold-in.md#d1-tool-set-exactly-three-read-only) | The chat assistant has exactly three read-only tools. | No tool-count limit (Q5); reading is bounded by a page budget instead. Region tools for the viewer context, and an agent that **writes** an annotation through its own endpoint. | **Contradiction** (tool set) |
 | IP-015 [D12](ip-015-assistant-fold-in.md#d12-relationship-to-ip-012) | The assistant has no retrieval work. | Unchanged. IP-018 tools read one publication the reader has open, which is not catalog-wide retrieval. | Compatible |
 
 ### Deprecated: IP-013's highlighting non-goal
@@ -73,6 +73,15 @@ machinery to avoid. That module has changed in monad-knowledge since IP-013 was 
 reasoning behind the non-goal no longer holds. **The non-goal and the IP-013 Q2 answer are
 deprecated** as far as highlighting is concerned; IP-018 owns highlighting. IP-013 itself is
 amended in a separate change (see [Q3](#q3-should-ip-013-be-amended-now-or-after-this-proposal-is-accepted)).
+
+What changed in monad-knowledge (read 2026-10-28 at `988d0efdd`, `monad_knowledge/reading/highlights.py`,
+IP-171 and IP-175 there): the old module matched whole paragraphs to claims by token overlap and
+leaned on stored Neo4j bounding boxes. Since 2026-10-16 it is a deterministic, model-free
+resolver: the extractor stores the exact evidence sentence of every claim as an offset into its
+paragraph text, and at highlight time PyMuPDF finds that sentence on the page (`exact`), or most
+of it in six-word windows (`partial`), or reports it `missed`. Over 63 papers it located 12,647 of
+13,408 sentences (7,488 exact, 5,159 partial) and missed 761 (5.7 %). That is the machinery IP-018
+reuses for agent highlights; see [Quote resolution](#quote-resolution).
 
 ## Problem Statement
 
@@ -298,7 +307,7 @@ Per service:
 - [ ] `evilflowers-search-service`: update dependencies and base image, fix whatever keeps the
       container down, publish a new build; `apps/api/services/search_service_client.py` keeps
       working against it.
-- [ ] Catalog `compose.yml`: replace the `:main` references with pinned tags (Q13) and add the
+- [ ] Catalog `compose.yml` (development): keep `:main` for every service (Q13) and add the
       analyzer, image and equation services.
 - [ ] Run the full development compose end to end: upload a PDF, see the text task consumed, the
       extraction run reach `done`, regions and crops present, and OPDS 2.0 search answering.
@@ -341,23 +350,35 @@ Per service:
       always fill them. Manual `highlight` items may fill `text` and `quads` from the text selection,
       which makes them searchable the same way.
 - [ ] Highlight agent: reads the publication with the existing tools, returns exact quotes in
-      reading order, then a short summary built from those quotes.
-- [ ] Quote resolution: find each quote on its page with PyMuPDF `search_for(..., quads=True)` on
-      the original file, map the page to the reader's numbering, store the areas as page fractions.
-      Quotes that cannot be found are dropped and counted in `unresolved_count`.
-- [ ] Generate `content` for each agent item: an SVG of `rect` elements, one per quad, in the
-      coordinate system agreed in Q7, so the existing PDF export draws it.
+      reading order, each with the reader page it read it on, then a short summary built from those
+      quotes.
+- [ ] Quote gate: a quote is kept only if it occurs in the text `read_pdf_page` returned for its
+      page, tolerant of whitespace only (monad-knowledge `locate_evidence`). A quote the model
+      paraphrased is dropped here, before the PDF is searched, and counted in `unresolved_count`.
+- [ ] Quote resolution on the original file, as described in [Quote resolution](#quote-resolution):
+      `exact`, then `partial` six-word windows, else `missed`. Map the page to the reader's
+      numbering, store the areas as page fractions and the method in `match`. Missed quotes are
+      dropped and counted in `unresolved_count`. No model call.
+- [ ] Port monad-knowledge's resolver tests (`tests/reading/test_span_highlights.py`: exact,
+      one changed word is partial, absent is missed, a dry run writes nothing) against a small
+      generated PDF.
+- [ ] Generate `content` for each agent item: an SVG of `rect` elements, one per quad, in PDF
+      points with a `viewBox` (Q7), so the existing PDF export draws it.
+- [ ] One migration for all IP-018 schema: `extraction_run`, `extraction_region` (Q2), the
+      annotation and item columns (Q9), and a data step converting existing reader SVG from screen
+      pixels to PDF points (Q7). The viewer converts on save from then on.
+- [ ] Highlight requests run as a Celery task; the annotation starts `pending` (Q4).
 - [ ] Endpoint to request an agent annotation from a prompt. Listing, reading, renaming and
       deleting use the existing `annotations` and `annotation-items` endpoints, which return the
       new fields.
-- [ ] Agent annotations are read-only apart from the title: updates to their items are rejected.
+- [ ] Agent annotations: the reader may rename the title and delete one highlight or the whole
+      annotation; every other update is rejected (Q10).
 - [ ] Ownership is unchanged: `AnnotationFilter` already limits users to their own annotations.
 
 ### Phase 7: Production
 
 - [ ] Add the analyzer, image, equation, text and search services to the production compose
       (`elvira-devops`), each pulling its pinned build and mounting production storage.
-- [ ] Decide GPU or CPU for the services (see Review Questions).
 - [ ] Run the backfill, watching the queues in Flower.
 
 ### Prerequisites
@@ -457,12 +478,54 @@ CREATE TABLE extraction_region (
 
   ALTER TABLE annotation_items
       ADD COLUMN seq   int,                                      -- agent only: reading order in the annotation
+      ADD COLUMN match text,                                     -- agent only: exact | partial (see Quote resolution)
       ADD COLUMN quads jsonb,                                    -- agent only: [{x0, y0, x1, y1}, ...] page fractions
     ADD COLUMN text  text,                                     -- agent only: the highlighted sentence
     ADD COLUMN note  text;                                     -- agent only
 -- page:    unchanged meaning, the reader's page number, as the viewer already stores it
 -- content: still SVG; for agent items generated by the server from quads
 ```
+
+### Quote resolution
+
+Taken from monad-knowledge `monad_knowledge/reading/highlights.py` (`_locate`, `_page_index`),
+which does the same job for claim evidence sentences. Two steps, kept apart:
+
+1. **Text step (at answer time).** The agent's quote must occur in the page text it read, with
+   whitespace differences only. This is monad-knowledge's extraction gate (`locate_evidence` in
+   `extraction/claims.py`): a claim whose evidence is not literally in its paragraph is not stored,
+   "because it cannot be checked against its source". Here it stops paraphrased quotes.
+2. **PDF step (positions).** Each page of the original file gets one PyMuPDF text page built with
+   `TEXT_DEHYPHENATE | TEXT_PRESERVE_WHITESPACE | TEXT_MEDIABOX_CLIP`, and its text lower-cased with
+   whitespace collapsed. Then, per quote:
+   - **exact**: the collapsed quote occurs in a page's text and `page.search_for(quote, quads=True,
+     textpage=...)` returns quads. The quote's own page is tried first, then the rest of the
+     acquisition's range (monad-knowledge scans every page; the agent's page is a cheap first guess).
+   - **partial**: the quote is cut into six-word windows (windows under 20 characters dropped). The
+     page holding the most windows wins if it holds at least half of them; each window found there
+     is searched, and kept unless it returns more than three quads (ambiguous).
+   - **missed**: neither works. Quotes under 20 characters are missed outright.
+
+   Constants as in monad-knowledge: `_MIN_SPAN_CHARS = 20`, `_WINDOW_WORDS = 6`,
+   `_MIN_WINDOW_CHARS = 20`, `_MAX_WINDOW_QUADS = 3`, `_MIN_WINDOW_SHARE = 0.5`.
+
+What differs from monad-knowledge:
+
+- **Output.** monad-knowledge writes PDF highlight annotations into an `_annotated/` copy with a
+  legend page. IP-018 stores the quads as page fractions on `AnnotationItem` and generates the SVG
+  `content` from them; the reader's file is never rewritten.
+- **Page text.** monad-knowledge's evidence comes from GROBID text, which differs from PDF text in
+  quotes, symbols and running heads, and is the main cause of its misses. IP-018's quotes come
+  from `ReaderDocument`, which reads the same file with PyMuPDF (`get_text("text")`, no
+  dehyphenation), so misses should be rarer. That is an expectation, not a measurement; the miss
+  rate is reported (see Success Criteria). Hyphenated line breaks are the known gap: the reader
+  text keeps `exam-\nple`, the PDF step's text page joins it, so the PDF step normalises both sides
+  the same way (dehyphenate and collapse whitespace) before comparing.
+- **Shared sentences.** monad-knowledge merges claims that share one evidence sentence into one
+  highlight. Agent quotes are already one per item; two items with the same quote are merged and
+  keep the lower `seq`.
+- **Colours and attribution.** monad-knowledge colours by claim type and fades `cited` claims. The
+  viewer colours by annotation (`AgentHighlightLayer`), so neither applies.
 
 Region tables are new. Annotation tables keep their structure and only gain a `kind` with a default
 and nullable columns, so
@@ -602,6 +665,9 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 - [ ] The explain agent can explain a region given only its id.
 - [ ] A highlight request produces an `Annotation` of kind `agent` with a summary, whose items are
       ordered, positioned on the correct reader pages, and carry their text.
+- [ ] Quote resolution is reported per annotation (exact, partial, missed) and over a sample of
+      publications, as monad-knowledge reports it; its 5.7 % miss rate on GROBID text is the
+      reference, not a bar.
 - [ ] Agent annotations appear through the existing annotation endpoints and in PDF downloads with
       `?annotations=true`, with no change to how reader annotations behave.
 - [ ] Deleting an acquisition removes its extraction files.
@@ -634,11 +700,15 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
   `-equation-service`, `-analyzer-service`, `-search-service`, `-video-service`,
   `-text-service-tp2025`
 - Docling, PyMuPDF (`Page.search_for`), sympy
+- monad-knowledge (`Sibyx/monad-knowledge`, private; read at `988d0efdd`):
+  `monad_knowledge/reading/highlights.py` (resolver), `monad_knowledge/extraction/claims.py`
+  (`locate_evidence`), `tests/reading/test_span_highlights.py`, proposals IP-171 (evidence spans)
+  and IP-175 (web reader layers anchored by quote with prefix and suffix)
 
 ## Review Questions
 
-**Status**: ⏳ Partially answered (Q3, Q6 answered 2026-10-28; Q11–Q14 added after the
-service-repository decision)
+**Status**: ✅ Answered 2026-10-28, except the caption model inside Q8 (decided in Phase 2).
+Q2, Q4, Q7 and Q9 are the schema questions, so IP-018 needs one migration.
 **Review Date**: 2026-10-27
 **Reviewer**: Claude AI
 
@@ -657,16 +727,21 @@ become slow enough to stall the backfill.
 **Question**: Where do the extraction service containers run?
 
 **Options**:
-- [ ] **A**: On the production host, CPU only, captions switched off until a GPU is available (recommended)
+- [x] **A**: On the production host, CPU only, captions switched off until a GPU is available (recommended)
 - [ ] **B**: On the T4 machine, mounting production storage over the network
 - [ ] **C**: On the production host after a GPU is added
 
 **Answer**:
 ```
+For now the production host on CPU. Once a machine with a GPU exists the services move there;
+that is a simple change.
 ```
 
 **Resolution**:
 ```
+Services run on the production host, CPU only. Captions are behind a setting and off until a GPU
+host exists (Phase 2). Moving a service is a compose change: its image, storage mount and the
+catalog URL. Phase 7 no longer has a GPU decision step.
 ```
 
 ---
@@ -682,15 +757,19 @@ migration.
 **Question**: Which schema should the first implementation use?
 
 **Options**:
-- [ ] **A**: One `extraction_region` table, and IP-013 adopts it (recommended)
+- [x] **A**: One `extraction_region` table, and IP-013 adopts it (recommended)
 - [ ] **B**: IP-013's three tables, and IP-018 adapts
 
 **Answer**:
 ```
+One extraction_region table (option A).
 ```
 
 **Resolution**:
 ```
+The Data Model keeps a single `extraction_region` table with `kind`. It is created in the one
+IP-018 migration (see Q7), together with `extraction_run` and the annotation columns, and
+stays empty until the services post results. IP-013 is amended to adopt it (Q3).
 ```
 
 ---
@@ -736,16 +815,20 @@ this book" request needs far more reading than that.
 **Question**: How is a highlight request executed?
 
 **Options**:
-- [ ] **A**: Background Celery task on the default queue; the annotation is created with `status = pending` and filled in (recommended)
+- [x] **A**: Background Celery task on the default queue; the annotation is created with `status = pending` and filled in (recommended)
 - [ ] **B**: Synchronous request with a higher tool-round limit
 - [ ] **C**: Streamed over SSE like chat messages (IP-015 D5)
 
 **Answer**:
 ```
+Background Celery task (option A).
 ```
 
 **Resolution**:
 ```
+A highlight request creates the `Annotation` with `status = pending` and enqueues a Celery
+task on the default queue; the task fills summary and items and sets `done` or `failed`. The
+viewer already shows pending and failed annotations. `annotations.status` stays in the schema.
 ```
 
 ---
@@ -767,10 +850,20 @@ publication, and an agent that writes annotations.
 
 **Answer**:
 ```
+No tool limit is needed; tool calls can be unlimited. PDF reads must be limited: the agent must
+not read all 200 pages.
 ```
 
 **Resolution**:
 ```
+IP-015 D1's three-tool limit is dropped for the assistant (IP-015 to be amended). Chats bound to a
+reader's copy get the reader and region tools; annotations are still written only through the
+agent-annotation endpoint. What is bounded is reading: a page budget per chat turn, explain call
+and highlight run (`EVILFLOWERS_ASSISTANT_MAX_PAGES_READ`). A page already read in the request is
+free to read again; past the budget `read_pdf_page` returns an error telling the model to answer
+from what it read. `search_pdf` does not count. A round limit stays only as a runaway guard,
+well above what the page budget allows (Implemented in the catalog for chat and explain,
+2026-10-28.)
 ```
 
 ---
@@ -822,16 +915,22 @@ viewer or the export.
 **Question**: What coordinates does `AnnotationItem.content` use?
 
 **Options**:
-- [ ] **A**: PDF points of the page, with a `viewBox` on the SVG root; the viewer scales on render and converts on save (recommended)
+- [x] **A**: PDF points of the page, with a `viewBox` on the SVG root; the viewer scales on render and converts on save (recommended)
 - [ ] **B**: Page fractions (0–1) with `viewBox="0 0 1 1"`; the PDF export multiplies by page size
 - [ ] **C**: Keep screen pixels and store the zoom alongside; agent SVG is generated at 100%
 
 **Answer**:
 ```
+PDF points with a viewBox on the SVG root (option A).
 ```
 
 **Resolution**:
 ```
+`AnnotationItem.content` is SVG in PDF points of the page, `viewBox="0 0 <width> <height>"`.
+The PDF export reads it unchanged. The viewer scales it on render and converts screen pixels
+to points on save. Agent SVG is generated from `quads` times the page size. Existing reader
+items are converted in a data step of the same IP-018 migration, so there is one migration:
+region tables, annotation columns and the SVG conversion together.
 ```
 
 ---
@@ -852,10 +951,15 @@ setting.
 
 **Answer**:
 ```
+Captions belong to the vision image-service, but a multimodal LLM is preferred. Not decided which.
 ```
 
 **Resolution**:
 ```
+Captioning stays in image-service and is done by a multimodal LLM, not PaliGemma or the ViT/ResNet
+classifiers. Which model, and whether image-service calls it through the existing Ollama endpoint
+or loads it itself, is decided in Phase 2 by running both on a sample of figures from the catalog.
+On the CPU host (Q1) the Ollama route is the only practical one. Still open: the model.
 ```
 
 ---
@@ -872,15 +976,19 @@ page matches what the viewer loads today but needs a list of highlights inside a
 **Question**: How are agent highlights split into items?
 
 **Options**:
-- [ ] **A**: One item per highlight; clients accept several items per page for an annotation (recommended)
+- [x] **A**: One item per highlight; clients accept several items per page for an annotation (recommended)
 - [ ] **B**: One item per page, with `quads` and `text` holding a list of highlights and `seq` per highlight inside it
 
 **Answer**:
 ```
+One item per highlight (option A).
 ```
 
 **Resolution**:
 ```
+Each agent highlight is its own `AnnotationItem` with its own `seq`, `match`, `text` and
+list of `quads`. The viewer's agent layer already loads a whole annotation, so
+several items per page per annotation are expected; the drawing layer keeps one item per page.
 ```
 
 ---
@@ -895,15 +1003,22 @@ title, so the generated SVG never disagrees with `quads` and `text`.
 **Question**: What can a reader change?
 
 **Options**:
-- [ ] **A**: Only the title; to change it, the reader copies it into a new annotation of kind `highlight` (recommended)
+- [x] **A**: Only the title; to change it, the reader copies it into a new annotation of kind `highlight` (recommended)
 - [ ] **B**: Anything; edits clear `quads` and `text` on the changed item
 
 **Answer**:
 ```
+Readers can only delete it, and rename the annotation (group) title. Each highlight stays exactly
+where the agent put it, with everything that belongs to it. Editing the description may come
+later; for now it is agent -> database, and the reader can delete, as the viewer already does.
 ```
 
 **Resolution**:
 ```
+Agent annotations: the reader may rename the title, delete one highlight or delete the whole
+annotation (the viewer's `deleteHighlightFunc` and `deleteAnnotationFunc`). Every other update
+to an agent annotation or its items is rejected. No copy-to-highlight path. Editing the summary
+is a future consideration.
 ```
 
 ---
@@ -919,16 +1034,19 @@ a dependency between services.
 **Question**: Which service finds the regions?
 
 **Options**:
-- [ ] **A**: analyzer-service runs Docling layout once and sends each region to the service for its kind; image, equation and text services only enrich (recommended)
+- [x] **A**: analyzer-service runs Docling layout once and sends each region to the service for its kind; image, equation and text services only enrich (recommended)
 - [ ] **B**: Each service runs its own detection for its own kind; the catalog dispatches to all three in parallel
 - [ ] **C**: One new `evilflowers-extraction-service` repository replaces analyzer, image and equation services
 
 **Answer**:
 ```
+analyzer-service runs Docling (option A).
 ```
 
 **Resolution**:
 ```
+analyzer-service runs Docling layout once per document and sends each region to the service
+for its kind; image, equation and text services only enrich. Docling layout runs on CPU (Q1).
 ```
 
 ---
@@ -950,10 +1068,19 @@ catalog's Django `SECRET_KEY` with every service is broader than needed.
 
 **Answer**:
 ```
+Use evilflowers-protocol (https://github.com/EvilFlowersCatalog/evilflowers-protocol), which is
+meant for communication between containers.
 ```
 
 **Resolution**:
 ```
+evilflowers-protocol holds the catalog's OpenAPI spec, synced from the catalog's `docs.yml` on
+every deploy; a push there regenerates the `evilflowers-protocol-python` client. So services
+hand results back over HTTP to catalog endpoints that are part of the catalog's own API, called
+through the generated Python client, authenticated with the catalog's bearer JWT (an API key of
+a dedicated service user), not the Django `SECRET_KEY`. text-service's `CATALOG_SECRET_KEY` auth
+moves to the same API key. The ingestion endpoints must be in the OpenAPI spec so the client
+gets them. The synced spec is at 0.13.0 (2026-03-31), so the client is regenerated after Phase 1.
 ```
 
 ---
@@ -969,15 +1096,20 @@ without the catalog's `pipeline_version` changing.
 
 **Options**:
 - [ ] **A**: Semver release tags from each repository's CI, pinned in both composes; bumping a tag that changes output also bumps `EVILFLOWERS_EXTRACTION_PIPELINE_VERSION` (recommended)
-- [ ] **B**: `:main` in development, release tags in production
+- [x] **B**: `:main` in development, release tags in production
 - [ ] **C**: Image digests (`@sha256:...`) everywhere
 
 **Answer**:
 ```
+`:main` in development, release tags in production (option B).
 ```
 
 **Resolution**:
 ```
+Development compose pulls `:main` of every service, so a merged change reaches dev on the next
+pull. Production pins release tags; bumping a tag that changes output bumps
+`EVILFLOWERS_EXTRACTION_PIPELINE_VERSION`. `provenance` records the image tag and digest, so a
+dev run on a moving `:main` can still be traced.
 ```
 
 ---
@@ -992,16 +1124,19 @@ Elasticsearch, and IP-012 plans to replace it.
 **Question**: How far does the update go?
 
 **Options**:
-- [ ] **A**: Dependencies, base image and whatever is needed to run and pass the client's calls; no new features (recommended)
+- [x] **A**: Dependencies, base image and whatever is needed to run and pass the client's calls; no new features (recommended)
 - [ ] **B**: Also add region search (figure captions, table markdown) to it
 - [ ] **C**: Also move it off Milvus Lite to the store IP-012 picks
 
 **Answer**:
 ```
+Run as-is, no features (option A).
 ```
 
 **Resolution**:
 ```
+search-service gets dependencies, base image and whatever the catalog client needs to run; no
+new features, Milvus Lite stays.
 ```
 
 ---
@@ -1015,3 +1150,6 @@ Elasticsearch, and IP-012 plans to replace it.
 | 2026-10-27 | kordostomas | Dropped `highlight_layer`/`highlight`: agent highlights extend `Annotation` and `AnnotationItem` with nullable columns and server-generated SVG in `content`; existing annotation endpoints reused; replaced Q7 (ownership already enforced by `AnnotationFilter`) with the SVG coordinate question; added Q9 (item per highlight or per page) and Q10 (editing agent annotations) |
 | 2026-10-27 | kordostomas | Aligned `Annotation.kind` with the viewer's layers: `drawing`, `highlight`, `agent` (third layer), plus `bookmarks` replacing the `__page_bookmarks__` title convention; manual highlights may also fill `text` and `quads` |
 | 2026-10-28 | kordostomas | Review answers: IP-013's highlighting non-goal deprecated (monad-knowledge `highlights.py` has changed); no fold-in of extraction code — services are refactored in their own `evilflowers-*-service` repositories, images built there, catalog only changes compose to pull pinned builds; text- and search-service updated instead of retired and the full compose run end to end. Rewrote How it runs, Phases 1–3 and 7, Alternatives 1–2, risks, configuration and success criteria; answered Q3 and Q6; added Q11 (layout detection placement), Q12 (result write-back), Q13 (image pinning), Q14 (search-service update scope) |
+| 2026-10-28 | kordostomas | Highlighting after monad-knowledge `988d0efdd`: described what its `highlights.py` does now; added Quote resolution (text gate, then exact / partial six-word windows / missed with its constants, and the differences), `AnnotationItem.match`, the quote gate and test port in Phase 6, a resolution-rate success criterion and references |
+| 2026-10-28 | kordostomas | Answered the schema questions: Q2 one `extraction_region` table, Q4 background Celery task, Q7 SVG in PDF points with a viewBox (existing reader SVG converted), Q9 one item per highlight; Phase 6 now has one migration for all IP-018 schema |
+| 2026-10-28 | kordostomas | Answered the rest: Q1 production host on CPU, move when a GPU host exists; Q5 no tool-count limit, a page budget per request instead (implemented for chat and explain); Q8 captions by a multimodal LLM in image-service, model open; Q10 rename and delete only; Q11 analyzer runs Docling; Q12 write-back over the catalog API via evilflowers-protocol's generated Python client with an API key; Q13 `:main` in development, release tags in production; Q14 search-service run as-is. Updated the IP-015 row, Phase 3, 6 and 7 accordingly |
