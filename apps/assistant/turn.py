@@ -12,11 +12,11 @@ next time (IP-015 D8).
 
 import json
 import logging
-from typing import Generator, Iterator, List
+from typing import Generator, Iterator, List, Optional
 
 from django.utils.translation import gettext as _
 
-from apps.assistant import services, tools
+from apps.assistant import explain, services, tools
 from apps.assistant.llm import Delta, LLMUnavailable, OllamaClient
 from apps.assistant.models import Chat, ChatMessage
 
@@ -31,21 +31,31 @@ def sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
-def run(request, chat: Chat, text: str, entry=None) -> Iterator[str]:
+def run(request, chat: Chat, text: str, entry=None, contexts=None, page=None, document=None) -> Iterator[str]:
     """Drive one turn, yielding SSE frames.
 
     The generator body runs while the response streams, so anything raised here
     surfaces as an `error` frame rather than an HTTP status — the status line is
     long gone by then. `entry` is the publication the reader attached to this
-    message, if any.
+    message, if any; `contexts` and `page` are what they attached and where they
+    were in the viewer. `document` is the reader's copy when the chat is bound to
+    one, which lets the model read its pages.
     """
     user = request.user
     client = OllamaClient()
 
-    ChatMessage.objects.create(chat=chat, user=user, role=ChatMessage.Role.USER, text=text, entry=entry)
+    ChatMessage.objects.create(
+        chat=chat,
+        user=user,
+        role=ChatMessage.Role.USER,
+        text=text,
+        entry=entry,
+        contexts=contexts or None,
+        page=page,
+    )
 
     try:
-        for frame in _rounds(request, chat, client):
+        for frame in _rounds(request, chat, client, document):
             yield frame
     except LLMUnavailable as error:
         logger.warning("Assistant backend unavailable: %s", error)
@@ -57,15 +67,19 @@ def run(request, chat: Chat, text: str, entry=None) -> Iterator[str]:
         yield sse("done", {"chat_id": str(chat.pk)})
 
 
-def _rounds(request, chat: Chat, client: OllamaClient) -> Iterator[str]:
+def _rounds(request, chat: Chat, client: OllamaClient, document=None) -> Iterator[str]:
     specifications = tools.specifications()
+    if document is not None:
+        specifications = specifications + explain.TOOL_SPECIFICATIONS
 
-    # Publications shown during this turn. They belong to the answer that closes
-    # it, which is the message a reader sees when the chat is read back.
+    # Publications shown and pages read during this turn. They belong to the
+    # answer that closes it, which is the message a reader sees when the chat is
+    # read back.
     displayed: List[str] = []
+    pages_read: List[int] = []
 
     for _round in range(MAX_TOOL_ROUNDS):
-        messages = services.conversation(chat)
+        messages = services.conversation(chat, document)
 
         content, tool_calls, tokens = yield from _stream(client, messages, specifications)
 
@@ -76,8 +90,10 @@ def _rounds(request, chat: Chat, client: OllamaClient) -> Iterator[str]:
                 role=ChatMessage.Role.ASSISTANT,
                 text=content,
                 displayed_entries=displayed or None,
+                pages_read=pages_read or None,
                 tokens_used=tokens,
             )
+            yield from _pages_frame(pages_read)
             return
 
         # Showing cards is the answer, not a lookup: when displayBooks is all the
@@ -101,7 +117,7 @@ def _rounds(request, chat: Chat, client: OllamaClient) -> Iterator[str]:
         )
 
         for call in tool_calls:
-            for entry_id in (yield from _run_tool(request, chat, call)):
+            for entry_id in (yield from _run_tool(request, chat, call, document, pages_read)):
                 if entry_id not in displayed:
                     displayed.append(entry_id)
 
@@ -112,7 +128,9 @@ def _rounds(request, chat: Chat, client: OllamaClient) -> Iterator[str]:
                 role=ChatMessage.Role.ASSISTANT,
                 text=content,
                 displayed_entries=displayed or None,
+                pages_read=pages_read or None,
             )
+            yield from _pages_frame(pages_read)
             return
 
     if displayed:
@@ -122,7 +140,9 @@ def _rounds(request, chat: Chat, client: OllamaClient) -> Iterator[str]:
             user=chat.user,
             role=ChatMessage.Role.ASSISTANT,
             displayed_entries=displayed,
+            pages_read=pages_read or None,
         )
+        yield from _pages_frame(pages_read)
         return
 
     # Out of rounds with nothing to show: say so rather than leaving the reader with silence.
@@ -133,6 +153,12 @@ def _rounds(request, chat: Chat, client: OllamaClient) -> Iterator[str]:
         text=str(_("I could not complete that search. Could you rephrase it?")),
     )
     yield sse("message", {"text": str(_("I could not complete that search. Could you rephrase it?"))})
+
+
+def _pages_frame(pages_read: List[int]) -> Iterator[str]:
+    """Tells the client which pages the answer was drawn from."""
+    if pages_read:
+        yield sse("pages", {"pages": pages_read})
 
 
 def _stream(client: OllamaClient, messages: List[dict], specifications: List[dict]):
@@ -156,7 +182,9 @@ def _stream(client: OllamaClient, messages: List[dict], specifications: List[dic
     return content, tool_calls, tokens
 
 
-def _run_tool(request, chat: Chat, call: dict) -> Generator[str, None, List[str]]:
+def _run_tool(
+    request, chat: Chat, call: dict, document=None, pages_read: Optional[List[int]] = None
+) -> Generator[str, None, List[str]]:
     """Run one tool call, yielding SSE frames; returns publication ids to display."""
     function = call.get("function") or {}
     name = function.get("name") or ""
@@ -181,6 +209,12 @@ def _run_tool(request, chat: Chat, call: dict) -> Generator[str, None, List[str]
         )
         yield sse("entries", {"entry_ids": entry_ids})
         return entry_ids
+
+    if document is not None and name in (explain.READ_PDF_PAGE, explain.SEARCH_PDF):
+        # The reader's own copy, read in-process exactly as explain reads it.
+        text = explain.run_document_tool(document, call, pages_read if pages_read is not None else [])
+        ChatMessage.objects.create(chat=chat, user=chat.user, role=ChatMessage.Role.TOOL, text=text)
+        return []
 
     try:
         payload = tools.call(request, name, arguments)

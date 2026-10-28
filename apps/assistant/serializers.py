@@ -14,9 +14,21 @@ class ChatMessageSerializer:
         text: str
         #: Publication the reader attached to this message, if any.
         entry_id: Optional[UUID]
+        #: What the reader attached in the viewer (`apps.assistant.contexts`).
+        contexts: Optional[list]
+        #: Viewer page the reader was on when they sent the message.
+        page: Optional[int]
+        #: Pages of the publication the answer was drawn from.
+        pages_read: Optional[List[int]]
         displayed_entries: Optional[list]
         tokens_used: int
         created_at: datetime
+
+
+class ChatEntrySerializer(Serializer):
+    id: UUID
+    catalog_id: UUID
+    title: str
 
 
 class ChatSerializer:
@@ -24,6 +36,12 @@ class ChatSerializer:
         id: UUID
         user_id: UUID
         entry_id: Optional[UUID]
+        #: The publication the chat is about, for listing chats without a lookup per row.
+        entry: Optional[ChatEntrySerializer]
+        #: The reader's copy the chat is bound to, and its acquisition (file),
+        #: so clients can reopen the publication in the viewer.
+        user_acquisition_id: Optional[UUID]
+        acquisition_id: Optional[UUID]
         catalog_id: Optional[UUID]
         title: str
         is_active: bool

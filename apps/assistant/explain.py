@@ -130,7 +130,7 @@ def explain(
 
         messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
         for call in tool_calls:
-            messages.append({"role": "tool", "content": _run_tool(document, call, pages_read)})
+            messages.append({"role": "tool", "content": run_document_tool(document, call, pages_read)})
 
     # Out of rounds: ask for the answer from what has been read so far.
     messages.append(
@@ -194,7 +194,8 @@ def _complete(client: OllamaClient, messages: List[dict], specifications: Option
     return content, tool_calls, tokens
 
 
-def _run_tool(document: ReaderDocument, call: dict, pages_read: List[int]) -> str:
+def run_document_tool(document: ReaderDocument, call: dict, pages_read: List[int]) -> str:
+    """Run `read_pdf_page` or `search_pdf`; also used by chat turns bound to a reader's copy."""
     function = call.get("function") or {}
     name = function.get("name") or ""
     arguments = function.get("arguments") or {}
