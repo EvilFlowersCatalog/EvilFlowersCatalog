@@ -3,12 +3,12 @@
   "slug": "ai-update",
   "kind": "branch",
   "commit": {
-    "sha": "e5f9f448ef39014e5b4cb6b73ba3f4b6b81a5cf3",
-    "short": "e5f9f44",
-    "message": "docs(ip-018): quote resolution after monad-knowledge highlighter",
+    "sha": "1e6690884d356befc088dd573f453533f14ef911",
+    "short": "1e66908",
+    "message": "docs(ip-018): answer schema questions Q2, Q4, Q7, Q9",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e5f9f448ef39014e5b4cb6b73ba3f4b6b81a5cf3"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/1e6690884d356befc088dd573f453533f14ef911"
   },
-  "deployed_at": "2026-10-28T16:23:03Z",
+  "deployed_at": "2026-10-28T17:49:52Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
