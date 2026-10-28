@@ -185,8 +185,9 @@ def entry_note(entry) -> str:
         # Lent through Readium LCP: its text is never given to the model (IP-018 Q5 follow-up).
         note += (
             "\nThis publication is lent through Readium LCP, so you cannot read its text. If the reader asks "
-            "about its content, say so and tell them to borrow it in the library (the Borrow button on the "
-            "publication) and read it in Thorium; you can still answer from its catalogue description."
+            "about its content, say so and tell them to borrow it in the library (the button on the "
+            'publication is labelled "Vypožičať" in Slovak and "Borrow" in English) and read it in Thorium; '
+            "you can still answer from its catalogue description."
         )
     return note
 
