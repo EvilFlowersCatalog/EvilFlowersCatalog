@@ -63,7 +63,7 @@ statements this proposal directly contradicts.
 | IP-012 [Phase 1](ip-012-ai-powered-discovery.md#phase-1-event-driven-indexing-pipeline-replaces-61) | Retire `text-service` and `search-service`. | Both are **updated**, not retired: they stay in compose, are refactored in their own repositories and brought back to a running state. | **Contradiction** |
 | IP-013 [Data Model Changes](ip-013-document-extraction-structure.md#data-model-changes) | Separate `extraction_figure`, `extraction_table`, `extraction_equation` tables. | One `extraction_region` table with a `kind`. Whichever lands first decides. | Overlap (schema) |
 | IP-013 [Phase 2](ip-013-document-extraction-structure.md#phase-2-feature-extraction-docling-figures-tables-math-images) and [Phase 3](ip-013-document-extraction-structure.md#phase-3-classification-captioning) | Docling feature extraction, then VLM captions and classification. | Same tools and steps, but triggered on upload for the viewer. Sections, passages and subject classification stay with IP-013. | Overlap (shared work) |
-| IP-015 [D1](ip-015-assistant-fold-in.md#d1-tool-set-exactly-three-read-only) | The chat assistant has exactly three read-only tools. | Adds region tools for the viewer context, and an agent that **writes** an annotation. | **Contradiction** (tool set) |
+| IP-015 [D1](ip-015-assistant-fold-in.md#d1-tool-set-exactly-three-read-only) | The chat assistant has exactly three read-only tools. | No tool-count limit (Q5); reading is bounded by a page budget instead. Region tools for the viewer context, and an agent that **writes** an annotation through its own endpoint. | **Contradiction** (tool set) |
 | IP-015 [D12](ip-015-assistant-fold-in.md#d12-relationship-to-ip-012) | The assistant has no retrieval work. | Unchanged. IP-018 tools read one publication the reader has open, which is not catalog-wide retrieval. | Compatible |
 
 ### Deprecated: IP-013's highlighting non-goal
@@ -307,7 +307,7 @@ Per service:
 - [ ] `evilflowers-search-service`: update dependencies and base image, fix whatever keeps the
       container down, publish a new build; `apps/api/services/search_service_client.py` keeps
       working against it.
-- [ ] Catalog `compose.yml`: replace the `:main` references with pinned tags (Q13) and add the
+- [ ] Catalog `compose.yml` (development): keep `:main` for every service (Q13) and add the
       analyzer, image and equation services.
 - [ ] Run the full development compose end to end: upload a PDF, see the text task consumed, the
       extraction run reach `done`, regions and crops present, and OPDS 2.0 search answering.
@@ -371,14 +371,14 @@ Per service:
 - [ ] Endpoint to request an agent annotation from a prompt. Listing, reading, renaming and
       deleting use the existing `annotations` and `annotation-items` endpoints, which return the
       new fields.
-- [ ] Agent annotations are read-only apart from the title: updates to their items are rejected.
+- [ ] Agent annotations: the reader may rename the title and delete one highlight or the whole
+      annotation; every other update is rejected (Q10).
 - [ ] Ownership is unchanged: `AnnotationFilter` already limits users to their own annotations.
 
 ### Phase 7: Production
 
 - [ ] Add the analyzer, image, equation, text and search services to the production compose
       (`elvira-devops`), each pulling its pinned build and mounting production storage.
-- [ ] Decide GPU or CPU for the services (see Review Questions).
 - [ ] Run the backfill, watching the queues in Flower.
 
 ### Prerequisites
@@ -707,8 +707,8 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 
 ## Review Questions
 
-**Status**: ⏳ Partially answered (Q3, Q6 answered 2026-10-28; Q2, Q4, Q7, Q9 answered 2026-10-28,
-the schema questions, so IP-018 needs one migration; Q11–Q14 added after the service-repository decision)
+**Status**: ✅ Answered 2026-10-28, except the caption model inside Q8 (decided in Phase 2).
+Q2, Q4, Q7 and Q9 are the schema questions, so IP-018 needs one migration.
 **Review Date**: 2026-10-27
 **Reviewer**: Claude AI
 
@@ -727,16 +727,21 @@ become slow enough to stall the backfill.
 **Question**: Where do the extraction service containers run?
 
 **Options**:
-- [ ] **A**: On the production host, CPU only, captions switched off until a GPU is available (recommended)
+- [x] **A**: On the production host, CPU only, captions switched off until a GPU is available (recommended)
 - [ ] **B**: On the T4 machine, mounting production storage over the network
 - [ ] **C**: On the production host after a GPU is added
 
 **Answer**:
 ```
+For now the production host on CPU. Once a machine with a GPU exists the services move there;
+that is a simple change.
 ```
 
 **Resolution**:
 ```
+Services run on the production host, CPU only. Captions are behind a setting and off until a GPU
+host exists (Phase 2). Moving a service is a compose change: its image, storage mount and the
+catalog URL. Phase 7 no longer has a GPU decision step.
 ```
 
 ---
@@ -845,10 +850,20 @@ publication, and an agent that writes annotations.
 
 **Answer**:
 ```
+No tool limit is needed; tool calls can be unlimited. PDF reads must be limited: the agent must
+not read all 200 pages.
 ```
 
 **Resolution**:
 ```
+IP-015 D1's three-tool limit is dropped for the assistant (IP-015 to be amended). Chats bound to a
+reader's copy get the reader and region tools; annotations are still written only through the
+agent-annotation endpoint. What is bounded is reading: a page budget per chat turn, explain call
+and highlight run (`EVILFLOWERS_ASSISTANT_MAX_PAGES_READ`). A page already read in the request is
+free to read again; past the budget `read_pdf_page` returns an error telling the model to answer
+from what it read. `search_pdf` does not count. A round limit stays only as a runaway guard,
+well above what the page budget allows (Implemented in the catalog for chat and explain,
+2026-10-28.)
 ```
 
 ---
@@ -936,10 +951,15 @@ setting.
 
 **Answer**:
 ```
+Captions belong to the vision image-service, but a multimodal LLM is preferred. Not decided which.
 ```
 
 **Resolution**:
 ```
+Captioning stays in image-service and is done by a multimodal LLM, not PaliGemma or the ViT/ResNet
+classifiers. Which model, and whether image-service calls it through the existing Ollama endpoint
+or loads it itself, is decided in Phase 2 by running both on a sample of figures from the catalog.
+On the CPU host (Q1) the Ollama route is the only practical one. Still open: the model.
 ```
 
 ---
@@ -983,15 +1003,22 @@ title, so the generated SVG never disagrees with `quads` and `text`.
 **Question**: What can a reader change?
 
 **Options**:
-- [ ] **A**: Only the title; to change it, the reader copies it into a new annotation of kind `highlight` (recommended)
+- [x] **A**: Only the title; to change it, the reader copies it into a new annotation of kind `highlight` (recommended)
 - [ ] **B**: Anything; edits clear `quads` and `text` on the changed item
 
 **Answer**:
 ```
+Readers can only delete it, and rename the annotation (group) title. Each highlight stays exactly
+where the agent put it, with everything that belongs to it. Editing the description may come
+later; for now it is agent -> database, and the reader can delete, as the viewer already does.
 ```
 
 **Resolution**:
 ```
+Agent annotations: the reader may rename the title, delete one highlight or delete the whole
+annotation (the viewer's `deleteHighlightFunc` and `deleteAnnotationFunc`). Every other update
+to an agent annotation or its items is rejected. No copy-to-highlight path. Editing the summary
+is a future consideration.
 ```
 
 ---
@@ -1007,16 +1034,19 @@ a dependency between services.
 **Question**: Which service finds the regions?
 
 **Options**:
-- [ ] **A**: analyzer-service runs Docling layout once and sends each region to the service for its kind; image, equation and text services only enrich (recommended)
+- [x] **A**: analyzer-service runs Docling layout once and sends each region to the service for its kind; image, equation and text services only enrich (recommended)
 - [ ] **B**: Each service runs its own detection for its own kind; the catalog dispatches to all three in parallel
 - [ ] **C**: One new `evilflowers-extraction-service` repository replaces analyzer, image and equation services
 
 **Answer**:
 ```
+analyzer-service runs Docling (option A).
 ```
 
 **Resolution**:
 ```
+analyzer-service runs Docling layout once per document and sends each region to the service
+for its kind; image, equation and text services only enrich. Docling layout runs on CPU (Q1).
 ```
 
 ---
@@ -1038,10 +1068,19 @@ catalog's Django `SECRET_KEY` with every service is broader than needed.
 
 **Answer**:
 ```
+Use evilflowers-protocol (https://github.com/EvilFlowersCatalog/evilflowers-protocol), which is
+meant for communication between containers.
 ```
 
 **Resolution**:
 ```
+evilflowers-protocol holds the catalog's OpenAPI spec, synced from the catalog's `docs.yml` on
+every deploy; a push there regenerates the `evilflowers-protocol-python` client. So services
+hand results back over HTTP to catalog endpoints that are part of the catalog's own API, called
+through the generated Python client, authenticated with the catalog's bearer JWT (an API key of
+a dedicated service user), not the Django `SECRET_KEY`. text-service's `CATALOG_SECRET_KEY` auth
+moves to the same API key. The ingestion endpoints must be in the OpenAPI spec so the client
+gets them. The synced spec is at 0.13.0 (2026-03-31), so the client is regenerated after Phase 1.
 ```
 
 ---
@@ -1057,15 +1096,20 @@ without the catalog's `pipeline_version` changing.
 
 **Options**:
 - [ ] **A**: Semver release tags from each repository's CI, pinned in both composes; bumping a tag that changes output also bumps `EVILFLOWERS_EXTRACTION_PIPELINE_VERSION` (recommended)
-- [ ] **B**: `:main` in development, release tags in production
+- [x] **B**: `:main` in development, release tags in production
 - [ ] **C**: Image digests (`@sha256:...`) everywhere
 
 **Answer**:
 ```
+`:main` in development, release tags in production (option B).
 ```
 
 **Resolution**:
 ```
+Development compose pulls `:main` of every service, so a merged change reaches dev on the next
+pull. Production pins release tags; bumping a tag that changes output bumps
+`EVILFLOWERS_EXTRACTION_PIPELINE_VERSION`. `provenance` records the image tag and digest, so a
+dev run on a moving `:main` can still be traced.
 ```
 
 ---
@@ -1080,16 +1124,19 @@ Elasticsearch, and IP-012 plans to replace it.
 **Question**: How far does the update go?
 
 **Options**:
-- [ ] **A**: Dependencies, base image and whatever is needed to run and pass the client's calls; no new features (recommended)
+- [x] **A**: Dependencies, base image and whatever is needed to run and pass the client's calls; no new features (recommended)
 - [ ] **B**: Also add region search (figure captions, table markdown) to it
 - [ ] **C**: Also move it off Milvus Lite to the store IP-012 picks
 
 **Answer**:
 ```
+Run as-is, no features (option A).
 ```
 
 **Resolution**:
 ```
+search-service gets dependencies, base image and whatever the catalog client needs to run; no
+new features, Milvus Lite stays.
 ```
 
 ---
@@ -1105,3 +1152,4 @@ Elasticsearch, and IP-012 plans to replace it.
 | 2026-10-28 | kordostomas | Review answers: IP-013's highlighting non-goal deprecated (monad-knowledge `highlights.py` has changed); no fold-in of extraction code — services are refactored in their own `evilflowers-*-service` repositories, images built there, catalog only changes compose to pull pinned builds; text- and search-service updated instead of retired and the full compose run end to end. Rewrote How it runs, Phases 1–3 and 7, Alternatives 1–2, risks, configuration and success criteria; answered Q3 and Q6; added Q11 (layout detection placement), Q12 (result write-back), Q13 (image pinning), Q14 (search-service update scope) |
 | 2026-10-28 | kordostomas | Highlighting after monad-knowledge `988d0efdd`: described what its `highlights.py` does now; added Quote resolution (text gate, then exact / partial six-word windows / missed with its constants, and the differences), `AnnotationItem.match`, the quote gate and test port in Phase 6, a resolution-rate success criterion and references |
 | 2026-10-28 | kordostomas | Answered the schema questions: Q2 one `extraction_region` table, Q4 background Celery task, Q7 SVG in PDF points with a viewBox (existing reader SVG converted), Q9 one item per highlight; Phase 6 now has one migration for all IP-018 schema |
+| 2026-10-28 | kordostomas | Answered the rest: Q1 production host on CPU, move when a GPU host exists; Q5 no tool-count limit, a page budget per request instead (implemented for chat and explain); Q8 captions by a multimodal LLM in image-service, model open; Q10 rename and delete only; Q11 analyzer runs Docling; Q12 write-back over the catalog API via evilflowers-protocol's generated Python client with an API key; Q13 `:main` in development, release tags in production; Q14 search-service run as-is. Updated the IP-015 row, Phase 3, 6 and 7 accordingly |
