@@ -362,8 +362,12 @@ Per service:
 - [ ] Port monad-knowledge's resolver tests (`tests/reading/test_span_highlights.py`: exact,
       one changed word is partial, absent is missed, a dry run writes nothing) against a small
       generated PDF.
-- [ ] Generate `content` for each agent item: an SVG of `rect` elements, one per quad, in the
-      coordinate system agreed in Q7, so the existing PDF export draws it.
+- [ ] Generate `content` for each agent item: an SVG of `rect` elements, one per quad, in PDF
+      points with a `viewBox` (Q7), so the existing PDF export draws it.
+- [ ] One migration for all IP-018 schema: `extraction_run`, `extraction_region` (Q2), the
+      annotation and item columns (Q9), and a data step converting existing reader SVG from screen
+      pixels to PDF points (Q7). The viewer converts on save from then on.
+- [ ] Highlight requests run as a Celery task; the annotation starts `pending` (Q4).
 - [ ] Endpoint to request an agent annotation from a prompt. Listing, reading, renaming and
       deleting use the existing `annotations` and `annotation-items` endpoints, which return the
       new fields.
@@ -703,8 +707,8 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 
 ## Review Questions
 
-**Status**: ⏳ Partially answered (Q3, Q6 answered 2026-10-28; Q11–Q14 added after the
-service-repository decision)
+**Status**: ⏳ Partially answered (Q3, Q6 answered 2026-10-28; Q2, Q4, Q7, Q9 answered 2026-10-28,
+the schema questions, so IP-018 needs one migration; Q11–Q14 added after the service-repository decision)
 **Review Date**: 2026-10-27
 **Reviewer**: Claude AI
 
@@ -748,15 +752,19 @@ migration.
 **Question**: Which schema should the first implementation use?
 
 **Options**:
-- [ ] **A**: One `extraction_region` table, and IP-013 adopts it (recommended)
+- [x] **A**: One `extraction_region` table, and IP-013 adopts it (recommended)
 - [ ] **B**: IP-013's three tables, and IP-018 adapts
 
 **Answer**:
 ```
+One extraction_region table (option A).
 ```
 
 **Resolution**:
 ```
+The Data Model keeps a single `extraction_region` table with `kind`. It is created in the one
+IP-018 migration (see Q7), together with `extraction_run` and the annotation columns, and
+stays empty until the services post results. IP-013 is amended to adopt it (Q3).
 ```
 
 ---
@@ -802,16 +810,20 @@ this book" request needs far more reading than that.
 **Question**: How is a highlight request executed?
 
 **Options**:
-- [ ] **A**: Background Celery task on the default queue; the annotation is created with `status = pending` and filled in (recommended)
+- [x] **A**: Background Celery task on the default queue; the annotation is created with `status = pending` and filled in (recommended)
 - [ ] **B**: Synchronous request with a higher tool-round limit
 - [ ] **C**: Streamed over SSE like chat messages (IP-015 D5)
 
 **Answer**:
 ```
+Background Celery task (option A).
 ```
 
 **Resolution**:
 ```
+A highlight request creates the `Annotation` with `status = pending` and enqueues a Celery
+task on the default queue; the task fills summary and items and sets `done` or `failed`. The
+viewer already shows pending and failed annotations. `annotations.status` stays in the schema.
 ```
 
 ---
@@ -888,16 +900,22 @@ viewer or the export.
 **Question**: What coordinates does `AnnotationItem.content` use?
 
 **Options**:
-- [ ] **A**: PDF points of the page, with a `viewBox` on the SVG root; the viewer scales on render and converts on save (recommended)
+- [x] **A**: PDF points of the page, with a `viewBox` on the SVG root; the viewer scales on render and converts on save (recommended)
 - [ ] **B**: Page fractions (0–1) with `viewBox="0 0 1 1"`; the PDF export multiplies by page size
 - [ ] **C**: Keep screen pixels and store the zoom alongside; agent SVG is generated at 100%
 
 **Answer**:
 ```
+PDF points with a viewBox on the SVG root (option A).
 ```
 
 **Resolution**:
 ```
+`AnnotationItem.content` is SVG in PDF points of the page, `viewBox="0 0 <width> <height>"`.
+The PDF export reads it unchanged. The viewer scales it on render and converts screen pixels
+to points on save. Agent SVG is generated from `quads` times the page size. Existing reader
+items are converted in a data step of the same IP-018 migration, so there is one migration:
+region tables, annotation columns and the SVG conversion together.
 ```
 
 ---
@@ -938,15 +956,19 @@ page matches what the viewer loads today but needs a list of highlights inside a
 **Question**: How are agent highlights split into items?
 
 **Options**:
-- [ ] **A**: One item per highlight; clients accept several items per page for an annotation (recommended)
+- [x] **A**: One item per highlight; clients accept several items per page for an annotation (recommended)
 - [ ] **B**: One item per page, with `quads` and `text` holding a list of highlights and `seq` per highlight inside it
 
 **Answer**:
 ```
+One item per highlight (option A).
 ```
 
 **Resolution**:
 ```
+Each agent highlight is its own `AnnotationItem` with its own `seq`, `match`, `text` and
+list of `quads`. The viewer's agent layer already loads a whole annotation, so
+several items per page per annotation are expected; the drawing layer keeps one item per page.
 ```
 
 ---
@@ -1082,3 +1104,4 @@ Elasticsearch, and IP-012 plans to replace it.
 | 2026-10-27 | kordostomas | Aligned `Annotation.kind` with the viewer's layers: `drawing`, `highlight`, `agent` (third layer), plus `bookmarks` replacing the `__page_bookmarks__` title convention; manual highlights may also fill `text` and `quads` |
 | 2026-10-28 | kordostomas | Review answers: IP-013's highlighting non-goal deprecated (monad-knowledge `highlights.py` has changed); no fold-in of extraction code — services are refactored in their own `evilflowers-*-service` repositories, images built there, catalog only changes compose to pull pinned builds; text- and search-service updated instead of retired and the full compose run end to end. Rewrote How it runs, Phases 1–3 and 7, Alternatives 1–2, risks, configuration and success criteria; answered Q3 and Q6; added Q11 (layout detection placement), Q12 (result write-back), Q13 (image pinning), Q14 (search-service update scope) |
 | 2026-10-28 | kordostomas | Highlighting after monad-knowledge `988d0efdd`: described what its `highlights.py` does now; added Quote resolution (text gate, then exact / partial six-word windows / missed with its constants, and the differences), `AnnotationItem.match`, the quote gate and test port in Phase 6, a resolution-rate success criterion and references |
+| 2026-10-28 | kordostomas | Answered the schema questions: Q2 one `extraction_region` table, Q4 background Celery task, Q7 SVG in PDF points with a viewBox (existing reader SVG converted), Q9 one item per highlight; Phase 6 now has one migration for all IP-018 schema |
