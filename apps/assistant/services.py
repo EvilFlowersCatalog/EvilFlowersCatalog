@@ -220,6 +220,30 @@ def reader_notes(row: ChatMessage) -> str:
     return "\n".join(notes)
 
 
+#: UI languages the reader can switch between, by code.
+LANGUAGE_NAMES = {"sk": "Slovak", "en": "English"}
+
+
+def language_instruction(language: Optional[str]) -> Optional[str]:
+    """Pins the answer to the reader's UI language.
+
+    Sent as the last message of every request, after the history, so it never
+    changes the cached prefix. Small models drift (Slovak into Czech, a DRM
+    notice into Russian), so the language is named and Czech is ruled out.
+    """
+    code = (language or "").split("-")[0].lower()
+    name = LANGUAGE_NAMES.get(code)
+    if name is None:
+        return None
+    instruction = (
+        f"Write your answer in {name}, whatever language the reader's message, the publication or a tool "
+        "result is in."
+    )
+    if code == "sk":
+        instruction += " It must be Slovak, never Czech."
+    return instruction
+
+
 def reading_note(document) -> str:
     """Tells the model it can read the publication's PDF and how to cite it."""
     return (

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from apps.api.serializers import Serializer
 
@@ -29,6 +29,21 @@ class ChatEntrySerializer(Serializer):
     id: UUID
     catalog_id: UUID
     title: str
+    #: Lent through Readium LCP: not readable in the viewer, so clients offer
+    #: borrowing instead of "open in reader".
+    readium_enabled: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_entry(cls, value):
+        if hasattr(value, "read_config"):
+            return {
+                "id": value.pk,
+                "catalog_id": value.catalog_id,
+                "title": value.title,
+                "readium_enabled": bool(value.read_config("readium_enabled")),
+            }
+        return value
 
 
 class ChatSerializer:
