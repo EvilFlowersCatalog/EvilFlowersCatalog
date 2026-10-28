@@ -180,7 +180,15 @@ def entry_note(entry) -> str:
     note = f'The reader is attaching the publication {entry.pk}: "{entry.title}"'
     if summary:
         note += f" — {summary}"
-    return note + "\nAnswer from this when it is enough; use the get_entry tool for more detail."
+    note += "\nAnswer from this when it is enough; use the get_entry tool for more detail."
+    if entry.read_config("readium_enabled"):
+        # Lent through Readium LCP: its text is never given to the model (IP-018 Q5 follow-up).
+        note += (
+            "\nThis publication is lent through Readium LCP, so you cannot read its text. If the reader asks "
+            "about its content, say so and tell them to borrow it in the library (the Borrow button on the "
+            "publication) and read it in Thorium; you can still answer from its catalogue description."
+        )
+    return note
 
 
 def _as_message(row: ChatMessage) -> dict:
@@ -213,9 +221,10 @@ def reader_notes(row: ChatMessage) -> str:
 
 
 def reading_note(document) -> str:
-    """Tells the model it can read the reader's copy and how to cite it."""
+    """Tells the model it can read the publication's PDF and how to cite it."""
     return (
-        f"The reader has this publication open in the PDF viewer. It has {document.page_count} pages. "
+        f"You can read this publication's PDF, numbered as the reader's viewer numbers it. It has "
+        f"{document.page_count} pages. "
         "Use `read_pdf_page` to read pages and `search_pdf` to find where something is discussed; base "
         "answers about the publication on what it says and never invent its content.\n"
         "Whenever you refer to a page, write it as [[page:N]] with the viewer's page number, for example "

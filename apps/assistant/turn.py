@@ -22,9 +22,10 @@ from apps.assistant.models import Chat, ChatMessage
 
 logger = logging.getLogger(__name__)
 
-#: How many times the model may call tools before it must produce an answer.
-#: search → refine → get_entry → display is already four, so leave headroom.
-MAX_TOOL_ROUNDS = 6
+#: Runaway guard only. Tool calls are not what is limited (IP-018 Q5); reading
+#: the reader's copy is, by `EVILFLOWERS_ASSISTANT_MAX_PAGES_READ`, and this sits
+#: well above what a turn needs so it only stops a model that loops.
+MAX_TOOL_ROUNDS = 25
 
 
 def sse(event: str, data: dict) -> str:

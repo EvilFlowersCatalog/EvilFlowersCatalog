@@ -18,7 +18,7 @@ from django.conf import settings
 from django.core.cache import cache
 
 from apps.core.fields.multirange import depack
-from apps.core.models import UserAcquisition
+from apps.core.models import Acquisition, UserAcquisition
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +56,40 @@ class ReaderDocument:
         acquisition = user_acquisition.acquisition
         if acquisition.mime != "application/pdf" or not acquisition.content:
             raise DocumentUnavailable(acquisition.mime)
+        return cls._cached(acquisition, user_acquisition.range)
 
-        key = f"assistant:pdf:{acquisition.pk}:{user_acquisition.range or ''}"
+    @classmethod
+    def for_open_access(cls, entry) -> "ReaderDocument":
+        """The entry's open-access PDF, whole, as the viewer shows it to anyone who opens it.
+
+        Used when a chat is about a publication but has no reader's copy behind
+        it (the portal's "ask about this book"). Entries lent through Readium LCP
+        are never read: the reader has to borrow them.
+        """
+        if entry.read_config("readium_enabled"):
+            raise DocumentUnavailable("readium")
+
+        acquisition = (
+            entry.acquisitions.filter(
+                relation=Acquisition.AcquisitionType.OPEN_ACCESS,
+                mime=Acquisition.AcquisitionMIME.PDF,
+                storage_backend=Acquisition.StorageBackend.LOCAL,
+            )
+            .exclude(content="")
+            .exclude(content__isnull=True)
+            .order_by("created_at")
+            .first()
+        )
+        if acquisition is None:
+            raise DocumentUnavailable("no open-access PDF")
+        return cls._cached(acquisition, None)
+
+    @classmethod
+    def _cached(cls, acquisition, page_range: Optional[str]) -> "ReaderDocument":
+        key = f"assistant:pdf:{acquisition.pk}:{page_range or ''}"
         cached = cache.get(key)
         if cached is None:
-            cached = cls._extract(acquisition, user_acquisition.range)
+            cached = cls._extract(acquisition, page_range)
             cache.set(key, cached, CACHE_TIMEOUT)
 
         pages, toc = cached

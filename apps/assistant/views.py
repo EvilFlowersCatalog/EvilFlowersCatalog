@@ -64,19 +64,31 @@ class AssistantView(SecuredView):
         _check_ip_block(request, user_acquisition.acquisition.entry)
         return user_acquisition
 
-    def _chat_document(self, request, chat: Chat) -> Optional[ReaderDocument]:
-        """The reader's copy a chat is bound to, readable by the model, or None.
+    def _chat_document(self, request, chat: Chat, entry=None) -> Optional[ReaderDocument]:
+        """The publication the model may read this turn, or None.
 
-        A copy that expired or is no longer the reader's to open simply turns
-        the reading tools off; the conversation itself still continues.
+        `entry` is the publication attached to this message, else the chat's.
+        Entries lent through Readium LCP are never read: the model is told to
+        send the reader to borrow them (`services.entry_note`). Otherwise the
+        reader's copy the chat is bound to (opened in the viewer), or the
+        entry's open-access PDF. Anything that is not readable — no PDF, an
+        expired copy, an IP block — turns the reading tools off; the
+        conversation itself continues.
         """
-        if chat.user_acquisition is None:
+        entry = entry or chat.entry
+        if entry is not None and entry.read_config("readium_enabled"):
             return None
         try:
-            self._reader_copy(request, chat.user_acquisition)
-            return ReaderDocument.for_user_acquisition(chat.user_acquisition)
+            copy = chat.user_acquisition
+            if copy is not None and (entry is None or copy.acquisition.entry_id == entry.pk):
+                self._reader_copy(request, copy)
+                return ReaderDocument.for_user_acquisition(copy)
+            if entry is not None:
+                _check_ip_block(request, entry)
+                return ReaderDocument.for_open_access(entry)
         except (AuthorizationException, ProblemDetailException, DocumentUnavailable):
-            return None
+            pass
+        return None
 
     @staticmethod
     def _blocked(error: services.UserBlocked) -> ProblemDetailException:
@@ -267,7 +279,7 @@ class ChatMessages(AssistantView):
                 entry=form.cleaned_data.get("entry_id"),
                 contexts=form.cleaned_data.get("contexts"),
                 page=form.cleaned_data.get("page"),
-                document=self._chat_document(request, chat),
+                document=self._chat_document(request, chat, form.cleaned_data.get("entry_id")),
             ),
             content_type="text/event-stream",
         )
