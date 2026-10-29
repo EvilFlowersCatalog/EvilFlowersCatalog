@@ -9,6 +9,9 @@ class AnnotationSerializer:
         id: UUID
         user_acquisition_id: UUID
         title: str
+        #: Viewer layer: `drawing`, `highlight`, `agent` or `bookmarks` (IP-018).
+        kind: str
+        status: str
         created_at: datetime
         updated_at: datetime
 

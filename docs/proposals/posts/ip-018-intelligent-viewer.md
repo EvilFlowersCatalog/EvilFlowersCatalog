@@ -341,39 +341,49 @@ Per service:
 
 ### Phase 6: Agent annotations
 
-- [ ] Migration adding `kind`, `status`, `prompt`, `summary`, `model` and `unresolved_count` to
-      `Annotation`. `kind` names the layer the annotation belongs to, matching the layers the
+- [x] Migration adding `kind`, `status`, `prompt`, `summary` and `unresolved_count` to
+      `Annotation` (`core/0044_annotation_layers`; `model` left out until a second model exists). `kind` names the layer the annotation belongs to, matching the layers the
       viewer already has: `drawing` (freehand), `highlight` (manual text highlights) and `agent`
       (new). Existing rows get `drawing`. Rows titled `__page_bookmarks__`, which the portal uses as
       the page-bookmark container (`elvira-portal` `src/pages/common/Viewer.tsx`), get `bookmarks`.
-- [ ] Migration adding nullable `seq`, `quads`, `text` and `note` to `AnnotationItem`. Agent items
+- [x] Migration adding nullable `seq`, `match`, `quads`, `text` and `note` to `AnnotationItem`. Agent items
       always fill them. Manual `highlight` items may fill `text` and `quads` from the text selection,
       which makes them searchable the same way.
-- [ ] Highlight agent: reads the publication with the existing tools, returns exact quotes in
-      reading order, each with the reader page it read it on, then a short summary built from those
-      quotes.
-- [ ] Quote gate: a quote is kept only if it occurs in the text `read_pdf_page` returned for its
-      page, tolerant of whitespace only (monad-knowledge `locate_evidence`). A quote the model
+- [x] Highlight agent (`apps/assistant/highlight.py`): finds passages by agentic search (see
+      [Finding passages](#finding-passages)), returns exact quotes in reading order, each with the
+      reader page it read it on, a one-sentence summary and a short note per quote. It runs hidden:
+      no chat is created and nothing of its conversation is stored.
+- [x] Quote gate: a quote is kept only if it occurs in the text `read_pdf_page` returned for its
+      page, tolerant of whitespace and hyphenated line breaks only; a quote on another page the agent
+      read is kept with that page (monad-knowledge `locate_evidence`). A quote the model
       paraphrased is dropped here, before the PDF is searched, and counted in `unresolved_count`.
-- [ ] Quote resolution on the original file, as described in [Quote resolution](#quote-resolution):
+- [x] Quote resolution on the original file (`apps/assistant/quotes.py`), as described in [Quote resolution](#quote-resolution):
       `exact`, then `partial` six-word windows, else `missed`. Map the page to the reader's
       numbering, store the areas as page fractions and the method in `match`. Missed quotes are
       dropped and counted in `unresolved_count`. No model call.
-- [ ] Port monad-knowledge's resolver tests (`tests/reading/test_span_highlights.py`: exact,
-      one changed word is partial, absent is missed, a dry run writes nothing) against a small
-      generated PDF.
-- [ ] Generate `content` for each agent item: an SVG of `rect` elements, one per quad, in PDF
+- [x] Port monad-knowledge's resolver tests (`tests/reading/test_span_highlights.py`: exact,
+      one changed word is partial, absent is missed) against a small generated PDF, plus the page
+      mapping and the gate (`apps/assistant/tests/test_quotes.py`).
+- [x] Generate `content` for each agent item: an SVG of `rect` elements, one per quad, in PDF
       points with a `viewBox` (Q7), so the existing PDF export draws it.
 - [ ] One migration for all IP-018 schema: `extraction_run`, `extraction_region` (Q2), the
       annotation and item columns (Q9), and a data step converting existing reader SVG from screen
-      pixels to PDF points (Q7). The viewer converts on save from then on.
-- [ ] Highlight requests run as a Celery task; the annotation starts `pending` (Q4).
-- [ ] Endpoint to request an agent annotation from a prompt. Listing, reading, renaming and
-      deleting use the existing `annotations` and `annotation-items` endpoints, which return the
-      new fields.
-- [ ] Agent annotations: the reader may rename the title and delete one highlight or the whole
-      annotation; every other update is rejected (Q10).
-- [ ] Ownership is unchanged: `AnnotationFilter` already limits users to their own annotations.
+      pixels to PDF points (Q7). The viewer converts on save from then on. *Changed:* the annotation
+      columns shipped first in their own migration (`core/0044`), so agent highlights did not wait for
+      extraction; the region tables and the SVG conversion follow in theirs.
+- [x] Highlight requests run as a Celery task (`apps/assistant/tasks.py`); the annotation starts
+      `pending` (Q4). One left `pending` past `CELERY_TASK_TIME_LIMIT` is reported `failed`.
+- [x] Endpoints: `POST /assistant/v1/highlights` requests an agent annotation from a prompt (202,
+      `pending`); `GET /assistant/v1/highlights?user_acquisition_id=` lists them and
+      `GET /assistant/v1/highlights/{id}` polls one, each with its highlights nested. Renaming and
+      deleting use the existing `annotations` and `annotation-items` endpoints, which return `kind`
+      and `status` and filter by `kind`.
+- [x] Agent annotations: the reader may rename the title and delete one highlight or the whole
+      annotation; creating or updating items of an agent annotation is rejected (Q10). The
+      `annotations` endpoint cannot create one of kind `agent`.
+- [x] Ownership is unchanged: `AnnotationFilter` already limits users to their own annotations.
+- [x] Portal: the viewer's `agentAnnotationPackage` is wired to these endpoints, polling while
+      `pending`; agent annotations are kept out of the drawing layer's groups.
 
 ### Phase 7: Production
 
@@ -485,6 +495,25 @@ CREATE TABLE extraction_region (
 -- page:    unchanged meaning, the reader's page number, as the viewer already stores it
 -- content: still SVG; for agent items generated by the server from quads
 ```
+
+### Finding passages
+
+The highlight agent finds passages by **agentic search** over the reader's copy, with the tools
+the explain agent already has. It turns the request into several `search_pdf` queries (the reader's
+words, synonyms, the book's own terms once seen, guided by the outline), reads the pages that come
+up with `read_pdf_page` within `EVILFLOWERS_ASSISTANT_MAX_PAGES_READ`, and quotes from what it read.
+Nothing has to be indexed first, so it works on every readable PDF today. The model supplies the
+meaning; `search_pdf` itself is term overlap, so a passage that shares no word with any query the
+model thinks of is not found, and a long book is read only as far as the page budget allows.
+
+**Later: embeddings.** Once IP-012's chunk index exists (BGE-M3 vectors in pgvector, BM25 in
+`pg_search`, fused by RRF), the agent gets one more read tool, `search_semantic(query)`, returning
+chunks of this publication with their reader pages. Search by meaning finds passages that use other
+words than the request, and it is what makes a request over many publications possible ("where do
+these 40 books support my thesis"), which a page budget cannot cover. Only the finding changes: the
+quote gate, quote resolution and storage stay as they are, so the switch needs no schema change.
+Embedding the catalog takes a long time, so agentic search stays the fallback for publications not
+yet indexed.
 
 ### Quote resolution
 
@@ -679,6 +708,17 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 ## Future Considerations
 
 - Filling `text` and `quads` for reader highlights too, so they can be searched like agent ones.
+- Embedding search for the highlight agent, and requests over many publications at once (see
+  [Finding passages](#finding-passages)).
+- **Optional: tagging every sentence.** Extract the claims of a publication paragraph by paragraph
+  once, as monad-knowledge does (`extraction/claims.py`: a selection pass, then atomic claims, each
+  with its evidence sentence copied exactly and kept only if it is literally in its paragraph), and
+  store each with tags that do not depend on the reader: claim type, own or cited, and whether the
+  sentence supports it. Highlighting then becomes a lookup over stored claims, and tags relative to
+  a reader's request (supports, contradicts, unrelated) are computed only for the claims retrieval
+  brings up. It costs two model calls per paragraph, roughly 30 to 60 minutes per 300-page book on
+  one T4 with a 7–8B model (an estimate, not a measurement), paid once per publication and shared by
+  every reader. Not planned for now.
 - Sharing an annotation with another reader of the same publication.
 - Region search across the catalog once IP-012 search exists.
 - EPUB support.
@@ -1153,3 +1193,4 @@ new features, Milvus Lite stays.
 | 2026-10-28 | kordostomas | Highlighting after monad-knowledge `988d0efdd`: described what its `highlights.py` does now; added Quote resolution (text gate, then exact / partial six-word windows / missed with its constants, and the differences), `AnnotationItem.match`, the quote gate and test port in Phase 6, a resolution-rate success criterion and references |
 | 2026-10-28 | kordostomas | Answered the schema questions: Q2 one `extraction_region` table, Q4 background Celery task, Q7 SVG in PDF points with a viewBox (existing reader SVG converted), Q9 one item per highlight; Phase 6 now has one migration for all IP-018 schema |
 | 2026-10-28 | kordostomas | Answered the rest: Q1 production host on CPU, move when a GPU host exists; Q5 no tool-count limit, a page budget per request instead (implemented for chat and explain); Q8 captions by a multimodal LLM in image-service, model open; Q10 rename and delete only; Q11 analyzer runs Docling; Q12 write-back over the catalog API via evilflowers-protocol's generated Python client with an API key; Q13 `:main` in development, release tags in production; Q14 search-service run as-is. Updated the IP-015 row, Phase 3, 6 and 7 accordingly |
+| 2026-10-29 | kordostomas | Implemented Phase 6 (agent annotations) ahead of extraction: annotation layer columns in their own migration, hidden highlight agent with agentic search, quote gate and resolution, Celery task, `/assistant/v1/highlights` endpoints, item edit guard, portal wiring. Added Finding passages (agentic search now, IP-012 embeddings later as an extra tool, no schema change) and, under Future Considerations, optional per-sentence claim tagging |

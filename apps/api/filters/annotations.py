@@ -19,6 +19,10 @@ class AnnotationFilter(django_filters.FilterSet):
         lookup_expr="icontains",
         help_text="Filter annotations by title using case-insensitive partial matching. Searches within annotation titles and descriptions.",
     )
+    kind = django_filters.ChoiceFilter(
+        choices=Annotation.Kind.choices,
+        help_text="Filter annotations by viewer layer: drawing, highlight, agent or bookmarks.",
+    )
     user_id = django_filters.UUIDFilter(
         lookup_expr="exact",
         field_name="user_acquisition__user_id",

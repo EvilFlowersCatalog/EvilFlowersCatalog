@@ -60,3 +60,14 @@ class ExplainForm(Form):
 
     #: Language code to explain in; the selection's own language when omitted.
     language = forms.CharField(max_length=10, required=False)
+
+
+class HighlightForm(Form):
+    #: The reader's copy of the publication, as the viewer opened it.
+    user_acquisition_id = forms.ModelChoiceField(queryset=_user_acquisitions())
+
+    #: What to find and mark.
+    prompt = forms.CharField(max_length=2000, strip=True)
+
+    #: The reader's UI language; the summary and notes are written in it.
+    language = forms.CharField(max_length=10, required=False)

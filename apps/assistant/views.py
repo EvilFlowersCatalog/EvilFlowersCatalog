@@ -6,10 +6,13 @@ no anonymous mode: every chat belongs to a user, is quota'd per user and is
 readable only by that user.
 """
 
+from datetime import timedelta
 from http import HTTPStatus
 from typing import Optional
 from uuid import UUID
 
+from django.conf import settings
+from django.db import transaction
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -17,14 +20,14 @@ from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
 from apps.api.response import Ordering, PaginationResponse, SingleResponse
-from apps.assistant import explain, services, turn
-from apps.assistant.forms import ChatForm, ExplainForm, MessageForm
+from apps.assistant import explain, services, tasks, turn
+from apps.assistant.forms import ChatForm, ExplainForm, HighlightForm, MessageForm
 from apps.assistant.llm import LLMUnavailable
 from apps.assistant.models import Chat
 from apps.assistant.pdf import DocumentUnavailable, ReaderDocument
-from apps.assistant.serializers import ChatSerializer, ExplanationSerializer
+from apps.assistant.serializers import AgentAnnotationSerializer, ChatSerializer, ExplanationSerializer
 from apps.core.errors import AuthorizationException, ProblemDetailException, UnauthorizedException, ValidationException
-from apps.core.models import UserAcquisition
+from apps.core.models import Annotation, UserAcquisition
 from apps.core.views import SecuredView
 from apps.files.views import _check_ip_block
 
@@ -354,3 +357,129 @@ class Explain(AssistantView):
             ) from error
 
         return SingleResponse(request, data=ExplanationSerializer.Base.model_validate(explanation))
+
+
+class Highlights(AssistantView):
+    """Agent annotations (IP-018): the agent marks the passages that answer a reader's request.
+
+    The agent runs hidden, in a background task: no chat is created and nothing
+    of its conversation is kept. A request answers 202 with the annotation
+    `pending`; clients poll `HighlightDetail` until it is `done` or `failed`.
+    """
+
+    def _agent_annotations(self, request):
+        return (
+            Annotation.objects.filter(kind=Annotation.Kind.AGENT, user_acquisition__user=request.user)
+            .select_related("user_acquisition")
+            .prefetch_related("annotationitem_set")
+            .order_by("-created_at")
+        )
+
+    @openapi.metadata(
+        description=(
+            "Ask the assistant to find and highlight the passages of the reader's copy that answer a "
+            "request. Creates an agent annotation with status `pending` and returns it; the highlights "
+            "are added in the background. Responds 429 when the caller's daily allowance is spent, 403 "
+            "when their assistant access is blocked and 422 when the publication is not a readable PDF."
+        ),
+        tags=["Assistant"],
+        summary="Request agent highlights",
+    )
+    @openapi.response(HTTPStatus.ACCEPTED, "The pending annotation", AgentAnnotationSerializer.Base)
+    def post(self, request):
+        user = self._require_user(request)
+
+        try:
+            services.assert_not_blocked(user)
+        except services.UserBlocked as error:
+            raise self._blocked(error) from error
+
+        form = HighlightForm.create_from_request(request)
+        if not form.is_valid():
+            raise ValidationException(form)
+
+        try:
+            services.assert_within_quota(user)
+        except services.QuotaExceeded as error:
+            retry_after = max(int((error.reset_at - timezone.localtime()).total_seconds()), 1)
+            raise ProblemDetailException(
+                _("Daily assistant limit exceeded"),
+                status=HTTPStatus.TOO_MANY_REQUESTS,
+                detail=_("Used %(used)d of %(limit)d messages today.") % {"used": error.used, "limit": error.limit},
+                extra_headers=(("Retry-After", str(retry_after)),),
+            ) from error
+
+        user_acquisition = self._reader_copy(request, form.cleaned_data["user_acquisition_id"])
+        if user_acquisition.user_id != user.pk:
+            # Agent annotations belong to the reader's own copy, never a shared one.
+            raise AuthorizationException(request)
+
+        try:
+            ReaderDocument.for_user_acquisition(user_acquisition)
+        except DocumentUnavailable as error:
+            raise ProblemDetailException(
+                _("This publication cannot be highlighted"),
+                status=HTTPStatus.UNPROCESSABLE_ENTITY,
+                detail=_("Only PDF publications can be read by the assistant."),
+            ) from error
+
+        prompt = form.cleaned_data["prompt"]
+        annotation = Annotation.objects.create(
+            user_acquisition=user_acquisition,
+            kind=Annotation.Kind.AGENT,
+            status=Annotation.Status.PENDING,
+            title=prompt if len(prompt) <= 80 else prompt[:79] + "…",
+            prompt=prompt,
+        )
+        language = form.cleaned_data.get("language") or None
+        transaction.on_commit(lambda: tasks.highlight_annotation.delay(str(annotation.pk), language))
+
+        return SingleResponse(
+            request,
+            data=AgentAnnotationSerializer.Base.build(annotation),
+            status=HTTPStatus.ACCEPTED,
+        )
+
+    @openapi.metadata(
+        description="The caller's agent annotations of one copy, newest first, each with its highlights.",
+        tags=["Assistant"],
+        summary="List agent highlights",
+    )
+    @openapi.response(HTTPStatus.OK, "Agent annotations", AgentAnnotationSerializer.Base)
+    def get(self, request):
+        self._require_user(request)
+        annotations = self._agent_annotations(request)
+        user_acquisition_id = request.GET.get("user_acquisition_id")
+        if user_acquisition_id:
+            try:
+                annotations = annotations.filter(user_acquisition_id=UUID(user_acquisition_id))
+            except ValueError as error:
+                raise ProblemDetailException(
+                    _("Invalid user_acquisition_id"), status=HTTPStatus.BAD_REQUEST
+                ) from error
+
+        return SingleResponse(request, data=[_expire(annotation) for annotation in annotations[:100]])
+
+
+class HighlightDetail(Highlights):
+    @openapi.metadata(
+        description="One agent annotation with its highlights; poll it while its status is `pending`.",
+        tags=["Assistant"],
+        summary="Get agent highlights",
+    )
+    @openapi.response(HTTPStatus.OK, "The agent annotation", AgentAnnotationSerializer.Base)
+    def get(self, request, annotation_id: UUID):
+        self._require_user(request)
+        annotation = self._agent_annotations(request).filter(pk=annotation_id).first()
+        if annotation is None:
+            raise ProblemDetailException(_("Annotation not found"), status=HTTPStatus.NOT_FOUND)
+        return SingleResponse(request, data=_expire(annotation))
+
+
+def _expire(annotation: Annotation):
+    """A `pending` annotation older than the task time limit was lost (worker restart): report it failed."""
+    limit = timedelta(seconds=settings.CELERY_TASK_TIME_LIMIT)
+    if annotation.status == Annotation.Status.PENDING and timezone.now() - annotation.created_at > limit:
+        annotation.status = Annotation.Status.FAILED
+        annotation.save(update_fields=["status", "updated_at"])
+    return AgentAnnotationSerializer.Base.build(annotation)
