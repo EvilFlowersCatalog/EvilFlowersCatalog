@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "1acd888dd4d6d411b9fa0ee23ab8efc738198000",
-    "short": "1acd888",
-    "message": "fix(assistant): name the borrow button as the UI labels it",
+    "sha": "e947e6cc756d5bcd5e2cd82fe6658bdd09eeee8f",
+    "short": "e947e6c",
+    "message": "feat(assistant): agent highlights by hidden agentic search (IP-018 Phase 6)",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/1acd888dd4d6d411b9fa0ee23ab8efc738198000"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e947e6cc756d5bcd5e2cd82fe6658bdd09eeee8f"
   },
-  "deployed_at": "2026-10-28T18:54:15Z",
+  "deployed_at": "2026-10-29T19:00:36Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
