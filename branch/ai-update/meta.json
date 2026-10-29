@@ -3,12 +3,12 @@
   "slug": "ai-update",
   "kind": "branch",
   "commit": {
-    "sha": "e947e6cc756d5bcd5e2cd82fe6658bdd09eeee8f",
-    "short": "e947e6c",
-    "message": "feat(assistant): agent highlights by hidden agentic search (IP-018 Phase 6)",
+    "sha": "f6f4b65ff417751509a4c1a5c08ff22da314231d",
+    "short": "f6f4b65",
+    "message": "feat(annotations): reader text highlights carry text and line boxes",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e947e6cc756d5bcd5e2cd82fe6658bdd09eeee8f"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/f6f4b65ff417751509a4c1a5c08ff22da314231d"
   },
-  "deployed_at": "2026-10-29T18:59:17Z",
+  "deployed_at": "2026-10-29T19:55:26Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
