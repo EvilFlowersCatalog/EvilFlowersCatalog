@@ -31,8 +31,10 @@ their text, position and order, so they can be searched and stepped through.
 ## Status
 
 **Status**: Draft
-**Last Updated**: 2026-10-28
-**Implementation**: Not started
+**Last Updated**: 2026-10-29
+**Implementation**: In progress. Phase 6 (agent annotations, and the reader's own text highlights)
+is built and running on dev; chats bound to a user acquisition (Phase 5) shipped with IP-015.
+Phases 1–4 and 7 (extraction services, regions) are not started.
 
 This is a **parallel proposal**. It overlaps with [IP-012](ip-012-ai-powered-discovery.md),
 [IP-013](ip-013-document-extraction-structure.md) and [IP-015](ip-015-assistant-fold-in.md), but it
@@ -336,7 +338,7 @@ Per service:
 - [ ] Tools `list_page_regions(page)` and `get_region(region_id)` for the explain agent and for
       chats opened on a user acquisition.
 - [ ] `POST /api/v1/assistant/explain` accepts `region_id` as an alternative to selected text.
-- [ ] Chats can be bound to a user acquisition, giving them `read_pdf_page`, `search_pdf` and the
+- [x] Chats can be bound to a user acquisition, giving them `read_pdf_page`, `search_pdf` and the
       region tools for that publication only.
 
 ### Phase 6: Agent annotations
@@ -382,6 +384,15 @@ Per service:
       annotation; creating or updating items of an agent annotation is rejected (Q10). The
       `annotations` endpoint cannot create one of kind `agent`.
 - [x] Ownership is unchanged: `AnnotationFilter` already limits users to their own annotations.
+- [x] Reader text highlights (kind `highlight`): annotation items accept and return `text` and
+      `quads` (validated page fractions). With the viewer's `readerHighlightPackage` (viewer 0.7.3),
+      "Zvýrazniť" stores the selection as an item of one `highlight` annotation per copy instead of
+      painting it on the drawing layer, and the viewer lists them as "My highlights" beside the agent
+      annotations, with the same jump, step and delete. Older drawing-layer highlights stay drawings.
+- [x] Viewer fixes found while testing (0.7.2): text-layer spans were stretched over the whole page
+      and missing pdf.js 6's `--total-scale-factor`, so selection landed on the wrong lines; `dark:`
+      utilities followed a dark host page instead of the viewer's own theme. The portal now appends
+      the viewer stylesheet last so its own same-named utilities cannot override the viewer's.
 - [x] Portal: the viewer's `agentAnnotationPackage` is wired to these endpoints, polling while
       `pending`; agent annotations are kept out of the drawing layer's groups.
 
@@ -707,7 +718,6 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 
 ## Future Considerations
 
-- Filling `text` and `quads` for reader highlights too, so they can be searched like agent ones.
 - Embedding search for the highlight agent, and requests over many publications at once (see
   [Finding passages](#finding-passages)).
 - **Optional: tagging every sentence.** Extract the claims of a publication paragraph by paragraph
@@ -1194,3 +1204,4 @@ new features, Milvus Lite stays.
 | 2026-10-28 | kordostomas | Answered the schema questions: Q2 one `extraction_region` table, Q4 background Celery task, Q7 SVG in PDF points with a viewBox (existing reader SVG converted), Q9 one item per highlight; Phase 6 now has one migration for all IP-018 schema |
 | 2026-10-28 | kordostomas | Answered the rest: Q1 production host on CPU, move when a GPU host exists; Q5 no tool-count limit, a page budget per request instead (implemented for chat and explain); Q8 captions by a multimodal LLM in image-service, model open; Q10 rename and delete only; Q11 analyzer runs Docling; Q12 write-back over the catalog API via evilflowers-protocol's generated Python client with an API key; Q13 `:main` in development, release tags in production; Q14 search-service run as-is. Updated the IP-015 row, Phase 3, 6 and 7 accordingly |
 | 2026-10-29 | kordostomas | Implemented Phase 6 (agent annotations) ahead of extraction: annotation layer columns in their own migration, hidden highlight agent with agentic search, quote gate and resolution, Celery task, `/assistant/v1/highlights` endpoints, item edit guard, portal wiring. Added Finding passages (agentic search now, IP-012 embeddings later as an extra tool, no schema change) and, under Future Considerations, optional per-sentence claim tagging |
+| 2026-10-29 | kordostomas | Status: Phase 6 built and on dev, Phase 5 chat binding done. Added reader text highlights (`highlight` items with `text`/`quads`, viewer `readerHighlightPackage`, "My highlights") and the viewer text-layer and theme fixes to Phase 6 |

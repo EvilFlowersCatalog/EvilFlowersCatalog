@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "f6f4b65ff417751509a4c1a5c08ff22da314231d",
-    "short": "f6f4b65",
-    "message": "feat(annotations): reader text highlights carry text and line boxes",
+    "sha": "e012cf232a1f5535bae3aa987865f5a8e8d11e02",
+    "short": "e012cf2",
+    "message": "docs(ip-018): Phase 6 done, reader highlights, status",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/f6f4b65ff417751509a4c1a5c08ff22da314231d"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e012cf232a1f5535bae3aa987865f5a8e8d11e02"
   },
-  "deployed_at": "2026-10-29T19:56:51Z",
+  "deployed_at": "2026-10-29T20:12:45Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
