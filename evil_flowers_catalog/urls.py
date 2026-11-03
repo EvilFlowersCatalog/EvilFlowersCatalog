@@ -27,6 +27,7 @@ urlpatterns = [
     path("readium/v1/", include(("apps.readium.urls", "readium"), namespace="readium")),
     path("data/v1/", include(("apps.files.urls", "files"), namespace="files")),
     path("docs/", include(("apps.openapi.urls", "openapi"), namespace="openapi")),
+    path("extraction/v1/", include(("apps.extraction.urls", "extraction"), namespace="extraction")),
     path("admin/", admin.site.urls),
 ]
 

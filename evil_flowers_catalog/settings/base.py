@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     "apps.dataverse",
     "apps.mcp",
     "apps.assistant",
+    "apps.extraction",
 ]
 
 MIDDLEWARE = [
@@ -376,6 +377,20 @@ EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS = int(os.getenv("EVILFLOWERS_ASSISTANT_
 EVILFLOWERS_ASSISTANT_CACHE_TTL = int(os.getenv("EVILFLOWERS_ASSISTANT_CACHE_TTL", 3600))
 EVILFLOWERS_ASSISTANT_TRIM_MESSAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_TRIM_MESSAGES", 20))
 
+# Extraction (IP-018). The catalog only queues PDFs for the `evilflowers-*-service`
+# containers and stores what they report; off until those services run next to it.
+EVILFLOWERS_EXTRACTION_ENABLED = bool(int(os.getenv("EVILFLOWERS_EXTRACTION_ENABLED", "0")))
+# Bumped whenever the pinned service images change their output, so
+# `backfill_extraction --outdated` re-extracts.
+EVILFLOWERS_EXTRACTION_PIPELINE_VERSION = int(os.getenv("EVILFLOWERS_EXTRACTION_PIPELINE_VERSION", 1))
+# Queue of the entry service (analyzer).
+EVILFLOWERS_EXTRACTION_QUEUE = os.getenv("EVILFLOWERS_EXTRACTION_QUEUE", "evilflowers_analyzer")
+# text-service embeds highlight requests on this queue with the model of the
+# run being searched (Phase 6b). A separate worker, so a request never waits
+# behind a book being extracted.
+EVILFLOWERS_EXTRACTION_EMBED_QUEUE = os.getenv("EVILFLOWERS_EXTRACTION_EMBED_QUEUE", "evilflowers_text_embed")
+EVILFLOWERS_EXTRACTION_EMBED_TIMEOUT = int(os.getenv("EVILFLOWERS_EXTRACTION_EMBED_TIMEOUT", 30))
+
 # Events
 EVILFLOWERS_EVENT_BROKER_EXECUTOR = os.getenv("EVILFLOWERS_EVENT_BROKER_EXECUTOR")
 EVILFLOWERS_EVENT_BROKER_TRANSFORMER = os.getenv("EVILFLOWERS_EVENT_BROKER_TRANSFORMER")
@@ -556,7 +571,7 @@ EVILFLOWERS_NOTIFICATION_LIBRARY_NAME = os.getenv("EVILFLOWERS_NOTIFICATION_LIBR
 EVILFLOWERS_ACTIVITY_RETENTION_DAYS = int(os.getenv("EVILFLOWERS_ACTIVITY_RETENTION_DAYS", 365))
 
 # OpenAPI
-EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium", "assistant"]
+EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium", "assistant", "extraction"]
 
 # Backups
 EVILFLOWERS_BACKUP_PGDUMP_BIN = os.getenv("EVILFLOWERS_BACKUP_PGDUMP_BIN", "pg_dump")

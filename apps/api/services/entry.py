@@ -203,6 +203,7 @@ def attach_acquisition(entry: Entry, uploaded_file, *, mime: str, relation: str 
     import logging
 
     from apps.dataverse.services.text_publish import TextServiceClient
+    from apps.extraction import services as extraction
 
     acquisition = Acquisition(
         entry=entry,
@@ -221,6 +222,8 @@ def attach_acquisition(entry: Entry, uploaded_file, *, mime: str, relation: str 
             logging.getLogger("apps.api.services.entry").exception(
                 "Failed to enqueue text processing task for acquisition_id=%s", acquisition.pk
             )
+        # IP-018: figures, tables, equations and the paragraph index.
+        extraction.queue(acquisition)
 
     return acquisition
 
@@ -292,6 +295,9 @@ class EntryService:
                     f"{uuid.uuid4()}{mimetypes.guess_extension(acquisition.mime)}",
                     record["content"],
                 )
+                from apps.extraction import services as extraction
+
+                extraction.queue(acquisition)
 
             for price in record.get("prices", []):
                 Price.objects.create(
