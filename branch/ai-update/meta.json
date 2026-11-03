@@ -3,12 +3,12 @@
   "slug": "ai-update",
   "kind": "branch",
   "commit": {
-    "sha": "4cd029dc77b3d13c6fd6c61fea1a72b4c5daee8e",
-    "short": "4cd029d",
-    "message": "docs(ip-018): paragraph index, semantic highlight finding, Q15-Q17",
+    "sha": "236931a84710948100e5cfaa2be003a819863d80",
+    "short": "236931a",
+    "message": "feat(extraction): IP-018 schema, dispatch, ingestion and reader regions",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/4cd029dc77b3d13c6fd6c61fea1a72b4c5daee8e"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/236931a84710948100e5cfaa2be003a819863d80"
   },
-  "deployed_at": "2026-11-03T17:27:01Z",
+  "deployed_at": "2026-11-03T17:44:12Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
