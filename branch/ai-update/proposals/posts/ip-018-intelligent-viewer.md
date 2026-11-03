@@ -34,8 +34,9 @@ their text, position and order, so they can be searched and stepped through.
 **Last Updated**: 2026-11-03
 **Implementation**: In progress. Phase 6 (agent annotations, and the reader's own text highlights)
 is built and running on dev; chats bound to a user acquisition (Phase 5) shipped with IP-015.
-Phases 1–4 and 7 (extraction services, regions) are not started. Phase 2b (paragraph embeddings)
-and Phase 6b (semantic highlight finding) were added on 2026-11-03 and are not started.
+Phases 1–6b are built (2026-11-03): the catalog on `ai-update`, each service on its `main` with a
+published `:main` image, and the services in the development and production composes under the
+`extraction` profile. Not yet run end to end; Phase 7 is not started.
 
 This is a **parallel proposal**. It overlaps with [IP-012](ip-012-ai-powered-discovery.md),
 [IP-013](ip-013-document-extraction-structure.md) and [IP-015](ip-015-assistant-fold-in.md), but it
@@ -303,112 +304,144 @@ catalog only through a compose image reference.
 
 ### Phase 1: Catalog schema, dispatch and ingestion (catalog repository)
 
-- [ ] Create `apps/extraction` with `ExtractionRun` and `Region` models and migrations
-      (see [Data Model Changes](#data-model-changes)). No pipeline code, no new dependencies.
-- [ ] Storage layout `catalogs/<catalog>/<entry>/extraction/<acquisition_id>/v<N>/`, documented as
-      the contract the services write to.
-- [ ] Remove the acquisition's `extraction/` folder in `AcquisitionStorageService.delete`.
-- [ ] Dispatch client next to `text_publish.py`: `send_task` to the entry service's queue with task
-      id `extract:<acquisition_id>:v<pipeline_version>`, so duplicate sends are dropped. Creates the
-      `ExtractionRun` with `status = queued`.
-- [ ] Internal ingestion endpoint for runs and regions, authenticated with a service credential
-      (mechanism per Q12). Rejects regions for runs that are not `running`.
-- [ ] When every service has reported, make the run active in one transaction and delete the
-      previous run's files.
+- [x] Create `apps/extraction` with `ExtractionRun` and `Region` models and migrations
+      (see [Data Model Changes](#data-model-changes)). No pipeline code. *Changed:* one migration
+      (`extraction/0001_initial`) holds all extraction tables including the paragraph index, so it
+      adds the `pgvector` dependency and enables the `vector` extension.
+- [x] Storage layout `catalogs/<catalog>/<entry>/extraction/<acquisition_id>/v<N>/`, documented as
+      the contract the services write to (`ExtractionRun.storage_dir`, sent to every task as
+      `output_dir`).
+- [x] Remove the acquisition's `extraction/` folder in `AcquisitionStorageService.delete`.
+- [x] Dispatch in `apps/extraction/services.py`: `send_task("evilflowers_analyzer.extract")` to
+      `EVILFLOWERS_EXTRACTION_QUEUE` with task id `extract:<acquisition_id>:v<pipeline_version>`,
+      sent once the transaction commits. Creates the `ExtractionRun` with `status = queued`; a failed
+      run of the same version is reset and sent again. Off unless `EVILFLOWERS_EXTRACTION_ENABLED`.
+- [x] Ingestion endpoints under `/extraction/v1/runs/{id}` (`start`, `regions`, `paragraphs`,
+      `jobs/{job}`, and `GET` of the run), part of the OpenAPI spec, authenticated with a bearer API
+      key of a user holding `extraction.ingest_extraction` (Q12). Results for a run that is not
+      `running` answer 409.
+- [x] The analyzer declares the run's jobs when it starts it (`ExtractionRun.jobs`); when the last
+      job reports, the run becomes active in one transaction and the previous run is deleted with
+      its files. A failed job fails the run and the previous active run stays.
 
 ### Phase 2: Service refactor (service repositories)
 
 Common to every service:
 
-- [ ] Replace Kafka consumers and producers with Celery workers on named queues over Redis.
-- [ ] Read the original PDF and write crops through the shared storage mount, using the catalog's
+- [x] Replace Kafka consumers and producers with Celery workers on named queues over Redis
+      (`evilflowers_analyzer`, `evilflowers_image`, `evilflowers_equation`, `evilflowers_text_worker`,
+      `evilflowers_text_embed`).
+- [x] Read the original PDF and write crops through the shared storage mount, using the catalog's
       storage layout.
-- [ ] Report results to the catalog ingestion endpoint; never write to the catalog database.
-- [ ] Load models once per worker process, not per item.
-- [ ] Failures on one page or one region are logged and skipped. A document never fails as a whole
+- [x] Report results to the catalog ingestion endpoint; never write to the catalog database.
+      *Changed:* a small `src/catalog.py` HTTP client in each service (retries, batches of 100,
+      409 stops the job) instead of `evilflowers-protocol-python`, whose generated client lacks the
+      ingestion endpoints until the spec is synced; the endpoints are in the OpenAPI spec.
+- [x] Load models once per worker process, not per item.
+- [x] Failures on one page or one region are logged and skipped. A document never fails as a whole
       because of one bad region.
-- [ ] CI builds and publishes a tagged image to `ghcr.io/evilflowerscatalog/<repo>`.
+- [x] CI runs the unit tests and builds and publishes `:main`, `:sha-…` and semver-tagged images to
+      `ghcr.io/evilflowerscatalog/<repo>`, recording `IMAGE_TAG` in the run's provenance.
 
 Per service:
 
-- [ ] `evilflowers-analyzer-service`: open the PDF with PyMuPDF, record page count and page sizes,
-      run the Docling layout pass (`do_ocr` only when a page has no text layer), and fan regions
-      out by kind (subject to Q11).
-- [ ] `evilflowers-image-service`: keep the bounding box it already computes instead of discarding
-      it; convert to page fractions with a top-left origin; crop to WebP; apply gates (reject under
-      80 px, extreme aspect ratios, anything covering over 90% of the page); captions and categories
-      behind a setting so they can be switched off without a GPU (model per Q8).
-- [ ] `evilflowers-equation-service`: implement region detection (currently a `TODO`), remove the
-      `pages[1:2]` test limit, LaTeX per region, sympy normalization where it parses, crop.
-- [ ] `evilflowers-text-service`: keep the tables it extracts (markdown, caption, crop, position)
-      and report them as regions; keep text processing working against `search-service`.
+- [x] `evilflowers-analyzer-service`: open the PDF with PyMuPDF, record page count and page sizes,
+      run the Docling layout pass in page batches, and fan regions out by kind (Q11). Captions
+      printed next to figures and tables are passed along. *Changed:* no OCR: layout runs on page
+      images and finds regions on scanned pages without it, and no extraction step uses OCR text.
+- [x] `evilflowers-image-service`: keep the bounding box as page fractions with a top-left origin;
+      crop to WebP; gates (under 80 px on a side, aspect ratio over 8, over 90% of the page);
+      captions and categories by a multimodal model behind an Ollama endpoint, off by default
+      (`CAPTIONS_ENABLED`, `CAPTION_MODEL`; the model is still open, Q8). PaliGemma and the ViT/ResNet
+      labellers are removed.
+- [x] `evilflowers-equation-service`: region detection comes from the analyzer (Q11) for every page
+      (the `pages[1:2]` limit is gone with the Nougat code); LaTeX per region with LaTeX-OCR on ONNX
+      Runtime (`LATEX_BACKEND=onnx`, or `ollama`), sympy normalization where it parses (kept in the
+      region's `provenance.sympy`; `latex` holds the model's LaTeX), crop.
+- [x] `evilflowers-text-service`: tables found by the analyzer are read with pdfplumber into markdown,
+      cropped and reported with caption and position (`evilflowers_text_worker.tables`); text
+      processing against `search-service` is unchanged and no longer extracts tables it drops.
 
 ### Phase 2b: Paragraph index (text-service and catalog)
 
 Runs as its own job of the extraction run, in parallel with figures, tables and equations (see
 [How it runs](#how-it-runs)).
 
-- [ ] Analyzer dispatches the paragraph job when it opens the document, before the layout pass.
-- [ ] `evilflowers-text-service`: split each page into paragraphs from PyMuPDF text blocks, keeping
+- [x] Analyzer dispatches the paragraph job when it opens the document, before the layout pass.
+- [x] `evilflowers-text-service`: split each page into paragraphs from PyMuPDF text blocks, keeping
       each paragraph's page and bounding box. Port the filters from
       `evilflowers-text-service-tp2025` `src/semantic/indexer.py` (`_is_valid_paragraph`: minimum
       length, table-of-contents boilerplate). Running heads and footers repeated across pages are
       dropped.
-- [ ] Split each paragraph into sentences and store character offsets into the paragraph text,
-      plus each sentence's quads on the page (PyMuPDF `search_for` within the paragraph's box), so a
-      sentence can be highlighted without resolving a quote.
-- [ ] Embed every paragraph with `EMBEDDING_MODEL` (default Snowflake Arctic Embed v2.0; BGE-M3,
+- [x] Split each paragraph into sentences and store character offsets into the paragraph text,
+      plus each sentence's quads on the page, so a sentence can be highlighted without resolving a
+      quote. *Changed:* quads come from the words the paragraph is built from (one box per line the
+      sentence covers), not from `search_for`, so a repeated sentence is never placed on the wrong
+      line.
+- [x] Embed every paragraph with `EMBEDDING_MODEL` (default Snowflake Arctic Embed v2.0; BGE-M3,
       `stsb-xlm-r-multilingual` or another sentence-transformers model selectable, Q16), loaded
       once per worker, batched. The paragraph is embedded with its section title prefixed, as
       monad-knowledge's chunker does. The model name goes into the run's `provenance`.
 - [ ] Confirm the Arctic Embed v2.0 size (`-m` or `-l`) and its dimension on a sample of Slovak
-      and English requests; the pgvector column takes that dimension.
-- [ ] Build the paragraph links (see [Paragraph index](#paragraph-index)): `next` within the reading
+      and English requests; the pgvector column takes that dimension. *For now:* `-m` (768
+      dimensions, the same as stsb-xlm-r-multilingual), `EMBEDDING_DIMENSIONS` in
+      `apps/extraction/models.py`.
+- [x] Build the paragraph links (see [Paragraph index](#paragraph-index)): `next` within the reading
       order, `section` from the PDF outline, and `similar` to the k nearest paragraphs of the same
-      publication.
-- [ ] Report paragraphs, sentences, embeddings and links to the catalog ingestion endpoint (Q12).
-      text-service keeps no vector store of its own; tp2025's Milvus writer is not ported (Q15).
-- [ ] Catalog: enable the pgvector `vector` extension; `extraction_paragraph` (with the
+      publication (`SIMILAR_LINKS_K`, above `SIMILAR_MIN_SCORE`).
+- [x] Report paragraphs, sentences, embeddings and links to the catalog ingestion endpoint (Q12),
+      in batches with the links in the last one. text-service keeps no vector store of its own;
+      tp2025's Milvus writer is not ported (Q15).
+- [x] Catalog: enable the pgvector `vector` extension; `extraction_paragraph` (with the
       `embedding` column and an HNSW cosine index), `extraction_sentence` and
       `extraction_paragraph_link` tables in the IP-018 migration; paragraphs of the inactive run are
       deleted with it.
 
 ### Phase 3: Text and search services back up
 
-- [ ] `evilflowers-text-service`: update dependencies and base image, fix whatever keeps the
-      container down, publish a new build.
-- [ ] `evilflowers-search-service`: update dependencies and base image, fix whatever keeps the
-      container down, publish a new build; `apps/api/services/search_service_client.py` keeps
-      working against it.
-- [ ] Catalog `compose.yml` (development): keep `:main` for every service (Q13) and add the
-      analyzer, image and equation services.
+- [x] `evilflowers-text-service`: update dependencies and base image, fix whatever keeps the
+      container down, publish a new build. The ToC layout model (`*.pt`, never in the image) is
+      fetched on demand instead of crashing; models live in `/models`.
+- [x] `evilflowers-search-service`: update dependencies and base image, fix whatever keeps the
+      container down, publish a new build. The image started `src.api:app`, which does not exist,
+      and `Config` crashed without Milvus variables; it now runs `main:app` on Milvus Lite and
+      starts without Elasticsearch. `search_service_client.py` is unchanged.
+- [x] Catalog `compose.yml` (development): keep `:main` for every service (Q13) and add the
+      analyzer, image, equation and text-embed services; PostgreSQL is `pgvector/pgvector:pg16`.
+      The server's development and production composes (`elvira-devops`) carry the same services
+      under the `extraction` profile, `:main` in development and `EXTRACTION_RELEASE` in production.
 - [ ] Run the full development compose end to end: upload a PDF, see the text task consumed, the
       extraction run reach `done`, regions and crops present, and OPDS 2.0 search answering.
 
 ### Phase 3b: Triggers and backfill (catalog repository)
 
-- [ ] Queue extraction wherever a PDF acquisition file is stored: `apps/api/services/entry.py`
-      next to the existing text-service publish, and `apps/dataverse/services/sync.py`.
-- [ ] Re-queue when an acquisition's file is replaced.
-- [ ] `manage.py backfill_extraction` with `--missing` (no active run), `--outdated` (older pipeline
-      version), `--acquisition <id>` and a rate limit.
+- [x] Queue extraction wherever a PDF acquisition file is stored: `attach_acquisition` (API upload
+      and MCP upload links) and `EntryService.populate`. *Changed:* Dataverse sync stores external
+      URLs, not files the services can read, so it queues nothing.
+- [x] Re-queue when an acquisition's file is replaced. *Changed:* an acquisition's file cannot be
+      replaced (`PUT /acquisitions/{id}` changes metadata only); `queue(force=True)` and
+      `backfill_extraction --force` re-extract when that changes.
+- [x] `manage.py backfill_extraction` with `--missing` (no active run), `--outdated` (older pipeline
+      version), `--acquisition <id>`, `--force`, `--limit`, `--dry-run` and a rate limit (`--rate`
+      per minute). Runs left `queued` or `running` are sent again.
 
 ### Phase 4: Reader API
 
-- [ ] Page mapping between original pages and reader pages, shared with
-      `apps/assistant/pdf.py` instead of duplicated.
-- [ ] `GET /api/v1/user-acquisitions/<id>/regions?page=N` and `GET .../regions/<region_id>`.
-- [ ] `GET /data/v1/user-acquisitions/<id>/regions/<region_id>.webp` for the crop.
-- [ ] Access checks identical to `UserAcquisitionDownload`: `check_user_acquisition_read` and the
+- [x] Page mapping between original pages and reader pages, shared with
+      `apps/assistant/pdf.py` instead of duplicated (`reader_source_pages`).
+- [x] `GET /api/v1/user-acquisitions/<id>/regions?page=N` and `GET .../regions/<region_id>`.
+- [x] `GET /data/v1/user-acquisitions/<id>/regions/<region_id>.webp` for the crop.
+- [x] Access checks identical to `UserAcquisitionDownload`: `check_user_acquisition_read` and the
       IP block. Regions on pages outside the acquisition's range are never returned.
-- [ ] Extraction status per acquisition, so a client can tell "nothing found" from "not processed
-      yet".
+- [x] Extraction status per acquisition (`GET /api/v1/user-acquisitions/<id>/extraction`), so a
+      client can tell "nothing found" from "not processed yet".
 
 ### Phase 5: Assistant access
 
-- [ ] Tools `list_page_regions(page)` and `get_region(region_id)` for the explain agent and for
-      chats opened on a user acquisition.
-- [ ] `POST /api/v1/assistant/explain` accepts `region_id` as an alternative to selected text.
+- [x] Tools `list_page_regions(page)` and `get_region(region_id)` for the explain agent, the
+      highlight agent and chats opened on a user acquisition; reading regions costs no page budget.
+      *Changed:* the crop is not sent to the model; `get_region` returns caption, markdown or LaTeX.
+- [x] `POST /assistant/v1/explain` accepts `region_id` as an alternative to selected text.
 - [x] Chats can be bound to a user acquisition, giving them `read_pdf_page`, `search_pdf` and the
       region tools for that publication only.
 
@@ -475,24 +508,31 @@ Runs as its own job of the extraction run, in parallel with figures, tables and 
       above `EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE`, capped at
       `EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES`, with reader page and sentence ids. Pages outside
       the acquisition's range are never returned.
-- [ ] Expansion over the links: each candidate brings its `next` neighbour and its `similar`
+- [x] Highlight requests rank the paragraphs directly (`apps/assistant/semantic.py`,
+      `apps/extraction/reader.py`), without a tool call: the request is embedded by text-service on
+      `EVILFLOWERS_EXTRACTION_EMBED_QUEUE` with the model recorded on the run, and every paragraph
+      above `EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE` (0.3), capped at
+      `EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES` (40), on pages of the acquisition's range is a
+      candidate. The `search_paragraphs` tool above, for explain and chats, is not built yet.
+- [x] Expansion over the links: each candidate brings its `next` neighbour and its `similar`
       paragraphs above the same threshold, one hop, so a passage that continues on the next
       paragraph or repeats the point elsewhere is not missed.
-- [ ] Sentence selection (Q17): all candidates go to the model at once, as numbered sentences with
+- [x] Sentence selection (Q17): all candidates go to the model at once, as numbered sentences with
       their paragraph's score. It keeps the sentences that answer the request, with a note each,
       and discards the rest, possibly all of them. The score only orders and filters candidates;
       it never makes a highlight by itself. Candidates beyond the model's context are sent in
       batches in score order and the kept sentences merged. No quote is copied, so nothing can be
       paraphrased: each highlight is a stored sentence with stored quads, `match = exact`.
-- [ ] `MAX_QUOTES` becomes a cap on sentences per annotation, not the agent's stopping point; the
-      number of highlights follows from the threshold.
-- [ ] Fallback: a publication whose paragraph job has not finished (or failed) uses the agentic
-      search of Phase 6 unchanged.
-- [ ] Report per annotation: candidates ranked, paragraphs read, sentences kept.
+- [x] `MAX_QUOTES` becomes a cap on sentences per annotation (the best-scored are kept), not the
+      agent's stopping point; the number of highlights follows from the threshold.
+- [x] Fallback: a publication without a paragraph index, or a request text-service cannot embed in
+      `EVILFLOWERS_EXTRACTION_EMBED_TIMEOUT`, uses the agentic search of Phase 6 unchanged.
+- [x] Report per annotation: candidate paragraphs, sentences shown and sentences kept, in the task's
+      log line.
 
 ### Phase 7: Production
 
-- [ ] Add the analyzer, image, equation, text and search services to the production compose
+- [x] Add the analyzer, image, equation, text and search services to the production compose
       (`elvira-devops`), each pulling its pinned build and mounting production storage.
 - [ ] Run the backfill, watching the queues in Flower.
 
@@ -764,23 +804,27 @@ All tools are bound to one user acquisition and inherit its access check and pag
 
 ```
 # catalog
-EVILFLOWERS_EXTRACTION_ENABLED=1
+EVILFLOWERS_EXTRACTION_ENABLED=0                   # off until the services run next to the catalog
 EVILFLOWERS_EXTRACTION_PIPELINE_VERSION=1          # bumped when pinned service tags change output
 EVILFLOWERS_EXTRACTION_QUEUE=evilflowers_analyzer  # entry service queue
-EVILFLOWERS_EXTRACTION_SERVICE_TOKEN=...           # credential the services present on ingestion
-EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE=...      # cosine threshold: what the model sees, not what is highlighted (Q17)
-EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES=...     # cap on candidate paragraphs per request
+EVILFLOWERS_EXTRACTION_EMBED_QUEUE=evilflowers_text_embed  # request embeddings (Phase 6b)
+EVILFLOWERS_EXTRACTION_EMBED_TIMEOUT=30
+EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE=0.3      # cosine threshold: what the model sees, not what is highlighted (Q17)
+EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES=40      # cap on candidate paragraphs per request
 
 # services (set in compose)
 REDIS_URL=redis://redis:6379/7
 STORAGE_PATH=/mnt/data
 CATALOG_API_URL=http://django:8000
-CATALOG_SERVICE_TOKEN=...
-CAPTIONS_ENABLED=1                                 # image-service; off on CPU-only hosts
-CAPTION_MODEL=...
+CATALOG_API_KEY=...                                # API key of a user holding extraction.ingest_extraction (Q12)
+CAPTIONS_ENABLED=0                                 # image-service; off on CPU-only hosts
+OLLAMA_ENDPOINT=...                                # image-service captions; equation-service with LATEX_BACKEND=ollama
+CAPTION_MODEL=qwen2.5vl:7b
+LATEX_BACKEND=onnx                                 # equation-service: onnx | ollama | none
 HF_HOME=/models
-EMBEDDING_MODEL=Snowflake/snowflake-arctic-embed-...-v2.0  # size confirmed in Phase 2b; BGE-M3 etc. selectable (Q16)
-SIMILAR_LINKS_K=...                                # similar links per paragraph
+EMBEDDING_MODEL=Snowflake/snowflake-arctic-embed-m-v2.0  # 768 dimensions; size to be confirmed (Q16)
+SIMILAR_LINKS_K=5                                  # similar links per paragraph
+SIMILAR_MIN_SCORE=0.6
 ```
 
 ## Alternatives Considered
@@ -1470,3 +1514,4 @@ exceed the model's context, they are sent in batches in score order and the kept
 | 2026-10-29 | kordostomas | Status: Phase 6 built and on dev, Phase 5 chat binding done. Added reader text highlights (`highlight` items with `text`/`quads`, viewer `readerHighlightPackage`, "My highlights") and the viewer text-layer and theme fixes to Phase 6 |
 | 2026-11-03 | kordostomas | Paragraph index as part of extraction: every paragraph stored with sentences, positions, one embedding and `next`/`similar` links, built by text-service as its own job in parallel with figures, tables and equations (How it runs, sequence diagram). Added Phase 2b (paragraph index), Phase 6b (semantic highlight finding: cosine over paragraphs above a threshold, link expansion, sentence selection, agentic search as fallback), the three paragraph tables, `search_paragraphs` tool, configuration, success criteria, and the narrow IP-012 contradiction. Explained why the agentic path yields only a handful of highlights. Added Review Questions Q15 (vector store), Q16 (embedding model), Q17 (sentence selection) |
 | 2026-11-03 | kordostomas | Answered and applied Q15–Q17: pgvector column with HNSW index in the catalog, no vector store in text-service; Snowflake Arctic Embed v2.0 as the configurable default (BGE-M3, stsb-xlm-r and a retrieval test kept as options; size and dimension confirmed in Phase 2b; model in provenance, change bumps pipeline version); cosine scores pick candidates, the model keeps or discards every candidate sentence in one call (batched past context). Updated Phase 2b, 6b, Data Model, Semantic finding, Technology Stack, Configuration and the IP-012 row |
+| 2026-11-03 | kordostomas | Implemented Phases 1–6b: `apps/extraction` (schema with pgvector, dispatch on upload, `/extraction/v1` ingestion, reader region, crop and status APIs, `backfill_extraction`); analyzer (Docling layout, no OCR), image (crops, gates, Ollama captions), equation (LaTeX-OCR on ONNX, sympy), text (tables, paragraph index, request embeddings) and search (runs again) services over Celery with CI images; region tools and explain by region; semantic highlight finding with agentic fallback; services in the dev and production composes under the `extraction` profile. Recorded the changes against the plan in each phase |
