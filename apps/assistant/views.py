@@ -296,7 +296,8 @@ class ChatMessages(AssistantView):
 class Explain(AssistantView):
     @openapi.metadata(
         description=(
-            "Explain a passage the reader selected in the viewer. The model is given the page the "
+            "Explain a passage the reader selected in the viewer, or a figure, table or equation of "
+            "their copy by `region_id` (IP-018). The model is given the page the "
             "selection is on and reads further pages of the reader's copy, or searches its text, until "
             "it can say what the passage means in context. Returns a short explanation, examples and "
             "the pages it drew on. Responds 429 when the caller's daily allowance is spent, 403 when "
@@ -341,11 +342,21 @@ class Explain(AssistantView):
                 detail=_("Only PDF publications can be read by the assistant."),
             ) from error
 
+        text, page = form.cleaned_data.get("text"), form.cleaned_data.get("page")
+        if form.cleaned_data.get("region_id"):
+            from apps.extraction.reader import ReaderExtraction
+
+            extraction = ReaderExtraction.for_document(document)
+            found = extraction and extraction.region_text(form.cleaned_data["region_id"])
+            if not found:
+                raise ProblemDetailException(_("Region not found"), status=HTTPStatus.NOT_FOUND)
+            text, page = found
+
         try:
             explanation = explain.explain(
                 document,
-                text=form.cleaned_data["text"],
-                page=form.cleaned_data.get("page"),
+                text=text,
+                page=page,
                 title=entry.title,
                 authors=", ".join(author.full_name for author in entry.authors.all()),
                 language=form.cleaned_data.get("language") or None,

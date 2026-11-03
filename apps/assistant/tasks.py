@@ -17,7 +17,7 @@ def highlight_annotation(annotation_id: str, language: Optional[str] = None) -> 
     show on a page it read, and quotes the PDF search could not place, are
     counted in `unresolved_count`. Any failure leaves the annotation `failed`.
     """
-    from apps.assistant import highlight, quotes
+    from apps.assistant import highlight, quotes, semantic
     from apps.assistant.pdf import ReaderDocument
     from apps.core.models import Annotation, AnnotationItem
 
@@ -32,6 +32,13 @@ def highlight_annotation(annotation_id: str, language: Optional[str] = None) -> 
     try:
         entry = annotation.user_acquisition.acquisition.entry
         document = ReaderDocument.for_user_acquisition(annotation.user_acquisition)
+
+        # Phase 6b: by meaning over the paragraph index, when the publication has one.
+        found = semantic.find(document, prompt=annotation.prompt or "", language=language)
+        if found is not None:
+            _store_semantic(annotation, found)
+            return
+
         result = highlight.highlight(
             document,
             prompt=annotation.prompt or "",
@@ -84,3 +91,38 @@ def highlight_annotation(annotation_id: str, language: Optional[str] = None) -> 
     except Exception:
         logger.exception("Agent annotation %s failed", annotation_id)
         Annotation.objects.filter(pk=annotation_id).update(status=Annotation.Status.FAILED)
+
+
+def _store_semantic(annotation, found) -> None:
+    """One item per kept sentence, with the quads stored at extraction (`match = exact`)."""
+    from apps.assistant import quotes
+    from apps.core.models import Annotation, AnnotationItem
+
+    items = [
+        AnnotationItem(
+            annotation=annotation,
+            seq=seq,
+            page=pick.page,
+            content=quotes.svg(pick.quads, pick.size),
+            match="exact",
+            quads=pick.quads,
+            text=pick.text,
+            note=pick.note or None,
+        )
+        for seq, pick in enumerate(found.picks, start=1)
+    ]
+    with transaction.atomic():
+        AnnotationItem.objects.bulk_create(items)
+        annotation.summary = found.summary or None
+        annotation.unresolved_count = 0
+        annotation.status = Annotation.Status.DONE
+        annotation.save(update_fields=["summary", "unresolved_count", "status", "updated_at"])
+
+    logger.info(
+        "Agent annotation %s (semantic): %d candidate paragraphs, %d sentences read, %d kept, %d tokens",
+        annotation.pk,
+        found.candidates,
+        found.sentences,
+        len(items),
+        found.tokens_used,
+    )

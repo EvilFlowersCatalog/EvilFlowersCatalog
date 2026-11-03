@@ -22,7 +22,9 @@ class IngestionFormTests(SimpleTestCase):
         self.assertEqual(region["provenance"], {})
 
     def test_region_rejects_inverted_box_and_unknown_kind(self):
-        self.assertFalse(RegionsForm({"regions": [{"kind": "figure", "page": 1, "seq": 0, "bbox": {**BOX, "x1": 0}}]}).is_valid())
+        self.assertFalse(
+            RegionsForm({"regions": [{"kind": "figure", "page": 1, "seq": 0, "bbox": {**BOX, "x1": 0}}]}).is_valid()
+        )
         self.assertFalse(RegionsForm({"regions": [{"kind": "chart", "page": 1, "seq": 0, "bbox": BOX}]}).is_valid())
 
     def test_paragraph_with_sentences_and_embedding(self):

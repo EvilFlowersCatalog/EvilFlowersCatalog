@@ -13,6 +13,7 @@ loop runs in memory and the answer is returned whole.
 """
 
 import json
+import uuid
 import logging
 import re
 from dataclasses import dataclass, field
@@ -39,6 +40,8 @@ MAX_PAGE_CHARS = 6000
 
 READ_PDF_PAGE = "read_pdf_page"
 SEARCH_PDF = "search_pdf"
+LIST_PAGE_REGIONS = "list_page_regions"
+GET_REGION = "get_region"
 
 SYSTEM_PROMPT = (
     "You explain passages from a publication to a reader who selected them in a PDF viewer. "
@@ -91,6 +94,37 @@ TOOL_SPECIFICATIONS = [
                     "query": {"type": "string", "description": "Words or a phrase to look for."},
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": LIST_PAGE_REGIONS,
+            "description": (
+                "List the figures, tables and equations the catalog found on a page (IP-018), each "
+                "with its id, kind and caption or first line. Empty when the publication has not been "
+                "processed or the page has none."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"page": {"type": "integer", "description": "Page, as the reader's viewer numbers it."}},
+                "required": ["page"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": GET_REGION,
+            "description": (
+                "Read one figure, table or equation by the id `list_page_regions` returned: a figure's "
+                "caption and category, a table's content as markdown, an equation's LaTeX."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"region_id": {"type": "string", "description": "Region id."}},
+                "required": ["region_id"],
             },
         },
     },
@@ -249,10 +283,35 @@ def run_document_tool(document: ReaderDocument, call: dict, pages_read: List[int
             if not query:
                 return json.dumps({"error": "`query` is required."})
             return json.dumps({"results": document.search(query)}, ensure_ascii=False)
+
+        if name in (LIST_PAGE_REGIONS, GET_REGION):
+            return _run_region_tool(document, name, arguments)
     except (TypeError, ValueError):
         return json.dumps({"error": f"Invalid arguments for `{name}`."})
 
     return json.dumps({"error": f"Unknown tool `{name}`."})
+
+
+def _run_region_tool(document: ReaderDocument, name: str, arguments: dict) -> str:
+    """Regions of the reader's copy (IP-018 Phase 5); reading them costs no page budget."""
+    from apps.extraction.reader import ReaderExtraction
+
+    if not hasattr(document, "_extraction"):
+        document._extraction = ReaderExtraction.for_document(document)
+    extraction = document._extraction
+    if extraction is None:
+        return json.dumps({"error": "This publication has no extracted figures, tables or equations yet."})
+
+    if name == LIST_PAGE_REGIONS:
+        return json.dumps({"regions": extraction.page_regions(int(arguments.get("page")))}, ensure_ascii=False)
+
+    try:
+        region = extraction.region(uuid.UUID(str(arguments.get("region_id"))))
+    except ValueError:
+        region = None
+    if region is None:
+        return json.dumps({"error": "No such region in this publication."})
+    return json.dumps({"region": region}, ensure_ascii=False)
 
 
 def _clip(text: str) -> str:

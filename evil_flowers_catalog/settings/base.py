@@ -365,6 +365,13 @@ EVILFLOWERS_ASSISTANT_OLLAMA_TIMEOUT = int(os.getenv("EVILFLOWERS_ASSISTANT_OLLA
 # read (IP-018 Q5). Tool calls are not limited; reading is.
 EVILFLOWERS_ASSISTANT_MAX_PAGES_READ = int(os.getenv("EVILFLOWERS_ASSISTANT_MAX_PAGES_READ", 20))
 
+# Semantic highlight finding (IP-018 Phase 6b): paragraphs whose cosine
+# similarity to the request is at least this are shown to the model, at most
+# this many (before expansion over links). The score decides what the model
+# sees, never what is highlighted.
+EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE = float(os.getenv("EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE", 0.3))
+EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES = int(os.getenv("EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES", 40))
+
 # Daily per-user quota. Overridable per user via `AssistantUserPolicy`.
 EVILFLOWERS_ASSISTANT_DAILY_LIMIT_MESSAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_DAILY_LIMIT_MESSAGES", 100))
 EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS = int(os.getenv("EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS", 50000))
