@@ -3,12 +3,12 @@
   "slug": "ai-update",
   "kind": "branch",
   "commit": {
-    "sha": "a6b072d3bccc3747f6dc1c631d9b428b173b28da",
-    "short": "a6b072d",
-    "message": "feat(assistant): region tools, explain a region, semantic highlights (IP-018)",
+    "sha": "082f58406192d37bac55995d2b6f1293e2a1babe",
+    "short": "082f584",
+    "message": "chore(compose): IP-018 extraction services in the development compose",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/a6b072d3bccc3747f6dc1c631d9b428b173b28da"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/082f58406192d37bac55995d2b6f1293e2a1babe"
   },
-  "deployed_at": "2026-11-03T18:07:14Z",
+  "deployed_at": "2026-11-03T18:09:31Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
