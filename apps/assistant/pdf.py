@@ -47,9 +47,20 @@ class Heading:
 
 
 class ReaderDocument:
-    def __init__(self, pages: List[str], toc: List[Heading]):
+    def __init__(
+        self,
+        pages: List[str],
+        toc: List[Heading],
+        source_pages: Optional[List[Optional[int]]] = None,
+        acquisition=None,
+    ):
         self.pages = pages
         self.toc = toc
+        #: 1-based page of the original file behind each reader page; None for
+        #: the license page. Defaults to the identity for documents built in memory.
+        self.source_pages = source_pages if source_pages is not None else list(range(1, len(pages) + 1))
+        #: The `Acquisition` the text was read from, for locating quotes in its file.
+        self.acquisition = acquisition
 
     @classmethod
     def for_user_acquisition(cls, user_acquisition: UserAcquisition) -> "ReaderDocument":
@@ -89,14 +100,14 @@ class ReaderDocument:
 
     @classmethod
     def _cached(cls, acquisition, page_range: Optional[str]) -> "ReaderDocument":
-        key = f"assistant:pdf:{acquisition.pk}:{page_range or ''}"
+        key = f"assistant:pdf:v2:{acquisition.pk}:{page_range or ''}"
         cached = cache.get(key)
         if cached is None:
             cached = cls._extract(acquisition, page_range)
             cache.set(key, cached, CACHE_TIMEOUT)
 
-        pages, toc = cached
-        return cls(pages, [Heading(*heading) for heading in toc])
+        pages, toc, source_pages = cached
+        return cls(pages, [Heading(*heading) for heading in toc], source_pages, acquisition)
 
     @staticmethod
     def _extract(acquisition, page_range: Optional[str]):
@@ -115,12 +126,14 @@ class ReaderDocument:
 
             pages = [document[page - 1].get_text("text").strip() for page in source_pages]
             reader_page = {source: index + 1 for index, source in enumerate(source_pages)}
+            sources: List[Optional[int]] = list(source_pages)
 
             # Mirrors `PDFModifier.generate`, which inserts the license page at
             # index 1 of every PDF it serves.
             licensed = acquisition.mime in settings.EVILFLOWERS_MODIFIERS
             if licensed:
                 pages.insert(1, LICENSE_PAGE_TEXT)
+                sources.insert(1, None)
                 reader_page = {source: page + 1 if page > 1 else page for source, page in reader_page.items()}
 
             toc = [
@@ -129,7 +142,7 @@ class ReaderDocument:
                 if page in reader_page and title.strip()
             ]
 
-        return pages, toc
+        return pages, toc, sources
 
     @property
     def page_count(self) -> int:
@@ -139,6 +152,18 @@ class ReaderDocument:
         if 1 <= number <= self.page_count:
             return self.pages[number - 1]
         return None
+
+    def source_page(self, number: int) -> Optional[int]:
+        """The original file's page behind a reader page, or None (license page, out of range)."""
+        if 1 <= number <= self.page_count:
+            return self.source_pages[number - 1]
+        return None
+
+    def reader_page(self, source: int) -> Optional[int]:
+        try:
+            return self.source_pages.index(source) + 1
+        except ValueError:
+            return None
 
     def section_of(self, number: int) -> List[str]:
         """Headings enclosing a page, outermost first (book part → chapter → section)."""

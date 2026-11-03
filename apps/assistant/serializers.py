@@ -89,3 +89,41 @@ class ExplanationSerializer:
         examples: List[ExplanationExampleSerializer]
         #: Pages the explanation was drawn from, in the order they were read.
         pages: List[int]
+
+
+class AgentHighlightSerializer(Serializer):
+    id: UUID
+    #: Reading order inside the annotation.
+    seq: int
+    #: The reader's page number.
+    page: int
+    #: `exact` or `partial` (IP-018 Quote resolution).
+    match: Optional[str]
+    #: One box per text line, `{x0, y0, x1, y1}` as page fractions, origin top-left.
+    quads: List[dict]
+    text: str
+    note: Optional[str]
+
+
+class AgentAnnotationSerializer:
+    class Base(Serializer):
+        id: UUID
+        user_acquisition_id: UUID
+        title: str
+        prompt: Optional[str]
+        summary: Optional[str]
+        #: `pending` while the agent works, then `done` or `failed`.
+        status: str
+        #: Quotes the agent returned that could not be placed on a page.
+        unresolved_count: Optional[int]
+        #: Filled by `build`; the model has no such attribute.
+        highlights: List[AgentHighlightSerializer] = Field(default_factory=list)
+        created_at: datetime
+        updated_at: datetime
+
+        @classmethod
+        def build(cls, annotation) -> "AgentAnnotationSerializer.Base":
+            items = sorted(annotation.annotationitem_set.all(), key=lambda item: (item.seq or 0, item.page))
+            data = cls.model_validate(annotation)
+            data.highlights = [AgentHighlightSerializer.model_validate(item) for item in items]
+            return data

@@ -14,8 +14,14 @@ from apps.api.serializers.annotation import (
     AnnotationItemSerializer,
 )
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
-from apps.core.models import AnnotationItem
+from apps.core.models import Annotation, AnnotationItem
 from apps.core.views import SecuredView
+
+
+def _forbid_agent(*annotations: Annotation) -> None:
+    """Agent highlights are the assistant's; readers may only delete them (IP-018 Q10)."""
+    if any(annotation.kind == Annotation.Kind.AGENT for annotation in annotations):
+        raise ProblemDetailException(_("Agent highlights cannot be edited"), status=HTTPStatus.FORBIDDEN)
 
 
 class AnnotationItemManagement(SecuredView):
@@ -38,6 +44,8 @@ class AnnotationItemManagement(SecuredView):
             form.cleaned_data["annotation_id"].user_acquisition,
         ):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+
+        _forbid_agent(form.cleaned_data["annotation_id"])
 
         annotation_item = AnnotationItem()
         form.populate(annotation_item)
@@ -84,6 +92,8 @@ class AnnotationItemDetail(SecuredView):
 
         if not form.is_valid():
             raise ValidationException(form)
+
+        _forbid_agent(annotation_item.annotation, form.cleaned_data["annotation_id"])
 
         form.populate(annotation_item)
         annotation_item.save()
