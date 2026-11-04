@@ -31,12 +31,13 @@ their text, position and order, so they can be searched and stepped through.
 ## Status
 
 **Status**: Draft
-**Last Updated**: 2026-11-03
+**Last Updated**: 2026-11-04
 **Implementation**: In progress. Phase 6 (agent annotations, and the reader's own text highlights)
 is built and running on dev; chats bound to a user acquisition (Phase 5) shipped with IP-015.
-Phases 1–6b are built (2026-11-03): the catalog on `ai-update`, each service on its `main` with a
-published `:main` image, and the services in the development and production composes under the
-`extraction` profile. Not yet run end to end; Phase 7 is not started.
+Phases 1–6b are built (2026-11-03) and run end to end on dev since 2026-11-04: the catalog on
+`develop`, each service on its `main` with a published `:main` image, the services started on the
+server with the `extraction` profile, and the portal showing regions in the viewer. Dev stays on
+trial for a few days; then the dev backfill, then Phase 7.
 
 This is a **parallel proposal**. It overlaps with [IP-012](ip-012-ai-powered-discovery.md),
 [IP-013](ip-013-document-extraction-structure.md) and [IP-015](ip-015-assistant-fold-in.md), but it
@@ -412,6 +413,18 @@ Runs as its own job of the extraction run, in parallel with figures, tables and 
       under the `extraction` profile, `:main` in development and `EXTRACTION_RELEASE` in production.
 - [ ] Run the full development compose end to end: upload a PDF, see the text task consumed, the
       extraction run reach `done`, regions and crops present, and OPDS 2.0 search answering.
+      *2026-11-04, dev:* everything but search. Runs reach `done` with every job reported, e.g. a
+      385-page book (Docling about 1 minute per 16 pages on 4 CPU threads, so about 25 minutes):
+      42 regions, 2411 paragraphs, crops served to the viewer. pgvector 0.8.7 was already on the
+      shared PostgreSQL 18, so no image change was needed. search-service runs, but dev has no
+      Elasticsearch, so keyword search fails; the semantic path does not use it. Fixed on the way:
+      equation-service CI (sympy 1.14 leaves `parse_latex` unevaluated), text-service on PDFs
+      without a text layer (an empty paragraph batch was rejected and the job never reported),
+      Arctic Embed under transformers 5 (non-persistent buffers left uninitialized: pinned
+      `transformers<5`), garbled markdown for rotated tables (dropped, the crop is kept), and
+      text-embed's IP clashing with dataverse on dev (now `172.28.20.12`). Still open: Docling
+      counts tables of contents and indexes as tables, and on a landscape page it boxed only part
+      of the table.
 
 ### Phase 3b: Triggers and backfill (catalog repository)
 
@@ -435,6 +448,10 @@ Runs as its own job of the extraction run, in parallel with figures, tables and 
       IP block. Regions on pages outside the acquisition's range are never returned.
 - [x] Extraction status per acquisition (`GET /api/v1/user-acquisitions/<id>/extraction`), so a
       client can tell "nothing found" from "not processed yet".
+- [x] Portal: the viewer's `regionPackage` loads a page's regions from the API, with the crop URL
+      carrying the access token for the `<img>` (`elvira-portal` `dev`, 2026-11-04). The viewer's
+      region card shows a table as its crop, without scrolling, and the markdown only without one
+      (EvilFlowersViewer `develop`, unreleased with the full-text search fix as 0.7.4).
 
 ### Phase 5: Assistant access
 
@@ -534,7 +551,9 @@ Runs as its own job of the extraction run, in parallel with figures, tables and 
 
 - [x] Add the analyzer, image, equation, text and search services to the production compose
       (`elvira-devops`), each pulling its pinned build and mounting production storage.
-- [ ] Run the backfill, watching the queues in Flower.
+- [ ] Run the backfill, watching the queues in Flower. First on dev (357 local PDFs), after a few
+      days of trial there. At about 4 seconds a page on CPU, raising the analyzer's
+      `LAYOUT_THREADS` is worth checking first.
 
 ### Prerequisites
 
@@ -1515,3 +1534,4 @@ exceed the model's context, they are sent in batches in score order and the kept
 | 2026-11-03 | kordostomas | Paragraph index as part of extraction: every paragraph stored with sentences, positions, one embedding and `next`/`similar` links, built by text-service as its own job in parallel with figures, tables and equations (How it runs, sequence diagram). Added Phase 2b (paragraph index), Phase 6b (semantic highlight finding: cosine over paragraphs above a threshold, link expansion, sentence selection, agentic search as fallback), the three paragraph tables, `search_paragraphs` tool, configuration, success criteria, and the narrow IP-012 contradiction. Explained why the agentic path yields only a handful of highlights. Added Review Questions Q15 (vector store), Q16 (embedding model), Q17 (sentence selection) |
 | 2026-11-03 | kordostomas | Answered and applied Q15–Q17: pgvector column with HNSW index in the catalog, no vector store in text-service; Snowflake Arctic Embed v2.0 as the configurable default (BGE-M3, stsb-xlm-r and a retrieval test kept as options; size and dimension confirmed in Phase 2b; model in provenance, change bumps pipeline version); cosine scores pick candidates, the model keeps or discards every candidate sentence in one call (batched past context). Updated Phase 2b, 6b, Data Model, Semantic finding, Technology Stack, Configuration and the IP-012 row |
 | 2026-11-03 | kordostomas | Implemented Phases 1–6b: `apps/extraction` (schema with pgvector, dispatch on upload, `/extraction/v1` ingestion, reader region, crop and status APIs, `backfill_extraction`); analyzer (Docling layout, no OCR), image (crops, gates, Ollama captions), equation (LaTeX-OCR on ONNX, sympy), text (tables, paragraph index, request embeddings) and search (runs again) services over Celery with CI images; region tools and explain by region; semantic highlight finding with agentic fallback; services in the dev and production composes under the `extraction` profile. Recorded the changes against the plan in each phase |
+| 2026-11-04 | kordostomas | Ran it end to end on dev: catalog merged to `develop`, services started with the `extraction` profile, service user and API key, regions wired into the portal's viewer. Recorded the results and the fixes made on the way in Phase 3 and 4 (equation CI, text-service on PDFs without text, transformers pinned below 5 for Arctic Embed, rotated tables, a dev IP clash). Backfill after a few days of trial on dev |
