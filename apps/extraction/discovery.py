@@ -93,16 +93,16 @@ def _entry(request, entry_id: UUID) -> Entry:
 
 def _entry_run(entry_id) -> Optional[ExtractionRun]:
     return (
-        ExtractionRun.objects.filter(acquisition__entry_id=entry_id, is_active=True)
-        .order_by("-finished_at")
-        .first()
+        ExtractionRun.objects.filter(acquisition__entry_id=entry_id, is_active=True).order_by("-finished_at").first()
     )
 
 
 def _ranked(request, scores: Dict, limit: int) -> List[dict]:
     """`{entry_id: score}` as the caller's visible entries, best first."""
     visible = _visible(request, scores)
-    ranked = sorted(((entry_id, score) for entry_id, score in scores.items() if entry_id in visible), key=lambda x: -x[1])
+    ranked = sorted(
+        ((entry_id, score) for entry_id, score in scores.items() if entry_id in visible), key=lambda x: -x[1]
+    )
     return [
         SimilarEntrySerializer(entry_id=entry_id, score=round(score, 4)).model_dump(mode="json")
         for entry_id, score in ranked[:limit]

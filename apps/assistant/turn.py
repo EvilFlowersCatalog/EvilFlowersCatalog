@@ -287,7 +287,11 @@ def _run_tool(
         yield sse("entries", {"entry_ids": entry_ids})
         return entry_ids
 
-    if document is not None and name == CREATE_HIGHLIGHTS and CREATE_HIGHLIGHTS_SPECIFICATION in _offered(chat, document):
+    if (
+        document is not None
+        and name == CREATE_HIGHLIGHTS
+        and CREATE_HIGHLIGHTS_SPECIFICATION in _offered(chat, document)
+    ):
         text = yield from _create_highlights(chat, arguments, annotations if annotations is not None else [], language)
         ChatMessage.objects.create(chat=chat, user=chat.user, role=ChatMessage.Role.TOOL, text=text)
         return []
