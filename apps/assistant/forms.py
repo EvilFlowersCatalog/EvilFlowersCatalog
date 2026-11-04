@@ -53,13 +53,22 @@ class MessageForm(Form):
 class ExplainForm(Form):
     #: The reader's copy of the publication, as the viewer opened it.
     user_acquisition_id = forms.ModelChoiceField(queryset=_user_acquisitions())
-    text = forms.CharField(max_length=4000, strip=True)
+    #: The selected passage; or `region_id` instead.
+    text = forms.CharField(max_length=4000, strip=True, required=False)
+
+    #: A figure, table or equation of the copy (IP-018), instead of a text selection.
+    region_id = forms.UUIDField(required=False)
 
     #: Viewer page the selection is on. Without it the model has to search for it.
     page = forms.IntegerField(min_value=1, required=False)
 
     #: Language code to explain in; the selection's own language when omitted.
     language = forms.CharField(max_length=10, required=False)
+
+    def clean(self):
+        if not self.cleaned_data.get("text") and not self.cleaned_data.get("region_id"):
+            raise forms.ValidationError("Send the selected `text` or a `region_id`.")
+        return self.cleaned_data
 
 
 class HighlightForm(Form):

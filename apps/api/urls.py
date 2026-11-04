@@ -28,6 +28,7 @@ from apps.api.views import (
 # observability so an unexpected POST is visible in logs rather than
 # silently 404ing.
 from apps.dataverse.views import PrepublishView as _DataversePrepublishView
+from apps.extraction import views as extraction_views
 
 urlpatterns = [
     # API keys
@@ -104,6 +105,22 @@ urlpatterns = [
         "user-acquisitions/<uuid:user_acquisition_id>",
         user_acquisitions.UserAcquisitionDetail.as_view(),
         name="user-acquisition-detail",
+    ),
+    # Extraction (IP-018): regions of a reader's copy, in the reader's page numbers
+    path(
+        "user-acquisitions/<uuid:user_acquisition_id>/extraction",
+        extraction_views.UserAcquisitionExtraction.as_view(),
+        name="user-acquisition-extraction",
+    ),
+    path(
+        "user-acquisitions/<uuid:user_acquisition_id>/regions",
+        extraction_views.UserAcquisitionRegions.as_view(),
+        name="user-acquisition-regions",
+    ),
+    path(
+        "user-acquisitions/<uuid:user_acquisition_id>/regions/<uuid:region_id>",
+        extraction_views.UserAcquisitionRegionDetail.as_view(),
+        name="user-acquisition-region-detail",
     ),
     # Annotations
     path(

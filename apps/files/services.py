@@ -111,6 +111,11 @@ class AcquisitionStorageService:
         if path and storage.exists(path):
             storage.delete(path)
 
+        # IP-018: crops of every extraction run of this acquisition.
+        from apps.extraction.services import delete_for_acquisition
+
+        delete_for_acquisition(acquisition)
+
     @classmethod
     def download_response(
         cls,

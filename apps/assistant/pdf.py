@@ -35,6 +35,23 @@ SNIPPET_RADIUS = 200
 _WORD = re.compile(r"\w+", re.UNICODE)
 
 
+def reader_source_pages(page_count: int, page_range: Optional[str], mime: str) -> List[Optional[int]]:
+    """The original file's 1-based page behind each page the reader sees; None for the license page.
+
+    The reader's copy is cut to the acquisition's range and, for the MIME types
+    the library modifies, gets the license page at index 1 (`PDFModifier.generate`).
+    Shared by the assistant and the extraction region API (IP-018).
+    """
+    sources: List[Optional[int]] = [
+        page for page in (depack(page_range) if page_range else []) if 1 <= page <= page_count
+    ]
+    if not sources:
+        sources = list(range(1, page_count + 1))
+    if mime in settings.EVILFLOWERS_MODIFIERS:
+        sources.insert(1, None)
+    return sources
+
+
 class DocumentUnavailable(Exception):
     """The acquisition has no readable PDF behind it."""
 
@@ -119,22 +136,9 @@ class ReaderDocument:
             raise DocumentUnavailable(str(error)) from error
 
         with document:
-            # 1-based source page numbers, in the order the reader sees them.
-            source_pages = [page for page in (depack(page_range) if page_range else []) if 1 <= page <= len(document)]
-            if not source_pages:
-                source_pages = list(range(1, len(document) + 1))
-
-            pages = [document[page - 1].get_text("text").strip() for page in source_pages]
-            reader_page = {source: index + 1 for index, source in enumerate(source_pages)}
-            sources: List[Optional[int]] = list(source_pages)
-
-            # Mirrors `PDFModifier.generate`, which inserts the license page at
-            # index 1 of every PDF it serves.
-            licensed = acquisition.mime in settings.EVILFLOWERS_MODIFIERS
-            if licensed:
-                pages.insert(1, LICENSE_PAGE_TEXT)
-                sources.insert(1, None)
-                reader_page = {source: page + 1 if page > 1 else page for source, page in reader_page.items()}
+            sources = reader_source_pages(len(document), page_range, acquisition.mime)
+            pages = [document[page - 1].get_text("text").strip() if page else LICENSE_PAGE_TEXT for page in sources]
+            reader_page = {source: index + 1 for index, source in enumerate(sources) if source}
 
             toc = [
                 (level, title.strip(), reader_page[page])

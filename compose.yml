@@ -4,7 +4,8 @@ include:
 
 services:
   db:
-    image: postgres:16
+    # pgvector for the IP-018 paragraph index (apps/extraction).
+    image: pgvector/pgvector:pg16
     volumes:
       - ./data/db:/var/lib/postgresql/data
     environment:
@@ -69,6 +70,8 @@ services:
       SECURED_VIEW_JWK: '{  "p": "w0ZHQN8tDhB80-X0AoOnCx72mP0leUs7pRpyQ_fJVahS-6Rz34wMoyxsdjVFTOO1lp4y14l5MYBZ0GTpEEL5wOgLZXMPZmyjrUa3SVN-K0VKD8fDKdHVALYtqiHulT9OAIDzzHN1d1uXRnrlNoDLWkqaW-4yZC1bKTGJfV8yk3k",  "kty": "RSA",  "q": "q8WYI8dY5eTj12Q0l3KwWDOyVbgCX1bZUd7CEfoUoiRSOnk2HYnxx7aGri4Zh_vfJ1NM8lEkjHe91qIONbzqt-JwzXGV21UEQE6WtmKaMBHBaHz22NczkpiVcEL6otfjWNdsh3YxLpBnKNEndT4NhdnNL9vN4HNeqz8Uq_SVr5M",  "d": "DnPkzyaxOY1mg7a9Ndi2jqDJo4jo2zOPnSbf-W2mLWQlk_sZ1sf1OpwDeskUMVfW4zJ9RP3mdiCUoz9cT9tX6dZzVmJKo-n9n3RLSDo26lR_TV9ynUtq8A3dghzkoO-xe3kD7OFAWj5RrSr50Y9r_DkXRkuaXeN6rRN7_x5wX4Foh0GKfSQQEa2a5qxqyQGF3EYlyT_lhqKrtHpbtXVHo9RQJw2vX4gpyzdLBwNdrkc03dXKU2mZeRHLpBNQiejx8lS63OthzG5gjdBsIT3YtxaNtRHlvZQnKCau_nE4jT_jLl3IX2I3ZeRGrxyd4dYMbu84tgoDHRfWmpn92150sQ",  "e": "AQAB",  "qi": "GMsGGp-Ikcw9infNMCLwqRSXgZdyicLXZiFagG3vJcG2_1vfgFNAR0yIr855SJv-sCmhGK1lTGYZzi0rcPc3wLUT8Kd_G_SbYUenbHhioDDozvfTGlyw1v8PkNhjp7iI3oF2ANXWzUruK-Lp-WupbxYvqyUBUKpqp1o6XN4IW1k",  "dp": "e1-lmQjn8GDeXQqGFiiTm2UerB4UVQQBVRjWZLbiz2mftDl8tBpJybZBeJXDiQa9LcIZoS_MEEhldlKrJYkLPqPcv2Xoru-ooctx9bP4nOIUHtA5L-zQxLhVNY5mrIjogUz3u46fAqAtfWwb8UmCMTO9PqPJ1p0JYYdYtIs26xE",  "dq": "jImaNIvBXDatg2jk7pRTW5bQbfmjV0XDgIx01Ch8AT0eWeEaOYjHXNMl1hS5ptyYc6Bf8FIbSSIfHCBy59ytXc3S5QPtzAn-9G5YONjrtjCQwWCcxkUsWOCmQ7dJQTrJM8LtdNdq3eIfxPF7Cx2-Cqlsi5-XDfDWn914mEgAwCk",  "n": "gwaqui74iVp7fSiCe2A7L-P2YQ0CqO81LhbqqCCQ4Czd-QMlNv0z5mexMvqd0J5f71V3yJW02tFjZeIGat0uU5ZelQEiUojRshawupu3Ndedwoy7AaphOaUvjwwH_02awqWj7DXfDE_jgoULvZv6UkRUQtHhYp6ZW4xO_f8z8uUj2lUYv9PeaxQgexxLQRvjuRMIHN5tYuB1nYXKw_i1TDyHuGCXvefM2iKRk7kWlk7Far2pGqzuHnQ_OjTy9tgJbVZ0m2uYOmuVe48D17yQoleZr1dFv8zcIJ0KEsK5nMAdHeiEQdmZfukZ5RRR4i_S5a0Mj0bQ5vKxODnjZkdlew"}'
       # Celery / Event Broker Configuration (using database 7 for worker communication)
       CELERY_RESULT_BACKEND: "redis://redis:6379/7"
+      # IP-018 extraction: queue PDFs for the services below
+      EVILFLOWERS_EXTRACTION_ENABLED: "1"
       # Readium LCP Configuration
       EVILFLOWERS_READIUM_LCPSV_URL: "http://readium:8989"
       EVILFLOWERS_READIUM_LSDSV_URL: "http://readium:8990"
@@ -148,14 +151,79 @@ services:
       TABLE_EXTRACTOR: "PdfPlumber"
       TEXT_EXTRACTOR_MODE: "None"
       CATALOG_API_URL: "http://django:8000"
-      CATALOG_SECRET_KEY: ${SECRET_KEY}
+      # API key of a catalog user with `extraction.ingest_extraction` (IP-018)
+      CATALOG_API_KEY: ${EXTRACTION_CATALOG_API_KEY:-}
+      HF_HOME: /models
+    command: ["celery", "--workdir", "src", "-A", "main", "worker", "--loglevel=info", "-E", "--pool=solo", "--queues=evilflowers_text_worker"]
     volumes:
       - ./data/evilflowers/private:/mnt/data
+      - extraction-models:/models
     networks:
       - shared
     depends_on:
       - redis
       - evil-flowers-search-service
+
+  # IP-018: embeds highlight requests for the catalog, apart from indexing.
+  evilflowers-text-embed:
+    image: "ghcr.io/evilflowerscatalog/evilflowers-text-service:main"
+    platform: linux/amd64
+    environment:
+      REDIS_URL: "redis://redis:6379/7"
+      HF_HOME: /models
+    command: ["celery", "--workdir", "src", "-A", "main", "worker", "--loglevel=info", "-E", "--pool=solo", "--queues=evilflowers_text_embed"]
+    volumes:
+      - extraction-models:/models
+    networks:
+      - shared
+    depends_on:
+      - redis
+
+  # IP-018: entry point of an extraction run (Docling layout, fan-out by kind).
+  evilflowers-analyzer-service:
+    image: "ghcr.io/evilflowerscatalog/evilflowers-analyzer-service:main"
+    platform: linux/amd64
+    environment: &extraction-env
+      REDIS_URL: "redis://redis:6379/7"
+      STORAGE_PATH: /mnt/data
+      CATALOG_API_URL: "http://django:8000"
+      CATALOG_API_KEY: ${EXTRACTION_CATALOG_API_KEY:-}
+      HF_HOME: /models
+    volumes: &extraction-volumes
+      - ./data/evilflowers/private:/mnt/data
+      - extraction-models:/models
+    networks:
+      - shared
+    depends_on:
+      - redis
+
+  # IP-018: figures (crop, gates; captions off without a vision model).
+  evilflowers-image-service:
+    image: "ghcr.io/evilflowerscatalog/evilflowers-image-service:main"
+    platform: linux/amd64
+    environment:
+      <<: *extraction-env
+      CAPTIONS_ENABLED: ${CAPTIONS_ENABLED:-0}
+      OLLAMA_ENDPOINT: ${CAPTION_OLLAMA_ENDPOINT:-http://host.docker.internal:11434/api/chat}
+      CAPTION_MODEL: ${CAPTION_MODEL:-qwen2.5vl:7b}
+    volumes: *extraction-volumes
+    networks:
+      - shared
+    depends_on:
+      - redis
+
+  # IP-018: equations to LaTeX.
+  evilflowers-equation-service:
+    image: "ghcr.io/evilflowerscatalog/evilflowers-equation-service:main"
+    platform: linux/amd64
+    environment:
+      <<: *extraction-env
+      MODELS_PATH: /models/latex-ocr
+    volumes: *extraction-volumes
+    networks:
+      - shared
+    depends_on:
+      - redis
 
   evil-flowers-search-service:
     image: "ghcr.io/evilflowerscatalog/evilflowers-search-service:main"
@@ -165,9 +233,14 @@ services:
       - "8001:8001"
     environment:
       - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-http://elasticsearch:9200}
-      - USE_MILVUS_LITE=true
+      - MILVUS_LITE_DB=/data/milvus_lite.db
+      - HF_HOME=/models
+    volumes:
+      - ./data/search:/data
+      - extraction-models:/models
     networks:
       - shared
    
 volumes:
+  extraction-models:
   minio-data:
