@@ -45,7 +45,12 @@ class RegionSerializer(Serializer):
     seq: int
     #: `{x0, y0, x1, y1}` page fractions, origin top-left.
     bbox: Dict[str, float]
+    #: The printed caption, else the model's description.
     caption: Optional[str]
+    #: The caption printed in the document, verbatim.
+    printed_caption: Optional[str] = None
+    #: A multimodal model's description of a figure.
+    description: Optional[str] = None
     category: Optional[str]
     markdown: Optional[str]
     latex: Optional[str]

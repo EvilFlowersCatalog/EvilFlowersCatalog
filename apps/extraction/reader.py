@@ -74,6 +74,8 @@ class ReaderExtraction:
             "kind": region.kind,
             "page": page,
             "caption": region.caption,
+            "printed_caption": region.printed_caption,
+            "description": region.description,
             "category": region.category,
             "markdown": region.markdown,
             "latex": region.latex,
@@ -86,7 +88,11 @@ class ReaderExtraction:
             return None
         label = {"figure": "Figure", "table": "Table", "equation": "Equation"}[region["kind"]]
         parts = [f"{label} on page {region['page']}."]
-        if region["caption"]:
+        if region["printed_caption"]:
+            parts.append(f"Printed caption: {region['printed_caption']}")
+        if region["description"]:
+            parts.append(f"Description: {region['description']}")
+        if region["caption"] and not (region["printed_caption"] or region["description"]):
             parts.append(f"Caption: {region['caption']}")
         if region["markdown"]:
             parts.append(f"Table content:\n{region['markdown']}")

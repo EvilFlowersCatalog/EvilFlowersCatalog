@@ -101,7 +101,12 @@ class Region(BaseModel):
     bbox = models.JSONField()
     #: Storage name of the crop, under the run's storage dir.
     image_path = models.CharField(max_length=255, null=True)
+    #: What clients read: the printed caption, else the model's description.
     caption = models.TextField(null=True)
+    #: The caption printed in the document ("Figure 2.1: ..."), verbatim (IP-018 Phase 8).
+    printed_caption = models.TextField(null=True)
+    #: A multimodal model's description of a figure, when image-service captions are on.
+    description = models.TextField(null=True)
     category = models.CharField(max_length=50, null=True)
     markdown = models.TextField(null=True)
     latex = models.TextField(null=True)

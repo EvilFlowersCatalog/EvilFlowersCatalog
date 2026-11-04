@@ -244,6 +244,8 @@ def _serialize(request, user_acquisition: UserAcquisition, region: Region, page:
         seq=region.seq,
         bbox=region.bbox,
         caption=region.caption,
+        printed_caption=region.printed_caption,
+        description=region.description,
         category=region.category,
         markdown=region.markdown,
         latex=region.latex,

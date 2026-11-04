@@ -21,6 +21,29 @@ class IngestionFormTests(SimpleTestCase):
         self.assertIsNone(region["caption"])
         self.assertEqual(region["provenance"], {})
 
+    def test_printed_caption_and_description_are_kept_apart(self):
+        def region(**fields):
+            form = RegionsForm({"regions": [{"kind": "figure", "page": 1, "seq": 0, "bbox": BOX, **fields}]})
+            self.assertTrue(form.is_valid(), form.errors)
+            return form.cleaned_data["regions"][0]
+
+        # A service that sends both.
+        both = region(printed_caption="Figure 2.1: Scaffolding", description="A bar chart.", caption="x")
+        self.assertEqual(
+            (both["caption"], both["printed_caption"], both["description"]),
+            ("Figure 2.1: Scaffolding", "Figure 2.1: Scaffolding", "A bar chart."),
+        )
+        # image-service before Phase 8 with captions on: the model's text in `caption`.
+        legacy = region(
+            caption="A bar chart.", provenance={"caption_model": "qwen", "printed_caption": "Figure 2.1: Scaffolding"}
+        )
+        self.assertEqual(legacy["printed_caption"], "Figure 2.1: Scaffolding")
+        self.assertEqual(legacy["description"], "A bar chart.")
+        self.assertEqual(legacy["caption"], "Figure 2.1: Scaffolding")
+        # Every other service: `caption` is the printed one.
+        printed = region(caption="Table 1: Results")
+        self.assertEqual((printed["printed_caption"], printed["description"]), ("Table 1: Results", None))
+
     def test_region_rejects_inverted_box_and_unknown_kind(self):
         self.assertFalse(
             RegionsForm({"regions": [{"kind": "figure", "page": 1, "seq": 0, "bbox": {**BOX, "x1": 0}}]}).is_valid()

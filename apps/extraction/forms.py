@@ -48,6 +48,8 @@ class RegionForm(Form):
     bbox = forms.JSONField()
     image_path = forms.CharField(max_length=255, required=False)
     caption = forms.CharField(required=False)
+    printed_caption = forms.CharField(required=False)
+    description = forms.CharField(required=False)
     category = forms.CharField(max_length=50, required=False)
     markdown = forms.CharField(required=False)
     latex = forms.CharField(required=False)
@@ -57,9 +59,22 @@ class RegionForm(Form):
         return _box(self.cleaned_data.get("bbox"))
 
     def clean(self):
-        for key in ("image_path", "caption", "category", "markdown", "latex"):
+        for key in ("image_path", "caption", "printed_caption", "description", "category", "markdown", "latex"):
             self.cleaned_data[key] = self.cleaned_data.get(key) or None
-        self.cleaned_data["provenance"] = self.cleaned_data.get("provenance") or {}
+        provenance = self.cleaned_data["provenance"] = self.cleaned_data.get("provenance") or {}
+
+        # Services that predate the two fields: image-service with captions on
+        # sent the model's text as `caption` and the printed one in provenance;
+        # every other service's `caption` is the printed one.
+        if not self.cleaned_data["printed_caption"] and not self.cleaned_data["description"]:
+            if provenance.get("caption_model"):
+                self.cleaned_data["printed_caption"] = provenance.get("printed_caption") or None
+                self.cleaned_data["description"] = self.cleaned_data["caption"]
+            else:
+                self.cleaned_data["printed_caption"] = self.cleaned_data["caption"]
+        self.cleaned_data["caption"] = (
+            self.cleaned_data["printed_caption"] or self.cleaned_data["description"] or self.cleaned_data["caption"]
+        )
         return self.cleaned_data
 
 
