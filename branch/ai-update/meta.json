@@ -3,12 +3,12 @@
   "slug": "ai-update",
   "kind": "branch",
   "commit": {
-    "sha": "9e1abd0562c068b8954128e257ee4a7f30b53936",
-    "short": "9e1abd0",
-    "message": "docs(ip-018): Phase 8, reader round on dev; Q18",
+    "sha": "923698c84cb32cbc2d6663e1b31b05956a8f39e7",
+    "short": "923698c",
+    "message": "feat(extraction): recommendations and entry figures from the paragraph index (IP-018 Phase 8)",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/9e1abd0562c068b8954128e257ee4a7f30b53936"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/923698c84cb32cbc2d6663e1b31b05956a8f39e7"
   },
-  "deployed_at": "2026-11-04T21:57:17Z",
+  "deployed_at": "2026-11-04T22:15:37Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
