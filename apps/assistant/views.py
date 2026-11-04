@@ -12,7 +12,6 @@ from typing import Optional
 from uuid import UUID
 
 from django.conf import settings
-from django.db import transaction
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -20,7 +19,7 @@ from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
 from apps.api.response import Ordering, PaginationResponse, SingleResponse
-from apps.assistant import explain, services, tasks, turn
+from apps.assistant import explain, services, turn
 from apps.assistant.forms import ChatForm, ExplainForm, HighlightForm, MessageForm
 from apps.assistant.llm import LLMUnavailable
 from apps.assistant.models import Chat
@@ -434,16 +433,9 @@ class Highlights(AssistantView):
                 detail=_("Only PDF publications can be read by the assistant."),
             ) from error
 
-        prompt = form.cleaned_data["prompt"]
-        annotation = Annotation.objects.create(
-            user_acquisition=user_acquisition,
-            kind=Annotation.Kind.AGENT,
-            status=Annotation.Status.PENDING,
-            title=prompt if len(prompt) <= 80 else prompt[:79] + "…",
-            prompt=prompt,
+        annotation = services.start_agent_annotation(
+            user_acquisition, form.cleaned_data["prompt"], form.cleaned_data.get("language") or None
         )
-        language = form.cleaned_data.get("language") or None
-        transaction.on_commit(lambda: tasks.highlight_annotation.delay(str(annotation.pk), language))
 
         return SingleResponse(
             request,

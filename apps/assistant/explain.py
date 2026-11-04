@@ -42,6 +42,14 @@ READ_PDF_PAGE = "read_pdf_page"
 SEARCH_PDF = "search_pdf"
 LIST_PAGE_REGIONS = "list_page_regions"
 GET_REGION = "get_region"
+LIST_REGIONS = "list_regions"
+SEARCH_PARAGRAPHS = "search_paragraphs"
+
+#: Paragraphs `search_paragraphs` returns, best first.
+MAX_PARAGRAPH_RESULTS = 8
+
+#: Characters of each paragraph `search_paragraphs` returns.
+MAX_PARAGRAPH_CHARS = 1200
 
 SYSTEM_PROMPT = (
     "You explain passages from a publication to a reader who selected them in a PDF viewer. "
@@ -57,6 +65,9 @@ SYSTEM_PROMPT = (
     "Give 1-3 examples. Do not mention page numbers: the viewer's numbering differs from the "
     "numbers printed in the book, and small raised numbers in the text are footnote markers."
 )
+
+#: Tools run against the reader's copy, in explain, highlight and bound chats.
+DOCUMENT_TOOLS = (READ_PDF_PAGE, SEARCH_PDF, LIST_PAGE_REGIONS, GET_REGION, LIST_REGIONS, SEARCH_PARAGRAPHS)
 
 TOOL_SPECIFICATIONS = [
     {
@@ -110,6 +121,45 @@ TOOL_SPECIFICATIONS = [
                 "type": "object",
                 "properties": {"page": {"type": "integer", "description": "Page, as the reader's viewer numbers it."}},
                 "required": ["page"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": LIST_REGIONS,
+            "description": (
+                "List every figure, table and equation the catalog found in the publication, with id, kind, "
+                "page and caption, in reading order. Use it to see all figures at once or to find one by its "
+                "caption; cite one as [[region:ID]]. Empty when the publication has not been processed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["figure", "table", "equation"],
+                        "description": "Only this kind. Omit for all.",
+                    }
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": SEARCH_PARAGRAPHS,
+            "description": (
+                "Find passages of the publication by meaning, not by words: returns the best matching "
+                "paragraphs with their page, section and a relevance score. Prefer it over "
+                f"`{SEARCH_PDF}` for questions and topics; use `{SEARCH_PDF}` for an exact term or name."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What to look for, in a sentence or a few words."}
+                },
+                "required": ["query"],
             },
         },
     },
@@ -284,8 +334,11 @@ def run_document_tool(document: ReaderDocument, call: dict, pages_read: List[int
                 return json.dumps({"error": "`query` is required."})
             return json.dumps({"results": document.search(query)}, ensure_ascii=False)
 
-        if name in (LIST_PAGE_REGIONS, GET_REGION):
+        if name in (LIST_PAGE_REGIONS, GET_REGION, LIST_REGIONS):
             return _run_region_tool(document, name, arguments)
+
+        if name == SEARCH_PARAGRAPHS:
+            return _search_paragraphs(document, str(arguments.get("query") or "").strip())
     except (TypeError, ValueError):
         return json.dumps({"error": f"Invalid arguments for `{name}`."})
 
@@ -294,16 +347,16 @@ def run_document_tool(document: ReaderDocument, call: dict, pages_read: List[int
 
 def _run_region_tool(document: ReaderDocument, name: str, arguments: dict) -> str:
     """Regions of the reader's copy (IP-018 Phase 5); reading them costs no page budget."""
-    from apps.extraction.reader import ReaderExtraction
-
-    if not hasattr(document, "_extraction"):
-        document._extraction = ReaderExtraction.for_document(document)
-    extraction = document._extraction
+    extraction = _extraction(document)
     if extraction is None:
         return json.dumps({"error": "This publication has no extracted figures, tables or equations yet."})
 
     if name == LIST_PAGE_REGIONS:
         return json.dumps({"regions": extraction.page_regions(int(arguments.get("page")))}, ensure_ascii=False)
+
+    if name == LIST_REGIONS:
+        kind = arguments.get("kind") if arguments.get("kind") in ("figure", "table", "equation") else None
+        return json.dumps({"regions": extraction.all_regions(kind)}, ensure_ascii=False)
 
     try:
         region = extraction.region(uuid.UUID(str(arguments.get("region_id"))))
@@ -312,6 +365,57 @@ def _run_region_tool(document: ReaderDocument, name: str, arguments: dict) -> st
     if region is None:
         return json.dumps({"error": "No such region in this publication."})
     return json.dumps({"region": region}, ensure_ascii=False)
+
+
+def _extraction(document: ReaderDocument):
+    from apps.extraction.reader import ReaderExtraction
+
+    if not hasattr(document, "_extraction"):
+        document._extraction = ReaderExtraction.for_document(document)
+    return document._extraction
+
+
+def _search_paragraphs(document: ReaderDocument, query: str) -> str:
+    """Paragraphs by meaning over the paragraph index (IP-018 Phase 8); `search_pdf` without one."""
+    from apps.extraction.reader import EmbeddingUnavailable
+
+    if not query:
+        return json.dumps({"error": "`query` is required."})
+
+    extraction = _extraction(document)
+    if extraction is not None and extraction.has_paragraphs():
+        try:
+            vector = extraction.embed(query)
+        except EmbeddingUnavailable:
+            vector = None
+        if vector is not None:
+            candidates = extraction.search_paragraphs(
+                vector, settings.EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE, MAX_PARAGRAPH_RESULTS
+            )
+            best = sorted(candidates, key=lambda c: -c.score)[:MAX_PARAGRAPH_RESULTS]
+            paragraphs = [
+                {
+                    "page": candidate.page,
+                    "score": candidate.score,
+                    "section": candidate.paragraph.section,
+                    "text": _clip_to(candidate.paragraph.text, MAX_PARAGRAPH_CHARS),
+                }
+                for candidate in sorted(best, key=lambda c: c.paragraph.seq)
+            ]
+            return json.dumps({"paragraphs": paragraphs}, ensure_ascii=False)
+
+    # No index or no embedding: the word search, said so, so the model can adapt its queries.
+    return json.dumps(
+        {
+            "note": "Search by meaning is not available for this publication; these are word matches.",
+            "results": document.search(query),
+        },
+        ensure_ascii=False,
+    )
+
+
+def _clip_to(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit] + " […]"
 
 
 def _clip(text: str) -> str:

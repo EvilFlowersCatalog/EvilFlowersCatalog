@@ -74,12 +74,16 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
     specifications = tools.specifications()
     if document is not None:
         specifications = specifications + explain.TOOL_SPECIFICATIONS
+        if chat.user_acquisition_id and chat.user_acquisition.user_id == chat.user_id:
+            # Agent annotations belong to the reader's own copy, never a shared one.
+            specifications = specifications + [CREATE_HIGHLIGHTS_SPECIFICATION]
 
     # Publications shown and pages read during this turn. They belong to the
     # answer that closes it, which is the message a reader sees when the chat is
     # read back.
     displayed: List[str] = []
     pages_read: List[int] = []
+    annotations: List[str] = []
 
     for _round in range(MAX_TOOL_ROUNDS):
         messages = services.conversation(chat, document)
@@ -98,6 +102,7 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
                 text=content,
                 displayed_entries=displayed or None,
                 pages_read=pages_read or None,
+                annotations=annotations or None,
                 tokens_used=tokens,
             )
             yield from _pages_frame(pages_read)
@@ -124,7 +129,7 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
         )
 
         for call in tool_calls:
-            for entry_id in (yield from _run_tool(request, chat, call, document, pages_read)):
+            for entry_id in (yield from _run_tool(request, chat, call, document, pages_read, annotations, language)):
                 if entry_id not in displayed:
                     displayed.append(entry_id)
 
@@ -136,11 +141,12 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
                 text=content,
                 displayed_entries=displayed or None,
                 pages_read=pages_read or None,
+                annotations=annotations or None,
             )
             yield from _pages_frame(pages_read)
             return
 
-    if displayed:
+    if displayed or annotations:
         # Out of rounds, but publications were already shown — that is an answer.
         ChatMessage.objects.create(
             chat=chat,
@@ -148,6 +154,7 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
             role=ChatMessage.Role.ASSISTANT,
             displayed_entries=displayed,
             pages_read=pages_read or None,
+            annotations=annotations or None,
         )
         yield from _pages_frame(pages_read)
         return
@@ -160,6 +167,63 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
         text=str(_("I could not complete that search. Could you rephrase it?")),
     )
     yield sse("message", {"text": str(_("I could not complete that search. Could you rephrase it?"))})
+
+
+CREATE_HIGHLIGHTS = "create_highlights"
+
+CREATE_HIGHLIGHTS_SPECIFICATION = {
+    "type": "function",
+    "function": {
+        "name": CREATE_HIGHLIGHTS,
+        "description": (
+            "Mark the passages of this publication that answer a request, as a new layer of AI highlights in "
+            "the reader's viewer. Use it when the reader asks you to highlight, mark or find passages for "
+            "them. It runs in the background: tell the reader the highlights are being prepared and will "
+            "appear in the viewer; do not wait for them and do not list them yourself."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "What to find, as the reader would ask it, e.g. 'definitions of entropy'.",
+                }
+            },
+            "required": ["prompt"],
+        },
+    },
+}
+
+#: Agent annotations one turn may create; a model that loops is stopped here.
+MAX_ANNOTATIONS_PER_TURN = 3
+
+
+def _offered(chat: Chat, document) -> List[dict]:
+    if document is None or not chat.user_acquisition_id or chat.user_acquisition.user_id != chat.user_id:
+        return []
+    return [CREATE_HIGHLIGHTS_SPECIFICATION]
+
+
+def _create_highlights(chat: Chat, arguments: dict, annotations: List[str], language: Optional[str]):
+    """Queue an agent annotation of the chat's copy; yields its `annotation` frame, returns the tool text."""
+    from apps.assistant.serializers import AgentAnnotationSerializer
+
+    prompt = str(arguments.get("prompt") or "").strip()[:500]
+    if not prompt:
+        return json.dumps({"error": "`prompt` is required."})
+    if len(annotations) >= MAX_ANNOTATIONS_PER_TURN:
+        return json.dumps({"error": "Enough highlight layers were created in this answer."})
+
+    annotation = services.start_agent_annotation(chat.user_acquisition, prompt, language)
+    annotations.append(str(annotation.pk))
+    yield sse("annotation", AgentAnnotationSerializer.Base.build(annotation).model_dump(mode="json"))
+    return json.dumps(
+        {
+            "annotation_id": str(annotation.pk),
+            "status": "pending",
+            "note": "The highlights are being prepared and will appear in the reader's viewer.",
+        }
+    )
 
 
 def _pages_frame(pages_read: List[int]) -> Iterator[str]:
@@ -190,7 +254,13 @@ def _stream(client: OllamaClient, messages: List[dict], specifications: List[dic
 
 
 def _run_tool(
-    request, chat: Chat, call: dict, document=None, pages_read: Optional[List[int]] = None
+    request,
+    chat: Chat,
+    call: dict,
+    document=None,
+    pages_read: Optional[List[int]] = None,
+    annotations: Optional[List[str]] = None,
+    language: Optional[str] = None,
 ) -> Generator[str, None, List[str]]:
     """Run one tool call, yielding SSE frames; returns publication ids to display."""
     function = call.get("function") or {}
@@ -217,7 +287,12 @@ def _run_tool(
         yield sse("entries", {"entry_ids": entry_ids})
         return entry_ids
 
-    if document is not None and name in (explain.READ_PDF_PAGE, explain.SEARCH_PDF):
+    if document is not None and name == CREATE_HIGHLIGHTS and CREATE_HIGHLIGHTS_SPECIFICATION in _offered(chat, document):
+        text = yield from _create_highlights(chat, arguments, annotations if annotations is not None else [], language)
+        ChatMessage.objects.create(chat=chat, user=chat.user, role=ChatMessage.Role.TOOL, text=text)
+        return []
+
+    if document is not None and name in explain.DOCUMENT_TOOLS:
         # The reader's own copy, read in-process exactly as explain reads it.
         text = explain.run_document_tool(document, call, pages_read if pages_read is not None else [])
         ChatMessage.objects.create(chat=chat, user=chat.user, role=ChatMessage.Role.TOOL, text=text)

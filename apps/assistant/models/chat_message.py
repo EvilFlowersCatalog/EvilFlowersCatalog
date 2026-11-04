@@ -96,6 +96,8 @@ class ChatMessage(BaseModel):
     #: that closes the turn in which the tool was called.
     displayed_entries = models.JSONField(null=True, blank=True)
 
+    #: Agent annotation ids the assistant created during the turn this message closes (IP-018 Phase 8).
+    annotations = models.JSONField(null=True, blank=True)
     tokens_used = models.IntegerField(default=0)
 
     objects = ChatMessageQuerySet.as_manager()

@@ -21,6 +21,8 @@ class ChatMessageSerializer:
         #: Pages of the publication the answer was drawn from.
         pages_read: Optional[List[int]]
         displayed_entries: Optional[list]
+        #: Agent annotation ids created by the assistant in this turn.
+        annotations: Optional[List[str]] = None
         tokens_used: int
         created_at: datetime
 

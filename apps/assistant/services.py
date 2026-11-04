@@ -245,17 +245,39 @@ def language_instruction(language: Optional[str]) -> Optional[str]:
     return instruction
 
 
+def start_agent_annotation(user_acquisition, prompt: str, language: Optional[str] = None):
+    """A pending agent annotation of the reader's copy, its highlight task queued on commit (IP-018)."""
+    from django.db import transaction
+
+    from apps.assistant import tasks
+    from apps.core.models import Annotation
+
+    prompt = prompt.strip()
+    annotation = Annotation.objects.create(
+        user_acquisition=user_acquisition,
+        kind=Annotation.Kind.AGENT,
+        status=Annotation.Status.PENDING,
+        title=prompt if len(prompt) <= 80 else prompt[:79] + "…",
+        prompt=prompt,
+    )
+    transaction.on_commit(lambda: tasks.highlight_annotation.delay(str(annotation.pk), language))
+    return annotation
+
+
 def reading_note(document) -> str:
     """Tells the model it can read the publication's PDF and how to cite it."""
     return (
         f"You can read this publication's PDF, numbered as the reader's viewer numbers it. It has "
         f"{document.page_count} pages. "
-        "Use `read_pdf_page` to read pages and `search_pdf` to find where something is discussed; base "
+        "Use `search_paragraphs` to find passages by meaning, `search_pdf` for an exact term and "
+        "`read_pdf_page` to read pages; `list_regions` lists every figure, table and equation, which you "
+        "cite as [[region:ID]]. When the reader asks you to mark, highlight or find passages for them, "
+        "call `create_highlights` with what to look for; the highlights appear in their viewer. Base "
         "answers about the publication on what it says and never invent its content. Answer in your own "
         "words and briefly: never paste the text of a page back to the reader, quote at most a sentence.\n"
         "Cite the page of everything you take from the publication as [[page:N]] with the viewer's page "
         "number, for example [[page:12]], right after the sentence it supports; the reader clicks it to "
-        "jump there. A figure, table or equation the reader attached can be "
+        "jump there. A figure, table or equation can be "
         "cited as [[region:ID]] with its id. Never use page numbers printed in the book itself; they differ "
         "from the viewer's."
     )
