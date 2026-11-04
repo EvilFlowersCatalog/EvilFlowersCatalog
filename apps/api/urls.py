@@ -28,6 +28,7 @@ from apps.api.views import (
 # observability so an unexpected POST is visible in logs rather than
 # silently 404ing.
 from apps.dataverse.views import PrepublishView as _DataversePrepublishView
+from apps.extraction import discovery as extraction_discovery
 from apps.extraction import views as extraction_views
 
 urlpatterns = [
@@ -61,6 +62,9 @@ urlpatterns = [
     # Entries
     path("entries", entries.EntryPaginator.as_view()),
     path("entries/facets", entries.EntryFacets.as_view()),
+    # Recommendations and figures from the extraction index (IP-018 Phase 8)
+    path("entries/<uuid:entry_id>/similar", extraction_discovery.EntrySimilar.as_view(), name="entry-similar"),
+    path("entries/<uuid:entry_id>/figures", extraction_discovery.EntryFigures.as_view(), name="entry-figures"),
     path("entry-introspection", entries.EntryIntrospection.as_view()),
     path("catalogs/<uuid:catalog_id>/entries", entries.EntryManagement.as_view()),
     path(
@@ -111,6 +115,11 @@ urlpatterns = [
         "user-acquisitions/<uuid:user_acquisition_id>/extraction",
         extraction_views.UserAcquisitionExtraction.as_view(),
         name="user-acquisition-extraction",
+    ),
+    path(
+        "user-acquisitions/<uuid:user_acquisition_id>/similar",
+        extraction_discovery.UserAcquisitionSimilar.as_view(),
+        name="user-acquisition-similar",
     ),
     path(
         "user-acquisitions/<uuid:user_acquisition_id>/regions",

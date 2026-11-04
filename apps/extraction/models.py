@@ -36,6 +36,9 @@ class ExtractionRun(BaseModel):
         constraints = [
             models.UniqueConstraint(fields=["acquisition", "pipeline_version"], name="extraction_run_version"),
         ]
+        indexes = [
+            HnswIndex(name="extraction_run_embedding", fields=["embedding"], opclasses=["vector_cosine_ops"]),
+        ]
         verbose_name = _("Extraction run")
         verbose_name_plural = _("Extraction runs")
 
@@ -62,6 +65,8 @@ class ExtractionRun(BaseModel):
     #: Image tags and digests, model names and versions that produced the run.
     provenance = models.JSONField(default=dict)
     error = models.TextField(null=True)
+    #: The publication's vector: mean of its paragraph embeddings, for recommendations (IP-018 Phase 8).
+    embedding = VectorField(dimensions=EMBEDDING_DIMENSIONS, null=True)
     started_at = models.DateTimeField(null=True)
     finished_at = models.DateTimeField(null=True)
 

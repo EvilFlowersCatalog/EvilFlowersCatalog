@@ -202,10 +202,27 @@ def _finish(run: ExtractionRun) -> None:
     )
     run.status = ExtractionRun.Status.DONE
     run.is_active = True
+    transaction.on_commit(lambda: update_embedding(run.pk))
     for old in previous:
         folder = old.storage_dir
         old.delete()
         transaction.on_commit(lambda folder=folder: delete_files(folder))
+
+
+def update_embedding(run_id) -> None:
+    """The run's publication vector: the mean of its paragraph embeddings (IP-018 Phase 8).
+
+    Cosine similarity does not depend on length, so the mean needs no normalising.
+    """
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE extraction_run SET embedding = ("
+            "SELECT AVG(embedding) FROM extraction_paragraph WHERE run_id = %s AND embedding IS NOT NULL"
+            ") WHERE id = %s",
+            [run_id, run_id],
+        )
 
 
 def active_run(acquisition_id) -> Optional[ExtractionRun]:
