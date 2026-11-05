@@ -3,12 +3,12 @@
   "slug": "ai-update",
   "kind": "branch",
   "commit": {
-    "sha": "a96fe0ba3ff6e26a97d96018fdff09335830c25a",
-    "short": "a96fe0b",
-    "message": "docs(ip-018): answer Q18 and Q19 (licensed titles)",
+    "sha": "d21976c96c4f3f5060c599176bba220596aeab02",
+    "short": "d21976c",
+    "message": "feat(assistant): regex search over the PDF for every agent",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/a96fe0ba3ff6e26a97d96018fdff09335830c25a"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/d21976c96c4f3f5060c599176bba220596aeab02"
   },
-  "deployed_at": "2026-11-05T11:00:18Z",
+  "deployed_at": "2026-11-05T11:11:40Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
