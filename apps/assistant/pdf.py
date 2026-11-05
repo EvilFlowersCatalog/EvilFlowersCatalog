@@ -32,6 +32,13 @@ LICENSE_PAGE_TEXT = "(This page is the library's license notice; it is not part 
 #: Characters of context kept around each search hit.
 SNIPPET_RADIUS = 200
 
+#: Longest pattern `search_regex` accepts.
+MAX_PATTERN_LENGTH = 200
+
+#: A quantified group that is itself quantified, e.g. `(a+)+` or `(\w*)*`: exponential
+#: backtracking that would hold a worker. Such patterns are refused, not run.
+_NESTED_QUANTIFIER = re.compile(r"\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)\s*[+*{]")
+
 _WORD = re.compile(r"\w+", re.UNICODE)
 
 
@@ -183,6 +190,42 @@ class ReaderDocument:
 
     def outline(self) -> List[dict]:
         return [{"level": heading.level, "title": heading.title, "page": heading.page} for heading in self.toc]
+
+    def search_regex(self, pattern: str, limit: int = 12) -> List[dict]:
+        """Pages matching a regular expression (case-insensitive), in reading order.
+
+        Each hit has the page, how many matches it holds and a snippet around the
+        first one, in the page's own case with whitespace collapsed. Raises
+        ValueError for an invalid, overlong or nested-quantifier pattern.
+        """
+        if not pattern or len(pattern) > MAX_PATTERN_LENGTH:
+            raise ValueError(f"The pattern must be 1-{MAX_PATTERN_LENGTH} characters.")
+        if _NESTED_QUANTIFIER.search(pattern):
+            raise ValueError("Nested quantifiers such as (a+)+ are not allowed.")
+        try:
+            compiled = re.compile(pattern, re.IGNORECASE | re.UNICODE)
+        except re.error as error:
+            raise ValueError(f"Invalid regular expression: {error}") from error
+
+        hits = []
+        for index, text in enumerate(self.pages):
+            flat = " ".join(text.split())
+            matches = list(compiled.finditer(flat))
+            matches = [match for match in matches if match.end() > match.start()]
+            if not matches:
+                continue
+            first = matches[0]
+            start = max(first.start() - SNIPPET_RADIUS, 0)
+            hits.append(
+                {
+                    "page": index + 1,
+                    "matches": len(matches),
+                    "snippet": flat[start : first.end() + SNIPPET_RADIUS],
+                }
+            )
+            if len(hits) >= limit:
+                break
+        return hits
 
     def search(self, query: str, limit: int = 8) -> List[dict]:
         """Pages ranked by how many of the query's words they contain.

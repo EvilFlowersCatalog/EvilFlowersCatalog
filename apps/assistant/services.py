@@ -269,7 +269,8 @@ def reading_note(document) -> str:
     return (
         f"You can read this publication's PDF, numbered as the reader's viewer numbers it. It has "
         f"{document.page_count} pages. "
-        "Use `search_paragraphs` to find passages by meaning, `search_pdf` for an exact term and "
+        "Use `search_paragraphs` to find passages by meaning, `search_pdf` for an exact term (with "
+        "`regex: true` for a regular expression, e.g. every 'Table 2.x') and "
         "`read_pdf_page` to read pages; `list_regions` lists every figure, table and equation, which you "
         "cite as [[region:ID]]. When the reader asks you to mark, highlight or find passages for them, "
         "call `create_highlights` with what to look for; the highlights appear in their viewer. Base "

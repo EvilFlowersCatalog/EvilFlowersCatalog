@@ -56,8 +56,9 @@ SYSTEM_PROMPT = (
     "The reader is in the middle of reading and wants to understand what the passage means in "
     "context — what it refers to, what the terms mean and why it matters at this point.\n\n"
     "You are given the page the passage is on. When it refers to something defined elsewhere "
-    f'("this method", "the theorem above", an abbreviation), find it: use `{SEARCH_PDF}` to '
-    f"locate where a term is introduced and `{READ_PDF_PAGE}` to read earlier pages. Read only "
+    f'("this method", "the theorem above", an abbreviation), find it: use `{SEARCH_PARAGRAPHS}` to '
+    f"find passages by meaning, `{SEARCH_PDF}` to locate where a term is introduced (with "
+    f"`regex: true` for a pattern) and `{READ_PDF_PAGE}` to read earlier pages. Read only "
     "what you need. Base the explanation on what the book says; never invent its content.\n\n"
     "When you are done reading, answer with a single JSON object and nothing else:\n"
     '{"simple": "<a short plain-language explanation, 2-5 sentences>", '
@@ -96,13 +97,20 @@ TOOL_SPECIFICATIONS = [
         "function": {
             "name": SEARCH_PDF,
             "description": (
-                "Search the publication's full text. Returns the best matching pages with a snippet "
-                "around the match. Use it to find where a term, name or method is introduced."
+                "Search the publication's full text for words. Returns the best matching pages with a "
+                "snippet around the match. Use it to find where a term, name or method is introduced. "
+                "With `regex: true` the query is a regular expression (Python syntax, case-insensitive) "
+                "and every page with a match is returned in reading order with its match count, e.g. "
+                r"`table\s+2\.\d` or `scaffold(ing|ed)`."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Words or a phrase to look for."},
+                    "query": {"type": "string", "description": "Words or a phrase, or a regular expression."},
+                    "regex": {
+                        "type": "boolean",
+                        "description": "Treat `query` as a regular expression. Defaults to false.",
+                    },
                 },
                 "required": ["query"],
             },
@@ -332,6 +340,11 @@ def run_document_tool(document: ReaderDocument, call: dict, pages_read: List[int
             query = str(arguments.get("query") or "").strip()
             if not query:
                 return json.dumps({"error": "`query` is required."})
+            if arguments.get("regex") is True:
+                try:
+                    return json.dumps({"results": document.search_regex(query)}, ensure_ascii=False)
+                except ValueError as error:
+                    return json.dumps({"error": str(error)})
             return json.dumps({"results": document.search(query)}, ensure_ascii=False)
 
         if name in (LIST_PAGE_REGIONS, GET_REGION, LIST_REGIONS):

@@ -24,6 +24,7 @@ from apps.assistant.explain import (
     LANGUAGE_NAMES,
     MAX_TOOL_ROUNDS,
     READ_PDF_PAGE,
+    SEARCH_PARAGRAPHS,
     SEARCH_PDF,
     TOOL_SPECIFICATIONS,
     _complete,
@@ -42,7 +43,8 @@ SYSTEM_PROMPT = (
     "You find and mark passages in a publication for a reader who will read them in a PDF viewer. "
     "The reader tells you what to look for. You do not explain or summarise the book: you point the "
     "reader to the exact sentences so they read them themselves.\n\n"
-    f"Search the text with `{SEARCH_PDF}`. Try several queries: the reader's own words, synonyms, "
+    f"Find passages by meaning with `{SEARCH_PARAGRAPHS}` and by words with `{SEARCH_PDF}` (with "
+    "`regex: true` for a pattern). Try several queries: the reader's own words, synonyms, "
     "related terms, and the terms the book itself uses once you have seen them. Search results are "
     f"only snippets; read every page you quote from with `{READ_PDF_PAGE}`. The outline helps you "
     "find the right chapter.\n\n"
