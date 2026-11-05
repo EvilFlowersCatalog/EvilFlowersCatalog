@@ -1066,6 +1066,7 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 ✅ Q15–Q17 (paragraph index) answered 2026-11-03; the exact Arctic Embed size inside Q16 is
 confirmed in Phase 2b.
 ⏳ Q18 (figures in the entry detail) open since 2026-11-04.
+⏳ Q19 (AI processing of Readium LCP titles) open since 2026-11-05.
 Q2, Q4, Q7 and Q9 are the schema questions, so IP-018 needs one migration.
 **Review Date**: 2026-10-27
 **Reviewer**: Claude AI
@@ -1625,6 +1626,41 @@ Until answered, implemented as A.
 
 ---
 
+### Q19: 🔴 May licensed (Readium LCP) titles be processed and summarised by AI?
+
+**Issue**: Extraction runs for every stored PDF (`is_extractable` ignores `readium_enabled`), so a
+licensed title gets its figures, tables and equations cropped and every paragraph embedded and
+stored. Its publication vector takes part in recommendations for everyone, and a borrower's chat,
+explain and highlight requests read the copy and summarise it.
+
+**Context**: What reaches readers today: the entry detail hides figures of licensed titles (Q18),
+"ask about this book" without a loan refuses them (`ReaderDocument.for_open_access`), and
+recommendations return entry ids and scores only, never text. So no content leaks without a loan.
+But the licensed text is still processed and stored, and summarised by the model for borrowers,
+which a publisher's licence may not allow.
+
+**Question**: What may the pipeline and the assistant do with a licensed title?
+
+**Options**:
+- [ ] **A**: Everything, as today: extract and embed; borrowers get figures, chat, explain and
+      highlights; the title takes part in recommendations
+- [ ] **B**: Extract for borrowers (figures and highlights in the viewer), but no AI summarisation
+      (chat, explain, entry summary) and no recommendations
+- [ ] **C**: Nothing: skip licensed titles in extraction and in every assistant tool; a title that
+      becomes licensed loses its run
+- [ ] **D**: Decided per catalog or per licence, with one of A–C as the default
+
+**Answer**:
+```
+```
+
+**Resolution**:
+```
+Open; nothing changed until answered (today's behaviour is A).
+```
+
+---
+
 ## Changelog
 
 | Date | Author | Changes |
@@ -1644,3 +1680,4 @@ Until answered, implemented as A.
 | 2026-11-03 | kordostomas | Implemented Phases 1–6b: `apps/extraction` (schema with pgvector, dispatch on upload, `/extraction/v1` ingestion, reader region, crop and status APIs, `backfill_extraction`); analyzer (Docling layout, no OCR), image (crops, gates, Ollama captions), equation (LaTeX-OCR on ONNX, sympy), text (tables, paragraph index, request embeddings) and search (runs again) services over Celery with CI images; region tools and explain by region; semantic highlight finding with agentic fallback; services in the dev and production composes under the `extraction` profile. Recorded the changes against the plan in each phase |
 | 2026-11-04 | kordostomas | Ran it end to end on dev: catalog merged to `develop`, services started with the `extraction` profile, service user and API key, regions wired into the portal's viewer. Recorded the results and the fixes made on the way in Phase 3 and 4 (equation CI, text-service on PDFs without text, transformers pinned below 5 for Arctic Embed, rotated tables, a dev IP clash). Backfill after a few days of trial on dev |
 | 2026-11-04 | kordostomas | Phase 8 from the first days on dev: tables as a grid with CSV copy and a larger card, text drawn twice over tables, Chapters/Figures tabs in Obsah, printed caption stored beside the model description (answers whether a figure is matched with its printed caption: only while captions are off), chat tools `search_paragraphs`, `list_regions` and `create_highlights` with the annotation shown in both chats, publication vectors for recommendations in the entry detail and the viewer, a Figures tab in the entry detail. Added Q18 (who sees figures in the entry detail) |
+| 2026-11-05 | kordostomas | Added Q19 (may licensed Readium LCP titles be extracted, embedded and summarised by AI); recorded that today all are processed and Q18 hides their figures in the entry detail |
