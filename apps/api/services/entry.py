@@ -10,11 +10,13 @@ import isbnlib
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from django.conf import settings
 from django.core.files import File
+from django.db import transaction
 from django.db.models import Q
 from isbnlib.registry import bibformatters
 
 from apps.api.forms.entries import EntryForm
 from apps.core.models import Catalog, User, Entry, Author, Category, Acquisition, Price, EntryAuthor
+from apps.core.tasks import store_table_of_contents
 
 
 def build_thumbnail(source_image: Image.Image, size: tuple[int, int]) -> tuple[BytesIO, str]:
@@ -224,6 +226,8 @@ def attach_acquisition(entry: Entry, uploaded_file, *, mime: str, relation: str 
             )
         # IP-018: figures, tables, equations and the paragraph index.
         extraction.queue(acquisition)
+        # The outline (chapters) and page count shown in the entry detail.
+        transaction.on_commit(lambda: store_table_of_contents.delay(str(entry.pk)))
 
     return acquisition
 
@@ -298,6 +302,8 @@ class EntryService:
                 from apps.extraction import services as extraction
 
                 extraction.queue(acquisition)
+                if acquisition.mime == Acquisition.AcquisitionMIME.PDF:
+                    transaction.on_commit(lambda entry_id=str(entry.pk): store_table_of_contents.delay(entry_id))
 
             for price in record.get("prices", []):
                 Price.objects.create(
