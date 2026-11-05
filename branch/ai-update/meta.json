@@ -3,12 +3,12 @@
   "slug": "ai-update",
   "kind": "branch",
   "commit": {
-    "sha": "4f397382a14a2dc9e251f7621aeaf6088b51a010",
-    "short": "4f39738",
-    "message": "docs(ip-018): Q19, AI processing of Readium LCP titles",
+    "sha": "a96fe0ba3ff6e26a97d96018fdff09335830c25a",
+    "short": "a96fe0b",
+    "message": "docs(ip-018): answer Q18 and Q19 (licensed titles)",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/4f397382a14a2dc9e251f7621aeaf6088b51a010"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/a96fe0ba3ff6e26a97d96018fdff09335830c25a"
   },
-  "deployed_at": "2026-11-05T10:58:07Z",
+  "deployed_at": "2026-11-05T11:00:18Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
