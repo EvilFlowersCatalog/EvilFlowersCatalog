@@ -520,7 +520,7 @@ Runs as its own job of the extraction run, in parallel with figures, tables and 
 
 ### Phase 6b: Semantic highlight finding
 
-- [ ] Tool `search_paragraphs(query)` for the highlight agent, explain and bound chats: embeds the
+- [x] Tool `search_paragraphs(query)` for the highlight agent, explain and bound chats: embeds the
       query with the model recorded on the active run, ranks this acquisition's paragraphs by
       cosine similarity in pgvector, and returns every paragraph
       above `EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE`, capped at
@@ -554,39 +554,41 @@ What the first days on dev asked for. Each item lands as its own commit in the r
 
 **Tables** (EvilFlowersViewer)
 
-- [ ] The region card shows a table as a **grid of cells** (rows and columns from the extracted
+- [x] The region card shows a table as a **grid of cells** (rows and columns from the extracted
       markdown), not as its crop. The crop is the fallback: a table without markdown, or markdown
       that does not parse into rows. A toggle switches between grid and crop.
-- [ ] **Copy as CSV** (and copy as Markdown) on every table card; the CSV is built from the same
+- [x] **Copy as CSV** (and copy as Markdown) on every table card; the CSV is built from the same
       parsed rows, quoted per RFC 4180.
-- [ ] Table cards are large: up to 640px wide and 70% of the viewer's height, scrolling inside
+- [x] Table cards are large: up to 640px wide and 70% of the viewer's height, scrolling inside
       the grid only. Figure and equation cards keep the small size.
 
 **Rendering** (EvilFlowersViewer)
 
-- [ ] Text drawn twice over tables on some PDFs (cell text shifted over the paragraph above),
+- [x] Text drawn twice over tables on some PDFs (cell text shifted over the paragraph above),
       while the analyzer's crop of the same page is correct. Reproduce on the reported book, compare
       the canvas against pdf.js's reference rendering, and fix the viewer's render path.
+      *Closed without a change (2026-11-05):* a freshly downloaded copy of the same PDF renders
+      correctly, so the reported file was most likely corrupted. Reopen if it shows up again.
 
 **Contents** (EvilFlowersViewer)
 
-- [ ] The "Obsah" sidebar gets two tabs: **Chapters** (the outline, as today) and **Figures**
+- [x] The "Obsah" sidebar gets two tabs: **Chapters** (the outline, as today) and **Figures**
       (every figure, table and equation of the copy, from `GET .../regions` without `page`, with
       kind, caption and reader page). A click jumps to the page and opens the region's card. The
       tab says when nothing was found or the copy is not processed yet.
 
 **Captions** (services and catalog)
 
-- [ ] Answer to "is the image matched with its printed caption": *partly*. The analyzer takes
+- [x] Answer to "is the image matched with its printed caption": *partly*. The analyzer takes
       Docling's `caption_text` for a figure or table (the "Figure 2.1: ..." under or above it) and
       stores it as `caption`, but when image-service captions are on, the model's description
       **replaces** it and the printed text survives only in `provenance.printed_caption`.
-- [ ] Store both: new `Region.printed_caption` (the document's own caption, verbatim) and
+- [x] Store both: new `Region.printed_caption` (the document's own caption, verbatim) and
       `Region.description` (the model's). `caption` stays as the field clients read and becomes
       `printed_caption or description`. Ingestion takes `printed_caption` from the analyzer's
       caption; image-service sends its description separately. A migration copies
       `provenance.printed_caption` into the new column for existing runs.
-- [ ] Viewer and portal always show the printed caption when there is one, the description
+- [x] Viewer and portal always show the printed caption when there is one, the description
       under it, smaller.
 
 **Highlights** (catalog)
@@ -599,32 +601,37 @@ What the first days on dev asked for. Each item lands as its own commit in the r
 
 **Chat** (catalog, EvilFlowersViewer, elvira-portal)
 
-- [ ] `search_paragraphs(query)` for chats bound to a copy and for explain (the open item of
+- [x] `search_paragraphs(query)` for chats bound to a copy and for explain (the open item of
       Phase 6b), falling back to `search_pdf` when the copy has no index.
-- [ ] `list_regions(kind?)`: every figure, table and equation of the copy with id, kind, reader
+- [x] `search_pdf` takes `regex: true`: the query is a regular expression (case-insensitive),
+      every page with a match is returned in reading order with its match count and a snippet.
+      Patterns over 200 characters and nested quantifiers such as `(a+)+` are refused, so a
+      model-written pattern cannot hold a worker. Explain, the highlight agent and bound chats are
+      all told about both searches: `search_paragraphs` by meaning, `search_pdf` by words or pattern.
+- [x] `list_regions(kind?)`: every figure, table and equation of the copy with id, kind, reader
       page and caption, so the chat sees all figures and can cite them by id
       (`[[region:<id>]]`, which the viewer already resolves to a card).
-- [ ] `create_highlights(prompt)`: a chat bound to a copy can ask for an agent annotation. The
+- [x] `create_highlights(prompt)`: a chat bound to a copy can ask for an agent annotation. The
       tool queues the same Celery task as `POST /assistant/v1/highlights` and returns the
       annotation id at once; the turn yields an `annotation` SSE frame with it.
-- [ ] Viewer chat: on an `annotation` frame the AI highlights layer reloads and the new annotation
+- [x] Viewer chat: on an `annotation` frame the AI highlights layer reloads and the new annotation
       shows as a card in the chat (title, status, count) that opens it in the AI highlights
       sidebar, like one made there.
-- [ ] Portal chat (`AiAssistant`): the same frame renders the card with "open in viewer", which
+- [x] Portal chat (`AiAssistant`): the same frame renders the card with "open in viewer", which
       opens the copy on the annotation's first page.
 
 **Recommendations** (catalog, elvira-portal, EvilFlowersViewer)
 
-- [ ] A publication vector per active run: the normalised mean of its paragraph embeddings,
+- [x] A publication vector per active run: the normalised mean of its paragraph embeddings,
       stored on `ExtractionRun.embedding` (pgvector, HNSW), computed when the run becomes active.
-- [ ] `GET /api/v1/entries/<id>/similar`: the nearest publications by that vector among entries
+- [x] `GET /api/v1/entries/<id>/similar`: the nearest publications by that vector among entries
       the user may see, one per entry, never the entry itself, with their score.
-- [ ] `POST /assistant/v1/similar` with `{user_acquisition_id, text}`: the selection embedded and
+- [x] `POST /assistant/v1/similar` with `{user_acquisition_id, text}`: the selection embedded and
       ranked against every publication's paragraphs, grouped per entry, the copy itself excluded.
       This backs the viewer's "Podobné" (`suggestionsFunction`, kind `similar`).
-- [ ] Portal entry detail: the "Súvisiace" tab lists `similar` (today it shows the entry itself
+- [x] Portal entry detail: the "Súvisiace" tab lists `similar` (today it shows the entry itself
       four times, a placeholder).
-- [ ] Portal entry detail: a **Figures** tab next to it, every figure of the entry's processed
+- [x] Portal entry detail: a **Figures** tab next to it, every figure of the entry's processed
       PDF with its crop, printed caption and description (Q18 for access).
 
 ### Phase 7: Production
@@ -634,6 +641,8 @@ What the first days on dev asked for. Each item lands as its own commit in the r
 - [ ] Run the backfill, watching the queues in Flower. First on dev (357 local PDFs), after a few
       days of trial there. At about 4 seconds a page on CPU, raising the analyzer's
       `LAYOUT_THREADS` is worth checking first.
+      *On hold (2026-11-05):* not before extraction and embeddings are checked further on dev for
+      mistakes, so weeks of processing are not spent on a pipeline that has to run again.
 
 ### Prerequisites
 
@@ -1065,7 +1074,7 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 **Status**: ✅ Q1–Q14 answered 2026-10-28, except the caption model inside Q8 (decided in Phase 2).
 ✅ Q15–Q17 (paragraph index) answered 2026-11-03; the exact Arctic Embed size inside Q16 is
 confirmed in Phase 2b.
-⏳ Q18 (figures in the entry detail) open since 2026-11-04.
+✅ Q18 and Q19 (licensed titles: figures and AI) answered 2026-11-05.
 Q2, Q4, Q7 and Q9 are the schema questions, so IP-018 needs one migration.
 **Review Date**: 2026-10-27
 **Reviewer**: Claude AI
@@ -1616,11 +1625,54 @@ for a licensed (Readium LCP) title a gallery of every figure leaks content witho
 
 **Answer**:
 ```
+Licensed titles never show figures (see Q19).
 ```
 
 **Resolution**:
 ```
-Until answered, implemented as A.
+A, as implemented: open-access entries show the Figures tab to everyone who can see the entry;
+licensed (Readium LCP) entries show none. Licensed copies are read in an LCP reader, never in the
+viewer, so no one sees their regions anywhere.
+```
+
+---
+
+### Q19: 🔴 May licensed (Readium LCP) titles be processed and summarised by AI?
+
+**Issue**: Extraction runs for every stored PDF (`is_extractable` ignores `readium_enabled`), so a
+licensed title gets its figures, tables and equations cropped and every paragraph embedded and
+stored. Its publication vector takes part in recommendations for everyone, and a borrower's chat,
+explain and highlight requests read the copy and summarise it.
+
+**Context**: What reaches readers today: the entry detail hides figures of licensed titles (Q18),
+"ask about this book" without a loan refuses them (`ReaderDocument.for_open_access`), and
+recommendations return entry ids and scores only, never text. So no content leaks without a loan.
+But the licensed text is still processed and stored, and summarised by the model for borrowers,
+which a publisher's licence may not allow.
+
+**Question**: What may the pipeline and the assistant do with a licensed title?
+
+**Options**:
+- [ ] **A**: Everything, as today: extract and embed; borrowers get figures, chat, explain and
+      highlights; the title takes part in recommendations
+- [ ] **B**: Extract for borrowers (figures and highlights in the viewer), but no AI summarisation
+      (chat, explain, entry summary) and no recommendations
+- [ ] **C**: Nothing: skip licensed titles in extraction and in every assistant tool; a title that
+      becomes licensed loses its run
+- [ ] **D**: Decided per catalog or per licence, with one of A–C as the default
+
+**Answer**:
+```
+Embedding and recommendations: yes. Showing figures and letting AI read it: no.
+```
+
+**Resolution**:
+```
+Licensed titles are extracted and embedded and take part in recommendations (ids and scores
+only). Their figures are never shown (the entry detail returns none, Q18) and no AI reads them:
+"ask about this book" refuses them (`ReaderDocument.for_open_access`), and licensed copies are
+opened in an LCP reader, never in the viewer, so there is no reader copy for chat, explain or
+highlights. Already the behaviour; no code change.
 ```
 
 ---
@@ -1644,3 +1696,6 @@ Until answered, implemented as A.
 | 2026-11-03 | kordostomas | Implemented Phases 1–6b: `apps/extraction` (schema with pgvector, dispatch on upload, `/extraction/v1` ingestion, reader region, crop and status APIs, `backfill_extraction`); analyzer (Docling layout, no OCR), image (crops, gates, Ollama captions), equation (LaTeX-OCR on ONNX, sympy), text (tables, paragraph index, request embeddings) and search (runs again) services over Celery with CI images; region tools and explain by region; semantic highlight finding with agentic fallback; services in the dev and production composes under the `extraction` profile. Recorded the changes against the plan in each phase |
 | 2026-11-04 | kordostomas | Ran it end to end on dev: catalog merged to `develop`, services started with the `extraction` profile, service user and API key, regions wired into the portal's viewer. Recorded the results and the fixes made on the way in Phase 3 and 4 (equation CI, text-service on PDFs without text, transformers pinned below 5 for Arctic Embed, rotated tables, a dev IP clash). Backfill after a few days of trial on dev |
 | 2026-11-04 | kordostomas | Phase 8 from the first days on dev: tables as a grid with CSV copy and a larger card, text drawn twice over tables, Chapters/Figures tabs in Obsah, printed caption stored beside the model description (answers whether a figure is matched with its printed caption: only while captions are off), chat tools `search_paragraphs`, `list_regions` and `create_highlights` with the annotation shown in both chats, publication vectors for recommendations in the entry detail and the viewer, a Figures tab in the entry detail. Added Q18 (who sees figures in the entry detail) |
+| 2026-11-05 | kordostomas | Added Q19 (may licensed Readium LCP titles be extracted, embedded and summarised by AI); recorded that today all are processed and Q18 hides their figures in the entry detail |
+| 2026-11-05 | kordostomas | Answered Q18 and Q19: licensed titles are embedded and recommended, but never show figures and are never read by AI (already the behaviour) |
+| 2026-11-05 | kordostomas | Phase 8 ticked as shipped (except verifying the semantic highlight path on dev); text drawn twice over tables closed as a corrupted file; `search_pdf` gained a regex mode and every agent is told about semantic and word/regex search; Phase 6b `search_paragraphs` ticked; backfill on hold until extraction and embeddings are checked further |

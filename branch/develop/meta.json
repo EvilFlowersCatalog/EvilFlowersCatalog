@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "c8e62fa23e7f999fdd3d67ef366e07ac6c7ad08a",
-    "short": "c8e62fa",
-    "message": "feat(entry): store the PDF outline as the entry's table of contents",
+    "sha": "d21976c96c4f3f5060c599176bba220596aeab02",
+    "short": "d21976c",
+    "message": "feat(assistant): regex search over the PDF for every agent",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/c8e62fa23e7f999fdd3d67ef366e07ac6c7ad08a"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/d21976c96c4f3f5060c599176bba220596aeab02"
   },
-  "deployed_at": "2026-11-05T10:50:50Z",
+  "deployed_at": "2026-11-05T11:12:48Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
