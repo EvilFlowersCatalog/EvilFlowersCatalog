@@ -1065,8 +1065,7 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 **Status**: ✅ Q1–Q14 answered 2026-10-28, except the caption model inside Q8 (decided in Phase 2).
 ✅ Q15–Q17 (paragraph index) answered 2026-11-03; the exact Arctic Embed size inside Q16 is
 confirmed in Phase 2b.
-⏳ Q18 (figures in the entry detail) open since 2026-11-04.
-⏳ Q19 (AI processing of Readium LCP titles) open since 2026-11-05.
+✅ Q18 and Q19 (licensed titles: figures and AI) answered 2026-11-05.
 Q2, Q4, Q7 and Q9 are the schema questions, so IP-018 needs one migration.
 **Review Date**: 2026-10-27
 **Reviewer**: Claude AI
@@ -1617,11 +1616,14 @@ for a licensed (Readium LCP) title a gallery of every figure leaks content witho
 
 **Answer**:
 ```
+Licensed titles never show figures (see Q19).
 ```
 
 **Resolution**:
 ```
-Until answered, implemented as A.
+A, as implemented: open-access entries show the Figures tab to everyone who can see the entry;
+licensed (Readium LCP) entries show none. Licensed copies are read in an LCP reader, never in the
+viewer, so no one sees their regions anywhere.
 ```
 
 ---
@@ -1652,11 +1654,16 @@ which a publisher's licence may not allow.
 
 **Answer**:
 ```
+Embedding and recommendations: yes. Showing figures and letting AI read it: no.
 ```
 
 **Resolution**:
 ```
-Open; nothing changed until answered (today's behaviour is A).
+Licensed titles are extracted and embedded and take part in recommendations (ids and scores
+only). Their figures are never shown (the entry detail returns none, Q18) and no AI reads them:
+"ask about this book" refuses them (`ReaderDocument.for_open_access`), and licensed copies are
+opened in an LCP reader, never in the viewer, so there is no reader copy for chat, explain or
+highlights. Already the behaviour; no code change.
 ```
 
 ---
@@ -1681,3 +1688,4 @@ Open; nothing changed until answered (today's behaviour is A).
 | 2026-11-04 | kordostomas | Ran it end to end on dev: catalog merged to `develop`, services started with the `extraction` profile, service user and API key, regions wired into the portal's viewer. Recorded the results and the fixes made on the way in Phase 3 and 4 (equation CI, text-service on PDFs without text, transformers pinned below 5 for Arctic Embed, rotated tables, a dev IP clash). Backfill after a few days of trial on dev |
 | 2026-11-04 | kordostomas | Phase 8 from the first days on dev: tables as a grid with CSV copy and a larger card, text drawn twice over tables, Chapters/Figures tabs in Obsah, printed caption stored beside the model description (answers whether a figure is matched with its printed caption: only while captions are off), chat tools `search_paragraphs`, `list_regions` and `create_highlights` with the annotation shown in both chats, publication vectors for recommendations in the entry detail and the viewer, a Figures tab in the entry detail. Added Q18 (who sees figures in the entry detail) |
 | 2026-11-05 | kordostomas | Added Q19 (may licensed Readium LCP titles be extracted, embedded and summarised by AI); recorded that today all are processed and Q18 hides their figures in the entry detail |
+| 2026-11-05 | kordostomas | Answered Q18 and Q19: licensed titles are embedded and recommended, but never show figures and are never read by AI (already the behaviour) |
