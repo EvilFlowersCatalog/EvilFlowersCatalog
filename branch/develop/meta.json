@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "0abd67011df06c14fcd20a60ac143081efef1e0f",
-    "short": "0abd670",
-    "message": "Improving observability",
+    "sha": "d003e4246f9db0d0d2abbbc76a14f7ddaf0be3b6",
+    "short": "d003e42",
+    "message": "PostgreSQL 18 compatible runtime in container",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/0abd67011df06c14fcd20a60ac143081efef1e0f"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/d003e4246f9db0d0d2abbbc76a14f7ddaf0be3b6"
   },
-  "deployed_at": "2026-11-06T21:44:22Z",
+  "deployed_at": "2026-11-06T23:00:23Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
