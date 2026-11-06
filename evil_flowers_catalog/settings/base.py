@@ -14,7 +14,6 @@ import datetime
 import json
 import os
 import tomllib
-import warnings
 from datetime import timedelta
 from pathlib import Path
 
@@ -209,33 +208,6 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = os.getenv("MEDIA_ROOT", os.path.join(BASE_DIR, "media"))
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 100  # 100MB
-
-# Sentry
-if os.getenv("SENTRY_DSN", False):
-
-    def before_send(event, hint):
-        if "exc_info" in hint:
-            exc_type, exc_value, tb = hint["exc_info"]
-            if exc_type.__name__ in ["ValidationException", "DisallowedHost"]:
-                return None
-        if "extra" in event and not event["extra"].get("to_sentry", True):
-            return None
-
-        return event
-
-    try:
-        import sentry_sdk
-        from sentry_sdk.integrations.django import DjangoIntegration
-
-        sentry_sdk.init(
-            integrations=[DjangoIntegration()],
-            attach_stacktrace=True,
-            send_default_pii=True,
-            before_send=before_send,
-            release=VERSION,
-        )
-    except ImportError:
-        warnings.warn("sentry_sdk module is not installed")
 
 # Redis
 REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
@@ -590,21 +562,21 @@ EVILFLOWERS_BACKUP_S3_SECRET_KEY = os.environ.get("EVILFLOWERS_BACKUP_S3_SECRET_
 EVILFLOWERS_BACKUP_S3_SECURE = os.environ.get("EVILFLOWERS_BACKUP_S3_SECURE", "1").lower() == "1"
 
 DJANGO_LOG_LEVEL = os.getenv("DJANGO_LOG_LEVEL", "INFO").upper()
+# `json` (default): one object per line with `level` and `trace_id`, the shape
+# Grafana Alloy parses from container output (IP-019). `text` for a terminal.
+EVILFLOWERS_LOG_FORMAT = os.getenv("EVILFLOWERS_LOG_FORMAT", "json").strip().lower()
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "default": {
-            "format": "%(asctime)s %(levelname)-5s [%(name)s] %(message)s",
-            "datefmt": "%Y-%m-%d %H:%M:%S",
-        }
+        "json": {"()": "evil_flowers_catalog.log_format.JsonFormatter"},
+        "text": {"()": "evil_flowers_catalog.log_format.TextFormatter"},
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "formatter": "default",
+            "formatter": "text" if EVILFLOWERS_LOG_FORMAT == "text" else "json",
         },
-        "syslog": {"class": "logging.handlers.SysLogHandler"},
     },
     "loggers": {
         "django": {
@@ -642,36 +614,9 @@ LOGGING = {
 CORS_ALLOW_ALL_ORIGINS = True
 SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "0") == "1"
 
-if os.getenv("ELASTIC_APM_SERVICE_NAME"):
-    INSTALLED_APPS.append("elasticapm.contrib.django")
-    LOGGING["handlers"]["elasticapm"] = {
-        "level": "INFO",
-        "class": "elasticapm.contrib.django.handlers.LoggingHandler",
-    }
-    LOGGING["root"]["handlers"].append("elasticapm")
-    MIDDLEWARE.append("elasticapm.contrib.django.middleware.TracingMiddleware")
-    ELASTIC_APM = {
-        "DEBUG": True,
-    }
-
-# Logfire
-# NOTE: instrument_django() is called in apps.core.apps.CoreConfig.ready() because
-# calling it here causes a circular import — django.conf.settings is not yet available
-# during settings module load, so the OTEL middleware never gets inserted.
-if os.getenv("LOGFIRE_TOKEN"):
-    try:
-        import logfire
-
-        logfire.configure(
-            service_name=os.getenv("LOGFIRE_SERVICE_NAME", "evilflowers-catalog"),
-            service_version=VERSION,
-            environment=os.getenv("LOGFIRE_ENVIRONMENT", "development"),
-        )
-        logfire.instrument_celery()
-        logfire.instrument_requests()
-        logfire.instrument_system_metrics()
-    except ImportError:
-        pass
+# OpenTelemetry is configured per process by `evil_flowers_catalog.telemetry.setup()`,
+# never here: settings are imported by the gunicorn master and the Celery main
+# process before they fork, and exporter threads do not survive a fork (IP-019).
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATABASE}")
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True

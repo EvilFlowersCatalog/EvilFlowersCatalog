@@ -1,7 +1,15 @@
+import logging.config
 import os
 
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import (
+    beat_init,
+    setup_logging,
+    worker_init,
+    worker_process_init,
+    worker_process_shutdown,
+)
 from django.conf import settings
 
 # Set the default Django settings module for the 'celery' program.
@@ -19,6 +27,65 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 
 app.conf.beat_schedule = {}
+
+
+# -- logging and telemetry (IP-019) ------------------------------------------
+
+
+@setup_logging.connect
+def _use_django_logging(**kwargs):
+    """Keep Celery from replacing the root handlers with its plain-text format.
+
+    With a receiver on this signal Celery configures no logging of its own; the
+    worker and beat log through `settings.LOGGING` (JSON lines) like gunicorn.
+    `warnings` go through logging too, as Django's own logging setup does.
+    """
+    logging.config.dictConfig(settings.LOGGING)
+    logging.captureWarnings(True)
+
+
+def _is_prefork(worker) -> bool:
+    pool = getattr(worker, "pool_cls", None)
+    return "prefork" in f"{getattr(pool, '__module__', '')}.{getattr(pool, '__name__', pool)}"
+
+
+@worker_init.connect
+def _discover_collector(sender=None, **kwargs):
+    """Main worker process: look for the collector once, before the pool forks.
+
+    The children inherit the discovered endpoint (or the verdict that there is
+    none) through the environment, so they neither probe nor log again. With a
+    non-forking pool the tasks run here, so this process is the one to set up.
+    """
+    from evil_flowers_catalog import telemetry
+
+    telemetry.discover_endpoint()
+    if sender is not None and not _is_prefork(sender):
+        telemetry.setup("celery-worker")
+
+
+@worker_process_init.connect
+def _setup_telemetry_in_child(**kwargs):
+    from evil_flowers_catalog import telemetry
+
+    telemetry.setup("celery-worker")
+
+
+@worker_process_shutdown.connect
+def _flush_telemetry_in_child(**kwargs):
+    # Prefork children leave through `os._exit()`, which skips `atexit`.
+    from evil_flowers_catalog import telemetry
+
+    telemetry.shutdown()
+
+
+@beat_init.connect
+def _setup_telemetry_in_beat(**kwargs):
+    # Beat turns SIGTERM into SystemExit itself, so `atexit` flushes on exit.
+    from evil_flowers_catalog import telemetry
+
+    telemetry.setup("celery-beat")
+
 
 if settings.EVILFLOWERS_BACKUP_DESTINATION and settings.EVILFLOWERS_BACKUP_SCHEDULE:
     minute, hour, day_of_month, month_of_year, day_of_week = settings.EVILFLOWERS_BACKUP_SCHEDULE.strip().split(" ")

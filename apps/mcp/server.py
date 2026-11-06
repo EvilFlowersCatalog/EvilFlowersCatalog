@@ -18,6 +18,7 @@ from typing import List, Optional
 
 from django.conf import settings
 from django.utils.translation import gettext as _
+from opentelemetry.trace import SpanKind, StatusCode
 
 from apps.core.errors import ProblemDetailException
 from apps.mcp import completions, prompts, resources
@@ -36,9 +37,36 @@ from apps.mcp.protocol import (
     supports_structured_output,
 )
 from apps.mcp.registry import Tool, ToolAccess, ToolRegistry
+from evil_flowers_catalog import telemetry
 
 logger = logging.getLogger("apps.mcp.server")
 audit = logging.getLogger("apps.mcp.audit")
+
+# Semantic conventions for MCP (`mcp.*`, `gen_ai.tool.name`, `error.type`).
+_tracer = telemetry.get_tracer("apps.mcp")
+_operation_duration = telemetry.get_meter("apps.mcp").create_histogram(
+    "mcp.server.operation.duration",
+    unit="s",
+    description="Duration of one MCP request handled by the server.",
+    explicit_bucket_boundaries_advisory=[0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300],
+)
+
+KNOWN_METHODS = frozenset(
+    {
+        "initialize",
+        "ping",
+        "tools/list",
+        "tools/call",
+        "resources/list",
+        "resources/templates/list",
+        "resources/read",
+        "prompts/list",
+        "prompts/get",
+        "completion/complete",
+        "notifications/initialized",
+        "notifications/cancelled",
+    }
+)
 
 READ_INSTRUCTIONS = (
     "This server exposes an OPDS publication catalog — a digital library.\n\n"
@@ -107,7 +135,53 @@ class McpServer:
 
         JSON-RPC forbids answering a notification (a message with no `id`), so
         `None` here means "the caller should send nothing back for this one".
+
+        Every message gets one INTERNAL span, `"{mcp.method.name} {gen_ai.tool.name}"`,
+        and one `mcp.server.operation.duration` point (IP-019). Method and tool
+        names come from the client, so anything we do not know is `_OTHER`.
         """
+        method, tool = self._telemetry_names(message)
+        attributes = {"mcp.method.name": method}
+        if tool:
+            attributes["gen_ai.tool.name"] = tool
+        stopwatch = telemetry.Stopwatch()
+
+        with _tracer.start_as_current_span(
+            f"{method} {tool}" if tool else method, kind=SpanKind.INTERNAL, attributes=attributes
+        ) as span:
+            response = self._handle(request, message, protocol_version)
+
+            error_type = self._error_type(response)
+            if error_type:
+                attributes["error.type"] = error_type
+                span.set_attribute("error.type", error_type)
+                span.set_status(StatusCode.ERROR)
+
+        _operation_duration.record(stopwatch.elapsed, attributes)
+        return response
+
+    def _telemetry_names(self, message):
+        if not isinstance(message, dict) or not isinstance(message.get("method"), str):
+            return "_OTHER", None
+        method = message["method"] if message["method"] in KNOWN_METHODS else "_OTHER"
+        if method != "tools/call":
+            return method, None
+        name = (message.get("params") or {}).get("name") if isinstance(message.get("params"), dict) else None
+        return method, (name if isinstance(name, str) and self._registry.get(name) else "_OTHER")
+
+    @staticmethod
+    def _error_type(response) -> Optional[str]:
+        """JSON-RPC error code, or `tool_error` for a tool result with `isError`."""
+        if not isinstance(response, dict):
+            return None
+        if isinstance(response.get("error"), dict):
+            return str(response["error"].get("code", "_OTHER"))
+        result = response.get("result")
+        if isinstance(result, dict) and result.get("isError"):
+            return "tool_error"
+        return None
+
+    def _handle(self, request, message, protocol_version: str = ""):
         if not isinstance(message, dict):
             return failure(None, JsonRpcError(INVALID_REQUEST, "A JSON-RPC message must be an object."))
 

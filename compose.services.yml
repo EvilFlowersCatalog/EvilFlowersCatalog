@@ -47,29 +47,6 @@ services:
       - elasticsearch
 
 
-  apm-server:
-    image: docker.elastic.co/apm/apm-server:8.17.0
-    environment:
-      - ELASTICSEARCH_HOSTS=https://elasticsearch:9200
-      - ELASTICSEARCH_USERNAME=elastic
-      - ELASTICSEARCH_PASSWORD=admin
-      - output.elasticsearch.hosts=["https://elasticsearch:9200"]
-      - output.elasticsearch.username=apm_system
-      - output.elasticsearch.password=${APM_SYSTEM_PASSWORD}
-      - apm-server.secret_token=ba2fd8d1-6552-4871-a730-daf8a1ecb06b
-      - apm-server.ssl.enabled=true
-      - apm-server.ssl.key=/usr/share/apm-server/config/certs/elastic-certificates.p12
-      - apm-server.ssl.certificate=/usr/share/apm-server/config/certs/elastic-stack-ca.p12
-      - setup.template.enabled=true
-      - setup.template.overwrite=true
-      - logging.level=info
-    volumes:
-      - ./data/elasticsearch/certs:/usr/share/apm-server/config/certs
-    ports:
-      - "8200:8200"
-    depends_on:
-      - elasticsearch
-
   readium:
     image: "ghcr.io/evilflowerscatalog/readium-lcp-server:master"
     user: "0:0"  # Run as root to avoid permission issues with mounted volumes

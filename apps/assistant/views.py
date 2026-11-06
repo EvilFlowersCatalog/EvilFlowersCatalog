@@ -29,6 +29,7 @@ from apps.core.errors import AuthorizationException, ProblemDetailException, Una
 from apps.core.models import Annotation, UserAcquisition
 from apps.core.views import SecuredView
 from apps.files.views import _check_ip_block
+from evil_flowers_catalog import telemetry
 
 
 class AssistantView(SecuredView):
@@ -273,16 +274,21 @@ class ChatMessages(AssistantView):
                 extra_headers=(("Retry-After", str(retry_after)),),
             ) from error
 
+        # The turn runs while the body streams, after the request span has
+        # ended; bind it to the request's trace so the model call, its tools
+        # and its queries stay in that trace (IP-019).
         response = StreamingHttpResponse(
-            turn.run(
-                request,
-                chat,
-                form.cleaned_data["message"],
-                entry=form.cleaned_data.get("entry_id"),
-                contexts=form.cleaned_data.get("contexts"),
-                page=form.cleaned_data.get("page"),
-                document=self._chat_document(request, chat, form.cleaned_data.get("entry_id")),
-                language=form.cleaned_data.get("language") or None,
+            telemetry.ContextBoundIterator(
+                turn.run(
+                    request,
+                    chat,
+                    form.cleaned_data["message"],
+                    entry=form.cleaned_data.get("entry_id"),
+                    contexts=form.cleaned_data.get("contexts"),
+                    page=form.cleaned_data.get("page"),
+                    document=self._chat_document(request, chat, form.cleaned_data.get("entry_id")),
+                    language=form.cleaned_data.get("language") or None,
+                )
             ),
             content_type="text/event-stream",
         )

@@ -23,6 +23,7 @@ from apps.core.modifiers import InvalidPage
 from apps.core.services.activity import ActivityService
 from apps.core.views import SecuredView
 from apps.files.services import AcquisitionStorageError, AcquisitionStorageService
+from evil_flowers_catalog import domain_metrics
 
 
 def _get_client_ip(request) -> str:
@@ -129,7 +130,9 @@ class AcquisitionDownload(SecuredView):
                     _("base64 format is not supported for externally stored content"),
                     status=HTTPStatus.BAD_REQUEST,
                 )
-            return SingleResponse(request, data={"data": base64.b64encode(acquisition.content.read()).decode()})
+            response = SingleResponse(request, data={"data": base64.b64encode(acquisition.content.read()).decode()})
+            domain_metrics.record_acquisition_served(acquisition.mime, "acquisition", "base64")
+            return response
 
         try:
             response = AcquisitionStorageService.download_response(acquisition)
@@ -137,6 +140,7 @@ class AcquisitionDownload(SecuredView):
             raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND) from exc
 
         response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE
+        domain_metrics.record_acquisition_served(acquisition.mime, "acquisition", "file")
         return response
 
 
@@ -216,11 +220,15 @@ class UserAcquisitionDownload(SecuredView):
         else:
             content = user_acquisition.acquisition.content
 
+        mime = user_acquisition.acquisition.mime
         if request.GET.get("format", None) == "base64":
-            return SingleResponse(request, data={"data": base64.b64encode(content.read()).decode()})
+            response = SingleResponse(request, data={"data": base64.b64encode(content.read()).decode()})
+            domain_metrics.record_acquisition_served(mime, "user_acquisition", "base64")
+            return response
 
         response = FileResponse(content, as_attachment=True, filename=sanitized_filename)
         response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE
+        domain_metrics.record_acquisition_served(mime, "user_acquisition", "file")
         return response
 
 

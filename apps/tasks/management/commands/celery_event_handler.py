@@ -1,4 +1,5 @@
 import ast
+import logging
 
 from django.core.management.base import BaseCommand
 from celery.events import EventReceiver
@@ -6,7 +7,11 @@ from kombu import Connection
 from django.utils import timezone
 
 from apps.tasks.models import JobProtocol
+from evil_flowers_catalog import telemetry
 from evil_flowers_catalog.celery import app
+
+logger = logging.getLogger(__name__)
+_tracer = telemetry.get_tracer("apps.tasks.event_handler")
 
 
 class Command(BaseCommand):
@@ -19,6 +24,12 @@ class Command(BaseCommand):
         if "uuid" not in event:
             return
 
+        # One span per event (IP-019), so its queries form one trace instead of
+        # each being a root span. The event type is a closed set (task-*).
+        with _tracer.start_as_current_span(f"celery.event {event['type']}"):
+            self._record(event)
+
+    def _record(self, event):
         try:
             protocol = JobProtocol.objects.get(pk=event["uuid"])
         except JobProtocol.DoesNotExist:
@@ -72,5 +83,10 @@ class Command(BaseCommand):
             recv.capture(limit=None, timeout=None, wakeup=True)
 
     def handle(self, *args, **options):
-        self.stdout.write(self.style.SUCCESS("Starting Celery event listener..."))
+        # IP-019: this process is started by supervisord and never forks.
+        # SIGTERM becomes SystemExit so `atexit` flushes the exporters.
+        telemetry.setup("event-handler")
+        telemetry.exit_on_sigterm()
+
+        logger.info("Starting Celery event listener")
         self.start_event_listener()

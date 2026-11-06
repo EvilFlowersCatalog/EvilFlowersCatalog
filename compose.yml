@@ -41,7 +41,6 @@ services:
       - ./data/evilflowers/media:/usr/local/app/media
       - ./data/evilflowers/private:/usr/local/app/private
       - ./data/evilflowers/private:/mnt/data  # Mount for shared storage with text-service
-      - ./logs:/var/log
     environment:
       # Broker + Django cache (defaults to 127.0.0.1, which fails inside the container)
       REDIS_HOST: redis
@@ -75,15 +74,32 @@ services:
       # Readium LCP Configuration
       EVILFLOWERS_READIUM_LCPSV_URL: "http://readium:8989"
       EVILFLOWERS_READIUM_LSDSV_URL: "http://readium:8990"
-      # Logfire (uncomment to enable)
-      # LOGFIRE_TOKEN: ""
-      # LOGFIRE_SERVICE_NAME: "evilflowers-catalog"
-      # LOGFIRE_ENVIRONMENT: "development"
+      # OpenTelemetry (IP-019). With no endpoint set, each process probes
+      # <default gateway>:4318 once; `docker compose --profile observability up -d otel-lgtm`
+      # publishes a collector there and Grafana on http://localhost:3000.
+      OTEL_RESOURCE_ATTRIBUTES: "service.namespace=elvira,deployment.environment.name=development"
+      # OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-lgtm:4318"  # explicit, skips discovery
+      # OTEL_EXPORTER_OTLP_AUTODISCOVER: "false"               # never probe
+      # OTEL_TRACES_EXPORTER: "console"                        # spans to stdout, no collector
+      # OTEL_METRICS_EXPORTER: "console"
+      # OTEL_SDK_DISABLED: "true"
+      # EVILFLOWERS_LOG_FORMAT: "text"                         # plain-text logs instead of JSON
     ports:
       - "8000:8000"
     depends_on:
       - db
       - redis
+    networks:
+      - shared
+
+  # Local stand-in for the production Alloy → Tempo/Mimir/Loki stack (IP-019).
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.39.0
+    profiles: [observability]
+    ports:
+      - "3000:3000"
+      - "4317:4317"
+      - "4318:4318"
     networks:
       - shared
 

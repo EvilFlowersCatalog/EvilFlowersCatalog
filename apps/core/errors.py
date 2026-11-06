@@ -1,5 +1,4 @@
 import traceback
-import warnings
 from enum import Enum
 from http import HTTPStatus
 from typing import Tuple, Optional, List, Any
@@ -49,7 +48,6 @@ class ProblemDetailException(Exception):
         *,
         status: int = HTTPStatus.INTERNAL_SERVER_ERROR,
         previous: Optional[BaseException] = None,
-        to_sentry: Optional[bool] = False,
         additional_data: Optional[dict] = None,
         detail_type: Optional[DetailType] = None,
         detail: Optional[str] = None,
@@ -68,17 +66,6 @@ class ProblemDetailException(Exception):
             self._additional_data = additional_data
         else:
             self._additional_data = {}
-
-        if to_sentry:
-            try:
-                import sentry_sdk
-
-                with sentry_sdk.push_scope() as scope:
-                    for key, value in self.__dict__.items():
-                        scope.set_extra(key, value)
-                    sentry_sdk.capture_exception(self)
-            except ImportError:
-                warnings.warn("sentry_sdk module is not installed")
 
     @property
     def status(self) -> int:

@@ -22,6 +22,7 @@ from django.conf import settings
 from apps.core.models import Entry, User, Acquisition, UserActivity
 from apps.core.services.activity import ActivityService
 from apps.readium.models import License, EncryptedContent
+from evil_flowers_catalog import domain_metrics
 from .content_encryption_service import ContentEncryptionService
 from .exceptions import NotLendableError, borrow_error_from_availability
 from .lcp_server_client import LCPServerClient
@@ -195,6 +196,7 @@ class LicenseService:
                     ):
                         locked.state = License.LicenseState.EXPIRED
                         locked.save(update_fields=["state", "updated_at"])
+                        domain_metrics.record_license_transition("expired", expiry_path="on_read")
                         logger.info(
                             "readium.expire_on_read",
                             extra={"event": "readium.expire_on_read", "license_id": str(locked.pk)},
@@ -376,6 +378,8 @@ class LicenseService:
                 # (queued via on_commit below) is never enqueued.
                 raise ValueError(f"Failed to generate LCP license: {str(e)}")
 
+            domain_metrics.record_license_transition("issued")
+
         return license
 
     @staticmethod
@@ -462,6 +466,7 @@ class LicenseService:
         # counter reflects accepted renewals only.
         License.objects.filter(pk=license.pk).update(renewal_count=models.F("renewal_count") + 1)
         license.refresh_from_db(fields=["renewal_count", "state", "expires_at"])
+        domain_metrics.record_license_transition("renewed")
 
         # IP-016: `.update()` above bypasses post_save, so the history row is written here.
         ActivityService.record(
@@ -511,6 +516,7 @@ class LicenseService:
         # Return via Status Server
         status_client = StatusServerClient()
         status_client.return_license(license)
+        domain_metrics.record_license_transition("returned")
 
         # Promote next user in queue for this entry (IP-003 Phase 3).
         LicenseService._maybe_promote_next(license)
@@ -531,6 +537,7 @@ class LicenseService:
         """
         status_client = StatusServerClient()
         status_client.revoke_license(license, reason)
+        domain_metrics.record_license_transition("revoked")
 
         LicenseService._maybe_promote_next(license)
 
@@ -550,6 +557,7 @@ class LicenseService:
         """
         status_client = StatusServerClient()
         status_client.cancel_license(license, reason)
+        domain_metrics.record_license_transition("cancelled")
 
         LicenseService._maybe_promote_next(license)
 

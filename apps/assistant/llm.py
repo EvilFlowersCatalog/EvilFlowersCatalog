@@ -15,12 +15,67 @@ import json
 import logging
 from dataclasses import dataclass, field
 from typing import Iterator, List, Optional
+from urllib.parse import urlsplit
 
 import requests
 from django.conf import settings
 from django.utils.translation import gettext as _
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind, StatusCode
+
+from evil_flowers_catalog import telemetry
 
 logger = logging.getLogger(__name__)
+
+# GenAI semantic conventions (IP-019). Only names, counts and the model go into
+# attributes — never prompt, completion or document text.
+PROVIDER_NAME = "ollama"
+OPERATION_NAME = "chat"
+
+_tracer = telemetry.get_tracer("apps.assistant")
+_meter = telemetry.get_meter("apps.assistant")
+_operation_duration = _meter.create_histogram(
+    "gen_ai.client.operation.duration",
+    unit="s",
+    description="GenAI operation duration.",
+    explicit_bucket_boundaries_advisory=[
+        0.01,
+        0.02,
+        0.04,
+        0.08,
+        0.16,
+        0.32,
+        0.64,
+        1.28,
+        2.56,
+        5.12,
+        10.24,
+        20.48,
+        40.96,
+        81.92,
+    ],
+)
+_token_usage = _meter.create_histogram(
+    "gen_ai.client.token.usage",
+    unit="{token}",
+    description="Number of input and output tokens used.",
+    explicit_bucket_boundaries_advisory=[
+        1,
+        4,
+        16,
+        64,
+        256,
+        1024,
+        4096,
+        16384,
+        65536,
+        262144,
+        1048576,
+        4194304,
+        16777216,
+        67108864,
+    ],
+)
 
 
 class LLMUnavailable(Exception):
@@ -84,43 +139,103 @@ class OllamaClient:
         if tools:
             payload["tools"] = tools
 
-        try:
-            response = requests.post(
-                self.endpoint,
-                json=payload,
-                headers=self._headers(),
-                stream=True,
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-        except requests.RequestException as error:
-            logger.exception("Ollama request failed")
-            raise LLMUnavailable(str(error)) from error
+        # One CLIENT span for the model call (IP-019). It is not made current
+        # across the `yield`s below — a generator resumes in its consumer's
+        # context — only around the HTTP request, whose own span is suppressed so
+        # the call shows up once in Tempo's service graph.
+        attributes = self._telemetry_attributes()
+        span = _tracer.start_span(f"{OPERATION_NAME} {self.model}", kind=SpanKind.CLIENT, attributes=attributes)
+        stopwatch = telemetry.Stopwatch()
+        error_type = None
 
         try:
-            for line in response.iter_lines(decode_unicode=True):
-                if not line:
-                    continue
+            try:
+                with trace.use_span(span, end_on_exit=False), telemetry.suppress_http_spans():
+                    response = requests.post(
+                        self.endpoint,
+                        json=payload,
+                        headers=self._headers(),
+                        stream=True,
+                        timeout=self.timeout,
+                    )
+                    response.raise_for_status()
+            except requests.RequestException as error:
+                error_type = self._request_error_type(error)
+                logger.exception("Ollama request failed")
+                raise LLMUnavailable(str(error)) from error
 
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError:
-                    # A malformed line is not worth killing a live conversation
-                    # over; skip it and keep reading the stream.
-                    logger.warning("Skipping malformed line from Ollama: %r", line[:200])
-                    continue
+            try:
+                for line in response.iter_lines(decode_unicode=True):
+                    if not line:
+                        continue
 
-                if event.get("error"):
-                    raise LLMUnavailable(str(event["error"]))
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        # A malformed line is not worth killing a live conversation
+                        # over; skip it and keep reading the stream.
+                        logger.warning("Skipping malformed line from Ollama: %r", line[:200])
+                        continue
 
-                message = event.get("message") or {}
+                    if event.get("error"):
+                        error_type = "ollama_error"
+                        raise LLMUnavailable(str(event["error"]))
 
-                yield Delta(
-                    content=message.get("content") or "",
-                    tool_calls=message.get("tool_calls") or [],
-                    done=bool(event.get("done")),
-                    prompt_tokens=event.get("prompt_eval_count") or 0,
-                    completion_tokens=event.get("eval_count") or 0,
-                )
+                    message = event.get("message") or {}
+                    delta = Delta(
+                        content=message.get("content") or "",
+                        tool_calls=message.get("tool_calls") or [],
+                        done=bool(event.get("done")),
+                        prompt_tokens=event.get("prompt_eval_count") or 0,
+                        completion_tokens=event.get("eval_count") or 0,
+                    )
+                    if delta.done:
+                        self._record_usage(span, attributes, event, delta)
+
+                    yield delta
+            except requests.RequestException as error:
+                error_type = self._request_error_type(error)
+                raise
+            finally:
+                response.close()
+        except GeneratorExit:
+            # The consumer stopped reading (client disconnected); not a failure.
+            raise
+        except Exception as error:
+            error_type = error_type or type(error).__qualname__
+            raise
         finally:
-            response.close()
+            if error_type:
+                attributes["error.type"] = error_type
+                span.set_attribute("error.type", error_type)
+                span.set_status(StatusCode.ERROR)
+            span.end()
+            _operation_duration.record(stopwatch.elapsed, attributes)
+
+    def _telemetry_attributes(self) -> dict:
+        attributes = {
+            "gen_ai.operation.name": OPERATION_NAME,
+            "gen_ai.provider.name": PROVIDER_NAME,
+            "gen_ai.request.model": self.model,
+        }
+        address = urlsplit(self.endpoint)
+        if address.hostname:
+            attributes["server.address"] = address.hostname
+            attributes["server.port"] = address.port or (443 if address.scheme == "https" else 80)
+        return attributes
+
+    @staticmethod
+    def _request_error_type(error: requests.RequestException) -> str:
+        response = getattr(error, "response", None)
+        if response is not None and response.status_code:
+            return str(response.status_code)
+        return type(error).__qualname__
+
+    @staticmethod
+    def _record_usage(span, attributes: dict, event: dict, delta: Delta) -> None:
+        if event.get("model"):
+            span.set_attribute("gen_ai.response.model", event["model"])
+        span.set_attribute("gen_ai.usage.input_tokens", delta.prompt_tokens)
+        span.set_attribute("gen_ai.usage.output_tokens", delta.completion_tokens)
+        _token_usage.record(delta.prompt_tokens, {**attributes, "gen_ai.token.type": "input"})
+        _token_usage.record(delta.completion_tokens, {**attributes, "gen_ai.token.type": "output"})

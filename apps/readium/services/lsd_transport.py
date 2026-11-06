@@ -27,8 +27,8 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 # Cap surfaced response bodies. Big enough to carry an RFC 7807 problem
-# detail (title + detail + a few fields), small enough to keep Sentry
-# tags and Django ProblemDetailException bodies sane.
+# detail (title + detail + a few fields), small enough to keep log lines
+# and Django ProblemDetailException bodies sane.
 _BODY_SNIPPET_LIMIT = 500
 
 

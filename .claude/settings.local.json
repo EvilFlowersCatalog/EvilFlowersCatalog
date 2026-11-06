@@ -39,6 +39,13 @@
     "github-evilflowers",
     "elvira-gateway-ssh",
     "github-sibyx",
-    "elvira"
+    "elvira",
+    "linux-ssh",
+    "osquery",
+    "evilflowers-knowledge",
+    "grafana",
+    "tempo",
+    "ripwire",
+    "postgres"
   ]
 }

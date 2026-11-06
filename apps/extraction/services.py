@@ -16,6 +16,7 @@ from django.utils import timezone
 from apps.core.models import Acquisition
 from apps.extraction.models import ExtractionRun, Paragraph, ParagraphLink, Region, Sentence
 from apps.files.storage import get_storage
+from evil_flowers_catalog import domain_metrics
 from evil_flowers_catalog.celery import app
 
 logger = logging.getLogger(__name__)
@@ -182,6 +183,7 @@ def fail(run: ExtractionRun, error: str) -> None:
     run.error = error
     run.finished_at = timezone.now()
     run.save()
+    domain_metrics.record_extraction_run("failed", run.started_at, run.finished_at)
 
 
 def _finish(run: ExtractionRun) -> None:
@@ -193,7 +195,10 @@ def _finish(run: ExtractionRun) -> None:
     run.finished_at = timezone.now()
     if ExtractionRun.JobStatus.FAILED in run.jobs.values():
         run.status = ExtractionRun.Status.FAILED
+        domain_metrics.record_extraction_run("failed", run.started_at, run.finished_at)
         return
+
+    domain_metrics.record_extraction_run("done", run.started_at, run.finished_at)
 
     previous = list(
         ExtractionRun.objects.filter(acquisition_id=run.acquisition_id)
