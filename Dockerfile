@@ -37,8 +37,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     fi && \
     rm -rf /var/lib/apt/lists/*
 
+ARG PG_MAJOR=18
+
+# PostgreSQL client tools (psql, pg_dump) from the official PGDG repository: pg_dump refuses to dump
+# a server newer than itself, and Debian's own postgresql-client lags behind the server we run.
+RUN apt-get update -y && apt-get install -y --no-install-recommends curl && \
+    install -d /usr/share/postgresql-common/pgdg && \
+    curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+        https://www.postgresql.org/media/keys/ACCC4CF8.asc && \
+    . /etc/os-release && \
+    echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
-    supervisor curl libjpeg-tools argon2 tzdata ldap-utils swig postgresql-client fonts-dejavu-core && \
+    supervisor curl libjpeg-tools argon2 tzdata ldap-utils swig postgresql-client-${PG_MAJOR} fonts-dejavu-core && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
