@@ -11,6 +11,13 @@ env:
   REGISTRY: ghcr.io
   DOCKER_BUILDKIT: 1
 
+# A newer push to develop (or a PR update) supersedes the running build + deploy: the deploy
+# checks that the pods run the digest it built, so two overlapping runs would fail each other.
+# master and release tags always finish.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' }}
+
 jobs:
   build:
 
@@ -20,6 +27,8 @@ jobs:
       contents: read
       packages: write
       attestations: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
 
     steps:
       - name: Set lowercase image name
@@ -84,22 +93,63 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
+  # Development environment = k3s namespace evilflowers-dev (since 2026-11-07; the Compose unit
+  # evilflowers-dev.service is disabled). Infra: knowledge repo, roles/evilflowers_k8s and
+  # vault Cookbooks/Move-Dev-To-K8s, Cookbooks/CI-Runner.
+  #
+  # Deployment `evilflowers` pins :develop with imagePullPolicy Always, so a new image goes
+  # live with a rollout restart. This job runs on the self-hosted runner INSIDE k3s
+  # (runs-on: elvira-k3s); its ServiceAccount arc-deployer may only restart Deployments in the
+  # namespaces listed in github_runner_deploy_namespaces (must include evilflowers-dev).
+  # A push never changes the pod's env; that needs playbooks/evilflowers-k8s.yml.
   deploy:
-    runs-on: ubuntu-latest
     needs: build
-    if: github.ref == 'refs/heads/develop'
-    environment: dev.evilflowers.elvira.stuba.sk
+    if: >-
+      github.event_name == 'push'
+      && github.ref == 'refs/heads/develop'
+      && github.repository == 'EvilFlowersCatalog/EvilFlowersCatalog'
+    runs-on: elvira-k3s            # ARC scale set (knowledge: roles/github_runner github_runner_scale_set)
+    environment:
+      name: dev.evilflowers.elvira.stuba.sk
+      url: https://dev.evilflowers.elvira.stuba.sk
+    concurrency:
+      group: deploy-evilflowers-dev
+      cancel-in-progress: false
+    permissions: {}
+    env:
+      NAMESPACE: evilflowers-dev
+      DEPLOYMENT: evilflowers
+      SELECTOR: app.kubernetes.io/name=evilflowers,app.kubernetes.io/instance=dev
+      DIGEST: ${{ needs.build.outputs.digest }}
+      KUBECTL_VERSION: v1.31.5     # = the cluster (k3s v1.31.5+k3s1)
+      KUBECTL_SHA256: fbecbfd375b3686002c2e81d51c390172f5ffba3d6b47920d55342cb03f557af   # dl.k8s.io …/linux/amd64/kubectl.sha256
     steps:
-      - name: Add SSH private key
+      # The runner image has no kubectl. The pod is deleted after the job, so nothing is cached.
+      - name: kubectl ${{ env.KUBECTL_VERSION }} (checksum-pinned)
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
+          curl -fsSLo "$RUNNER_TEMP/kubectl" "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          echo "${KUBECTL_SHA256}  $RUNNER_TEMP/kubectl" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/kubectl"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
-      - name: Add SSH server to known hosts
-        run: |
-          ssh-keyscan -H ${{ secrets.SSH_SERVER }} >> ~/.ssh/known_hosts
+      # In-cluster credentials: the pod's ServiceAccount arc-deployer.
+      - name: Restart onto the new :develop
+        run: kubectl -n "$NAMESPACE" rollout restart "deployment/$DEPLOYMENT"
 
-      - name: Restart evilflowers-dev.service on remote server
+      # Strategy Recreate + startup probe of up to 300 s (migrations, Celery): same budget as
+      # the role's evilflowers_rollout_timeout.
+      - name: Wait for the rollout
+        run: kubectl -n "$NAMESPACE" rollout status "deployment/$DEPLOYMENT" --timeout=900s
+
+      # :develop could have moved, or the pull could have failed silently onto a cached image.
+      # Pods still terminating are skipped. A newer push cancels this run (workflow concurrency).
+      - name: Running pods use ${{ env.DIGEST }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_SERVER }} "sudo systemctl restart evilflowers-dev.service"
+          ids=$(kubectl -n "$NAMESPACE" get pods -l "$SELECTOR" \
+            -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{range .status.containerStatuses}}{{.imageID}}{{"\n"}}{{end}}{{end}}{{end}}')
+          echo "$ids"
+          test -n "$ids"
+          if echo "$ids" | grep -v -- "@${DIGEST}\$"; then
+            echo "::error::a running pod does not use ${DIGEST}"
+            exit 1
+          fi
