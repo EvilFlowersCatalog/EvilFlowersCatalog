@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "acafa4e3239c9803202746f7017b19305023f692",
-    "short": "acafa4e",
-    "message": "Merge branch 'fix/public-https-scheme' into develop",
+    "sha": "2190e8a7247dba23f13395796634b1b79b818a59",
+    "short": "2190e8a",
+    "message": "Merge branch 'fix/relative-acquisition-redirect' into develop",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/acafa4e3239c9803202746f7017b19305023f692"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/2190e8a7247dba23f13395796634b1b79b818a59"
   },
-  "deployed_at": "2026-11-08T15:51:47Z",
+  "deployed_at": "2026-11-08T16:15:20Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
