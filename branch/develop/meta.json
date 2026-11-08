@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "63375b46b39ab2563d753e998d1f589b42f3d600",
-    "short": "63375b4",
-    "message": "Hardening MCP",
-    "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/63375b46b39ab2563d753e998d1f589b42f3d600"
+    "sha": "cbebeef04d0cdfc1ee9134a8bb9566e35878665b",
+    "short": "cbebeef",
+    "message": "feat(extraction): admin view of an entry's AI processing, list filter and sort",
+    "author": "Tomáš Kordoš",
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/cbebeef04d0cdfc1ee9134a8bb9566e35878665b"
   },
-  "deployed_at": "2026-11-08T17:45:38Z",
+  "deployed_at": "2026-11-08T20:21:36Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
