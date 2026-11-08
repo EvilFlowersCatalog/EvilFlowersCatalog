@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "a2afacd608129984650e846aaf3fe170ac4cac9e",
-    "short": "a2afacd",
-    "message": "Implementing #72 (ETag layer)",
+    "sha": "e9c41dbbcbd2c65b4c1c3f45494b07f519cb8fd4",
+    "short": "e9c41db",
+    "message": "Fixing OPDS compatibility issues",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/a2afacd608129984650e846aaf3fe170ac4cac9e"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e9c41dbbcbd2c65b4c1c3f45494b07f519cb8fd4"
   },
-  "deployed_at": "2026-11-08T14:37:01Z",
+  "deployed_at": "2026-11-08T15:06:02Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
