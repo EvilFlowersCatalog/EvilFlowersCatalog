@@ -269,7 +269,7 @@ class ContentEncryptionService:
         # worker wraps the raw PDF into a Readium package and writes its
         # `manifest.json`. A raw PDF carries no embedded metadata, so without
         # these the manifest falls back to the filename and Thorium shows
-        # "no title and no authors available". See `_publication_metadata`
+        # "no title and no authors available". See `publication_metadata`
         # (issue #96). Older workers ignore unknown kwargs.
         kwargs = {
             "input_file": input_file,
@@ -281,7 +281,7 @@ class ContentEncryptionService:
             "report": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_REPORT_URL", None),
             "url": f"{settings.EVILFLOWERS_READIUM_BASE_URL}/readium/v1/content",
         }
-        kwargs.update(ContentEncryptionService._publication_metadata(acquisition.entry))
+        kwargs.update(ContentEncryptionService.publication_metadata(acquisition.entry))
 
         event_broker = get_event_broker()
         event_broker.execute(
@@ -316,8 +316,10 @@ class ContentEncryptionService:
         return task_id
 
     @staticmethod
-    def _publication_metadata(entry) -> dict:
+    def publication_metadata(entry) -> dict:
         """Entry metadata for the package manifest the worker writes (issue #96).
+
+        Public so `reencrypt_publication`'s dry run can show what would be sent.
 
         `title` and `author` (first author) are always sent: older workers
         read only those two. The rest is sent only when the entry has data,

@@ -129,7 +129,7 @@ class PublicationMetadataTests(SimpleTestCase):
             image="catalogs/stu/abc/cover.jpg",
         )
 
-        metadata = ContentEncryptionService._publication_metadata(entry)
+        metadata = ContentEncryptionService.publication_metadata(entry)
 
         self.assertEqual(
             metadata,
@@ -151,13 +151,13 @@ class PublicationMetadataTests(SimpleTestCase):
         for precision in (PartialDate.YEAR, PartialDate.MONTH):
             with self.subTest(precision=precision):
                 entry = _entry(published_at=PartialDate(date(2023, 1, 1), precision))
-                self.assertNotIn("published", ContentEncryptionService._publication_metadata(entry))
+                self.assertNotIn("published", ContentEncryptionService.publication_metadata(entry))
 
     def test_doi_identifier_when_no_isbn(self):
         entry = _entry(identifiers={"doi": "10.1000/xyz"})
-        metadata = ContentEncryptionService._publication_metadata(entry)
+        metadata = ContentEncryptionService.publication_metadata(entry)
         self.assertEqual(metadata["identifier"], "https://doi.org/10.1000/xyz")
 
     def test_empty_entry_sends_only_title_and_author(self):
-        metadata = ContentEncryptionService._publication_metadata(_entry(title="Bare"))
+        metadata = ContentEncryptionService.publication_metadata(_entry(title="Bare"))
         self.assertEqual(metadata, {"title": "Bare", "author": ""})

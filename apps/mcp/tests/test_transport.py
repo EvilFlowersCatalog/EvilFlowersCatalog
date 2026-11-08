@@ -57,6 +57,7 @@ WRITE_TOOLS = {
     "delete_entry",
     "delete_feed",
     "delete_user",
+    "reencrypt_publication",
     "remove_entries_from_feed",
     "requeue_encryption",
     "revoke_api_key",
