@@ -1,0 +1,14 @@
+{
+  "ref": "fix/lcpl-download-url-https",
+  "slug": "fix-lcpl-download-url-https",
+  "kind": "branch",
+  "commit": {
+    "sha": "9f1ada57aa83e6cb343cd4f89bc4523203034c52",
+    "short": "9f1ada5",
+    "message": "fix(readium): build .lcpl download_url from the public base URL",
+    "author": "Tomáš Kordoš",
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/9f1ada57aa83e6cb343cd4f89bc4523203034c52"
+  },
+  "deployed_at": "2026-11-08T15:24:22Z",
+  "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
+}
