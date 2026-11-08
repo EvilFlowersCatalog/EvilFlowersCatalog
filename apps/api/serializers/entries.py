@@ -128,6 +128,12 @@ class EntrySerializer:
         next_available_at: Optional[datetime] = Field(default=None, validate_default=True)
         user_active_license_id: Optional[UUID] = Field(default=None, validate_default=True)
         queue_length: int = Field(default=0, validate_default=True)
+        # AI extraction (IP-018), present only when the list is asked for it (`?extraction=1`,
+        # an `extraction_*` sort or the `extraction_status` filter); see `annotate_entries`.
+        extraction_status: Optional[str] = None
+        extraction_regions: Optional[int] = None
+        extraction_paragraphs: Optional[int] = None
+        extraction_finished_at: Optional[datetime] = None
         user_reservation_id: Optional[UUID] = Field(default=None, validate_default=True)
         user_position: Optional[int] = Field(default=None, validate_default=True)
 
