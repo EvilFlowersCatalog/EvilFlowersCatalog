@@ -510,7 +510,7 @@ Older revisions ignore the unknown key, so one result shape serves all three (Q6
 ```bash
 EVILFLOWERS_MCP_ENABLED=1                        # 0 unmounts the route entirely (404, not a disabled endpoint)
 EVILFLOWERS_MCP_ALLOW_WRITE=1                    # 0 unadvertises all thirteen management tools
-EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=Bearer,Basic
+EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=Bearer    # Bearer,Basic opts in to passwords (issue #100)
 EVILFLOWERS_MCP_REQUIRE_AUTHENTICATION=0
 EVILFLOWERS_MCP_DEFAULT_LIMIT=10
 EVILFLOWERS_MCP_MAX_LIMIT=50                     # deliberately below the REST ceiling
@@ -518,7 +518,7 @@ EVILFLOWERS_MCP_MAX_BULK_ITEMS=100               # records one bulk write may to
 EVILFLOWERS_MCP_SUMMARY_MAX_CHARS=600
 EVILFLOWERS_MCP_CONTENT_MAX_CHARS=4000
 EVILFLOWERS_MCP_MAX_REQUEST_BYTES=1048576
-EVILFLOWERS_MCP_ALLOWED_ORIGINS=                 # unset = no Origin check (non-browser clients send none)
+EVILFLOWERS_MCP_ALLOWED_ORIGINS=                 # unset = origin of EVILFLOWERS_BASE_URL; * = no check; no Origin header always passes
 ```
 
 ### Client configuration
@@ -1111,16 +1111,19 @@ in its environment and issue API keys to the librarians who need them?
 **Options**:
 - [ ] **A**: `Bearer,Basic` everywhere, documented trade-off. **(implemented)**
 - [ ] **B**: `Bearer,Basic` as the shipped default, but STU pins `Bearer` in its own `.env`.
-- [ ] **C**: Revert the default to `Bearer` and let deployments opt into Basic.
+- [x] **C**: Revert the default to `Bearer` and let deployments opt into Basic.
 
 **Answer**:
 ```
-[User fills this in]
+C — issue #100 (2026-11-08).
 ```
 
 **Resolution**:
 ```
-[AI writes this]
+`EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS` defaults to `Bearer`; deployments that need
+username/password clients set `Bearer,Basic`. In the same change
+`EVILFLOWERS_MCP_ALLOWED_ORIGINS` defaults to the origin of `EVILFLOWERS_BASE_URL`
+(the guard is on unless set to `*`), and CORS is read from `CORS_ALLOWED_ORIGINS`.
 ```
 
 ---
@@ -1276,3 +1279,4 @@ Regression tests: `apps/core/tests/test_account_endpoints.py` (9).
 | 2026-11-08 | jdubec | Phase 12 (accounts): `list_users`, `get_user`, `create_user`, `update_user`, `delete_user`, `list_api_keys`, `create_api_key`, `revoke_api_key` in `tools/users.py` and `tools/api_keys.py` — 38 tools. Superuser-only guard on administrator accounts, no self role/active/password changes, `confirm_username` on deletion, tokens shown once, revoke = deactivate. `test_accounts.py` (39 tests); both write-surface sweeps and the transport tool sets extended. New Review Questions Q17 (API-key sessions minting keys) and Q18 (REST token re-issue and superuser escalation). |
 | 2026-11-08 | jdubec | Answered Q18 (A): REST no longer returns tokens from `GET /api/v1/api_keys` (`ApiKeySerializer.Created` for POST only); `UserDetail` answers 404 for hidden accounts and 403 when a non-superuser modifies or deletes a superuser. 9 regression tests in `apps/core/tests/test_account_endpoints.py`. |
 | 2026-11-08 | jdubec | Added `reencrypt_publication` (administrators, write, non-idempotent) for issue #98: re-runs `registered` jobs through `ContentEncryptionService.reencrypt`, active-loan guard unless `force`, `dry_run`; 10 tests in `test_encryption.py`, write-surface sweep and transport sets extended. |
+| 2026-11-08 | jdubec | Answered Q14 (C) per issue #100: Basic is opt-in (`Bearer` default); the origin guard defaults to the instance's own origin (`*` disables it). Tests updated, `OriginGuardTests` added. |

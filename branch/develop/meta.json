@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "8f11dc7f49310eab25fa8de739fb23877c5cf091",
-    "short": "8f11dc7",
-    "message": "fix(opds,readium): don't prefix an identifier already stored as a URI",
+    "sha": "63375b46b39ab2563d753e998d1f589b42f3d600",
+    "short": "63375b4",
+    "message": "Hardening MCP",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/8f11dc7f49310eab25fa8de739fb23877c5cf091"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/63375b46b39ab2563d753e998d1f589b42f3d600"
   },
-  "deployed_at": "2026-11-08T17:05:54Z",
+  "deployed_at": "2026-11-08T17:45:38Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
