@@ -14,9 +14,12 @@ and first author name. The upstream HTTP/Celery hop is mocked via the event
 broker so no real worker is contacted.
 """
 
+from datetime import date
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase, override_settings
+from partial_date import PartialDate
 
 from apps.readium.services.content_encryption_service import ContentEncryptionService
 
@@ -78,3 +81,83 @@ class EncryptionPayloadMetadataTests(SimpleTestCase):
 
         self.assertEqual(kwargs.get("title"), "Anonymous Work")
         self.assertEqual(kwargs.get("author"), "")
+
+
+def _entry(**fields):
+    """A stand-in Entry with explicit metadata (no DB)."""
+    entry = MagicMock()
+    entry.title = fields.get("title", "Title")
+    entry.first_author_name = fields.get("first_author_name", "")
+    entry.publisher = fields.get("publisher")
+    entry.summary = fields.get("summary")
+    entry.identifiers = fields.get("identifiers")
+    entry.published_at = fields.get("published_at")
+
+    language = fields.get("language")
+    entry.language = SimpleNamespace(alpha2=language) if language else None
+
+    entry_authors = [
+        SimpleNamespace(author=SimpleNamespace(full_name=name), position=i)
+        for i, name in enumerate(fields.get("authors", []))
+    ]
+    entry.entry_authors.select_related.return_value.order_by.return_value = entry_authors
+
+    entry.categories.all.return_value = [
+        SimpleNamespace(term=term, label=label) for term, label in fields.get("categories", [])
+    ]
+
+    image = fields.get("image")
+    entry.image = SimpleNamespace(name=image) if image else None
+    return entry
+
+
+@override_settings(EVILFLOWERS_DEFAULT_LANGUAGE="en")
+class PublicationMetadataTests(SimpleTestCase):
+    """Issue #96: full RWPM metadata for the LCP-for-PDF manifest."""
+
+    def test_full_entry(self):
+        entry = _entry(
+            title="Algoritmy",
+            first_author_name="Ján Novák",
+            authors=["Ján Novák", "Eva Malá"],
+            publisher="STU",
+            summary="Úvod do algoritmov.",
+            language="sk",
+            published_at=PartialDate(date(2023, 5, 17), PartialDate.DAY),
+            categories=[("004", {"sk": "Informatika", "en": "Computer science"}), ("51", {})],
+            identifiers={"isbn": "9788022749999", "doi": "10.1000/xyz"},
+            image="catalogs/stu/abc/cover.jpg",
+        )
+
+        metadata = ContentEncryptionService._publication_metadata(entry)
+
+        self.assertEqual(
+            metadata,
+            {
+                "title": "Algoritmy",
+                "author": "Ján Novák",
+                "authors": ["Ján Novák", "Eva Malá"],
+                "publisher": "STU",
+                "description": "Úvod do algoritmov.",
+                "language": "sk",
+                "published": "2023-05-17",
+                "subjects": ["Informatika", "51"],
+                "identifier": "urn:isbn:9788022749999",
+                "cover": "catalogs/stu/abc/cover.jpg",
+            },
+        )
+
+    def test_partial_dates_are_not_sent(self):
+        for precision in (PartialDate.YEAR, PartialDate.MONTH):
+            with self.subTest(precision=precision):
+                entry = _entry(published_at=PartialDate(date(2023, 1, 1), precision))
+                self.assertNotIn("published", ContentEncryptionService._publication_metadata(entry))
+
+    def test_doi_identifier_when_no_isbn(self):
+        entry = _entry(identifiers={"doi": "10.1000/xyz"})
+        metadata = ContentEncryptionService._publication_metadata(entry)
+        self.assertEqual(metadata["identifier"], "https://doi.org/10.1000/xyz")
+
+    def test_empty_entry_sends_only_title_and_author(self):
+        metadata = ContentEncryptionService._publication_metadata(_entry(title="Bare"))
+        self.assertEqual(metadata, {"title": "Bare", "author": ""})

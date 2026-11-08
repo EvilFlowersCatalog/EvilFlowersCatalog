@@ -2,6 +2,12 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## Unreleased
+
+- **Added**: The lcpencrypt worker receives full publication metadata for the LCP-for-PDF package manifest — all authors in order, publisher, description, language, day-precision `published`, subjects, ISBN/DOI `identifier` and the catalog cover ([#96](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/96))
+- **Changed**: `compose.services.yml` runs the lcpencrypt worker from `:develop`, drops the unused `LCPSV_URL` and documents its OpenTelemetry settings ([#95](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/95))
+- **Fixed**: `GET /api/v1/entries?query=` keeps the relevance ranking instead of falling back to `created_at`; an explicit `order_by` still wins ([#60](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/60))
+
 ## 0.14.0 : 2026-09-10
 
 - **Added**: Model Context Protocol server at `POST /mcp/v1` (IP-014) — 25 tools over the catalog for LLM agents, plus resources, prompts and argument completions, authenticated with the existing credentials

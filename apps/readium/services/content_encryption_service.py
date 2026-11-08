@@ -11,9 +11,11 @@ import os
 from django.conf import settings
 from django.utils import timezone
 from django.utils.module_loading import import_string
+from partial_date import PartialDate
 from typing import Optional
 import uuid
 
+from apps.core.fields.localized import localize
 from apps.core.models import Acquisition
 from apps.files.storage import get_storage
 from apps.readium.models import EncryptedContent, License
@@ -256,36 +258,87 @@ class ContentEncryptionService:
         # (`apps/readium/views/hooks.py`) is what flips the row to REGISTERED.
         # The worker drops the flag when it is None.
         #
-        # title/author: publication display metadata. For the LCP-for-PDF
-        # profile (`.lcpdf`) lcpencrypt wraps the raw PDF into a Readium
-        # package and generates its `manifest.json`; a raw PDF carries no
-        # embedded title/author, so without these the manifest falls back to
-        # the filename (title) and empty authors — which is why Thorium shows
-        # "no title and no authors available" for borrowed PDFs. We forward
-        # the Entry's metadata so the worker can inject it into the package
-        # manifest. (The worker must consume these keys — see
-        # evilflowers-lcpencrypt-worker; unknown keys are ignored by older
-        # workers, so sending them is backwards compatible.)
-        entry = acquisition.entry
-        author_name = entry.first_author_name
+        # Publication metadata: for the LCP-for-PDF profile (`.lcpdf`) the
+        # worker wraps the raw PDF into a Readium package and writes its
+        # `manifest.json`. A raw PDF carries no embedded metadata, so without
+        # these the manifest falls back to the filename and Thorium shows
+        # "no title and no authors available". See `_publication_metadata`
+        # (issue #96). Older workers ignore unknown kwargs.
+        kwargs = {
+            "input_file": input_file,
+            "contentid": encrypted_content.lcp_content_id,
+            "storage": f"{acquisition.upload_base_path()}/encrypted",
+            "filename": encrypted_content.lcp_content_id,
+            "lcpsv": getattr(settings, "EVILFLOWERS_READIUM_LCPSV_URL", None),
+            "notify": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None),
+            "url": f"{settings.EVILFLOWERS_READIUM_BASE_URL}/readium/v1/content",
+        }
+        kwargs.update(ContentEncryptionService._publication_metadata(acquisition.entry))
+
         event_broker = get_event_broker()
         event_broker.execute(
             "evilflowers_lcpencrypt_worker.lcpencrypt",
             {
-                "kwargs": {
-                    "input_file": input_file,
-                    "contentid": encrypted_content.lcp_content_id,
-                    "storage": f"{acquisition.upload_base_path()}/encrypted",
-                    "filename": encrypted_content.lcp_content_id,
-                    "lcpsv": getattr(settings, "EVILFLOWERS_READIUM_LCPSV_URL", None),
-                    "notify": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None),
-                    "url": f"{settings.EVILFLOWERS_READIUM_BASE_URL}/readium/v1/content",
-                    "title": entry.title,
-                    "author": author_name,
-                },
+                "kwargs": kwargs,
                 "queue": "evilflowers_lcpencrypt_worker",
             },
         )
+
+    @staticmethod
+    def _publication_metadata(entry) -> dict:
+        """Entry metadata for the package manifest the worker writes (issue #96).
+
+        `title` and `author` (first author) are always sent: older workers
+        read only those two. The rest is sent only when the entry has data,
+        since the worker treats a missing key and an empty value alike.
+
+        `published` goes out only with day precision: lcpencrypt's Go date
+        parser rejects `2023` and `2023-05`.
+        """
+        authors = [
+            entry_author.author.full_name
+            for entry_author in entry.entry_authors.select_related("author").order_by("position")
+        ]
+        authors = [name for name in authors if name]
+
+        # `author` must match `authors[0]`; `first_author_name` ignores `position`.
+        metadata = {
+            "title": entry.title,
+            "author": authors[0] if authors else entry.first_author_name,
+        }
+        if authors:
+            metadata["authors"] = authors
+
+        if entry.publisher:
+            metadata["publisher"] = entry.publisher
+
+        if entry.summary:
+            metadata["description"] = entry.summary
+
+        language = entry.language.alpha2 if entry.language else None
+        if language:
+            metadata["language"] = language
+
+        published_at = entry.published_at
+        if published_at and published_at.precision == PartialDate.DAY:
+            metadata["published"] = published_at.date.isoformat()
+
+        # Category labels in the publication's own language where available.
+        subjects = [localize(category.label, language) or category.term for category in entry.categories.all()]
+        if subjects:
+            metadata["subjects"] = subjects
+
+        identifiers = entry.identifiers or {}
+        if identifiers.get("isbn"):
+            metadata["identifier"] = f"urn:isbn:{identifiers['isbn']}"
+        elif identifiers.get("doi"):
+            metadata["identifier"] = f"https://doi.org/{identifiers['doi']}"
+
+        # Storage-relative path; without it the worker renders page 1.
+        if entry.image:
+            metadata["cover"] = entry.image.name
+
+        return metadata
 
     @staticmethod
     def mark_encryption_completed(lcp_content_id: str, encrypted_url: Optional[str] = None) -> EncryptedContent:
