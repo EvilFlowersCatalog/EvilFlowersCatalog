@@ -1,0 +1,14 @@
+{
+  "ref": "fix/relative-acquisition-redirect",
+  "slug": "fix-relative-acquisition-redirect",
+  "kind": "branch",
+  "commit": {
+    "sha": "e8c3e9e51cadc86e3f28814315919e5bc0f7f8fb",
+    "short": "e8c3e9e",
+    "message": "fix(api): relative Location on the existing user-acquisition redirect",
+    "author": "Tomáš Kordoš",
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e8c3e9e51cadc86e3f28814315919e5bc0f7f8fb"
+  },
+  "deployed_at": "2026-11-08T16:14:25Z",
+  "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
+}
