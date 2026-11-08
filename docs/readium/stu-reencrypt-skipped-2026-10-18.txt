@@ -19,24 +19,30 @@ license page) — open in Thorium and spot-check that figures still render:
 efd2f20e-a2e6-4fe1-be05-48bbf1ed3076   Matematika II: Zbierka úloh
                                        ("cannot load shading function (670 0 R)", "invalid key in dict")
 
-Skipped (active loan):
+Still to do (checked 2026-11-08):
 
-Entry ID                               Title
-------------------------------------   -----
-6ae4919a-556e-47a4-bdce-2b3ae6b135c2   Numerická matematika (nielen) pre geodetov a kartografov
-b8b84d10-f39d-4925-b8bc-8eaab64af5f1   Materiálografia (2018)
+Entry ID                               Title                                     Why
+------------------------------------   ---------------------------------------   ---
+b8b84d10-f39d-4925-b8bc-8eaab64af5f1   Materiálografia (2018)                    1 active loan
 8682cd26-5417-4634-900d-22a15d2a2481   Aplikovaná pravdepodobnosť a štatistika pre inžinierov: Štatistická analýza jedného a dvoch súborov dát. 1. diel
+                                                                                 1 active loan
+5eb54d08-c51e-4e1d-89bb-6c9002fec386   Detail v interiéri                        1 active loan
+04cbc18c-2a63-4dfe-a536-b1e8c4da2167   Ateliérová tvorba: Skladby a detaily plochých striech
+                                                                                 no loan (dry run OK); run blocked by
+                                                                                 Claude's permission check, run it by hand
+
+(4 books left.)
+
+Done 2026-11-08 ~20:12 UTC (re-encrypted, job `registered`, license page in):
+
+6ae4919a-556e-47a4-bdce-2b3ae6b135c2   Numerická matematika (nielen) pre geodetov a kartografov
 ef354b85-a810-4bb1-8b41-a083bd20efd7   Výživa človeka
-5eb54d08-c51e-4e1d-89bb-6c9002fec386   Detail v interiéri
-1acf813f-3edd-4495-9359-1088e3f189f8   Využitie vodnej energie: Návody na cvičenia. 1. časť. Vodohospodársko-energetické plány vodných elektrární
+1acf813f-3edd-4495-9359-1088e3f189f8   Využitie vodnej energie: Návody na cvičenia. 1. časť
 3308f97e-7fe6-47b9-ab7c-44b8b6a46eb5   Advanced R
 f6ac9d46-4da8-4fca-ba0a-6e82c8794f32   Navigačné metódy VFH v nestatickom prostredí
 a5a30a6c-b78e-4238-9a7a-311b934e2651   RIADENIE MECHATRONICKÝCH SYSTÉMOV v podmienkach neúplnej informácie
 124b4f4e-036d-4a97-a859-14704dbaac1f   Pozemkové právo
-04cbc18c-2a63-4dfe-a536-b1e8c4da2167   Ateliérová tvorba: Skladby a detaily plochých striech
 f9037010-7b9a-45e5-812d-6ee90b8abf13   Riadenie systémov s rozloženými parametrami: Návody na cvičenia
-
-(12 books total.)
 
 
 Not processed — lending (readium_enabled) is switched off

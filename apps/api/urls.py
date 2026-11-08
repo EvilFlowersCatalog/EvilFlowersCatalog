@@ -62,6 +62,7 @@ urlpatterns = [
     # Entries
     path("entries", entries.EntryPaginator.as_view()),
     path("entries/facets", entries.EntryFacets.as_view()),
+    path("entries/suggest", entries.EntrySuggest.as_view()),
     # Recommendations and figures from the extraction index (IP-018 Phase 8)
     path("entries/<uuid:entry_id>/similar", extraction_discovery.EntrySimilar.as_view(), name="entry-similar"),
     path("entries/<uuid:entry_id>/figures", extraction_discovery.EntryFigures.as_view(), name="entry-figures"),

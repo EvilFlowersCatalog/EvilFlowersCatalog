@@ -3,7 +3,7 @@ from enum import Enum
 from typing import List, Optional, Dict
 from uuid import UUID
 
-from pydantic import Field, computed_field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_core.core_schema import ValidationInfo
 
 from apps.api.serializers import Serializer
@@ -208,12 +208,43 @@ class EntrySerializer:
 
 
 class EntryFacetLanguage(Serializer):
-    code: str
+    code: str = Field(validation_alias=AliasChoices("code", "value"))
+    name: Optional[str] = None
     count: int
 
 
-class EntryFacetItem(Serializer):
-    id: UUID
+class EntryFacetCategory(Serializer):
+    id: UUID = Field(validation_alias=AliasChoices("id", "value"))
+    term: Optional[str] = None
+    label: Dict[str, str] = Field(default_factory=dict)
+    count: int
+
+
+class EntryFacetFeed(Serializer):
+    id: UUID = Field(validation_alias=AliasChoices("id", "value"))
+    title: Dict[str, str] = Field(default_factory=dict)
+    count: int
+
+
+class EntryFacetAuthor(Serializer):
+    id: UUID = Field(validation_alias=AliasChoices("id", "value"))
+    name: str
+    surname: str
+    count: int
+
+
+class EntryFacetValue(Serializer):
+    value: str
+    count: int
+
+
+class EntryFacetFormat(Serializer):
+    mime: str = Field(validation_alias=AliasChoices("mime", "value"))
+    count: int
+
+
+class EntryFacetFlag(Serializer):
+    value: bool
     count: int
 
 
@@ -229,8 +260,91 @@ class EntryFacetYears(Serializer):
 
 class EntryFacetSerializer:
     class Base(Serializer):
-        languages: List[EntryFacetLanguage]
-        categories: List[EntryFacetItem]
-        feeds: List[EntryFacetItem]
-        availability: List[EntryFacetAvailability]
-        years: EntryFacetYears
+        """Every dimension is present unless `facet=` asked for a subset."""
+
+        languages: Optional[List[EntryFacetLanguage]] = None
+        categories: Optional[List[EntryFacetCategory]] = None
+        feeds: Optional[List[EntryFacetFeed]] = None
+        authors: Optional[List[EntryFacetAuthor]] = None
+        publishers: Optional[List[EntryFacetValue]] = None
+        formats: Optional[List[EntryFacetFormat]] = None
+        fulltext: Optional[List[EntryFacetFlag]] = None
+        availability: Optional[List[EntryFacetAvailability]] = None
+        years: Optional[EntryFacetYears] = None
+
+
+class EntrySearchHighlights(Serializer):
+    title: Optional[str] = None
+    summary: Optional[str] = None
+
+
+class EntrySearchHit(Serializer):
+    """Why an entry matched a `query`: relevance, matched fields, highlighted title/summary (HTML, `<mark>`)."""
+
+    score: Optional[float] = None
+    matched: List[str] = Field(default_factory=list)
+    highlights: EntrySearchHighlights = Field(default_factory=EntrySearchHighlights)
+
+
+class EntrySearchMetadata(Serializer):
+    query: str
+    mode: str = "fulltext"
+    #: True when no entry contained every word and the results come from a fallback
+    relaxed: bool = False
+    #: `any_word` (OR of the words) or `similar` (trigram similarity of title/authors), null when strict
+    fallback: Optional[str] = None
+    did_you_mean: Optional[str] = None
+    total: int
+
+
+class EntrySearchResult(EntrySerializer.Base):
+    """An entry of `GET /api/v1/entries?query=…`: the list item plus why it matched."""
+
+    search: Optional[EntrySearchHit] = Field(default=None, validate_default=True)
+
+    @field_validator("search", mode="before")
+    def resolve_search(cls, v, info: ValidationInfo):
+        hits = (info.context or {}).get("search_hits") or {}
+        return hits.get(info.data.get("id"))
+
+
+EntrySerializer.SearchResult = EntrySearchResult
+
+
+class SuggestedEntry(Serializer):
+    id: UUID
+    catalog_id: UUID
+    title: str
+    authors: List[str]
+    thumbnail: Optional[str] = None
+    #: HTML-escaped title with `<mark>` around the matched words
+    highlight: Optional[str] = None
+
+
+class SuggestedAuthor(Serializer):
+    id: UUID
+    name: str
+    surname: str
+    count: int
+
+
+class SuggestedCategory(Serializer):
+    id: UUID
+    term: str
+    label: Dict[str, str] = Field(default_factory=dict)
+    count: int
+
+
+class SuggestedFeed(Serializer):
+    id: UUID
+    title: Dict[str, str] = Field(default_factory=dict)
+    count: int
+
+
+class EntrySuggestionSerializer(Serializer):
+    query: str
+    entries: List[SuggestedEntry]
+    authors: List[SuggestedAuthor]
+    categories: List[SuggestedCategory]
+    feeds: List[SuggestedFeed]
+    did_you_mean: Optional[str] = None

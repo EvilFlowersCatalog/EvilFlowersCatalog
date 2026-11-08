@@ -127,6 +127,9 @@ class PaginationResponse(GeneralResponse):
         serializer_context: dict = None,
         ordering: Ordering = None,
         context_builder: Optional[Callable[[list], dict]] = None,
+        response_model: Type[PaginationResponseModel] = None,
+        metadata_model: Type[PaginationModel] = None,
+        extra_builder: Optional[Callable[[list, int], tuple[dict, dict]]] = None,
         **kwargs,
     ):
         """
@@ -134,7 +137,13 @@ class PaginationResponse(GeneralResponse):
             items (a list of ORM instances) and returns a dict that is merged into
             `serializer_context` before validation. Use this when context values
             depend on the page itself — for example a per-entry LCP-state mapping.
+        :param response_model / metadata_model: subclasses of the default envelope models
+            for endpoints that add fields to the response or to `metadata`.
+        :param extra_builder: receives the page items and the total count, returns
+            `(metadata fields, response fields)` for those subclasses.
         """
+        response_model = response_model or PaginationResponseModel
+        metadata_model = metadata_model or PaginationModel
         kwargs.setdefault("content_type", "application/json")
 
         # Ordering
@@ -192,13 +201,16 @@ class PaginationResponse(GeneralResponse):
             extra = context_builder(items_list) or {}
             merged_context.update(extra)
 
+        metadata_extra, response_extra = extra_builder(items_list, total) if extra_builder else ({}, {})
+
         super().__init__(
             request,
-            PaginationResponseModel(
+            response_model(
                 items=RootModel[List[serializer]].model_validate(
                     items_list, from_attributes=True, context=merged_context
                 ),
-                metadata=PaginationModel(page=page, limit=limit, pages=num_pages, total=total),
+                metadata=metadata_model(page=page, limit=limit, pages=num_pages, total=total, **metadata_extra),
+                **response_extra,
             ),
             **kwargs,
         )

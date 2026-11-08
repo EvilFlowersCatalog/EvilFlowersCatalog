@@ -1,17 +1,26 @@
-from typing import List
-from urllib.parse import urlencode
+import re
+from typing import Optional
 
 import django_filters
 from django.core.exceptions import ValidationError
-from django.db.models import Q, Value, CharField, Case, When, IntegerField, Count
-from django.db.models.functions import Concat, Lower
+from django.db.models import Q, Value, CharField, Exists, OuterRef
+from django.db.models.functions import Concat
 from django.utils.translation import gettext as _
 from partial_date import PartialDate
 
-from apps.core.fields.localized import localize
-from apps.core.models import Entry
-from apps.opds.structures import Facet
+from apps.core.models import Acquisition, Entry
+from apps.core.search.query import Level, SearchState, did_you_mean
 from apps.api.filters.base import BaseSecuredFilter
+
+# OpenSearch 1.1 parameters in the `ef` namespace (declared by the OPDS 1.2 search descriptor).
+OPENSEARCH_NAMESPACE = "ef"
+
+
+def fulltext_runs():
+    """Extraction runs that produced the full text of an acquisition."""
+    from apps.extraction.models import ExtractionRun
+
+    return ExtractionRun.objects.filter(status=ExtractionRun.Status.DONE)
 
 
 class EntryFilter(BaseSecuredFilter):
@@ -96,7 +105,14 @@ class EntryFilter(BaseSecuredFilter):
     )
     query = django_filters.CharFilter(
         method="filter_query",
-        help_text="Perform comprehensive full-text search across all entry fields including title, summary, content, author names, categories, and publisher. Results are ranked by relevance with title matches having highest priority.",
+        help_text=(
+            "Full-text search over title, author names, category terms and labels (all translations), "
+            "publisher and summary. Words are stemmed for the entry's language and matched with and without "
+            'diacritics; web-search syntax works (`"exact phrase"`, `-excluded`, `a or b`). Results are '
+            "ranked by relevance (title > authors/categories > publisher/summary). When no entry contains "
+            "every word, entries with any word are returned, then entries with a similar title or author "
+            "(typos); `GET /api/v1/entries` reports this in `metadata.search`."
+        ),
     )
     feed_id = django_filters.CharFilter(
         method="filter_feed_id",
@@ -139,91 +155,91 @@ class EntryFilter(BaseSecuredFilter):
         ),
     )
 
+    publisher = django_filters.CharFilter(
+        method="filter_publisher",
+        help_text=(
+            "Filter entries by publisher (case-insensitive exact match). Accepts a comma-separated list; "
+            "values are OR-ed. Matches the values of the `publishers` facet."
+        ),
+    )
+    format = django_filters.CharFilter(
+        method="filter_format",
+        help_text=(
+            "Filter entries by acquisition media type (e.g. `application/pdf`, `application/epub+zip`). "
+            "Accepts a comma-separated list; values are OR-ed."
+        ),
+    )
+    fulltext = django_filters.BooleanFilter(
+        method="filter_fulltext",
+        help_text=(
+            "`true` returns entries whose full text has been extracted (a finished extraction run), "
+            "`false` entries without one."
+        ),
+    )
+
+    # An OpenSearch client that does not fill an optional template parameter may send it back
+    # verbatim (`?category_id={ef:categoryId?}`); such a value means "not set".
+    UNFILLED_TEMPLATE = re.compile(r"^\{[^{}]*\}$")
+
+    # Filters a reader may fill from the OpenSearch descriptor: parameter -> template name, all in the
+    # `ef` namespace so no client fills them on its own (the core `{language}` defaults to `*` or the
+    # reader's UI locale, which would silently filter results). The trailing `?` marks them optional.
+    OPENSEARCH_TEMPLATE = {
+        "language_code": f"{OPENSEARCH_NAMESPACE}:language_code?",
+        "category_id": f"{OPENSEARCH_NAMESPACE}:category_id?",
+        "author_id": f"{OPENSEARCH_NAMESPACE}:author_id?",
+        "feed_id": f"{OPENSEARCH_NAMESPACE}:feed_id?",
+        "published_at__gte": f"{OPENSEARCH_NAMESPACE}:published_at__gte?",
+        "published_at__lte": f"{OPENSEARCH_NAMESPACE}:published_at__lte?",
+    }
+
+    def __init__(self, data=None, *args, search: Optional[SearchState] = None, **kwargs):
+        """
+        `search`: an already resolved free-text search (facets reuse the level of the main result
+        instead of resolving the fallback again).
+        """
+        if data is not None and hasattr(data, "lists"):
+            unfilled = [key for key, values in data.lists() if values and all(self._unfilled(v) for v in values)]
+            if unfilled:
+                data = data.copy()
+                for key in unfilled:
+                    data.pop(key)
+        super().__init__(data, *args, **kwargs)
+        #: Set by `filter_query`: the free-text search of this request (level, suggestion, ...).
+        self.search: Optional[SearchState] = search
+        self._search_resolved = search is not None
+
     @classmethod
-    def template(cls) -> str:
-        params = {}
-        for key, definition in cls.base_filters.items():
-            params[key] = definition.extra.get("value", key)
-
-        return urlencode(params)
-
-    @property
-    def facets(self) -> List[Facet]:
-        # Evaluate the access-controlled queryset once (the `qs` property
-        # re-applies access control on every access) and compute each
-        # dimension's counts with a single grouped aggregate instead of one
-        # COUNT query per language / category / author.
-        qs = self.qs
-        facets = []
-
-        # Language — one grouped COUNT over all present languages.
-        language_rows = (
-            qs.filter(language__isnull=False)
-            .values("language__name", "language__alpha2")
-            .annotate(count=Count("id", distinct=True))
-        )
-        for row in language_rows:
-            alpha2 = row["language__alpha2"]
-            url_params = self.request.GET.dict()
-            url_params["language_code"] = alpha2
-            facets.append(
-                Facet(
-                    title=row["language__name"],
-                    href=f"{self.request.path}?{urlencode(url_params)}",
-                    group=_("Language"),
-                    count=row["count"],
-                    is_active=self.request.GET.get("language_code") == alpha2,
-                )
-            )
-
-        # Categories — one grouped COUNT over all present categories.
-        category_rows = (
-            qs.filter(categories__isnull=False)
-            .values("categories__id", "categories__term", "categories__label")
-            .annotate(count=Count("id", distinct=True))
-        )
-        for row in category_rows:
-            category_id = row["categories__id"]
-            url_params = self.request.GET.dict()
-            url_params["category_id"] = category_id
-            facets.append(
-                Facet(
-                    title=localize(row["categories__label"]) or row["categories__term"],
-                    href=f"{self.request.path}?{urlencode(url_params)}",
-                    group=_("Category"),
-                    count=row["count"],
-                    is_active=self.request.GET.get("category_id") == str(category_id),
-                )
-            )
-
-        # Authors — one grouped COUNT over all present authors.
-        author_rows = (
-            qs.filter(authors__isnull=False)
-            .values("authors__id", "authors__name", "authors__surname")
-            .annotate(count=Count("id", distinct=True))
-        )
-        for row in author_rows:
-            author_id = row["authors__id"]
-            full_name = f"{row['authors__name']} {row['authors__surname']}".strip()
-            url_params = self.request.GET.dict()
-            url_params["author_id"] = author_id
-            facets.append(
-                Facet(
-                    title=full_name,
-                    href=f"{self.request.path}?{urlencode(url_params)}",
-                    group=_("Author"),
-                    count=row["count"],
-                    is_active=self.request.GET.get("author_id") == str(author_id),
-                )
-            )
-
-        return facets
+    def _unfilled(cls, value) -> bool:
+        return isinstance(value, str) and bool(cls.UNFILLED_TEMPLATE.match(value.strip()))
 
     @property
     def qs(self):
-        qs = super().qs
-        # Use cached access control from base class
-        return self.apply_catalog_access_control(qs)
+        if not hasattr(self, "_secured_qs"):
+            qs = self.apply_catalog_access_control(super().qs)
+            if self.search is not None and not self._search_resolved:
+                self._search_resolved = True
+                if not qs.exists():
+                    qs = self._search_fallback(qs)
+            self._secured_qs = qs
+        return self._secured_qs
+
+    def _search_fallback(self, empty_qs):
+        """No entry has every word: retry with any word, then with trigram similarity (typos)."""
+        qs = empty_qs
+        for level in (Level.RELAXED, Level.FUZZY):
+            self.search.level = level
+            del self._qs  # django-filter's cache of the filtered queryset
+            candidate = self.apply_catalog_access_control(super().qs)
+            if candidate.exists():
+                qs = candidate
+                break
+        else:
+            self.search.level = Level.STRICT
+
+        readable = self.apply_catalog_access_control(self.queryset)
+        self.search.did_you_mean = did_you_mean(self.search.text, readable)
+        return qs
 
     @staticmethod
     def filter_author(qs, name, value):
@@ -276,54 +292,42 @@ class EntryFilter(BaseSecuredFilter):
             return qs
         return qs.filter(feeds__id__in=ids).distinct()
 
+    def filter_query(self, qs, name, value):
+        """
+        Full-text search (IP-020) over `entries.search_vector`: title (A), authors and categories (B),
+        publisher and summary (C). Annotates `relevance_score`; when nothing matches every word,
+        `qs` falls back to any word, then to similar titles/authors (see `self.search`).
+        """
+        text = (value or "").strip()
+        if not text:
+            return qs
+        if self.search is None:
+            self.search = SearchState(text)
+        return self.search.apply(qs).order_by("-relevance_score", "-popularity", "-created_at")
+
+    @classmethod
+    def filter_publisher(cls, qs, name, value):
+        publishers = cls._split_csv(value)
+        if not publishers:
+            return qs
+        condition = Q()
+        for publisher in publishers:
+            condition |= Q(publisher__iexact=publisher)
+        return qs.filter(condition)
+
+    @classmethod
+    def filter_format(cls, qs, name, value):
+        mimes = cls._split_csv(value)
+        if not mimes:
+            return qs
+        return qs.filter(Exists(Acquisition.objects.filter(entry_id=OuterRef("pk"), mime__in=mimes)))
+
     @staticmethod
-    def filter_query(qs, name, value):
-        # Optimized search implementation
-        search_terms = value.strip().split()
-
-        # Use simpler query structure for better performance
-        base_conditions = []
-
-        # Create efficient OR conditions for each term
-        for term in search_terms:
-            term_conditions = (
-                Q(title__icontains=term)
-                | Q(summary__icontains=term)
-                | Q(publisher__icontains=term)
-                | Q(authors__name__icontains=term)
-                | Q(authors__surname__icontains=term)
-                | Q(categories__label__icontains=term)
-                | Q(categories__term__icontains=term)
-            )
-            base_conditions.append(term_conditions)
-
-        # Combine all conditions with AND (all terms must match somewhere)
-        if base_conditions:
-            combined_query = base_conditions[0]
-            for condition in base_conditions[1:]:
-                combined_query &= condition
-        else:
-            combined_query = Q()
-
-        # Apply filtering with simpler relevance scoring
-        return (
-            qs.filter(combined_query)
-            .annotate(
-                # Simplified relevance scoring based on field priority
-                relevance_score=Case(
-                    When(title__icontains=value, then=Value(100)),
-                    When(authors__name__icontains=value, then=Value(90)),
-                    When(authors__surname__icontains=value, then=Value(90)),
-                    When(publisher__icontains=value, then=Value(80)),
-                    When(categories__label__icontains=value, then=Value(70)),
-                    When(summary__icontains=value, then=Value(60)),
-                    default=Value(50),
-                    output_field=IntegerField(),
-                )
-            )
-            .distinct()
-            .order_by("-relevance_score", "-popularity", "-created_at")
-        )
+    def filter_fulltext(qs, name, value):
+        if value is None:
+            return qs
+        has_text = Exists(fulltext_runs().filter(acquisition__entry_id=OuterRef("pk")))
+        return qs.filter(has_text if value else ~has_text)
 
     @staticmethod
     def filter_published_at_gte(qs, name, value):
@@ -343,9 +347,9 @@ class EntryFilter(BaseSecuredFilter):
 
     @classmethod
     def filter_language_code(cls, qs, name, value):
-        """Filter entries by language code(s); accepts comma-separated alpha2/alpha3 codes."""
+        """Filter entries by language code(s); accepts comma-separated alpha2/alpha3 codes. `*` means any."""
         codes = cls._split_csv(value)
-        if not codes:
+        if not codes or "*" in codes:
             return qs
         return qs.filter(Q(language__alpha2__in=codes) | Q(language__alpha3__in=codes))
 
@@ -361,7 +365,8 @@ class EntryFilter(BaseSecuredFilter):
             return qs
 
         user = self.request.user if self.request is not None else None
-        materialized = list(qs)
+        # `lcp_state_mapping` reads only the primary key and `config`.
+        materialized = list(qs.only("pk", "config"))
         mapping = lcp_state_mapping(user, materialized)
         matching_ids = [
             entry.pk
@@ -381,7 +386,7 @@ class EntryFilter(BaseSecuredFilter):
             return qs
 
         user = self.request.user if self.request is not None else None
-        materialized = list(qs)
+        materialized = list(qs.only("pk", "config"))
         mapping = lcp_state_mapping(user, materialized)
         matching_ids = [
             entry.pk

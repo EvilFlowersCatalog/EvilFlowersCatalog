@@ -101,9 +101,27 @@ class EntrySearchService:
     # ----- internals -----------------------------------------------------
 
     @staticmethod
+    def catalog_filter(catalog: Catalog, request) -> EntryFilter:
+        """The catalog-mode filter: its `qs` are the results, its `search` the resolved full-text search."""
+        return EntryFilter(request.GET, queryset=Entry.objects.filter(catalog=catalog), request=request)
+
+    @staticmethod
+    def catalog_facets(catalog: Catalog, request, entry_filter: Optional[EntryFilter] = None) -> dict:
+        """Facet counts within `catalog` for the current filters (IP-020), as `EntryFacetService` returns them."""
+        from apps.api.services.facets import EntryFacetService, OPDS_DIMENSIONS
+
+        params = request.GET.copy()
+        params["facet"] = ",".join(OPDS_DIMENSIONS)
+        return EntryFacetService(
+            request,
+            params,
+            queryset=Entry.objects.filter(catalog=catalog),
+            search=entry_filter.search if entry_filter is not None else None,
+        ).compute()
+
+    @staticmethod
     def _catalog_search(catalog: Catalog, request) -> QuerySet[Entry]:
-        queryset = Entry.objects.filter(catalog=catalog)
-        return EntryFilter(request.GET, queryset=queryset, request=request).qs
+        return EntrySearchService.catalog_filter(catalog, request).qs
 
     @staticmethod
     def _catalog_acquisition_ids(catalog: Catalog, user) -> Iterable[str]:

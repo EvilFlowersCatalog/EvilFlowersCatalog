@@ -2,6 +2,8 @@ from typing import Optional, TypedDict, Literal
 
 from django.conf import settings
 from django.contrib.postgres.fields import HStoreField
+from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.search import SearchVectorField
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -49,7 +51,16 @@ def default_entry_config() -> EntryConfig:
     )
 
 
+class EntryManager(models.Manager):
+    def get_queryset(self):
+        # The search vector is only read in SQL. Deferring it keeps it out of every entry
+        # query, and `save()` on a deferred instance never writes back a stale vector.
+        return super().get_queryset().defer("search_vector")
+
+
 class Entry(BaseModel):
+    objects = EntryManager()
+
     class Meta:
         app_label = "core"
         db_table = "entries"
@@ -73,6 +84,8 @@ class Entry(BaseModel):
             # Text search optimization
             models.Index(fields=["title", "catalog_id"]),
             models.Index(fields=["summary", "catalog_id"]),
+            # IP-020: full-text search
+            GinIndex(fields=["search_vector"], name="entries_search_vector_gin"),
         ]
 
     def _upload_to_path(self, filename):
@@ -112,6 +125,11 @@ class Entry(BaseModel):
     page_count = models.PositiveIntegerField(null=True, blank=True)
     table_of_contents = models.JSONField(null=True, blank=True)
     related_entries = models.ManyToManyField("self", symmetrical=False, related_name="related_to", blank=True)
+
+    # IP-020: maintained by `apps.core.search.index.refresh_search_vectors` (signals), never by forms.
+    # `search_config` is the text search configuration (regconfig name) the vector was built with.
+    search_config = models.CharField(max_length=63, null=True, editable=False)
+    search_vector = SearchVectorField(null=True, editable=False)
 
     @property
     def first_author_name(self) -> str:

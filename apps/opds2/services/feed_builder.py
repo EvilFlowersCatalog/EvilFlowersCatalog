@@ -8,8 +8,11 @@ from apps.core.fields.localized import localize, request_language
 from apps.core.models import Catalog, Entry, Feed
 from apps.opds.services.borrow_link import LICENSED_STATES
 from apps.readium.models import Reservation
+from apps.api.services.facets import facet_href, opds_facets
 from apps.opds2.schema.opds import NavigationEntry, OpdsFeed
+from apps.opds2.schema.opds.facet import Facet
 from apps.opds2.schema.rwpm import Link, Metadata, Publication
+from apps.opds2.schema.rwpm.link import Properties
 from .manifest_builder import ManifestBuilder
 
 OPDS_JSON = "application/opds+json"
@@ -130,7 +133,9 @@ class FeedBuilder:
         per_page: int | None = None,
         title: str = "Publications",
         self_url: str | None = None,
+        facets: dict | None = None,
     ) -> OpdsFeed:
+        """`facets`: counts from `EntrySearchService.catalog_facets`, rendered as OPDS 2.0 facets."""
         if per_page is None:
             per_page = getattr(settings, "EVILFLOWERS_OPDS2_PAGE_SIZE", 50)
         per_page = min(per_page, getattr(settings, "EVILFLOWERS_OPDS2_MAX_PAGE_SIZE", 100))
@@ -172,7 +177,25 @@ class FeedBuilder:
             links=links,
             # A feed needs at least one collection, even when it is empty.
             publications=publications,
+            facets=cls._facets(request, facets) if facets else None,
         )
+
+    @classmethod
+    def _facets(cls, request: HttpRequest, facets: dict) -> list[Facet] | None:
+        """OPDS 2.0 §2.3 facets: one group per dimension; the active value links with `rel: self`."""
+        groups: dict[str, list[Link]] = {}
+        base = request.build_absolute_uri(request.path)
+        for facet in opds_facets(request, facets, request_language(request)):
+            groups.setdefault(facet.group, []).append(
+                Link(
+                    href=facet_href(request, facet, base=base),
+                    type=OPDS_JSON,
+                    title=facet.title,
+                    rel="self" if facet.active else None,
+                    properties=Properties(number_of_items=facet.count),
+                )
+            )
+        return [Facet(metadata=Metadata(title=group), links=links) for group, links in groups.items()] or None
 
     @classmethod
     def build_navigation_feed(cls, feeds: QuerySet, catalog: Catalog, request: HttpRequest) -> OpdsFeed:

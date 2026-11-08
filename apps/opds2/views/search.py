@@ -29,20 +29,32 @@ class SearchView(Opds2CatalogView):
 
         mode = SearchMode.parse(request.GET.get("mode"))
 
-        try:
-            entries = EntrySearchService.search(self.catalog, request, mode=mode)
-        except SearchServiceUnavailable as exc:
-            return self._search_service_down(str(exc))
-        except SearchServiceBadResponse as exc:
-            # Bad upstream response — treat as 502 too, but without
-            # Retry-After since retrying won't help if the schema is
-            # broken.
-            return self._search_service_down(str(exc), retry_after=None)
+        facets = None
+        if mode == SearchMode.CATALOG:
+            # In-database full-text search (IP-020): no search-service call on this path.
+            entry_filter = EntrySearchService.catalog_filter(self.catalog, request)
+            entries = entry_filter.qs
+            facets = EntrySearchService.catalog_facets(self.catalog, request, entry_filter)
+        else:
+            try:
+                entries = EntrySearchService.search(self.catalog, request, mode=mode)
+            except SearchServiceUnavailable as exc:
+                return self._search_service_down(str(exc))
+            except SearchServiceBadResponse as exc:
+                # Bad upstream response — treat as 502 too, but without
+                # Retry-After since retrying won't help if the schema is
+                # broken.
+                return self._search_service_down(str(exc), retry_after=None)
 
         page = parse_int_query(request, "page", default=1, min_value=1)
         query = request.GET.get("query", "")
         feed = FeedBuilder.build_publication_feed(
-            entries, self.catalog, request, page=page, title=f"Search: {query}" if query else "Search"
+            entries,
+            self.catalog,
+            request,
+            page=page,
+            title=f"Search: {query}" if query else "Search",
+            facets=facets,
         )
         return self.opds_response(feed.model_dump(exclude_none=True, by_alias=True))
 

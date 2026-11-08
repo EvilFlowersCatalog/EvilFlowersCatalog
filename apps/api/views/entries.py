@@ -1,12 +1,9 @@
 import json
-from collections import Counter
 from http import HTTPStatus
+from typing import Optional
 from uuid import UUID
 
-from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, Max, Min
-from django.urls import reverse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext as _
@@ -14,13 +11,29 @@ from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
 from apps.api.services.entry_introspection_service import EntryIntrospectionService
+from apps.api.services.facets import EntryFacetService
+from apps.api.services.suggest import EntrySuggestService
+from apps.api.utils.parse import parse_int_query
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.api.filters.entries import EntryFilter
 from apps.api.forms.entries import EntryForm, AcquisitionMetaForm
-from apps.api.response import Ordering, SingleResponse, PaginationResponse
-from apps.api.serializers.entries import EntrySerializer, AcquisitionSerializer, EntryFacetSerializer, LcpState
+from apps.api.response import (
+    Ordering,
+    PaginationModel,
+    PaginationResponse,
+    PaginationResponseModel,
+    SingleResponse,
+)
+from apps.api.serializers.entries import (
+    AcquisitionSerializer,
+    EntryFacetSerializer,
+    EntrySearchMetadata,
+    EntrySerializer,
+    EntrySuggestionSerializer,
+)
 from apps.api.services.entry import EntryService, attach_acquisition
-from apps.core.models import Entry, Acquisition, Price, Catalog, ShelfRecord, User
+from apps.core.search.query import describe_hits
+from apps.core.models import Entry, Price, Catalog, ShelfRecord, User
 from apps.core.views import SecuredView
 from apps.readium.models import License
 from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
@@ -84,101 +97,140 @@ def shelf_record_mapping(user: User) -> dict[UUID, UUID]:
     }
 
 
+class EntryListMetadata(PaginationModel):
+    #: present when the request has a `query`
+    search: Optional[EntrySearchMetadata] = None
+
+
+class EntryListResponse(PaginationResponseModel):
+    metadata: EntryListMetadata
+    #: present with `include=facets`
+    facets: Optional[EntryFacetSerializer.Base] = None
+
+
+RELEVANCE_ORDERING = ["-relevance_score", "-popularity", "-pk"]
+
+
+def entry_list_ordering(request, searching: bool) -> Ordering:
+    """
+    With a `query` and no `order_by` (or `order_by=relevance`), order by relevance; ties break on
+    popularity and then id, so pages are stable. `relevance` without a `query` means newest first.
+    """
+    requested = [column.strip() for column in request.GET.get("order_by", "").split(",") if column.strip()]
+    if not requested:
+        return Ordering(list(RELEVANCE_ORDERING)) if searching else Ordering.create_from_request(request)
+
+    columns = []
+    for column in requested:
+        if column.lstrip("-") == "relevance":
+            columns.extend(RELEVANCE_ORDERING if searching else ["-created_at"])
+        else:
+            columns.append(column)
+    return Ordering(columns)
+
+
 class EntryPaginator(SecuredView):
     @openapi.metadata(
-        description="Retrieve a paginated list of entries from the catalog. Supports advanced filtering by catalog, author, category, language, publication date, and full-text search across titles, summaries, and content.",
+        description=(
+            "Retrieve a paginated list of entries. Supports filtering by catalog, author, category, language, "
+            "feed, publisher, format, publication date and availability, and full-text search (`query`). "
+            "With a `query` the list is ordered by relevance unless `order_by` says otherwise "
+            "(`order_by=relevance` asks for it explicitly), every item carries `search` (score, matched fields, "
+            "`<mark>`-highlighted title and summary) and `metadata.search` reports whether the results come "
+            "from a fallback (`relaxed`) and a `did_you_mean` suggestion. `include=facets` adds the facet "
+            "counts of `GET /api/v1/entries/facets` to the response."
+        ),
         tags=["Entries"],
         summary="List catalog entries with filtering and pagination",
     )
     def get(self, request):
+        entry_filter = EntryFilter(request.GET, queryset=Entry.objects.all(), request=request)
         entries = (
-            EntryFilter(request.GET, queryset=Entry.objects.all(), request=request)
-            .qs.distinct()
-            .select_related("language")
+            entry_filter.qs.select_related("language")
             .prefetch_related(
                 "entry_authors__author",
                 "categories",
                 "feeds",
                 "acquisitions",
             )
-            .all()
             .distinct()
         )
+        search = entry_filter.search
 
-        # `query` ranks by relevance (EntryFilter.filter_query); the default
-        # `order_by=created_at` would throw that ranking away (#60).
-        ordering = None
-        if request.GET.get("query", "").strip() and "order_by" not in request.GET:
-            ordering = Ordering(["-relevance_score", "-popularity", "-created_at"])
+        def context(items):
+            result = {"lcp_states": lcp_state_mapping(request.user, items)}
+            if search is not None:
+                result["search_hits"] = describe_hits(search, items)
+            return result
+
+        include = {part.strip() for part in request.GET.get("include", "").split(",")}
+
+        def extras(items, total):
+            metadata, response = {}, {}
+            if search is not None:
+                metadata["search"] = EntrySearchMetadata(
+                    query=search.text,
+                    relaxed=search.relaxed,
+                    fallback=search.fallback,
+                    did_you_mean=search.did_you_mean,
+                    total=total,
+                )
+            if "facets" in include:
+                facets = EntryFacetService(request, search=search).compute()
+                response["facets"] = EntryFacetSerializer.Base.model_validate(facets)
+            return metadata, response
 
         return PaginationResponse(
             request,
             entries,
-            ordering=ordering,
-            serializer=EntrySerializer.Base,
+            ordering=entry_list_ordering(request, search is not None),
+            serializer=EntrySerializer.SearchResult if search is not None else EntrySerializer.Base,
             serializer_context={"shelf_entries": shelf_record_mapping(request.user), "request": request},
-            context_builder=lambda items: {"lcp_states": lcp_state_mapping(request.user, items)},
+            context_builder=context,
+            response_model=EntryListResponse,
+            metadata_model=EntryListMetadata,
+            extra_builder=extras,
         )
 
 
 class EntryFacets(SecuredView):
-    # Facet key -> (EntryFilter param that filters on that dimension, grouped field, output key).
-    DIMENSIONS = {
-        "languages": ("language_code", "language__alpha2", "code"),
-        "categories": ("category_id", "categories__id", "id"),
-        "feeds": ("feed_id", "feeds__id", "id"),
-    }
-
-    @staticmethod
-    def _entries_without(request, *params):
-        """Entries matching every active filter except the given params (a facet ignores its own filter)."""
-        query = request.GET.copy()
-        for param in params:
-            query.pop(param, None)
-        matching = EntryFilter(query, queryset=Entry.objects.all(), request=request).qs.order_by().values("pk")
-        return Entry.objects.filter(pk__in=matching)
-
     @openapi.metadata(
         description=(
-            "Per-value entry counts for the language, category, feed and availability (`lcp_state`) filters, "
-            "plus the publication year range. Accepts the same query parameters as `GET /api/v1/entries`. "
-            "Each dimension is computed with every active filter applied except its own, so selecting a "
-            "language still shows the other languages that could be OR-ed in. Only values with at least one "
-            "entry are returned, sorted by count. Availability counts use the `lcp_state` values plus the "
-            "`reserved` pseudo-state (an entry the user has reserved is also counted under its LCP state)."
+            "Per-value entry counts for the language, category, feed, author, publisher, format (acquisition "
+            "media type), full text (`fulltext`) and availability (`lcp_state`) filters, plus the publication "
+            "year range. Accepts the same query parameters as `GET /api/v1/entries`. Each dimension is computed "
+            "with every active filter applied except its own, so selecting a language still shows the other "
+            "languages that could be OR-ed in. Only values with at least one entry are returned, sorted by "
+            "count. Authors and publishers return the top `facet_limit` values (default 10); other dimensions "
+            "are complete unless `facet_limit` is given. `facet=authors,publishers` computes only the named "
+            "dimensions and `facet_query` searches inside them (e.g. author names). Availability counts use "
+            "the `lcp_state` values plus the `reserved` pseudo-state (an entry the user has reserved is also "
+            "counted under its LCP state)."
         ),
         tags=["Entries"],
         summary="Facet counts for entry filters",
     )
     def get(self, request):
-        facets = {}
-        for dimension, (param, field, key) in self.DIMENSIONS.items():
-            rows = (
-                self._entries_without(request, param)
-                .filter(**{f"{field}__isnull": False})
-                .values(field)
-                .annotate(count=Count("pk", distinct=True))
-                .order_by("-count")
-            )
-            facets[dimension] = [{key: row[field], "count": row["count"]} for row in rows]
-
-        states = Counter()
-        for row in lcp_state_mapping(request.user, self._entries_without(request, "lcp_state")).values():
-            state = row["lcp_state"]
-            states[state.value if hasattr(state, "value") else str(state)] += 1
-            if row.get("user_reservation_id") is not None:
-                states["reserved"] += 1
-        states.pop(LcpState.NOT_LCP.value, None)
-        facets["availability"] = [{"state": state, "count": count} for state, count in states.most_common() if count]
-
-        # `published_at` is a PartialDateField (a plain Field, so ExtractYear rejects it);
-        # Min/Max come back as PartialDate via the field's converter.
-        bounds = self._entries_without(request, "published_at__gte", "published_at__lte").aggregate(
-            min=Min("published_at"), max=Max("published_at")
-        )
-        facets["years"] = {key: value.date.year if value else None for key, value in bounds.items()}
-
+        facets = EntryFacetService(request).compute()
         return SingleResponse(request, data=EntryFacetSerializer.Base.model_validate(facets))
+
+
+class EntrySuggest(SecuredView):
+    @openapi.metadata(
+        description=(
+            "Type-ahead for the search box, in one call: the best matching entries (the last word is matched "
+            "as a prefix), and the authors, categories and feeds whose name contains the text, each with the "
+            "number of readable entries. Accepts `catalog_id` to stay in one catalog, `limit` (default 6, "
+            "at most 20) per list. `did_you_mean` is set when no entry matches."
+        ),
+        tags=["Entries"],
+        summary="Search suggestions (type-ahead)",
+    )
+    def get(self, request):
+        text = (request.GET.get("query") or "").strip()
+        limit = parse_int_query(request, "limit", default=6, min_value=1)
+        result = EntrySuggestService(request, text, limit=min(limit, 20), catalog_id=request.GET.get("catalog_id"))
+        return SingleResponse(request, data=EntrySuggestionSerializer.model_validate(result.compute()))
 
 
 class EntryIntrospection(SecuredView):

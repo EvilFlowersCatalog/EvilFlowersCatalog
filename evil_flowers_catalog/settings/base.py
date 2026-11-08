@@ -250,6 +250,12 @@ EVILFLOWERS_OPDS_COMPLETE_FEED_MAX_ENTRIES = int(os.getenv("EVILFLOWERS_OPDS_COM
 # and as the fallback when a requested translation is missing
 EVILFLOWERS_DEFAULT_LANGUAGE = os.getenv("EVILFLOWERS_DEFAULT_LANGUAGE", "sk")
 
+# Full-text search (IP-020). When no entry contains every word of a query, entries whose title or
+# author name has at least this trigram word similarity to the query are returned (typos).
+EVILFLOWERS_SEARCH_TRIGRAM_THRESHOLD = float(os.getenv("EVILFLOWERS_SEARCH_TRIGRAM_THRESHOLD", 0.45))
+# Minimum trigram similarity of a title word / author name offered as `did_you_mean`.
+EVILFLOWERS_SEARCH_SUGGEST_THRESHOLD = float(os.getenv("EVILFLOWERS_SEARCH_SUGGEST_THRESHOLD", 0.3))
+
 EVILFLOWERS_IDENTIFIERS = ["isbn", "google", "doi", "dataverse_pid", "dataverse_dataset_id"]
 
 EVILFLOWERS_ENFORCE_USER_ACQUISITIONS = bool(int(os.getenv("EVILFLOWERS_ENFORCE_USER_ACQUISITIONS", "0")))

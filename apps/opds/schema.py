@@ -19,6 +19,8 @@ NSMAP = {
     # RFC 5005 (Feed Paging and Archiving) — `fh:complete` marks an unpaged
     # Complete Acquisition Feed (OPDS 1.2 §2.5).
     "fh": "http://purl.org/syndication/history/1.0",
+    # RFC 4685 (Atom Threading) — `thr:count` on OPDS 1.2 facet links (§4.3).
+    "thr": "http://purl.org/syndication/thread/1.0",
 }
 
 
@@ -87,6 +89,8 @@ class LinkType(str, Enum):
     PREVIOUS = "previous"
     NEXT = "next"
     LAST = "last"
+    # OPDS 1.2 §4.3 facets (IP-020).
+    FACET = "http://opds-spec.org/facet"
 
 
 class IndirectAcquisition(BaseXmlModel, tag="indirectAcquisition", ns="opds", nsmap=NSMAP):
@@ -132,6 +136,10 @@ class Link(BaseXmlModel, tag="link", nsmap=NSMAP):
     type: str = attr()
     title: Optional[str] = attr(default=None)
     checksum: Optional[str] = attr(ns="ef", default=None)
+    # OPDS 1.2 §4.3 facet links: group, the active value of the group, number of entries.
+    facet_group: Optional[str] = attr(name="facetGroup", ns="opds", default=None)
+    active_facet: Optional[str] = attr(name="activeFacet", ns="opds", default=None)
+    count: Optional[int] = attr(name="count", ns="thr", default=None)
     indirect_acquisition: Optional[IndirectAcquisition] = element(default=None)
     availability: Optional[Availability] = element(default=None)
     holds: Optional[Holds] = element(default=None)
@@ -305,7 +313,8 @@ class OpdsFeed(BaseXmlModel, tag="feed", nsmap=NSMAP):
     entries: List[Union[NavigationEntry, AcquisitionEntry]] = element(tag="entry", default=list())
 
 
-OPENSEARCH_NSMAP = {"": "http://a9.com/-/spec/opensearch/1.1/"}
+# `ef` declares the namespace of the catalog's own template parameters (`{ef:category_id?}`).
+OPENSEARCH_NSMAP = {"": "http://a9.com/-/spec/opensearch/1.1/", "ef": NSMAP["ef"]}
 
 
 class OpenSearchLink(BaseXmlModel, tag="Url", nsmap=OPENSEARCH_NSMAP):
@@ -314,11 +323,13 @@ class OpenSearchLink(BaseXmlModel, tag="Url", nsmap=OPENSEARCH_NSMAP):
     )
     template: str = attr(name="template")
 
-    def __init__(self, base_path: str, template_items: Dict[str, str], **data):
+    def __init__(self, base_path: str, template_items: Dict[str, str], fixed_items: Dict[str, str] = None, **data):
+        """`template_items`: parameter -> OpenSearch template name; `fixed_items`: parameter -> literal value."""
         from urllib.parse import quote
 
-        template = base_path + "?" + "&".join(f"{quote(k, safe='')}={{{v}}}" for k, v in template_items.items())
-        super().__init__(template=template, **data)
+        parts = [f"{quote(k, safe='')}={{{v}}}" for k, v in template_items.items()]
+        parts += [f"{quote(k, safe='')}={quote(str(v), safe='')}" for k, v in (fixed_items or {}).items()]
+        super().__init__(template=base_path + "?" + "&".join(parts), **data)
 
 
 class OpenSearchQuery(BaseXmlModel, tag="Query", nsmap=OPENSEARCH_NSMAP): ...
