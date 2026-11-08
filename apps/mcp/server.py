@@ -78,7 +78,9 @@ READ_INSTRUCTIONS = (
     "read one publication in full.\n\n"
     "Results are always scoped to what the calling credential may read; an unauthenticated "
     "session sees public catalogs only. `whoami`, `get_my_shelf` and `list_my_loans` describe the "
-    "authenticated user's own library and require credentials."
+    "authenticated user's own library and require credentials. `get_user` and `list_api_keys` "
+    "describe the caller's own account and API keys; administrators see everyone's through "
+    "`list_users` and `get_user`."
 )
 
 WRITE_INSTRUCTIONS = (
@@ -91,7 +93,7 @@ WRITE_INSTRUCTIONS = (
     "and the file is POSTed there as multipart `content`. Set `lcp_enabled` and `lcp_copies` for "
     "DRM-protected titles — encryption is queued when the file arrives. The catalog refuses a "
     "second publication with the same title, ISBN or DOI; search before importing.\n\n"
-    "Every management tool needs `manage` access on the catalog in question. Start with "
+    "Every curation tool needs `manage` access on the catalog in question. Start with "
     "`list_catalogs` — each result carries an `access` level — or `whoami` for the count. "
     "Creating a *catalog* additionally requires administrator rights, which `manage` on an "
     "existing catalog does not confer.\n\n"
@@ -114,7 +116,14 @@ WRITE_INSTRUCTIONS = (
     "Administrators also get two operations tools for Readium LCP encryption: "
     "`list_encryption_jobs` finds jobs stuck in `pending` or `failed` (a publication cannot be "
     "lent until its job is `registered`), and `requeue_encryption` sends them to the worker again. "
-    "Re-queuing does not fix whatever lost the job — say so if the cause looks like deployment."
+    "Re-queuing does not fix whatever lost the job — say so if the cause looks like deployment.\n\n"
+    "Accounts and credentials: `create_api_key` mints a Bearer key for the caller and returns its "
+    "token exactly once — give it to the user straight away, it cannot be retrieved later; "
+    "`revoke_api_key` disables one. Administrators can also `create_user`, `update_user` and "
+    "`delete_user`, and a superuser can mint a key for another account (e.g. an API-key-only "
+    "service account created without a password). Nobody can change their own role, active flag "
+    "or password here, and only a superuser can touch an administrator's account. Prefer "
+    "deactivating a user over `delete_user`, which also destroys their loans and annotations."
 )
 
 READ_ONLY_NOTE = "\n\nThis deployment is read-only: no tool here borrows, reserves, edits or deletes."
@@ -309,10 +318,7 @@ class McpServer:
         if not request.user.is_authenticated:
             if tool.writes:
                 return self._error_result(
-                    _(
-                        "`%(tool)s` changes catalog data and requires an authenticated session with "
-                        "`manage` access on the catalog. Connect with %(hint)s."
-                    )
+                    _("`%(tool)s` changes data and requires an authenticated session. " "Connect with %(hint)s.")
                     % {"tool": tool.name, "hint": credential_hint()}
                 )
             return self._error_result(

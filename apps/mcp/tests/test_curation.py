@@ -12,7 +12,7 @@ import uuid
 from django.contrib.auth.models import AnonymousUser
 from django.test import override_settings
 
-from apps.core.models import Catalog, Category, Entry, Feed, UserCatalog
+from apps.core.models import ApiKey, Catalog, Category, Entry, Feed, UserCatalog
 from apps.mcp.registry import ToolAccess
 from apps.mcp.tests.test_management import ManagementTestCase
 from apps.mcp.tools import registry
@@ -79,6 +79,13 @@ class WriteSurfaceSweepTests(ManagementTestCase):
             "create_upload_link": {"entry_id": entry_ids[0]},
             # The administrator check runs before any lookup, so no job need exist.
             "requeue_encryption": {"content_ids": [str(uuid.uuid4())]},
+            # Account tools: each case is something a reader may *not* do. Minting
+            # or revoking their own key is allowed, so these aim at someone else.
+            "create_user": {"username": "sweep", "name": "Sweep", "surname": "User"},
+            "update_user": {"user_id": str(self.reader.pk), "is_superuser": True},
+            "delete_user": {"user_id": str(self.manager.pk), "confirm_username": self.manager.username},
+            "create_api_key": {"name": "sweep", "user_id": str(self.manager.pk)},
+            "revoke_api_key": {"api_key_id": str(ApiKey.objects.create(user=self.manager, name="sweep").pk)},
         }
 
     def test_every_write_tool_refuses_a_reader_of_the_catalog(self):
@@ -92,7 +99,11 @@ class WriteSurfaceSweepTests(ManagementTestCase):
         for name in sorted(writes):
             with self.subTest(tool=name):
                 message = self.refused(name, arguments[name], self.reader)
-                self.assertRegex(message, "Insufficient permissions|restricted to administrators", name)
+                # "not readable" is the refusal for a record outside the caller's
+                # boundary (another user's API key) — reported as absent, never 403.
+                self.assertRegex(
+                    message, "Insufficient permissions|restricted to administrators|is not readable", name
+                )
 
 
 class CatalogManagementTests(ManagementTestCase):

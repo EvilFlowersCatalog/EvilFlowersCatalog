@@ -73,16 +73,30 @@ class UserManagement(SecuredView):
 class UserDetail(SecuredView):
     @staticmethod
     def _get_user(request, user_id: UUID, perm_test: Optional[Callable] = None) -> User:
-        try:
-            user = User.objects.get(pk=user_id)
-        except User.DoesNotExist as e:
-            raise ProblemDetailException(_("User not found"), status=HTTPStatus.NOT_FOUND, previous=e)
+        """The account, if the caller may act on it.
 
-        if not perm_test:
-            perm_test = lambda: True
+        An account the caller may not even *view* answers 404, exactly like a
+        missing id — answering 403 would confirm which ids are real accounts.
+        Only a caller who can see the account is told they may not change it.
+        """
+        user = User.objects.filter(pk=user_id).first()
+        is_self = user is not None and user.pk == request.user.pk
 
-        if not (user.id == request.user.id or perm_test()):
+        if user is None or not (is_self or request.user.has_perm("core.view_user")):
+            raise ProblemDetailException(_("User not found"), status=HTTPStatus.NOT_FOUND)
+
+        if is_self or perm_test is None:
+            return user
+
+        if not perm_test():
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+
+        # `core.change_user` / `core.delete_user` without superuser rights must
+        # not reach an administrator: resetting their password is a takeover.
+        if user.is_superuser and not request.user.is_superuser:
+            raise ProblemDetailException(
+                _("Only a superuser may modify an administrator account"), status=HTTPStatus.FORBIDDEN
+            )
 
         return user
 
@@ -92,7 +106,8 @@ class UserDetail(SecuredView):
         summary="Get user details",
     )
     def get(self, request, user_id: UUID):
-        user = self._get_user(request, user_id, lambda: request.user.has_perm("core.view_user"))
+        # Visibility (`core.view_user` or self) is checked inside `_get_user`.
+        user = self._get_user(request, user_id)
 
         return SingleResponse(request, data=UserSerializer.Detailed.model_validate(user))
 

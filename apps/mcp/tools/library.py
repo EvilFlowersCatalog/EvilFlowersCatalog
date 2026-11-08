@@ -40,7 +40,14 @@ LICENSE_STATES = tuple(state.value for state in License.LicenseState)
             "is_superuser": {"type": "boolean"},
             "readable_catalogs": {"type": "integer"},
             "manageable_catalogs": {"type": "integer"},
-            "can_write": {"type": "boolean"},
+            "can_write": {
+                "type": "boolean",
+                "description": (
+                    "Whether catalog curation tools will accept anything. Account tools (own API keys, "
+                    "own profile) are available to any authenticated user regardless."
+                ),
+            },
+            "can_manage_users": {"type": "boolean", "description": "Holds `core.change_user`."},
             "access": {"type": "string"},
         },
         "required": ["authenticated"],
@@ -74,10 +81,11 @@ def whoami(request, raw_arguments: dict) -> dict:
         "is_superuser": user.is_superuser,
         "readable_catalogs": user.catalogs.count(),
         # A model should know before it tries. `manageable_catalogs == 0` means
-        # every create/update/delete tool will refuse, whatever the write
-        # surface is set to.
+        # every catalog curation tool will refuse, whatever the write surface is
+        # set to. Account tools (own API keys and profile) are not covered by it.
         "manageable_catalogs": manageable,
         "can_write": settings.EVILFLOWERS_MCP_ALLOW_WRITE and manageable > 0,
+        "can_manage_users": user.has_perm("core.change_user"),
     }
 
 

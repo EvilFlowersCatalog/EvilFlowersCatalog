@@ -1,0 +1,87 @@
+STU LCP re-encryption — books skipped because of active loans
+=============================================================
+
+Run:    2026-10-18, started 15:34 UTC on prod (elvira.stuba.sk)
+Why:    license page fix (commit 715ee92, PR #86). Re-encrypting changes the
+        content key, so books with a READY/ACTIVE loan were skipped to avoid
+        breaking the borrower's copy.
+Status: these books are still served WITHOUT the license page.
+Log:    /opt/elvira-devops/environments/production/logs/reencrypt-stu.log
+        (grep -B1 skipping)
+
+Re-encrypt each one after its loan ends (refuses again while a loan is active):
+
+  docker exec evilflowers-prod-evilflowers-1 python manage.py encrypt_readium_content --entry <entry-id> --reencrypt
+
+Re-encrypted, but the source PDF is malformed (MuPDF warnings while adding the
+license page) — open in Thorium and spot-check that figures still render:
+
+efd2f20e-a2e6-4fe1-be05-48bbf1ed3076   Matematika II: Zbierka úloh
+                                       ("cannot load shading function (670 0 R)", "invalid key in dict")
+
+Skipped (active loan):
+
+Entry ID                               Title
+------------------------------------   -----
+6ae4919a-556e-47a4-bdce-2b3ae6b135c2   Numerická matematika (nielen) pre geodetov a kartografov
+b8b84d10-f39d-4925-b8bc-8eaab64af5f1   Materiálografia (2018)
+8682cd26-5417-4634-900d-22a15d2a2481   Aplikovaná pravdepodobnosť a štatistika pre inžinierov: Štatistická analýza jedného a dvoch súborov dát. 1. diel
+ef354b85-a810-4bb1-8b41-a083bd20efd7   Výživa človeka
+5eb54d08-c51e-4e1d-89bb-6c9002fec386   Detail v interiéri
+1acf813f-3edd-4495-9359-1088e3f189f8   Využitie vodnej energie: Návody na cvičenia. 1. časť. Vodohospodársko-energetické plány vodných elektrární
+3308f97e-7fe6-47b9-ab7c-44b8b6a46eb5   Advanced R
+f6ac9d46-4da8-4fca-ba0a-6e82c8794f32   Navigačné metódy VFH v nestatickom prostredí
+a5a30a6c-b78e-4238-9a7a-311b934e2651   RIADENIE MECHATRONICKÝCH SYSTÉMOV v podmienkach neúplnej informácie
+124b4f4e-036d-4a97-a859-14704dbaac1f   Pozemkové právo
+04cbc18c-2a63-4dfe-a536-b1e8c4da2167   Ateliérová tvorba: Skladby a detaily plochých striech
+f9037010-7b9a-45e5-812d-6ee90b8abf13   Riadenie systémov s rozloženými parametrami: Návody na cvičenia
+
+(12 books total.)
+
+
+Not processed — lending (readium_enabled) is switched off
+-----------------------------------------------------------
+
+These 25 books have an LCP package from before the fix (encrypted 2026-09-29 or
+2026-10-08) but the run only covers lending-enabled entries. Nobody can borrow
+them right now, so no exposure today. The command also filters on
+readium_enabled, so `--entry` does nothing for them until lending is switched
+back on. When it is, re-encrypt straight away with the same command as above.
+
+Entry ID                               Title
+------------------------------------   -----
+d3a2ac31-3f57-453d-8cfe-a7e46c1c9dd2   Umelá inteligencia
+d2bef95b-422d-4ea1-b6aa-61e340229155   Weboveda: východiská, predmet, metódy
+fc482fc3-09f0-4eb4-9a3e-8fe0288ba434   Aplikačné architektúry softvérových systémov
+90575a55-e874-4c4b-bb01-dd94d9c8c201   Softvérové inžinierstvo v otázkach a odpovediach
+6bfc3087-c6c6-4d5a-a2cd-2224c797394e   PRAVDEPODOBNOSŤ A MATEMATICKÁ ŠTATISTIKA
+45e60794-7853-4801-8bf9-646a20d95981   O softvéri od A po Z; Úvahy nastupujúcich profesionálov
+2f2e4274-6f5a-4024-9912-fd8cfd4eed8b   PROGRAMOVANIE V JAZYKU C V RIEŠENÝCH PRÍKLADOCH 1
+ac99688a-98dc-4dce-9494-0e4f5b0a11c3   Kognitívna veda v kontexte informatických vied
+2f0a030f-3044-433d-aab5-06397e955ad2   ÚVOD DO SOFTVÉROVÝCH JAZYKOV, PRÍKLADY A ÚLOHY
+2e738fff-f5d8-413b-97dd-a8703c5f2376   Vyhľadávanie informácií
+c348b08d-c165-4970-a7cf-ebf4c5db39ad   Úvod do matematickej analýzy; Zbierka riešených príkladov
+e55508cc-261c-470c-a1bb-3ca6f7c2b8aa   Štúdie vybraných tém programových a informačných systémov 4
+24a83983-dc62-49e0-9ba3-b25a558c720c   Fyzika I a II: Interaktívne elektronické testy
+60b866b9-17f9-4b08-89eb-a9e6b2b23938   Fyzika: Praktikum
+63b8faf6-cda8-4933-95a6-f6ef2cb59d1e   Fyzika I: Úlohy a testy
+2b3228e9-1f4f-41d3-af0a-79e5737305f7   Fyzika II: Úlohy a testy
+eccf3d84-4d5a-4ed1-a42d-d651c8c47761   Základy štatistickej analýzy
+b98b7441-7922-4a02-a12c-c70738380f15   Metódy modelovania komunikačných funkcií: III. Smerovanie
+c02ad14c-2379-4247-8499-ef1bd387f2d1   Štatistické analýzy
+f80e73d6-2e54-497d-bba3-d3fa56c1f59c   E-learning na STU: Ako na to
+8379900f-b4fc-443d-a59e-efea37fc92bb   Energetické hodnotenie budov (2019)
+7ee20cde-3968-49fc-9bfd-603358ea315b   Prúdenie plynov v potrubnom systéme spaľovacieho motora
+b434e658-c79d-4f67-91e7-5329c1af935c   Laboratórne cvičenia z mikrobiológie
+5c2c2583-0e4e-42dc-b3cd-978108e7ec62   Základy konštruovania a technická dokumentácia (2007)
+7ffb9aed-91cf-4377-b284-5aeda354780a   Priestorové východiská tvorby v marginalizovaných komunitách
+
+(25 books total.)
+
+
+Run result
+----------
+
+Started 15:34 UTC, finished ~16:38 UTC. 513 lending-enabled entries checked:
+501 re-encrypted, 12 skipped (active loans), 0 failed. No STU job left
+pending or failed afterwards.

@@ -15,7 +15,7 @@ from apps.core.views import SecuredView
 
 class ApiKeyManagement(SecuredView):
     @openapi.metadata(
-        description="Generate a new API key for the authenticated user. Creates a unique API key that can be used for programmatic access to the API. Superusers can create keys for other users by specifying a user_id. Returns the generated key details including the key value for initial setup.",
+        description="Generate a new API key for the authenticated user. Creates a unique API key that can be used for programmatic access to the API. Superusers can create keys for other users by specifying a user_id. Returns the generated key details including its bearer `token` — the only response that ever contains it; store it now.",
         tags=["API Keys"],
         summary="Create new API key",
     )
@@ -34,12 +34,12 @@ class ApiKeyManagement(SecuredView):
 
         return SingleResponse(
             request,
-            data=ApiKeySerializer.Base.model_validate(api_key),
+            data=ApiKeySerializer.Created.model_validate(api_key),
             status=HTTPStatus.CREATED,
         )
 
     @openapi.metadata(
-        description="Retrieve a paginated list of API keys in the system. Returns API key metadata including creation date, user association, and key status. Supports filtering and pagination. Superusers can view all keys, while regular users see only their own keys.",
+        description="Retrieve a paginated list of API keys in the system. Returns API key metadata including creation date, user association, and key status — never the token, which is shown only when the key is created. Supports filtering and pagination. Superusers can view all keys, while regular users see only their own keys.",
         tags=["API Keys"],
         summary="List API keys",
     )
