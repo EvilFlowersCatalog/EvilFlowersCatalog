@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "dbe016d7e916e140aa241a9393b78e33e1b16e67",
-    "short": "dbe016d",
-    "message": "Merge remote-tracking branch 'origin/develop' into develop",
+    "sha": "fe26abaddec9c6e2913e4511d8463652a2ff5423",
+    "short": "fe26aba",
+    "message": "feat(mcp): reencrypt_publication re-runs registered LCP jobs (#98)",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/dbe016d7e916e140aa241a9393b78e33e1b16e67"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/fe26abaddec9c6e2913e4511d8463652a2ff5423"
   },
-  "deployed_at": "2026-11-08T16:25:24Z",
+  "deployed_at": "2026-11-08T16:56:31Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
