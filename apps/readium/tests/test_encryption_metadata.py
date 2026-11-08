@@ -158,6 +158,18 @@ class PublicationMetadataTests(SimpleTestCase):
         metadata = ContentEncryptionService.publication_metadata(entry)
         self.assertEqual(metadata["identifier"], "https://doi.org/10.1000/xyz")
 
+    def test_an_identifier_stored_as_a_uri_is_not_prefixed_twice(self):
+        cases = (
+            ({"isbn": "urn:isbn:9789811015595"}, "urn:isbn:9789811015595"),
+            ({"isbn": "ISBN:978-80-227-4999-9"}, "urn:isbn:9788022749999"),
+            ({"doi": "https://doi.org/10.1000/xyz"}, "https://doi.org/10.1000/xyz"),
+            ({"doi": "doi:10.1000/xyz"}, "https://doi.org/10.1000/xyz"),
+        )
+        for identifiers, expected in cases:
+            with self.subTest(identifiers=identifiers):
+                metadata = ContentEncryptionService.publication_metadata(_entry(identifiers=identifiers))
+                self.assertEqual(metadata["identifier"], expected)
+
     def test_empty_entry_sends_only_title_and_author(self):
         metadata = ContentEncryptionService.publication_metadata(_entry(title="Bare"))
         self.assertEqual(metadata, {"title": "Bare", "author": ""})

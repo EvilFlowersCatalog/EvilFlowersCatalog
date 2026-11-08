@@ -19,6 +19,7 @@ import uuid
 from apps.core.fields.localized import localize
 from apps.core.models import Acquisition
 from apps.files.storage import get_storage
+from apps.opds.services.identifiers import entry_identifier_uris
 from apps.readium.models import EncryptedContent, License
 from apps.events.services import get_event_broker
 from evil_flowers_catalog import telemetry
@@ -361,11 +362,11 @@ class ContentEncryptionService:
         if subjects:
             metadata["subjects"] = subjects
 
-        identifiers = entry.identifiers or {}
-        if identifiers.get("isbn"):
-            metadata["identifier"] = f"urn:isbn:{identifiers['isbn']}"
-        elif identifiers.get("doi"):
-            metadata["identifier"] = f"https://doi.org/{identifiers['doi']}"
+        # Same URI as the OPDS feeds, so a reader matches the package to the
+        # catalog record; `[]` when the entry has neither ISBN nor DOI.
+        uris = entry_identifier_uris(entry)
+        if uris:
+            metadata["identifier"] = uris[0]
 
         # Storage-relative path; without it the worker renders page 1.
         if entry.image:

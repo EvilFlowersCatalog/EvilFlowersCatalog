@@ -30,6 +30,7 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Fixed**: Reservations are not promoted on entries with lending switched off
 - **Fixed**: Status document link rewrite and anonymous entry listing
 - **Fixed**: `GET /api/v1/entries?query=` keeps the relevance ranking instead of falling back to `created_at`; an explicit `order_by` still wins ([#60](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/60))
+- **Fixed**: ISBN/DOI already stored as a URI (`urn:isbn:…`, `https://doi.org/…`) is no longer prefixed twice in OPDS identifiers and in the LCP package manifest; the manifest now uses the same identifier URI as the feeds
 - **Fixed**: CI Docker build fails at "Install poetry" on a stale apt index ([#97](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/97))
 
 ## 0.14.0 : 2026-09-10
