@@ -1,0 +1,14 @@
+{
+  "ref": "fix/public-https-scheme",
+  "slug": "fix-public-https-scheme",
+  "kind": "branch",
+  "commit": {
+    "sha": "43e65000d6c8b0ffdd1fc7c2fce9b211875faf14",
+    "short": "43e6500",
+    "message": "fix(api): treat requests for the public https host as https",
+    "author": "Tomáš Kordoš",
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/43e65000d6c8b0ffdd1fc7c2fce9b211875faf14"
+  },
+  "deployed_at": "2026-11-08T15:50:29Z",
+  "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
+}
