@@ -28,6 +28,7 @@ from apps.api.views import (
 # observability so an unexpected POST is visible in logs rather than
 # silently 404ing.
 from apps.dataverse.views import PrepublishView as _DataversePrepublishView
+from apps.extraction import admin_views as extraction_admin
 from apps.extraction import discovery as extraction_discovery
 from apps.extraction import views as extraction_views
 
@@ -66,6 +67,23 @@ urlpatterns = [
     # Recommendations and figures from the extraction index (IP-018 Phase 8)
     path("entries/<uuid:entry_id>/similar", extraction_discovery.EntrySimilar.as_view(), name="entry-similar"),
     path("entries/<uuid:entry_id>/figures", extraction_discovery.EntryFigures.as_view(), name="entry-figures"),
+    # Extraction for the entry's managers: status, runs, queue, (re)processing (IP-018 admin)
+    path("entries/<uuid:entry_id>/extraction", extraction_admin.EntryExtraction.as_view(), name="entry-extraction"),
+    path(
+        "entries/<uuid:entry_id>/extraction/regions",
+        extraction_admin.EntryExtractionRegions.as_view(),
+        name="entry-extraction-regions",
+    ),
+    path(
+        "entries/<uuid:entry_id>/extraction/regions/<uuid:region_id>/image",
+        extraction_admin.EntryExtractionRegionImage.as_view(),
+        name="entry-extraction-region-image",
+    ),
+    path(
+        "entries/<uuid:entry_id>/extraction/paragraphs",
+        extraction_admin.EntryExtractionParagraphs.as_view(),
+        name="entry-extraction-paragraphs",
+    ),
     path("entry-introspection", entries.EntryIntrospection.as_view()),
     path("catalogs/<uuid:catalog_id>/entries", entries.EntryManagement.as_view()),
     path(

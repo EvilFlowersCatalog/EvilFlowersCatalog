@@ -155,6 +155,16 @@ class EntryFilter(BaseSecuredFilter):
         ),
     )
 
+    extraction_status = django_filters.CharFilter(
+        method="filter_extraction_status",
+        help_text=(
+            "Filter entries by their AI extraction (IP-018): the status of the newest run, a single value or "
+            "a comma-separated list of `unsupported` (nothing to process), `none` (never queued), `queued`, "
+            "`running`, `done`, `failed`. The pseudo-value `available` matches entries with an active run, "
+            "whatever a newer run is doing."
+        ),
+    )
+
     publisher = django_filters.CharFilter(
         method="filter_publisher",
         help_text=(
@@ -352,6 +362,21 @@ class EntryFilter(BaseSecuredFilter):
         if not codes or "*" in codes:
             return qs
         return qs.filter(Q(language__alpha2__in=codes) | Q(language__alpha3__in=codes))
+
+    @classmethod
+    def filter_extraction_status(cls, qs, name, value):
+        from apps.extraction.admin_views import ENTRY_EXTRACTION_STATUSES, annotate_entries
+        from apps.extraction.models import ExtractionRun
+
+        values = set(cls._split_csv(value))
+        statuses = values & set(ENTRY_EXTRACTION_STATUSES)
+        available = "available" in values
+        if not statuses and not available:
+            return qs
+        condition = Q(extraction_status__in=statuses) if statuses else Q(pk__in=[])
+        if available:
+            condition |= Q(pk__in=ExtractionRun.objects.filter(is_active=True).values("acquisition__entry_id"))
+        return annotate_entries(qs).filter(condition)
 
     # IP-004 Phase 5: saturation post-filters. These are instance methods so they
     # have access to `self.request.user`, which `lcp_state_mapping` needs to

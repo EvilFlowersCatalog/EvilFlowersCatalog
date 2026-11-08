@@ -35,6 +35,7 @@ from apps.api.services.entry import EntryService, attach_acquisition
 from apps.core.search.query import describe_hits
 from apps.core.models import Entry, Price, Catalog, ShelfRecord, User
 from apps.core.views import SecuredView
+from apps.extraction import admin_views as extraction_admin
 from apps.readium.models import License
 from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
 
@@ -179,6 +180,15 @@ class EntryPaginator(SecuredView):
                 facets = EntryFacetService(request, search=search).compute()
                 response["facets"] = EntryFacetSerializer.Base.model_validate(facets)
             return metadata, response
+        # Extraction columns of the admin list (IP-018), only when asked for: they are subqueries.
+        if extraction_admin.wants_entry_columns(request):
+            entries = extraction_admin.annotate_entries(entries)
+
+        # `query` ranks by relevance (EntryFilter.filter_query); the default
+        # `order_by=created_at` would throw that ranking away (#60).
+        ordering = None
+        if request.GET.get("query", "").strip() and "order_by" not in request.GET:
+            ordering = Ordering(["-relevance_score", "-popularity", "-created_at"])
 
         return PaginationResponse(
             request,
