@@ -82,6 +82,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Must run first: fixes the request scheme before anything builds URLs.
+    "apps.api.middleware.public_scheme.PublicSchemeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # GZip compresses the highly-repetitive OPDS Atom XML and entry JSON
     # payloads (which now carry ~15 LCP fields per entry). Placed high so it
