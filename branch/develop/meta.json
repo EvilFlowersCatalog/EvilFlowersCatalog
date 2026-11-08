@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "59d8931e80adb5b8d23819fa14e432ca5fb86801",
-    "short": "59d8931",
-    "message": "Few little fixies",
+    "sha": "a2afacd608129984650e846aaf3fe170ac4cac9e",
+    "short": "a2afacd",
+    "message": "Implementing #72 (ETag layer)",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/59d8931e80adb5b8d23819fa14e432ca5fb86801"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/a2afacd608129984650e846aaf3fe170ac4cac9e"
   },
-  "deployed_at": "2026-11-08T13:47:00Z",
+  "deployed_at": "2026-11-08T14:37:01Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
