@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "9288f97fc31bac43c9584dcc890a8e52cbd2b97f",
-    "short": "9288f97",
-    "message": "K8s deployments",
+    "sha": "59d8931e80adb5b8d23819fa14e432ca5fb86801",
+    "short": "59d8931",
+    "message": "Few little fixies",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/9288f97fc31bac43c9584dcc890a8e52cbd2b97f"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/59d8931e80adb5b8d23819fa14e432ca5fb86801"
   },
-  "deployed_at": "2026-11-07T02:01:43Z",
+  "deployed_at": "2026-11-08T13:47:00Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
