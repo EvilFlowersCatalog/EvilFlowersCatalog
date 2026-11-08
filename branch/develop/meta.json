@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "1b3330d3e303caaf722c3627172a5eadca37c766",
-    "short": "1b3330d",
-    "message": "Merge branch 'fix/lcpl-download-url-https' into develop",
+    "sha": "acafa4e3239c9803202746f7017b19305023f692",
+    "short": "acafa4e",
+    "message": "Merge branch 'fix/public-https-scheme' into develop",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/1b3330d3e303caaf722c3627172a5eadca37c766"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/acafa4e3239c9803202746f7017b19305023f692"
   },
-  "deployed_at": "2026-11-08T15:28:44Z",
+  "deployed_at": "2026-11-08T15:51:47Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
