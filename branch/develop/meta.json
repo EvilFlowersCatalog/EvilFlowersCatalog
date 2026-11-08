@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "2190e8a7247dba23f13395796634b1b79b818a59",
-    "short": "2190e8a",
-    "message": "Merge branch 'fix/relative-acquisition-redirect' into develop",
-    "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/2190e8a7247dba23f13395796634b1b79b818a59"
+    "sha": "dbe016d7e916e140aa241a9393b78e33e1b16e67",
+    "short": "dbe016d",
+    "message": "Merge remote-tracking branch 'origin/develop' into develop",
+    "author": "Jakub Dubec",
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/dbe016d7e916e140aa241a9393b78e33e1b16e67"
   },
-  "deployed_at": "2026-11-08T16:15:20Z",
+  "deployed_at": "2026-11-08T16:25:24Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
