@@ -27,6 +27,9 @@ class FeedFilter(django_filters.FilterSet):
         method="filter_title",
         help_text="Filter feeds by title using case-insensitive partial matching in any of its translations.",
     )
+    url_name = django_filters.CharFilter(
+        help_text="Filter feeds by exact URL name. Combine with catalog_id to check whether a slug is still free.",
+    )
     kind = django_filters.ChoiceFilter(
         choices=Feed.FeedKind.choices,
         help_text="Filter feeds by type/kind. Available types include navigation feeds, acquisition feeds, and other specialized feed types for different content organization patterns.",

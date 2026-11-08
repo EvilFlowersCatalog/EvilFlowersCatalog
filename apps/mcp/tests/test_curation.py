@@ -76,6 +76,7 @@ class WriteSurfaceSweepTests(ManagementTestCase):
             "classify_entries": {"entry_ids": entry_ids, "category_ids": [str(category.pk)]},
             "create_entry": {"catalog_id": catalog_id, "title": "Sweep book", "language_code": "sk"},
             "update_entry": {"entry_id": entry_ids[0], "title": "Sweep book"},
+            "delete_entry": {"entry_id": entry_ids[0]},
             "create_upload_link": {"entry_id": entry_ids[0]},
             # The administrator check runs before any lookup, so no job need exist.
             "requeue_encryption": {"content_ids": [str(uuid.uuid4())]},

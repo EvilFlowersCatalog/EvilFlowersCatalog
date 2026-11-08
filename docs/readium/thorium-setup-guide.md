@@ -60,16 +60,18 @@ Before you can borrow books, you need an **LCP passphrase** on your account. Thi
 
 ## Step 4: Sign In
 
-When you open the catalog for the first time, Thorium will show a login screen.
+Public catalogs let you browse without signing in, so Thorium does not ask for a login when you open them. To sign in:
 
-1. Enter your **username** (or email)
-2. Enter your **password**
-3. Click **Sign In**
+1. Go to **Catalogs**. The card of your catalog shows a **person icon** next to the edit and delete buttons.
+2. Click the person icon. Thorium shows the login screen.
+3. Enter your **username** (or email) and **password**, then click **Sign In**.
 
-That's it -- Thorium remembers your credentials for future visits.
+After you sign in, the same icon opens **My Shelf**, your borrowed books. Thorium remembers your credentials for this server.
 
-!!! note
-    Some catalogs are public and let you browse without signing in. You will still need to sign in when you want to borrow a book.
+Pressing **Borrow** on a book also asks you to sign in if you haven't yet.
+
+!!! tip "No person icon on the card?"
+    Thorium looks for sign-in support only when a catalog is first added. If you added the catalog before this server supported it, or changed its URL with the edit button, delete the catalog and add it again. Use the `/opds/v2/…/` URL.
 
 ---
 

@@ -9,6 +9,7 @@ import logging
 import os
 
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.module_loading import import_string
 from partial_date import PartialDate
@@ -20,6 +21,8 @@ from apps.core.models import Acquisition
 from apps.files.storage import get_storage
 from apps.readium.models import EncryptedContent, License
 from apps.events.services import get_event_broker
+from evil_flowers_catalog import telemetry
+from evil_flowers_catalog.log_format import current_trace_ids
 
 logger = logging.getLogger(__name__)
 
@@ -105,10 +108,12 @@ class ContentEncryptionService:
         """Send a stuck or failed encryption job to the worker again.
 
         `encrypt_acquisition` returns early once an `EncryptedContent` row
-        exists, so a job lost in transit (wrong broker, worker without the
-        storage mount) stays PENDING forever — lcpencrypt only reports back on
-        success. This re-sends the task for the existing row, keeping its
-        `lcp_content_id` and `encrypted_path`, and resets it to PENDING.
+        exists, so a job lost in transit (wrong broker, worker down) stays
+        PENDING forever — nothing reports on a task no worker ran. A job the
+        worker failed turns FAILED through its result report (issue #99).
+        This re-sends the task for the existing row, keeping its
+        `lcp_content_id` and `encrypted_path`, and resets it to PENDING under
+        a new task id.
 
         Raises:
             ValueError: If the row is already COMPLETED or REGISTERED.
@@ -257,6 +262,8 @@ class ContentEncryptionService:
         # notify = callback URL lcpencrypt POSTs to on success; the webhook
         # (`apps/readium/views/hooks.py`) is what flips the row to REGISTERED.
         # The worker drops the flag when it is None.
+        # report = URL the worker POSTs the outcome of the task to, success or
+        # failure (`EncryptionResultWebhook`, issue #99). None: no report.
         #
         # Publication metadata: for the LCP-for-PDF profile (`.lcpdf`) the
         # worker wraps the raw PDF into a Readium package and writes its
@@ -271,6 +278,7 @@ class ContentEncryptionService:
             "filename": encrypted_content.lcp_content_id,
             "lcpsv": getattr(settings, "EVILFLOWERS_READIUM_LCPSV_URL", None),
             "notify": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None),
+            "report": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_REPORT_URL", None),
             "url": f"{settings.EVILFLOWERS_READIUM_BASE_URL}/readium/v1/content",
         }
         kwargs.update(ContentEncryptionService._publication_metadata(acquisition.entry))
@@ -281,8 +289,31 @@ class ContentEncryptionService:
             {
                 "kwargs": kwargs,
                 "queue": "evilflowers_lcpencrypt_worker",
+                "task_id": ContentEncryptionService._record_dispatch(encrypted_content),
             },
         )
+
+    @staticmethod
+    def _record_dispatch(encrypted_content: EncryptedContent) -> str:
+        """Start a new attempt on the row and return the task id to send it under (issue #99).
+
+        The task id is minted here, not read back from the broker, so the row
+        knows it before the worker can possibly report on it; it is saved
+        before dispatch for the same reason. The dispatch span gets
+        `lcp.content_id`, so `{span.lcp.content_id="…"}` finds this trace.
+        """
+        task_id = str(uuid.uuid4())
+        telemetry.set_span_attributes(lcp__content_id=encrypted_content.lcp_content_id, lcp__task_id=task_id)
+        encrypted_content.task_id = task_id
+        encrypted_content.trace_id, _span_id = current_trace_ids()
+        encrypted_content.attempts = (encrypted_content.attempts or 0) + 1
+        encrypted_content.last_dispatched_at = timezone.now()
+        encrypted_content.report = None
+        encrypted_content.reported_at = None
+        encrypted_content.save(
+            update_fields=["task_id", "trace_id", "attempts", "last_dispatched_at", "report", "reported_at"]
+        )
+        return task_id
 
     @staticmethod
     def _publication_metadata(entry) -> dict:
@@ -362,23 +393,75 @@ class ContentEncryptionService:
             # Generate default URL
             encrypted_content.encrypted_url = ContentEncryptionService.get_encrypted_content_url(encrypted_content)
 
-        encrypted_content.save()
+        # Only the columns this method owns: the worker's result report may be
+        # stored concurrently (issue #99) and a full save would erase it.
+        encrypted_content.save(update_fields=["status", "encrypted_at", "encrypted_url", "updated_at"])
         return encrypted_content
 
     @staticmethod
-    def mark_encryption_failed(lcp_content_id: str, error_message: str):
-        """Mark encryption as failed."""
-        encrypted_content = EncryptedContent.objects.get(lcp_content_id=lcp_content_id)
-        encrypted_content.status = EncryptedContent.EncryptionStatus.FAILED
-        encrypted_content.error_message = error_message
-        encrypted_content.save()
+    def _current_task(lcp_content_id: str, task_id: Optional[str]):
+        """Queryset of the row, narrowed to `task_id` when one is given.
+
+        A row dispatched before task ids were stored (`task_id` NULL) accepts
+        any report. Updating through this queryset makes the stale-report check
+        and the write one statement, so a concurrent re-queue cannot slip in
+        between them.
+        """
+        queryset = EncryptedContent.objects.filter(lcp_content_id=lcp_content_id)
+        if task_id:
+            queryset = queryset.filter(Q(task_id=task_id) | Q(task_id__isnull=True))
+        return queryset
+
+    @staticmethod
+    def mark_encryption_failed(
+        lcp_content_id: str, error_message: str, task_id: Optional[str] = None, report: Optional[dict] = None
+    ) -> bool:
+        """Mark encryption as failed.
+
+        With `task_id`, only while that task is still the row's current one;
+        returns False (and changes nothing) for a report about an older task.
+        """
+        now = timezone.now()
+        changes = {
+            "status": EncryptedContent.EncryptionStatus.FAILED,
+            "error_message": error_message,
+            "updated_at": now,
+        }
+        if task_id:
+            changes.update(task_id=task_id, report=report, reported_at=now)
+        return ContentEncryptionService._current_task(lcp_content_id, task_id).update(**changes) > 0
+
+    @staticmethod
+    def record_encryption_report(
+        lcp_content_id: str, task_id: Optional[str], trace_id: Optional[str], report: Optional[dict]
+    ) -> bool:
+        """Store the worker's report of a successful task (issue #99).
+
+        The status is left alone: the notify webhook flips it to REGISTERED,
+        and may arrive before or after this report. Returns False for a report
+        about an older task.
+        """
+        now = timezone.now()
+        updated = ContentEncryptionService._current_task(lcp_content_id, task_id).update(
+            report=report, reported_at=now, updated_at=now
+        )
+        if updated and task_id:
+            # Rows dispatched before this was tracked learn their task now.
+            EncryptedContent.objects.filter(lcp_content_id=lcp_content_id, task_id__isnull=True).update(
+                task_id=task_id
+            )
+        if updated and trace_id:
+            EncryptedContent.objects.filter(lcp_content_id=lcp_content_id, trace_id__isnull=True).update(
+                trace_id=trace_id
+            )
+        return updated > 0
 
     @staticmethod
     def mark_registered_with_lcp_server(encrypted_content: EncryptedContent):
         """Mark content as registered with LCP Server."""
         encrypted_content.status = EncryptedContent.EncryptionStatus.REGISTERED
         encrypted_content.registered_at = timezone.now()
-        encrypted_content.save()
+        encrypted_content.save(update_fields=["status", "registered_at", "updated_at"])
 
         # lcpencrypt has read its input by the time it notifies us.
         try:

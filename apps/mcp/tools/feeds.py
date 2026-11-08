@@ -5,10 +5,9 @@ acquisition feeds hold entries. These tools mirror `apps/api/views/feeds.py`:
 the same `FeedFilter` for scoping, the same `FeedForm` for validation, and the
 same `check_catalog_manage` / `check_catalog_read` checkers.
 
-Two places where they are deliberately **stricter** than the REST endpoint, both
+One place where they are deliberately **stricter** than the REST endpoint,
 noted inline: moving a feed between catalogs is permission-checked on both
-sides, and the `(catalog, title)` uniqueness constraint is checked rather than
-left to surface as an IntegrityError.
+sides. Only `url_name` must be unique within a catalog; titles may repeat.
 """
 
 import logging
@@ -48,7 +47,7 @@ FEED_FIELDS = {
             {"type": "object", "additionalProperties": {"type": "string", "maxLength": 100}},
         ],
         "description": (
-            "Human-readable feed name, unique within the catalog. Either translations keyed by ISO 639-1 "
+            "Human-readable feed name; it need not be unique. Either translations keyed by ISO 639-1 "
             'code ({"sk": "...", "en": "..."}) or a plain string stored in the default language. '
             "The default-language (Slovak) translation is required. Updating replaces all translations."
         ),
@@ -114,26 +113,25 @@ def _manageable_feed(request, feed_id: str, action: str) -> Feed:
     return feed
 
 
-def _assert_unique(catalog, title: dict, url_name: str, *, exclude_pk=None) -> None:
-    """Both halves of `Feed.Meta.unique_together`.
-
-    The REST endpoint checks `url_name` only, so a duplicate title reaches the
-    database and surfaces as a 500. Checking both here turns it into a message
-    the model can act on.
-    """
-    clashes = Feed.objects.filter(catalog=catalog)
+def _assert_unique(catalog, url_name: str, *, exclude_pk=None) -> None:
+    """`Feed.Meta.unique_together` is `(catalog, url_name)`; titles may repeat."""
+    clashes = Feed.objects.filter(catalog=catalog, url_name=url_name)
     if exclude_pk:
         clashes = clashes.exclude(pk=exclude_pk)
 
-    if clashes.filter(url_name=url_name).exists():
+    existing = clashes.first()
+    if existing is not None:
         raise ToolConflict(
-            _("A feed with url_name '%(url_name)s' already exists in catalog '%(catalog)s'.")
-            % {"url_name": url_name, "catalog": catalog.title}
-        )
-    if clashes.filter(title=title).exists():
-        raise ToolConflict(
-            _("A feed titled '%(title)s' already exists in catalog '%(catalog)s'.")
-            % {"title": localize(title), "catalog": catalog.title}
+            _(
+                "A feed with url_name '%(url_name)s' already exists in catalog '%(catalog)s' "
+                "(feed '%(title)s'). '%(suggestion)s' is free."
+            )
+            % {
+                "url_name": url_name,
+                "catalog": catalog.title,
+                "title": localize(existing.title),
+                "suggestion": Feed.available_url_name(catalog, url_name, exclude_pk=exclude_pk),
+            }
         )
 
 
@@ -229,7 +227,7 @@ def get_feed(request, raw_arguments: dict) -> dict:
     description=(
         "Create a feed in a catalog. Requires `manage` access on that catalog. A 'navigation' "
         "feed groups other feeds and cannot hold entries; an 'acquisition' feed holds "
-        "publications. `title` and `url_name` must each be unique within the catalog."
+        "publications. `url_name` must be unique within the catalog; `title` may repeat."
     ),
     input_schema={
         "type": "object",
@@ -276,7 +274,7 @@ def create_feed(request, raw_arguments: dict) -> dict:
         }
     )
 
-    _assert_unique(catalog, form.cleaned_data["title"], form.cleaned_data["url_name"])
+    _assert_unique(catalog, form.cleaned_data["url_name"])
 
     feed = Feed(creator=request.user)
     form.populate(feed)
@@ -374,7 +372,7 @@ def update_feed(request, raw_arguments: dict) -> dict:
         payload["parents"] = arguments.uuid_sequence("parent_ids") or []
 
     form = _validated_form(payload, exclude_pk=feed.pk)
-    _assert_unique(catalog, form.cleaned_data["title"], form.cleaned_data["url_name"], exclude_pk=feed.pk)
+    _assert_unique(catalog, form.cleaned_data["url_name"], exclude_pk=feed.pk)
 
     form.populate(feed)
     feed.save()

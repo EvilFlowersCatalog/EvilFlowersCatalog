@@ -3,6 +3,7 @@ Readium LCP URL Configuration
 
 Endpoints:
 - /hooks/encryption - Webhook for lcpencrypt worker notifications
+- /hooks/encryption/result - Worker result report for every task (success or failure)
 - /content/{id} - Download encrypted publications
 - /licenses - License CRUD operations
 - /licenses/{id}.lcpl - License Gateway (download .lcpl files; capability-token only after IP-009)
@@ -22,7 +23,7 @@ from django.urls import path, re_path
 
 from apps.readium.views.claim import ReservationClaimPage
 from apps.readium.views.content import EncryptedContentDownloadView
-from apps.readium.views.hooks import EncryptionWebhook
+from apps.readium.views.hooks import EncryptionResultWebhook, EncryptionWebhook
 from apps.readium.views.licenses import LicenseManagement, LicenseDetail, LicenseRenewalsView
 from apps.readium.views.availability import EntryAvailabilityView
 from apps.readium.views.download import LicenseDownloadView
@@ -40,6 +41,7 @@ from apps.readium.views.status_proxy import (
 urlpatterns = [
     # Webhooks
     path("hooks/encryption", EncryptionWebhook.as_view(), name="encryption-webhook"),
+    path("hooks/encryption/result", EncryptionResultWebhook.as_view(), name="encryption-result-webhook"),
     # Encrypted content download (reading apps fetch encrypted publications here)
     # Matches both /content/{uuid} and /content/{uuid}.lcpdf (lcpencrypt appends LCP extension)
     re_path(

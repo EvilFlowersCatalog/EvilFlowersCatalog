@@ -57,8 +57,21 @@ class S3Storage(Storage):
             return False
 
     def listdir(self, path):
-        s3_objects = self._client.list_objects(settings.EVILFLOWERS_STORAGE_S3_BUCKET, prefix=path)
-        return s3_objects
+        """Django's contract: `(directories, files)` directly under `path`, names relative to it.
+
+        This returned minio's object iterator before, which every caller unpacked
+        as a 2-tuple inside a broad `except` — so on S3 removing a folder (LCP
+        source copies, extraction crops) silently did nothing.
+        """
+        prefix = f"{path.strip('/')}/" if path and path.strip("/") else ""
+        directories, files = [], []
+        for item in self._client.list_objects(settings.EVILFLOWERS_STORAGE_S3_BUCKET, prefix=prefix, recursive=False):
+            name = item.object_name[len(prefix) :]
+            if item.is_dir:
+                directories.append(name.rstrip("/"))
+            elif name:
+                files.append(name)
+        return directories, files
 
     def size(self, name):
         s3_object = self._client.stat_object(settings.EVILFLOWERS_STORAGE_S3_BUCKET, name)

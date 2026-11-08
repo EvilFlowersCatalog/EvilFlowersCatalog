@@ -18,7 +18,9 @@ class Feed(BaseModel):
         default_permissions = ()
         verbose_name = _("Feed")
         verbose_name_plural = _("Feeds")
-        unique_together = (("catalog", "title"), ("catalog", "url_name"))
+        # Only the slug identifies a feed (it is the OPDS path segment). Titles may
+        # repeat — two "Novinky" feeds under different parents are legitimate.
+        unique_together = (("catalog", "url_name"),)
 
     class FeedKind(models.TextChoices):
         NAVIGATION = "navigation", _("navigation")
@@ -43,6 +45,28 @@ class Feed(BaseModel):
     @property
     def url(self):
         return reverse("opds:feed", args=[self.catalog.url_name, self.url_name])
+
+    @classmethod
+    def available_url_name(cls, catalog, url_name: str, *, exclude_pk=None, max_length: int = 50) -> str:
+        """First free slug in `catalog` built from `url_name`: itself, then `-2`, `-3`, ...
+
+        Used to offer the client a concrete alternative when a slug is taken.
+        """
+        taken = cls.objects.filter(catalog=catalog, url_name__startswith=url_name[: max_length - 8])
+        if exclude_pk is not None:
+            taken = taken.exclude(pk=exclude_pk)
+        taken = set(taken.values_list("url_name", flat=True))
+
+        if url_name not in taken:
+            return url_name
+
+        counter = 2
+        while True:
+            suffix = f"-{counter}"
+            candidate = f"{url_name[: max_length - len(suffix)]}{suffix}"
+            if candidate not in taken:
+                return candidate
+            counter += 1
 
 
 @receiver(post_save, sender=Feed)

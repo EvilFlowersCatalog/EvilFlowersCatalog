@@ -38,6 +38,13 @@ AVAILABILITY_SCHEMA = {
             "type": "string",
             "enum": ["available_now", "available_in_days", "active_loan_for_user", "fully_borrowed"],
         },
+        "package_ready": {
+            "type": "boolean",
+            "description": (
+                "False while the encrypted package is not registered with the LCP server (encryption "
+                "pending, failed or lost): no copy can be lent, whatever `total_slots` says."
+            ),
+        },
         "available_slots": {"type": "integer"},
         "total_slots": {"type": "integer"},
         "next_available_at": {"type": "string", "format": "date-time"},

@@ -10,14 +10,21 @@ here are **restricted to administrators** — the same gate as
 The check runs before any lookup, so a non-administrator learns nothing about
 which publications have jobs — the refusal is the same whatever ids are sent.
 
-lcpencrypt reports back only on success. A job lost in transit (wrong broker,
-worker without the storage mount) therefore stays `pending` forever and never
-flips to `failed`; `list_encryption_jobs` is how an operator finds those, and
-`requeue_encryption` sends them again.
+With `EVILFLOWERS_READIUM_LCPENCRYPT_REPORT_URL` set, the worker reports every
+task's outcome and a failure in the worker turns the job `failed` with its
+error (issue #99). A job that never reached a worker (wrong broker, worker
+down) still sends nothing and stays `pending`; `list_encryption_jobs` flags it
+`stale` once it has waited longer than
+`EVILFLOWERS_READIUM_ENCRYPTION_STALE_MINUTES`, and `requeue_encryption` sends
+it again. Each job carries the Celery `task_id` and the `trace_id` of its last
+dispatch, so its run can be found in Tempo.
 """
 
 import logging
+from datetime import timedelta
 
+from django.conf import settings
+from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from apps.mcp.arguments import Arguments
@@ -48,9 +55,44 @@ ENCRYPTION_JOB_SCHEMA = {
         "created_at": {"type": "string", "format": "date-time"},
         "updated_at": {"type": "string", "format": "date-time"},
         "encrypted_at": {"type": ["string", "null"], "format": "date-time"},
+        "task_id": {"type": ["string", "null"], "description": "Celery task id of the last dispatch."},
+        "trace_id": {
+            "type": ["string", "null"],
+            "description": "Trace of the last dispatch; it continues into the worker run and its result report.",
+        },
+        "attempts": {"type": "integer", "description": "How many times the job was sent to the worker."},
+        "last_dispatched_at": {"type": ["string", "null"], "format": "date-time"},
+        "reported_at": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "When the worker reported the outcome of the last dispatch.",
+        },
+        "report": {
+            "type": ["object", "null"],
+            "description": "The worker's report of the last dispatch: cover, pages, toc_entries, warnings, "
+            "protected_content_* (on success).",
+        },
+        "stale": {
+            "type": "boolean",
+            "description": "`pending`, no report, and dispatched longer ago than the stale threshold: "
+            "almost certainly lost.",
+        },
     },
     "required": ["content_id", "status", "entry_id"],
 }
+
+
+def _isoformat(value):
+    return value.isoformat() if value else None
+
+
+def _is_stale(encrypted_content: EncryptedContent) -> bool:
+    if encrypted_content.status != EncryptedContent.EncryptionStatus.PENDING or encrypted_content.reported_at:
+        return False
+    # Rows dispatched before #99 have no `last_dispatched_at`.
+    dispatched_at = encrypted_content.last_dispatched_at or encrypted_content.updated_at
+    threshold = timedelta(minutes=settings.EVILFLOWERS_READIUM_ENCRYPTION_STALE_MINUTES)
+    return timezone.now() - dispatched_at > threshold
 
 
 def _require_administrator(request) -> None:
@@ -78,7 +120,14 @@ def _job(encrypted_content: EncryptedContent) -> dict:
         "error_message": encrypted_content.error_message,
         "created_at": encrypted_content.created_at.isoformat(),
         "updated_at": encrypted_content.updated_at.isoformat(),
-        "encrypted_at": encrypted_content.encrypted_at.isoformat() if encrypted_content.encrypted_at else None,
+        "encrypted_at": _isoformat(encrypted_content.encrypted_at),
+        "task_id": encrypted_content.task_id,
+        "trace_id": encrypted_content.trace_id,
+        "attempts": encrypted_content.attempts,
+        "last_dispatched_at": _isoformat(encrypted_content.last_dispatched_at),
+        "reported_at": _isoformat(encrypted_content.reported_at),
+        "report": encrypted_content.report,
+        "stale": _is_stale(encrypted_content),
     }
 
 
@@ -92,10 +141,12 @@ def _jobs_queryset():
     description=(
         "List Readium LCP encryption jobs, oldest first, so an operator can find the ones that are "
         "stuck. **Restricted to administrators.** By default returns jobs still `pending` or "
-        "`failed` — a publication cannot be lent until its job is `registered`. A job that has sat "
-        "in `pending` for more than a few minutes almost certainly never reached the worker "
-        "(lcpencrypt only reports back on success, so a lost job never turns `failed`). Pass the "
-        "`content_id` values to `requeue_encryption` to retry them."
+        "`failed` — a publication cannot be lent until its job is `registered`. The worker reports "
+        "failures, so a job it could not encrypt turns `failed` with the worker's `error_message`. "
+        "A job marked `stale` sat in `pending` without any report and almost certainly never "
+        "reached a worker. Each job carries `task_id` and `trace_id` of its last dispatch (look the "
+        "trace up in Tempo) and the worker's `report`. Pass the `content_id` values to "
+        "`requeue_encryption` to retry them."
     ),
     input_schema={
         "type": "object",
@@ -179,6 +230,8 @@ def list_encryption_jobs(request, raw_arguments: dict) -> dict:
                         "entry_title": {"type": "string"},
                         "requeued": {"type": "boolean"},
                         "status": {"type": "string"},
+                        "task_id": {"type": ["string", "null"], "description": "Celery task id of the new dispatch."},
+                        "trace_id": {"type": ["string", "null"]},
                         "reason": {"type": "string"},
                     },
                     "required": ["content_id", "requeued", "status"],
@@ -211,7 +264,12 @@ def requeue_encryption(request, raw_arguments: dict) -> dict:
         except ValueError as error:
             result.update(requeued=False, status=encrypted_content.status, reason=str(error))
         else:
-            result.update(requeued=True, status=encrypted_content.status)
+            result.update(
+                requeued=True,
+                status=encrypted_content.status,
+                task_id=encrypted_content.task_id,
+                trace_id=encrypted_content.trace_id,
+            )
         results.append(result)
 
     requeued = sum(1 for result in results if result["requeued"])

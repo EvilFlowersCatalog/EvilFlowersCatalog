@@ -23,10 +23,13 @@ class CeleryExecurtor(Executor):
                 "queue": event,
             }
 
+        # A caller that wants to recognise the task later (e.g. in a worker's
+        # result report) mints its id and passes it as `task_id`.
         self.celery_app.send_task(
             event,
             args=payload["args"],
             kwargs=payload["kwargs"],
             immutable=True,
             queue=payload["queue"],
+            task_id=payload.get("task_id"),
         )

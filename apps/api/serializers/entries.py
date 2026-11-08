@@ -115,6 +115,9 @@ class EntrySerializer:
         # `shelf_record_id` above. When the context key is absent the response advertises
         # the `not_lcp` defaults.
         lcp_state: LcpState = Field(default=LcpState.NOT_LCP, validate_default=True)
+        # False while an LCP title's package is not registered yet (encryption pending,
+        # failed or lost) — it then reports no free copy, whatever `total_slots` says.
+        lcp_ready: bool = Field(default=False, validate_default=True)
         available_slots: int = Field(default=0, validate_default=True)
         total_slots: int = Field(default=0, validate_default=True)
         # IP-004 Phase 2: `active_count` and `over_saturated` expose legacy over-saturation
@@ -130,6 +133,7 @@ class EntrySerializer:
 
         @field_validator(
             "lcp_state",
+            "lcp_ready",
             "available_slots",
             "total_slots",
             "active_count",

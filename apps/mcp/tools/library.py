@@ -6,8 +6,10 @@ else's borrowing history.
 """
 
 from django.conf import settings
+from django.http import QueryDict
 from django.utils.translation import gettext as _
 
+from apps.api.filters.catalogs import CatalogFilter
 from apps.core.models import Catalog, ShelfRecord, UserCatalog
 from apps.mcp.arguments import Arguments
 from apps.mcp.metadata import credential_hint
@@ -79,7 +81,12 @@ def whoami(request, raw_arguments: dict) -> dict:
         "username": user.username,
         "full_name": user.full_name,
         "is_superuser": user.is_superuser,
-        "readable_catalogs": user.catalogs.count(),
+        # The same scoping `list_catalogs` applies (memberships, public catalogs,
+        # superuser sees all), so the count matches what the model will be shown
+        # and `readable_catalogs >= manageable_catalogs` holds. `user.catalogs`
+        # counted explicit memberships only: 2 readable vs 10 manageable for a
+        # superuser on elvira-dev.
+        "readable_catalogs": CatalogFilter(QueryDict(), queryset=Catalog.objects.all(), request=request).qs.count(),
         # A model should know before it tries. `manageable_catalogs == 0` means
         # every catalog curation tool will refuse, whatever the write surface is
         # set to. Account tools (own API keys and profile) are not covered by it.

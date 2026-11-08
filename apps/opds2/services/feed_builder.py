@@ -97,8 +97,10 @@ class FeedBuilder:
             ),
             # Authentication for OPDS 1.0 §2.2: advertised whether or not the
             # request is signed in, so a reader can discover sign-in up front.
+            # The catalog's own document: it links this catalog's shelf, which
+            # Thorium's catalog-card icon opens.
             Link(
-                href=f"{base}{reverse('opds2:auth')}",
+                href=f"{base}{reverse('opds2:catalog-auth', kwargs={'catalog_name': cn})}",
                 type="application/opds-authentication+json",
                 rel="http://opds-spec.org/auth/document",
             ),

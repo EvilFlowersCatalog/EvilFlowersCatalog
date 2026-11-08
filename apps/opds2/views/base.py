@@ -29,7 +29,7 @@ class Opds2CatalogView(SecuredView):
             return self._dispatch(request, *args, **kwargs)
         except ProblemDetailException as e:
             if e.status == HTTPStatus.UNAUTHORIZED:
-                return authentication_required(request)
+                return authentication_required(request, self.catalog)
             raise
 
     def _dispatch(self, request, *args, **kwargs):

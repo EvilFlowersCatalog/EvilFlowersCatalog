@@ -2,11 +2,34 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## Unreleased
+## 0.15.0 : Unreleased
 
+- **Added**: In-catalog chat assistant on `/assistant/v1/` reusing the MCP tools (IP-015, [#77](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/77)); chats can be resumed, carry an attached publication (`entry_id` on messages) and answer in the reader's UI language
+- **Added**: Assistant in the PDF viewer — `POST /assistant/v1/explain` explains a selection or a region, chats bind to the reader's copy and read it (`read_pdf_page`, `search_pdf` with `regex: true`), cite pages as `[[page:N]]` and store what the reader attached ([#87](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/87), [#89](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/89))
+- **Added**: Assistant reads open-access PDFs of non-Readium entries; `EVILFLOWERS_ASSISTANT_MAX_PAGES_READ` (default 20) caps pages read per turn; Readium LCP entries are never read
+- **Added**: Agent highlights — `POST/GET /assistant/v1/highlights` finds passages by semantic search over the paragraph index (agentic search as fallback) and stores them as an agent annotation; reader highlights carry `text` and `quads` (IP-018)
+- **Added**: `apps/extraction` (IP-018, [#92](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/92)) — extraction runs, regions (figures, tables, equations), paragraphs with pgvector embeddings and sentences; ingestion on `/extraction/v1/`, reader regions on `/api/v1/user-acquisitions/{id}/regions`, `backfill_extraction` command; off by default (`EVILFLOWERS_EXTRACTION_ENABLED`), requires the `vector` extension in PostgreSQL ⚠️
+- **Added**: Recommendations from the paragraph index — `GET /api/v1/entries/{id}/similar` and `POST /api/v1/user-acquisitions/{id}/similar` ([#62](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/62)); entry figures on `GET /api/v1/entries/{id}/figures` (not for Readium LCP entries)
+- **Added**: PDF outline stored as the entry's table of contents after upload; `backfill_table_of_contents` management command
+- **Added**: `GET /api/v1/entries/facets` with per-facet counts (languages, categories, feeds, availability) and publication year range; `reserved` pseudo-state in the `lcp_state` filter ([#74](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/74))
+- **Added**: User activity history (IP-016) on `GET /api/v1/activity`; admin search over users, user acquisitions, activities and Readium loans
+- **Added**: Localized titles of categories and feeds (IP-017, English and Slovak) ([#88](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/88))
+- **Added**: MCP publishing tools (`create_entry`, `update_entry`, `create_upload_link` with signed single-use upload URLs), Readium encryption tools (`list_encryption_jobs`, `requeue_encryption`), user management (`list_users`, `get_user`, `create_user`, `update_user`, `delete_user`) and API key tools (`list_api_keys`, `create_api_key`, `revoke_api_key`)
+- **Added**: OPDS 1.2 conditional GET with a user-aware `ETag` and RFC 5005 paging of acquisition feeds; `EVILFLOWERS_OPDS_PAGE_SIZE` (default 50) and `EVILFLOWERS_OPDS_COMPLETE_FEED_MAX_ENTRIES` (default 2000) ([#72](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/72))
+- **Added**: OpenTelemetry observability — traces, metrics and JSON logs for Django, Celery, gunicorn, the assistant and MCP (IP-019, see `docs/observability.md`)
 - **Added**: The lcpencrypt worker receives full publication metadata for the LCP-for-PDF package manifest — all authors in order, publisher, description, language, day-precision `published`, subjects, ISBN/DOI `identifier` and the catalog cover ([#96](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/96))
+- **Added**: Kubernetes deployment in the build pipeline
+- **Added**: Readium encryption jobs record the Celery `task_id`, `trace_id`, attempt count and last dispatch time; `POST /readium/v1/hooks/encryption/result` accepts the lcpencrypt worker's report of every task, so a worker failure turns the job `failed` with its error; both encryption webhooks tag their span with `lcp.content_id`; `list_encryption_jobs` returns the tracking fields, the last report and a `stale` flag, `requeue_encryption` the new `task_id`. Needs `EVILFLOWERS_READIUM_LCPENCRYPT_REPORT_URL` and migration `readium.0008` ⚠️ ([#99](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/99))
+- **Changed**: Docker image ships PostgreSQL 18 client tools from PGDG (`PG_MAJOR` build arg) ([#93](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/93), [#94](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/94))
 - **Changed**: `compose.services.yml` runs the lcpencrypt worker from `:develop`, drops the unused `LCPSV_URL` and documents its OpenTelemetry settings ([#95](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/95))
+- **Changed**: Feed titles no longer have to be unique within a catalog — only `url_name` is (migration `core.0045`); a taken `url_name` answers 409 `/feed-url-name-taken` naming the conflicting feed and a free `suggested_url_name`; `GET /api/v1/feeds` filters by exact `url_name` ([elvira-portal#30](https://github.com/EvilFlowersCatalog/elvira-portal/issues/30))
+- **Changed**: Category `label` included in the categories Base serializer ([#76](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/76))
+- **Fixed**: OPDS 1.2 / OPDS 2.0 compatibility with reading systems (Thorium lending, borrow links, authentication document, publication manifests)
+- **Fixed**: Readium LCP license page in encrypted PDFs, encryption notifications and download headers ([#86](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/86))
+- **Fixed**: Reservations are not promoted on entries with lending switched off
+- **Fixed**: Status document link rewrite and anonymous entry listing
 - **Fixed**: `GET /api/v1/entries?query=` keeps the relevance ranking instead of falling back to `created_at`; an explicit `order_by` still wins ([#60](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/60))
+- **Fixed**: CI Docker build fails at "Install poetry" on a stale apt index ([#97](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/97))
 
 ## 0.14.0 : 2026-09-10
 

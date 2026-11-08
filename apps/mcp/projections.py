@@ -172,6 +172,9 @@ def availability(lcp_row: Optional[dict]) -> Optional[dict]:
     return _compact(
         {
             "state": state,
+            # False: the package is not registered yet, so nothing can be lent
+            # (`list_encryption_jobs` shows why).
+            "package_ready": lcp_row.get("lcp_ready"),
             "available_slots": lcp_row.get("available_slots"),
             "total_slots": lcp_row.get("total_slots"),
             "next_available_at": _iso(lcp_row.get("next_available_at")),

@@ -3,6 +3,7 @@ from django.urls import path
 from apps.opds2.views import (
     AuthenticationDocumentView,
     BorrowView,
+    CatalogAuthenticationDocumentView,
     CatalogView,
     FeedView,
     NavigationView,
@@ -22,6 +23,8 @@ urlpatterns = [
     path("auth", AuthenticationDocumentView.as_view(), name="auth"),
     # Catalog root
     path("<str:catalog_name>/", CatalogView.as_view(), name="catalog"),
+    # Per-catalog Authentication Document (links the catalog's shelf)
+    path("<str:catalog_name>/auth", CatalogAuthenticationDocumentView.as_view(), name="catalog-auth"),
     # Publications
     path("<str:catalog_name>/publications", PublicationFeedView.as_view(), name="publications"),
     path(

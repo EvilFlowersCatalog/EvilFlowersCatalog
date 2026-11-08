@@ -183,6 +183,19 @@ class PersonalLibraryTests(ToolTestCase):
         self.assertTrue(payload["authenticated"])
         self.assertEqual(payload["username"], "owner")
 
+    def test_whoami_readable_count_matches_list_catalogs(self):
+        """Regression: `readable_catalogs` counted memberships only (2) while a superuser managed 10."""
+        superuser = self._user("root")
+        superuser.is_superuser = True
+        superuser.save()
+
+        for user in (self.owner, self.outsider, superuser):
+            with self.subTest(user=user.username):
+                payload = self.ok("whoami", {}, user)
+                listed = self.ok("list_catalogs", {"limit": 50}, user)["metadata"]["total"]
+                self.assertEqual(payload["readable_catalogs"], listed)
+                self.assertGreaterEqual(payload["readable_catalogs"], payload["manageable_catalogs"])
+
     def test_shelf_returns_only_the_callers_own_records(self):
         ShelfRecord.objects.create(user=self.owner, entry=self.public_entry)
         ShelfRecord.objects.create(user=self.outsider, entry=self.public_entry)

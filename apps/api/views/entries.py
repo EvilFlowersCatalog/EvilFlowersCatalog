@@ -381,7 +381,12 @@ class EntryDetail(SecuredView):
         )
 
     @openapi.metadata(
-        description="Remove an entry from the catalog. This will also delete all associated acquisition files and user data (annotations, shelf records). This action is irreversible.",
+        description=(
+            "Remove an entry from the catalog together with its user data (annotations, shelf records, loan "
+            "history). Its stored files — acquisitions, cover, thumbnail, extraction crops and the Readium LCP "
+            "package — are removed from storage once the deletion commits. The LCP server keeps its own record "
+            "of an encrypted publication. This action is irreversible."
+        ),
         tags=["Entries"],
         summary="Delete catalog entry",
     )

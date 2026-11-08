@@ -21,6 +21,7 @@ class DetailType(Enum):
     INTERNAL_ERROR = "/internal-error"
     PASSPHRASE_REQUIRED = "/passphrase-required"
     READIUM_AMOUNT_BELOW_ACTIVE_COUNT = "/readium-amount-below-active-count"
+    FEED_URL_NAME_TAKEN = "/feed-url-name-taken"
 
 
 class ProblemDetail(Serializer):

@@ -21,6 +21,7 @@ from django.utils.translation import gettext as _
 from opentelemetry.trace import SpanKind, StatusCode
 
 from apps.core.errors import ProblemDetailException
+from apps.core.fields.localized import localize
 from apps.mcp import completions, prompts, resources
 from apps.mcp.errors import ToolError
 from apps.mcp.metadata import credential_hint
@@ -88,10 +89,13 @@ WRITE_INSTRUCTIONS = (
     "created, updated and deleted, publications can be filed under categories "
     "(`classify_entries`) and moved in and out of feeds (`add_entries_to_feed`, "
     "`remove_entries_from_feed`).\n\n"
-    "Publications themselves are added with `create_entry` and corrected with `update_entry`. A "
+    "Publications themselves are added with `create_entry`, corrected with `update_entry` and "
+    "removed with `delete_entry` (files included — run it with `dry_run: true` first and show "
+    "the user the report). A "
     "file never travels through a tool call: `create_upload_link` returns a signed single-use URL "
     "and the file is POSTed there as multipart `content`. Set `lcp_enabled` and `lcp_copies` for "
-    "DRM-protected titles — encryption is queued when the file arrives. The catalog refuses a "
+    "DRM-protected titles — encryption is queued when the file arrives; `ip_block`, `allow_print`, "
+    "`allow_share` and `allow_annotations` set who may read it and how. The catalog refuses a "
     "second publication with the same title, ISBN or DOI; search before importing.\n\n"
     "Every curation tool needs `manage` access on the catalog in question. Start with "
     "`list_catalogs` — each result carries an `access` level — or `whoami` for the count. "
@@ -399,7 +403,11 @@ class McpServer:
                 {
                     "type": "resource_link",
                     "uri": uri,
-                    "name": item.get("title") or item.get("term") or uri,
+                    # `name` must be a string. Feed titles and category labels are
+                    # localized mappings ({"sk": ..., "en": ...}); passing one through
+                    # made clients reject the whole result — after the write had
+                    # already been committed.
+                    "name": localize(item.get("title")) or localize(item.get("term")) or uri,
                     "mimeType": "application/json",
                 }
             )

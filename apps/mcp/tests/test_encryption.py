@@ -6,9 +6,11 @@ and that a refusal names no job.
 """
 
 import uuid
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.test import override_settings
+from django.utils import timezone
 
 from apps.core.models import Acquisition
 from apps.mcp.tests.test_management import ManagementTestCase
@@ -74,6 +76,37 @@ class EncryptionToolTests(ManagementTestCase):
         payload = self.ok("list_encryption_jobs", {"catalog_id": str(self.other_catalog.pk)}, self.superuser)
         self.assertEqual(payload["items"], [])
 
+    def test_listing_carries_dispatch_tracking(self):
+        with patch(BROKER):
+            requeued = self.ok("requeue_encryption", {"content_ids": [self.pending.lcp_content_id]}, self.superuser)
+
+        (item,) = [
+            item
+            for item in self.ok("list_encryption_jobs", {}, self.superuser)["items"]
+            if item["content_id"] == self.pending.lcp_content_id
+        ]
+        self.assertEqual(item["task_id"], requeued["results"][0]["task_id"])
+        self.assertEqual(item["attempts"], 1)
+        self.assertIsNotNone(item["last_dispatched_at"])
+        self.assertIsNone(item["report"])
+        self.assertFalse(item["stale"])
+
+    @override_settings(EVILFLOWERS_READIUM_ENCRYPTION_STALE_MINUTES=15)
+    def test_a_pending_job_without_a_report_turns_stale(self):
+        long_ago = timezone.now() - timedelta(minutes=16)
+        EncryptedContent.objects.filter(pk=self.pending.pk).update(last_dispatched_at=long_ago)
+        EncryptedContent.objects.filter(pk=self.failed.pk).update(last_dispatched_at=long_ago)
+
+        items = {item["content_id"]: item for item in self.ok("list_encryption_jobs", {}, self.superuser)["items"]}
+
+        self.assertTrue(items[self.pending.lcp_content_id]["stale"])
+        # Only `pending` can be lost; a `failed` job has its answer.
+        self.assertFalse(items[self.failed.lcp_content_id]["stale"])
+
+        EncryptedContent.objects.filter(pk=self.pending.pk).update(reported_at=timezone.now())
+        items = {item["content_id"]: item for item in self.ok("list_encryption_jobs", {}, self.superuser)["items"]}
+        self.assertFalse(items[self.pending.lcp_content_id]["stale"])
+
     def test_a_catalog_manager_may_not_list_jobs(self):
         message = self.refused("list_encryption_jobs", {}, self.manager)
         self.assertIn("administrators", message)
@@ -94,6 +127,10 @@ class EncryptionToolTests(ManagementTestCase):
 
         sent = [call.args[1]["kwargs"]["contentid"] for call in get_broker.return_value.execute.call_args_list]
         self.assertEqual(sent, [self.pending.lcp_content_id, self.failed.lcp_content_id])
+
+        # Each result names the Celery task it dispatched.
+        sent_task_ids = [call.args[1]["task_id"] for call in get_broker.return_value.execute.call_args_list]
+        self.assertEqual([result["task_id"] for result in payload["results"]], sent_task_ids)
 
         self.failed.refresh_from_db()
         self.assertEqual(self.failed.status, EncryptedContent.EncryptionStatus.PENDING)

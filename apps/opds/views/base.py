@@ -22,7 +22,7 @@ class OpdsCatalogView(SecuredView):
             # Authentication for OPDS 1.0 applies to Atom catalogs too: the
             # 401 body is the Authentication Document (see opds2 auth view).
             if e.status == HTTPStatus.UNAUTHORIZED:
-                return authentication_required(request)
+                return authentication_required(request, self.catalog)
             raise
 
     def _dispatch(self, request, *args, **kwargs):

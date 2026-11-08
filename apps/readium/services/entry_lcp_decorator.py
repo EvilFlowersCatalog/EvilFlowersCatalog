@@ -31,7 +31,7 @@ from django.utils import timezone
 
 from apps.api.serializers.entries import LcpState
 from apps.core.models import Entry
-from apps.readium.models import License
+from apps.readium.models import EncryptedContent, License
 
 
 def lcp_state_mapping(user, entries: Iterable) -> dict:
@@ -75,6 +75,20 @@ def lcp_state_mapping(user, entries: Iterable) -> dict:
         for row in res_rows:
             reservations_by_entry.setdefault(row["entry_id"], []).append(row)
 
+    # A publication can only be lent once its package is registered with the LCP
+    # server (`ContentEncryptionService.is_ready_for_licensing`). One query for the
+    # protected entries on this page.
+    lcp_entry_ids = [e.pk for e in entries_list if e.read_config("readium_enabled")]
+    ready_entry_ids = set()
+    if lcp_entry_ids:
+        ready_entry_ids = set(
+            EncryptedContent.objects.filter(
+                acquisition__entry_id__in=lcp_entry_ids,
+                status=EncryptedContent.EncryptionStatus.REGISTERED,
+                encrypted_at__isnull=False,
+            ).values_list("acquisition__entry_id", flat=True)
+        )
+
     result: dict[UUID, dict] = {}
     for entry in entries_list:
         result[entry.pk] = _resolve_one(
@@ -83,6 +97,7 @@ def lcp_state_mapping(user, entries: Iterable) -> dict:
             licenses_by_entry.get(entry.pk, []),
             reservations_by_entry.get(entry.pk, []),
             Reservation,
+            ready=entry.pk in ready_entry_ids,
         )
     return result
 
@@ -169,10 +184,13 @@ def _import_reservation_model():
         return None
 
 
-def _resolve_one(entry: Entry, user, license_rows: list, reservation_rows: list, Reservation) -> dict:
+def _resolve_one(
+    entry: Entry, user, license_rows: list, reservation_rows: list, Reservation, ready: bool = True
+) -> dict:
     if not entry.read_config("readium_enabled"):
         return {
             "lcp_state": LcpState.NOT_LCP,
+            "lcp_ready": False,
             "available_slots": 0,
             "total_slots": 0,
             "active_count": 0,
@@ -186,7 +204,12 @@ def _resolve_one(entry: Entry, user, license_rows: list, reservation_rows: list,
 
     total_slots = int(entry.read_config("readium_amount") or 0)
     active_count = len(license_rows)
-    available_slots = max(0, total_slots - active_count)
+    # Not lendable until the package is registered: encryption pending, failed, or
+    # the job was lost. Reporting free copies here made catalogs advertise
+    # "available now" for titles whose borrow request could only fail. No copy is
+    # free, so the states below resolve to `fully_borrowed` (or `available_in_days`
+    # while old loans of a re-encrypted package run out); `lcp_ready` says why.
+    available_slots = max(0, total_slots - active_count) if ready else 0
     # IP-004 Phase 2: surface the mismatch directly. Phase 1 prevents new writes
     # from creating this state, but legacy rows can already be over-saturated.
     over_saturated = active_count > total_slots
@@ -224,6 +247,7 @@ def _resolve_one(entry: Entry, user, license_rows: list, reservation_rows: list,
 
     return {
         "lcp_state": state,
+        "lcp_ready": ready,
         "available_slots": available_slots,
         "total_slots": total_slots,
         "active_count": active_count,

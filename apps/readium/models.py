@@ -50,6 +50,19 @@ class EncryptedContent(BaseModel):
     registered_at = models.DateTimeField(null=True, blank=True)
     error_message = models.TextField(null=True, blank=True)
 
+    # Last dispatch to the lcpencrypt worker (issue #99). `task_id` is the
+    # Celery task id the catalog minted for it; the worker's result report
+    # carries it back, and a report for any other task id is stale.
+    # `trace_id` is the trace the dispatch ran in (None with telemetry off).
+    task_id = models.CharField(max_length=64, null=True, blank=True)
+    trace_id = models.CharField(max_length=32, null=True, blank=True)
+    attempts = models.PositiveIntegerField(default=0)
+    last_dispatched_at = models.DateTimeField(null=True, blank=True)
+    # The worker's result report for `task_id`: package summary on success,
+    # whatever it built before failing otherwise. Never holds the content key.
+    report = models.JSONField(null=True, blank=True)
+    reported_at = models.DateTimeField(null=True, blank=True)
+
 
 class License(BaseModel):
     class Meta:
@@ -80,7 +93,12 @@ class License(BaseModel):
     # Link to encrypted content (shared by all licenses for this entry)
     encrypted_content = models.ForeignKey(
         EncryptedContent,
-        on_delete=models.PROTECT,  # Don't allow deleting encrypted content with active licenses
+        # RESTRICT, not PROTECT: deleting only the acquisition (and with it the
+        # package) is still refused while licenses point at it, but deleting the
+        # whole entry is allowed — its licenses go in the same cascade. PROTECT
+        # refused that too, so any publication that had ever been lent could not
+        # be deleted at all (REST answered 500 with ProtectedError).
+        on_delete=models.RESTRICT,
         related_name="licenses",
         null=True,  # Nullable during migration
         blank=True,

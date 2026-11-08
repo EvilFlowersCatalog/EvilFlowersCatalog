@@ -5,14 +5,48 @@ from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
-from apps.core.errors import ValidationException, ProblemDetailException
+from apps.core.errors import DetailType, ValidationException, ProblemDetailException
 from apps.api.filters.feeds import FeedFilter
 from apps.api.forms.feeds import FeedForm
 from apps.api.response import SingleResponse, PaginationResponse, Ordering
-from apps.core.fields.localized import localized_sort_key, sort_language
+from apps.core.fields.localized import localize, localized_sort_key, sort_language
 from apps.api.serializers.feeds import FeedSerializer
 from apps.core.models import Feed
 from apps.core.views import SecuredView
+
+
+def assert_url_name_available(catalog, url_name: str, *, exclude_pk=None) -> None:
+    """`(catalog, url_name)` is the only uniqueness rule on a feed; titles may repeat.
+
+    The 409 names the feed holding the slug and offers the first free alternative,
+    so a client can resolve the clash without another round trip.
+    """
+    clashes = Feed.objects.filter(catalog=catalog, url_name=url_name)
+    if exclude_pk is not None:
+        clashes = clashes.exclude(pk=exclude_pk)
+
+    existing = clashes.first()
+    if existing is None:
+        return
+
+    suggestion = Feed.available_url_name(catalog, url_name, exclude_pk=exclude_pk)
+    raise ProblemDetailException(
+        _("Feed with same url_name already exists in same catalog"),
+        status=HTTPStatus.CONFLICT,
+        detail_type=DetailType.FEED_URL_NAME_TAKEN,
+        detail=_("The URL name '%(url_name)s' is already used by feed '%(title)s'. Try '%(suggestion)s'.")
+        % {"url_name": url_name, "title": localize(existing.title), "suggestion": suggestion},
+        additional_data={
+            "field": "url_name",
+            "url_name": url_name,
+            "suggested_url_name": suggestion,
+            "conflicting_feed": {
+                "id": str(existing.pk),
+                "title": existing.title,
+                "url_name": existing.url_name,
+            },
+        },
+    )
 
 
 class FeedManagement(SecuredView):
@@ -30,15 +64,7 @@ class FeedManagement(SecuredView):
         if not has_object_permission("check_catalog_manage", request.user, form.cleaned_data["catalog_id"]):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-        # FIXME: Probably not working
-        if Feed.objects.filter(
-            catalog=form.cleaned_data["catalog_id"],
-            url_name=form.cleaned_data["url_name"],
-        ).exists():
-            raise ProblemDetailException(
-                _("Feed with same url_name already exists in same catalog"),
-                status=HTTPStatus.CONFLICT,
-            )
+        assert_url_name_available(form.cleaned_data["catalog_id"], form.cleaned_data["url_name"])
 
         feed = Feed(creator=request.user)
         form.populate(feed)
@@ -112,18 +138,7 @@ class FeedDetail(SecuredView):
         if not form.is_valid():
             raise ValidationException(form)
 
-        if (
-            Feed.objects.filter(
-                catalog=form.cleaned_data["catalog_id"],
-                url_name=form.cleaned_data["url_name"],
-            )
-            .exclude(pk=feed.id)
-            .exists()
-        ):
-            raise ProblemDetailException(
-                _("Feed with same url_name already exists in same catalog"),
-                status=HTTPStatus.CONFLICT,
-            )
+        assert_url_name_available(form.cleaned_data["catalog_id"], form.cleaned_data["url_name"], exclude_pk=feed.pk)
 
         form.populate(feed)
         feed.save()

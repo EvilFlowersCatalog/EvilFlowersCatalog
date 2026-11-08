@@ -184,6 +184,9 @@ class AuthenticationDocumentOn401Tests(LendingTestCase):
         self.assertEqual(response["Content-Type"], AUTH_DOC_TYPE)
         self.assertIn("authentication", response.json())
         self.assertIn("http://opds-spec.org/auth/document", response["Link"])
+        # The catalog's own document, so its shelf link is the one for this catalog.
+        self.assertIn("/opds/v2/open/auth>", response["Link"])
+        self.assertTrue(response.json()["id"].endswith("/opds/v2/open/auth"))
 
     def test_anonymous_borrow_gets_the_authentication_document(self):
         self.assert_auth_document(self.client.get(self.borrow_url))
@@ -193,6 +196,44 @@ class AuthenticationDocumentOn401Tests(LendingTestCase):
 
     def test_opds12_shelf_gets_the_authentication_document(self):
         self.assert_auth_document(self.client.get("/opds/v1.2/open/shelf"))
+
+
+class CatalogAuthenticationDocumentTests(LendingTestCase):
+    """Thorium's catalog-card person icon opens the `http://opds-spec.org/shelf`
+    link of the auth document it found in the root feed; it only accepts the
+    link when typed exactly `application/opds+json`."""
+
+    def test_catalog_document_links_the_shelf(self):
+        response = self.client.get("/opds/v2/open/auth")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], AUTH_DOC_TYPE)
+        document = response.json()
+        self.assertEqual(document["title"], "Open")
+        shelf = next(link for link in document["links"] if link["rel"] == "http://opds-spec.org/shelf")
+        self.assertEqual(shelf["type"], "application/opds+json")
+        self.assertTrue(shelf["href"].endswith("/opds/v2/open/shelf"))
+
+    def test_root_feeds_point_at_the_catalog_document(self):
+        root = self.client.get("/opds/v2/open/").json()
+        auth = next(link for link in root["links"] if link["rel"] == "http://opds-spec.org/auth/document")
+        self.assertTrue(auth["href"].endswith("/opds/v2/open/auth"))
+
+        atom = etree.fromstring(self.client.get("/opds/v1.2/open").content)
+        atom_auth = next(
+            link for link in atom.findall(f"{ATOM}link") if link.get("rel") == "http://opds-spec.org/auth/document"
+        )
+        self.assertTrue(atom_auth.get("href").endswith("/opds/v2/open/auth"))
+
+    def test_a_private_catalog_document_needs_no_sign_in_and_hides_the_title(self):
+        Catalog.objects.create(creator=self.owner, title="Secret", url_name="secret", is_public=False)
+        response = self.client.get("/opds/v2/secret/auth")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(response.json()["title"], "Secret")
+
+    def test_unknown_catalog_is_404(self):
+        self.assertEqual(self.client.get("/opds/v2/nope/auth").status_code, 404)
 
 
 class Opds12SpecTests(LendingTestCase):

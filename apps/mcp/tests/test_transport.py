@@ -54,6 +54,7 @@ WRITE_TOOLS = {
     "create_user",
     "delete_catalog",
     "delete_category",
+    "delete_entry",
     "delete_feed",
     "delete_user",
     "remove_entries_from_feed",
@@ -159,6 +160,7 @@ class ToolListingTests(TransportTestCase):
             "delete_category",
             "update_catalog",
             "delete_catalog",
+            "delete_entry",
             "classify_entries",
             "remove_entries_from_feed",
         ):

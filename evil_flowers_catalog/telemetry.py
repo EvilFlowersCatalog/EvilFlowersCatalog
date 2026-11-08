@@ -466,6 +466,22 @@ def get_meter(name: str):
     return metrics.get_meter(name)
 
 
+def set_span_attributes(**attributes) -> None:
+    """Set attributes on the current span; a no-op without a recording span.
+
+    Keyword names use `__` for `.`: `lcp__content_id` sets `lcp.content_id`.
+    `None` values are skipped.
+    """
+    if trace is None:
+        return
+    span = trace.get_current_span()
+    if not span.is_recording():
+        return
+    for name, value in attributes.items():
+        if value is not None:
+            span.set_attribute(name.replace("__", "."), value)
+
+
 @contextmanager
 def suppress_http_spans():
     """Run a block without HTTP client spans (one CLIENT span per remote call)."""
@@ -556,6 +572,7 @@ __all__ = [
     "on_commit",
     "parse_default_gateway",
     "probe",
+    "set_span_attributes",
     "setup",
     "shutdown",
     "suppress_http_spans",

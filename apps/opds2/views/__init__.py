@@ -1,4 +1,4 @@
-from .auth import AuthenticationDocumentView
+from .auth import AuthenticationDocumentView, CatalogAuthenticationDocumentView
 from .base import Opds2CatalogView
 from .borrow import BorrowView, RenewView, ReturnView
 from .catalog import CatalogView
@@ -9,6 +9,7 @@ from .shelf import ShelfView
 
 __all__ = [
     "AuthenticationDocumentView",
+    "CatalogAuthenticationDocumentView",
     "BorrowView",
     "CatalogView",
     "FeedView",

@@ -52,7 +52,7 @@ class RootView(OpdsCatalogView):
             # in before it hits a 401 (borrowing needs an account).
             Link(
                 rel=LinkType.AUTH_DOCUMENT,
-                href=request.build_absolute_uri(reverse("opds2:auth")),
+                href=request.build_absolute_uri(reverse("opds2:catalog-auth", kwargs={"catalog_name": catalog_name})),
                 type=AUTHENTICATION_DOCUMENT_TYPE,
             ),
         ]

@@ -393,6 +393,16 @@ EVILFLOWERS_READIUM_LSDSV_URL = os.getenv("EVILFLOWERS_READIUM_LSDSV_URL", "http
 # encryption stays PENDING. Credentials in the URL are sent as Basic auth and
 # the webhook requires them when present.
 EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL = os.getenv("EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL")
+# Where the lcpencrypt worker reports the outcome of every task, success or
+# failure (`report` kwarg), i.e.
+# `http://user:pass@<catalog-host>/readium/v1/hooks/encryption/result`. Without
+# it a job that fails in the worker stays PENDING forever. The worker sends
+# nothing when unset; lcpencrypt itself never sees this URL. Credentials work as
+# for the notify URL (issue #99).
+EVILFLOWERS_READIUM_LCPENCRYPT_REPORT_URL = os.getenv("EVILFLOWERS_READIUM_LCPENCRYPT_REPORT_URL")
+# A PENDING job dispatched longer ago than this, without a result report, is
+# flagged `stale` by `list_encryption_jobs`: almost certainly lost.
+EVILFLOWERS_READIUM_ENCRYPTION_STALE_MINUTES = int(os.getenv("EVILFLOWERS_READIUM_ENCRYPTION_STALE_MINUTES", 15))
 EVILFLOWERS_READIUM_BASE_URL = os.getenv(
     "EVILFLOWERS_READIUM_BASE_URL",
     f"http://{os.getenv('DJANGO_RUNSERVER_IP', '127.0.0.1')}:{os.getenv('DJANGO_RUNSERVER_PORT', '8000')}",
