@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "cf551ea8a06f3a9b8e26fc56afbd3f2805c08d1f",
-    "short": "cf551ea",
-    "message": "apt update in build pipeline",
+    "sha": "c1e33dd58d59b543d2b5e31587841bcff0a4abda",
+    "short": "c1e33dd",
+    "message": "Extending MCP capabilities to user management",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/cf551ea8a06f3a9b8e26fc56afbd3f2805c08d1f"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/c1e33dd58d59b543d2b5e31587841bcff0a4abda"
   },
-  "deployed_at": "2026-11-08T15:10:32Z",
+  "deployed_at": "2026-11-08T15:22:07Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
