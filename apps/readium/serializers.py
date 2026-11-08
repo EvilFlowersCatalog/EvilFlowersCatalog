@@ -19,6 +19,23 @@ from apps.readium.capability_scopes import (
 from apps.readium.models import License, Reservation
 
 
+_LOOPBACK_MARKERS = ("://127.0.0.1", "://localhost", "://0.0.0.0", "://[::1]")
+
+
+def _public_base_url() -> str:
+    """The configured public origin, or "" when it is unset or loopback.
+
+    Behind the k8s edge gateway the request reaches Django as plain http, so
+    `request.build_absolute_uri` yields an `http://` link that browsers block
+    on the https portal (mixed content). The configured origin is the one
+    clients actually use, same as the e-mailed `.lcpl` links.
+    """
+    base_url = str(getattr(settings, "EVILFLOWERS_BASE_URL", "") or "").rstrip("/")
+    if not base_url or any(marker in base_url for marker in _LOOPBACK_MARKERS):
+        return ""
+    return base_url
+
+
 def _mint_lcpl_download_url(license_id: UUID, user_id: UUID, info: ValidationInfo) -> str:
     """
     IP-009 Phase 4 D2: mint a capability token and return the absolute
@@ -62,7 +79,11 @@ def _mint_lcpl_download_url(license_id: UUID, user_id: UUID, info: ValidationInf
         ttl=ttl,
         single_use=single_use,
     )
-    return request.build_absolute_uri(f"{relative}?token={token}")
+    path = f"{relative}?token={token}"
+    public_base = _public_base_url()
+    if public_base:
+        return f"{public_base}{path}"
+    return request.build_absolute_uri(path)
 
 
 class LicenseSerializer:
