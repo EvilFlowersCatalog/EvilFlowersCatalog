@@ -18,7 +18,6 @@ from apps.readium.capability_scopes import (
 )
 from apps.readium.models import License, Reservation
 
-
 _LOOPBACK_MARKERS = ("://127.0.0.1", "://localhost", "://0.0.0.0", "://[::1]")
 
 
