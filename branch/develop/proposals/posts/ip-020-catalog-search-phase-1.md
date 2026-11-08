@@ -149,7 +149,7 @@ vector ..> ts
 ### Phase 1: Index
 
 - [X] Migration `core.0046`: `pg_trgm`, `f_unaccent`, text search configurations, `search_config`,
-      `search_vector`, GIN index, backfill
+      `search_vector`, GIN index (backfill moved to `core.0047`, IP-021)
 - [X] `apps/core/search/ddl.py` (idempotent, hunspell optional), `index.py` (`refresh_search_vectors`)
 - [X] Signals for entries, authors, categories and the through tables; `Entry.objects` defers the vector
 - [X] `manage.py reindex_search`
@@ -180,7 +180,7 @@ vector ..> ts
       syntax) with recall@10 / MRR before and after — `apps/core/tests/test_search_golden.py`
 - [X] API, OPDS and index-maintenance tests — `apps/core/tests/test_search_api.py`
 - [ ] Measure p95 on dev: `/entries/suggest` < 50 ms, `/entries/facets` < 80 ms
-- [ ] Deploy migration `core.0046` (database user must be allowed to create `pg_trgm` and text search objects)
+- [ ] Deploy migrations `core.0046`/`core.0047` (database user must be allowed to create `pg_trgm`, `pg_search` and text search objects)
 - [ ] After evilflowers-postgresql#1 is deployed: `manage.py reindex_search`, then restart the application and
       Celery workers (each process caches the list of configurations)
 - [ ] Portal: relevance sort option, highlights, `/entries/suggest` instead of five calls (elvira-portal issue)
@@ -436,6 +436,10 @@ run before it, so `evilflowers_slovak`/`_czech` do not fold accents. Input witho
 still matches through the `evilflowers_simple` part of the vector and the prefix term, but is not lemmatised.
 
 **Context**: The issue's README snippet maps `asciiword, word, hword, hword_part` to the hunspell dictionary, then `simple`.
+Measured 2026-11-09 on `evilflowers-postgresql:18` (dictionaries shipped): the golden set reaches MRR 1.000;
+the configuration now puts `slovak_stop`/`czech_stop` before hunspell as the image README prescribes, and a
+headline that marks nothing in the entry's configuration falls back to `evilflowers_simple`, so
+`vzdelavanie` is highlighted in *Vzdelávanie dospelých*.
 
 **Question**: Accept that diacritics-less Slovak input is matched exactly or by prefix only?
 
@@ -486,3 +490,4 @@ and list items carry `search` only when `query` is present.
 |------|--------|---------|
 | 2026-11-08 | jdubec | Initial draft from issue #101; implementation of phases 1–4 and tests (Claude) |
 | 2026-11-08 | jdubec | Added Review Questions section |
+| 2026-11-09 | jdubec | Phase 2 (IP-021) changes underneath: 0046 no longer builds the vectors (0047 does, its refresh SQL writes 0047's columns); stop dictionaries before hunspell; `-word` excluded in every configuration; headline fallback for diacritics-free input; ranking now via IP-021 fusion (`relevance_score` is an RRF score) (Claude) |

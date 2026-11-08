@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "b2343c11bb5906d04bf8e5fcfba79e7bccc2664f",
-    "short": "b2343c1",
-    "message": "Merge remote-tracking branch 'origin/develop' into develop",
+    "sha": "7c55e3083d95ee5cdda9c72c5f8446eaa6b1d319",
+    "short": "7c55e30",
+    "message": "Search phase 2: BM25 (pg_search) + semantic hybrid with multilingual-e5-large-instruct; remove search-service",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/b2343c11bb5906d04bf8e5fcfba79e7bccc2664f"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/7c55e3083d95ee5cdda9c72c5f8446eaa6b1d319"
   },
-  "deployed_at": "2026-11-08T22:41:47Z",
+  "deployed_at": "2026-11-08T23:33:55Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
