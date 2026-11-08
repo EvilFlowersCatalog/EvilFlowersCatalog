@@ -243,6 +243,36 @@ class HttpMethodTests(TransportTestCase):
         self.assertEqual(response.status_code, HTTPStatus.METHOD_NOT_ALLOWED)
 
 
+class OriginGuardTests(TransportTestCase):
+    """DNS-rebinding guard (issue #100): on by default, the instance's own origin only."""
+
+    PING = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+
+    def test_the_default_allows_only_the_instance_origin(self):
+        from django.conf import settings
+
+        self.assertEqual(len(settings.EVILFLOWERS_MCP_ALLOWED_ORIGINS), 1)
+        own = settings.EVILFLOWERS_MCP_ALLOWED_ORIGINS[0]
+        self.assertEqual(self.rpc(self.PING, headers={"Origin": own}).status_code, HTTPStatus.OK)
+
+    def test_a_foreign_origin_is_refused(self):
+        response = self.rpc(self.PING, headers={"Origin": "https://evil.example"})
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+
+    def test_a_request_without_origin_passes(self):
+        self.assertEqual(self.rpc(self.PING).status_code, HTTPStatus.OK)
+
+    @override_settings(EVILFLOWERS_MCP_ALLOWED_ORIGINS=[])
+    def test_an_empty_list_refuses_every_browser_origin(self):
+        response = self.rpc(self.PING, headers={"Origin": "http://127.0.0.1:8000"})
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+
+    @override_settings(EVILFLOWERS_MCP_ALLOWED_ORIGINS=None)
+    def test_none_turns_the_check_off(self):
+        response = self.rpc(self.PING, headers={"Origin": "https://evil.example"})
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
+
 class ProtocolVersionHeaderTests(TransportTestCase):
     def test_an_unsupported_header_is_rejected_after_initialize(self):
         response = self.rpc(

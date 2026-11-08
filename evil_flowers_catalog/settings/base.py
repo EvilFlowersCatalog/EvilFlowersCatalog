@@ -16,6 +16,7 @@ import os
 import tomllib
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -305,17 +306,15 @@ EVILFLOWERS_MCP_REQUIRE_AUTHENTICATION = bool(int(os.getenv("EVILFLOWERS_MCP_REQ
 # Authentication schemes this endpoint accepts, narrowed from
 # SECURED_VIEW_AUTHENTICATION_SCHEMAS.
 #
-# Both are on by default. Bearer (an API key JWT) is the scheme to prefer: it is
-# revocable on its own and carries no password. Basic is offered because many
-# MCP clients only know how to attach a username and a password, and because a
-# librarian curating the catalog through an agent should not have to mint an API
-# key first. It costs something real, though — with an LDAP-backed user, Basic
-# puts the directory password in an agent's config file, and it cannot be
-# revoked without changing that password. Deployments that care should set
-# `EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=Bearer`.
+# Bearer only by default (issue #100). Bearer (an API key JWT) is revocable on
+# its own and carries no password. Basic puts the user's password in an agent's
+# config file; with an LDAP-backed user that is the directory password, which
+# cannot be revoked without changing it. Deployments whose agents can only
+# attach a username and a password opt in with
+# `EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=Bearer,Basic`.
 EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS = [
     scheme.strip()
-    for scheme in os.getenv("EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS", "Bearer,Basic").split(",")
+    for scheme in os.getenv("EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS", "Bearer").split(",")
     if scheme.strip()
 ]
 # Ceiling on a single JSON-RPC request body.
@@ -325,10 +324,8 @@ EVILFLOWERS_MCP_MAX_REQUEST_BYTES = int(os.getenv("EVILFLOWERS_MCP_MAX_REQUEST_B
 # this large or big PDFs fail there with a 413 before Django sees them.
 EVILFLOWERS_MCP_UPLOAD_TTL = int(os.getenv("EVILFLOWERS_MCP_UPLOAD_TTL", 15 * 60))
 EVILFLOWERS_MCP_UPLOAD_MAX_BYTES = int(os.getenv("EVILFLOWERS_MCP_UPLOAD_MAX_BYTES", 200 * 1024 * 1024))
-# Comma-separated browser origins allowed to reach the MCP endpoint (DNS-rebinding
-# guard). Unset disables the check — non-browser MCP clients send no `Origin`.
-_mcp_origins = os.getenv("EVILFLOWERS_MCP_ALLOWED_ORIGINS")
-EVILFLOWERS_MCP_ALLOWED_ORIGINS = [o.strip() for o in _mcp_origins.split(",") if o.strip()] if _mcp_origins else None
+# EVILFLOWERS_MCP_ALLOWED_ORIGINS is set near the end of this file: its default
+# is derived from EVILFLOWERS_BASE_URL.
 
 # Assistant (IP-015)
 # Opt-out like the MCP server: disabled means the route is never mounted.
@@ -630,7 +627,43 @@ LOGGING = {
     },
 }
 
-CORS_ALLOW_ALL_ORIGINS = True
+
+def _origin(url: str) -> str | None:
+    """`scheme://host[:port]` of a URL, or None when it has no scheme or host."""
+    parts = urlsplit(url.strip())
+    if not parts.scheme or not parts.netloc:
+        return None
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def _origins_from_env(name: str, default: list[str]) -> list[str]:
+    """A comma-separated origin list from the environment, or `default` when unset or blank."""
+    value = os.getenv(name, "").strip()
+    if not value:
+        return default
+    return [origin.strip().rstrip("/") for origin in value.split(",") if origin.strip()]
+
+
+_portal_origin = _origin(EVILFLOWERS_PORTAL_URL)
+_instance_origin = _origin(EVILFLOWERS_BASE_URL)
+
+# CORS (issue #100). Browsers may call the API only from the listed origins,
+# by default the portal's (EVILFLOWERS_PORTAL_URL). Same-origin requests need no
+# entry. Allowing every origin is an explicit opt-in.
+CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "0").lower() in ("1", "true")
+CORS_ALLOWED_ORIGINS = _origins_from_env("CORS_ALLOWED_ORIGINS", [_portal_origin] if _portal_origin else [])
+
+# Browser origins allowed to reach the MCP endpoint (DNS-rebinding guard,
+# issue #100). Comma-separated; defaults to the instance's own origin
+# (EVILFLOWERS_BASE_URL). Requests without an `Origin` header (non-browser MCP
+# clients, the common case) always pass. `*` turns the check off.
+if os.getenv("EVILFLOWERS_MCP_ALLOWED_ORIGINS", "").strip() == "*":
+    EVILFLOWERS_MCP_ALLOWED_ORIGINS = None
+else:
+    EVILFLOWERS_MCP_ALLOWED_ORIGINS = _origins_from_env(
+        "EVILFLOWERS_MCP_ALLOWED_ORIGINS", [_instance_origin] if _instance_origin else []
+    )
+
 SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "0") == "1"
 
 # OpenTelemetry is configured per process by `evil_flowers_catalog.telemetry.setup()`,

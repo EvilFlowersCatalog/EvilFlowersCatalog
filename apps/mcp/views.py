@@ -188,12 +188,13 @@ class McpEndpoint(SecuredView):
     def _assert_origin(request) -> None:
         """Guard against DNS-rebinding when the endpoint is reachable from a browser.
 
-        Only enforced when `EVILFLOWERS_MCP_ALLOWED_ORIGINS` is configured. It
-        has to be opt-in: the project ships `CORS_ALLOW_ALL_ORIGINS = True`, and
-        a non-browser MCP client (the common case) sends no `Origin` at all.
+        `EVILFLOWERS_MCP_ALLOWED_ORIGINS` defaults to the instance's own origin.
+        A request without an `Origin` header passes: a non-browser MCP client
+        (the common case) sends none. `None` (the setting is `*`) turns the
+        check off; an empty list refuses every browser origin.
         """
         allowed = settings.EVILFLOWERS_MCP_ALLOWED_ORIGINS
-        if not allowed:
+        if allowed is None:
             return
 
         origin = request.headers.get("Origin")
