@@ -36,7 +36,11 @@ jobs:
 
       - name: Install poetry
         run: |
-          sudo apt install -y pipx
+          # Refresh the index first: the runner image's package lists go stale
+          # and point at .deb versions the mirror has already dropped (404).
+          # Skip recommends — pipx alone pulls in mkdocs, numpy, tornado, …
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pipx
           pipx ensurepath
           pipx install poetry
           pipx inject poetry poetry-plugin-export
