@@ -33,3 +33,7 @@ class Metadata(BaseModel):
     description: Optional[str] = None
     belongs_to: Optional[BelongsTo] = Field(None, alias="belongsTo")
     number_of_pages: Optional[int] = Field(None, alias="numberOfPages")
+    # OPDS 2.0 feed metadata (feed-metadata.schema.json) — paging.
+    number_of_items: Optional[int] = Field(None, alias="numberOfItems")
+    items_per_page: Optional[int] = Field(None, alias="itemsPerPage")
+    current_page: Optional[int] = Field(None, alias="currentPage")

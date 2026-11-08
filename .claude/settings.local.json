@@ -46,6 +46,7 @@
     "grafana",
     "tempo",
     "ripwire",
-    "postgres"
+    "postgres",
+    "elvira-dev"
   ]
 }

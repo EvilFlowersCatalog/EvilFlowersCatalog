@@ -28,15 +28,14 @@ class PublicationDetailView(Opds2CatalogView):
         try:
             entry = (
                 Entry.objects.select_related("catalog", "language")
-                .prefetch_related("entry_authors__author", "categories", "acquisitions")
+                .prefetch_related("entry_authors__author", "categories", "acquisitions__encrypted_content")
                 .get(pk=entry_id, catalog=self.catalog)
             )
         except Entry.DoesNotExist:
             raise ProblemDetailException(_("Publication not found"), status=HTTPStatus.NOT_FOUND)
 
-        base_url = f"{request.scheme}://{request.get_host()}"
-        publication = ManifestBuilder.build_publication(entry, base_url=base_url)
-        return self.opds_response(publication.model_dump(exclude_none=True, by_alias=True))
+        publication = ManifestBuilder.build_publication(entry, request, user=request.user)
+        return self.publication_response(publication.model_dump(exclude_none=True, by_alias=True))
 
 
 class PublicationManifestView(Opds2CatalogView):
@@ -44,13 +43,13 @@ class PublicationManifestView(Opds2CatalogView):
         try:
             entry = (
                 Entry.objects.select_related("catalog", "language")
-                .prefetch_related("entry_authors__author", "categories", "acquisitions")
+                .prefetch_related("entry_authors__author", "categories", "acquisitions__encrypted_content")
                 .get(pk=entry_id, catalog=self.catalog)
             )
         except Entry.DoesNotExist:
             raise ProblemDetailException(_("Publication not found"), status=HTTPStatus.NOT_FOUND)
 
-        base_url = f"{request.scheme}://{request.get_host()}"
+        base_url = ManifestBuilder.base_url(request)
         manifest = ManifestBuilder.build_manifest(entry, base_url=base_url)
         return JsonResponse(
             manifest.model_dump(exclude_none=True, by_alias=True),

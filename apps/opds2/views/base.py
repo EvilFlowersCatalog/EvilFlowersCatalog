@@ -8,8 +8,10 @@ from object_checker.base_object_checker import has_object_permission
 from apps.core.errors import ProblemDetailException, UnauthorizedException
 from apps.core.models import Catalog
 from apps.core.views import SecuredView
+from apps.opds2.views.auth import authentication_required
 
 OPDS_JSON_CONTENT_TYPE = "application/opds+json"
+OPDS_PUBLICATION_CONTENT_TYPE = "application/opds-publication+json"
 
 
 class Opds2CatalogView(SecuredView):
@@ -23,6 +25,14 @@ class Opds2CatalogView(SecuredView):
         super().__init__(*args, **kwargs)
 
     def dispatch(self, request, *args, **kwargs):
+        try:
+            return self._dispatch(request, *args, **kwargs)
+        except ProblemDetailException as e:
+            if e.status == HTTPStatus.UNAUTHORIZED:
+                return authentication_required(request)
+            raise
+
+    def _dispatch(self, request, *args, **kwargs):
         try:
             self.catalog = Catalog.objects.get(url_name=kwargs["catalog_name"])
         except Catalog.DoesNotExist:
@@ -41,5 +51,10 @@ class Opds2CatalogView(SecuredView):
         return View.dispatch(self, request, *args, **kwargs)
 
     @staticmethod
-    def opds_response(data: dict, status: int = 200) -> JsonResponse:
-        return JsonResponse(data, content_type=OPDS_JSON_CONTENT_TYPE, status=status)
+    def opds_response(data: dict, status: int = 200, content_type: str = OPDS_JSON_CONTENT_TYPE) -> JsonResponse:
+        return JsonResponse(data, content_type=content_type, status=status)
+
+    @staticmethod
+    def publication_response(data: dict, status: int = 200) -> JsonResponse:
+        """A single OPDS 2.0 publication (not a feed): readers pick the parser by type."""
+        return JsonResponse(data, content_type=OPDS_PUBLICATION_CONTENT_TYPE, status=status)

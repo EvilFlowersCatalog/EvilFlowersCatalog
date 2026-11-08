@@ -20,6 +20,7 @@ from apps.opds.schema import (
     Category,
     NavigationEntry,
     Content,
+    feed_type,
 )
 
 
@@ -115,10 +116,10 @@ class NavigationFeed(BaseFeed):
                                 "feed_name": feed.url_name,
                             },
                         ),
-                        type="application/atom+xml;profile=opds;kind=navigation",
+                        type=feed_type(feed.kind),
                     )
                 ],
-                content=Content(type="text", value=feed.content),
+                content=Content(type="text", value=feed.content or localize(feed.title, self._extras.get("language"))),
                 updated=feed.updated_at,
             )
         )

@@ -39,11 +39,12 @@ from django.utils.http import quote_etag
 
 from apps.core.fields.localized import request_language
 from apps.readium.capability_scopes import lcpl_feed_download_ttl
-from apps.readium.models import License
+from apps.readium.models import EncryptedContent, License, Reservation
 
 # Bump when the rendered XML changes shape for the same inputs, so cached
 # copies from the previous release are not revalidated as current.
-ETAG_VERSION = "opds1-v1"
+# v2: Dublin Core metadata, category attributes, lending extensions on links.
+ETAG_VERSION = "opds1-v2"
 
 LICENSED_STATES = (License.LicenseState.READY, License.LicenseState.ACTIVE)
 
@@ -51,6 +52,31 @@ LICENSED_STATES = (License.LicenseState.READY, License.LicenseState.ACTIVE)
 def _token_bucket() -> int:
     half_ttl = max(lcpl_feed_download_ttl() // 2, 1)
     return int(timezone.now().timestamp()) // half_ttl
+
+
+def _lending_parts(entry_ids: list) -> list:
+    """Everyone's loans and holds on the page, and its encryption status.
+
+    The borrow link of an LCP title carries `opds:copies`, `opds:holds` and
+    `opds:availability`, which move when *another* reader borrows, returns
+    or queues, and when a title's encryption is registered. None of that
+    touches the entry. Loans are filtered on `expires_at > now`, so a lapsed
+    loan drops out of the set the moment it stops counting.
+    """
+    if not entry_ids:
+        return []
+    loans = License.objects.filter(
+        entry_id__in=entry_ids, state__in=LICENSED_STATES, expires_at__gt=timezone.now()
+    ).values_list("pk", "expires_at")
+    holds = Reservation.objects.filter(
+        entry_id__in=entry_ids, status__in=Reservation.NON_TERMINAL_STATUSES
+    ).values_list("pk", "status", "position", "claim_deadline")
+    encryption = EncryptedContent.objects.filter(acquisition__entry_id__in=entry_ids).values_list("pk", "status")
+    return [
+        *sorted(f"loan:{pk}@{expires}" for pk, expires in loans),
+        *sorted(f"hold:{pk}:{status}:{position}@{deadline}" for pk, status, position, deadline in holds),
+        *sorted(f"enc:{pk}:{status}" for pk, status in encryption),
+    ]
 
 
 def feed_etag(request, *, head: Iterable, entries: Iterable = ()) -> str:
@@ -61,6 +87,7 @@ def feed_etag(request, *, head: Iterable, entries: Iterable = ()) -> str:
     """
     entries = list(entries)
     parts = [ETAG_VERSION, request_language(request), *head, *(f"{pk}@{touched}" for pk, touched in entries)]
+    parts.extend(_lending_parts([pk for pk, _ in entries]))
 
     user = request.user
     if user.is_authenticated:

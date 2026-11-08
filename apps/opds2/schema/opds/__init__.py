@@ -1,5 +1,5 @@
 from .authentication import AuthenticationDocument, AuthenticationFlow
-from .availability import Availability, Copies
+from .availability import Availability, Copies, Holds
 from .facet import Facet
 from .feed import OpdsFeed
 from .group import Group

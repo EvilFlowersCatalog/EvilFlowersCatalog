@@ -33,10 +33,10 @@ def _with_acquisition_prefetch(qs):
     categories, acquisitions) plus a catalog lookup per row. Matches the
     Python-side `sorted(entry_authors)` in `apps/opds/schema.py`.
     """
-    return qs.select_related("catalog").prefetch_related(
+    return qs.select_related("catalog", "language").prefetch_related(
         "entry_authors__author",
         "categories",
-        "acquisitions",
+        "acquisitions__encrypted_content",
     )
 
 
