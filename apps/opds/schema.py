@@ -15,6 +15,9 @@ NSMAP = {
     "opds": "http://opds-spec.org/2010/catalog",
     "opensearch": "http://a9.com/-/spec/opensearch/1.1/",
     "ef": "http://elvira.dital/schema/evilflowers-opds.xsd",
+    # RFC 5005 (Feed Paging and Archiving) — `fh:complete` marks an unpaged
+    # Complete Acquisition Feed (OPDS 1.2 §2.5).
+    "fh": "http://purl.org/syndication/history/1.0",
 }
 
 
@@ -60,6 +63,12 @@ class LinkType(str, Enum):
     # pydantic ValidationError and 500s every 1.2 feed that contains an
     # LCP title.
     BORROW = "http://opds-spec.org/acquisition/borrow"
+    # RFC 5005 §3 paged-feed relations (OPDS 1.2 §2.4). Same closed-enum
+    # trap as BORROW: a missing member 500s every paged feed.
+    FIRST = "first"
+    PREVIOUS = "previous"
+    NEXT = "next"
+    LAST = "last"
 
 
 class Link(BaseXmlModel, tag="link", nsmap=NSMAP):
@@ -117,7 +126,8 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
                 # fresh per-entry query for every feed row.
                 for entry_author in sorted(entry.entry_authors.all(), key=lambda ea: ea.position)
             ],
-            summary=Summary(type="text", value=entry.summary),
+            # `Entry.summary` is nullable; a `None` here 500s the whole feed.
+            summary=Summary(type="text", value=entry.summary or ""),
         )
 
         if not complete:

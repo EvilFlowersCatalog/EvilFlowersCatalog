@@ -234,7 +234,14 @@ EVILFLOWERS_IMAGE_MIME = (
 )
 EVILFLOWERS_IMAGE_THUMBNAIL = (768, 480)
 
-EVILFLOWERS_FEEDS_NEW_LIMIT = os.getenv("EVILFLOWERS_FEEDS_NEW_LIMIT", 20)
+EVILFLOWERS_FEEDS_NEW_LIMIT = int(os.getenv("EVILFLOWERS_FEEDS_NEW_LIMIT", 20))
+
+# OPDS 1.2 acquisition feeds (feeds, shelf) are paged with RFC 5005 next/previous links.
+# A feed's own `Feed.per_page` overrides the default.
+EVILFLOWERS_OPDS_PAGE_SIZE = int(os.getenv("EVILFLOWERS_OPDS_PAGE_SIZE", 50))
+# OPDS 1.2 §2.5: the Complete Acquisition Feed "should not be paginated unless extremely large".
+# Below this many entries it is served whole with `fh:complete`; above it, it is paged at this size.
+EVILFLOWERS_OPDS_COMPLETE_FEED_MAX_ENTRIES = int(os.getenv("EVILFLOWERS_OPDS_COMPLETE_FEED_MAX_ENTRIES", 2000))
 
 # Language of localized texts (feed titles, category labels) used when a client sends a plain string
 # and as the fallback when a requested translation is missing
