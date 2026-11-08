@@ -21,7 +21,8 @@ from apps.mcp.tests.test_management import ManagementTestCase
 from apps.readium.models import EncryptedContent
 
 BROKER = "apps.readium.services.content_encryption_service.get_event_broker"
-TEXT_SERVICE = "apps.dataverse.services.text_publish.TextServiceClient"
+# The search-service indexing call is gone (IP-021); extraction stays off in tests.
+TEXT_SERVICE = "apps.extraction.services.queue"
 
 
 def _one_page_pdf() -> bytes:
@@ -323,7 +324,8 @@ class UploadLinkTests(PublishingTestCase):
         self.assertEqual(acquisition.entry_id, Entry.objects.get(pk=entry["id"]).pk)
         self.assertEqual(acquisition.relation, Acquisition.AcquisitionType.ACQUISITION)
         self.broker.return_value.execute.assert_called_once()
-        self.text_service.return_value.process_acquisition.assert_called_once()
+        # The PDF is queued for extraction (IP-018); nothing is sent to a search service any more.
+        self.text_service.assert_called_once()
 
     def test_an_open_publication_is_stored_without_encryption(self):
         entry = self.create()

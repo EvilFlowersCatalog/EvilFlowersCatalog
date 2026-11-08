@@ -125,11 +125,30 @@ def _similar_to_run(request, entry_id, run: Optional[ExtractionRun], limit: int)
     return _ranked(request, scores, limit)
 
 
+def _similar_to_entry(request, entry_id, limit: int) -> Optional[List[dict]]:
+    """By the entry vector (IP-021: title, authors, categories, summary), among entries of the same model.
+
+    None when the entry has no vector yet, so the caller can fall back to the extraction run.
+    """
+    row = Entry.objects.filter(pk=entry_id).values("embedding", "embedding_model").first()
+    if not row or row["embedding"] is None:
+        return None
+    neighbours = (
+        Entry.objects.filter(embedding__isnull=False, embedding_model=row["embedding_model"])
+        .exclude(pk=entry_id)
+        .annotate(distance=CosineDistance("embedding", row["embedding"]))
+        .order_by("distance")
+        .values_list("pk", "distance")[: limit * 5]
+    )
+    return _ranked(request, {other_id: 1 - distance for other_id, distance in neighbours}, limit)
+
+
 class EntrySimilar(ReaderView):
     @openapi.metadata(
         description=(
-            "Publications similar to an entry, by the mean of their paragraph embeddings (IP-018). Empty "
-            "when the entry's PDF has not been processed. Only entries the caller may see, never the entry "
+            "Publications similar to an entry: by the entry vector (title, authors, categories and summary "
+            "embedded with multilingual-e5, IP-021) when it exists, else by the mean of the paragraph "
+            "embeddings of its processed PDF (IP-018). Only entries the caller may see, never the entry "
             "itself, best first. Resolve them with `GET /api/v1/entries?id=...`."
         ),
         tags=["Entries"],
@@ -138,7 +157,11 @@ class EntrySimilar(ReaderView):
     @openapi.response(HTTPStatus.OK, "Similar entries", SimilarEntrySerializer)
     def get(self, request, entry_id: UUID):
         _entry(request, entry_id)
-        return SingleResponse(request, data=_similar_to_run(request, entry_id, _entry_run(entry_id), _limit(request)))
+        limit = _limit(request)
+        similar = _similar_to_entry(request, entry_id, limit)
+        if similar is None:
+            similar = _similar_to_run(request, entry_id, _entry_run(entry_id), limit)
+        return SingleResponse(request, data=similar)
 
 
 class UserAcquisitionSimilar(ReaderView):
@@ -170,7 +193,7 @@ class UserAcquisitionSimilar(ReaderView):
         if extraction is None or not extraction.embedding_model:
             return SingleResponse(request, data=[])
         try:
-            vector = extraction.embed(text)
+            vector = extraction.embed(text, "similar")
         except EmbeddingUnavailable:
             logger.warning("Similar passages: text-service did not embed in time")
             return SingleResponse(request, data=[])

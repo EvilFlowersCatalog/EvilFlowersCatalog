@@ -4,6 +4,7 @@ from django.conf import settings
 from django.contrib.postgres.fields import HStoreField
 from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVectorField
+from pgvector.django import HalfVectorField, HnswIndex
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -51,11 +52,25 @@ def default_entry_config() -> EntryConfig:
     )
 
 
+#: multilingual-e5-large-instruct (IP-021); a model of another size needs a migration.
+ENTRY_EMBEDDING_DIMENSIONS = 1024
+
+#: Columns maintained in SQL by `apps.core.search` (index refresh, embedding task), never by forms.
+SEARCH_COLUMNS = (
+    "search_vector",
+    "search_authors",
+    "search_subjects",
+    "search_summary",
+    "embedding",
+    "embedding_model",
+)
+
+
 class EntryManager(models.Manager):
     def get_queryset(self):
-        # The search vector is only read in SQL. Deferring it keeps it out of every entry
-        # query, and `save()` on a deferred instance never writes back a stale vector.
-        return super().get_queryset().defer("search_vector")
+        # The search columns are only read in SQL. Deferring them keeps them out of every entry
+        # query, and `save()` on a deferred instance never writes back a stale value.
+        return super().get_queryset().defer(*SEARCH_COLUMNS)
 
 
 class Entry(BaseModel):
@@ -86,6 +101,8 @@ class Entry(BaseModel):
             models.Index(fields=["summary", "catalog_id"]),
             # IP-020: full-text search
             GinIndex(fields=["search_vector"], name="entries_search_vector_gin"),
+            # IP-021: semantic search (the BM25 index is created by migration, see apps.core.search.ddl)
+            HnswIndex(name="entries_embedding_hnsw", fields=["embedding"], opclasses=["halfvec_cosine_ops"]),
         ]
 
     def _upload_to_path(self, filename):
@@ -130,6 +147,15 @@ class Entry(BaseModel):
     # `search_config` is the text search configuration (regconfig name) the vector was built with.
     search_config = models.CharField(max_length=63, null=True, editable=False)
     search_vector = SearchVectorField(null=True, editable=False)
+    # IP-021: the related text, denormalised for the BM25 index (pg_search indexes columns of one
+    # table only): author names, category terms + labels in every language, summary without tags.
+    search_authors = models.TextField(null=True, editable=False)
+    search_subjects = models.TextField(null=True, editable=False)
+    search_summary = models.TextField(null=True, editable=False)
+    # IP-021: semantic vector of title + authors + categories + summary, and the model (`id@revision`)
+    # that produced it; vectors of two models are never compared.
+    embedding = HalfVectorField(dimensions=ENTRY_EMBEDDING_DIMENSIONS, null=True, editable=False)
+    embedding_model = models.CharField(max_length=255, null=True, editable=False)
 
     @property
     def first_author_name(self) -> str:
@@ -177,4 +203,4 @@ def touch_parents(sender, instance: Entry, **kwargs):
 # readium concepts.
 
 
-__all__ = ["Entry", "default_entry_config"]
+__all__ = ["Entry", "default_entry_config", "ENTRY_EMBEDDING_DIMENSIONS", "SEARCH_COLUMNS"]

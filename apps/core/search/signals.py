@@ -1,10 +1,19 @@
-"""Keep `entries.search_vector` current: every write that changes indexed text refreshes the affected entries."""
+"""
+Keep the search columns current: every write that changes indexed text refreshes the affected entries'
+lexical index at once and queues their vectors (IP-021) after commit.
+"""
 
 from django.db.models.signals import m2m_changed, post_delete, post_save
 from django.dispatch import receiver
 
 from apps.core.models import Author, Category, Entry, EntryAuthor
-from apps.core.search.index import refresh_search_vectors
+from apps.core.search import index, vectors
+
+
+def refresh_search_vectors(entry_ids) -> None:
+    entry_ids = list(entry_ids)
+    if index.refresh_search_vectors(entry_ids):
+        vectors.schedule(entry_ids)
 
 
 @receiver(post_save, sender=Entry, dispatch_uid="search_entry_saved")

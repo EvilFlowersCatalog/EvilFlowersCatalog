@@ -18,12 +18,6 @@ def drop_search_objects(apps, schema_editor):
     drop(schema_editor.connection)
 
 
-def build_vectors(apps, schema_editor):
-    from apps.core.search.index import refresh_search_vectors
-
-    refresh_search_vectors(connection=schema_editor.connection)
-
-
 class Migration(migrations.Migration):
     dependencies = [
         ("core", "0045_feed_title_not_unique"),
@@ -46,5 +40,6 @@ class Migration(migrations.Migration):
             model_name="entry",
             index=django.contrib.postgres.indexes.GinIndex(fields=["search_vector"], name="entries_search_vector_gin"),
         ),
-        migrations.RunPython(build_vectors, migrations.RunPython.noop),
+        # The vectors are built by 0047 (IP-021): the refresh SQL is application code and already
+        # writes the columns 0047 adds, so running it here would fail on a fresh database.
     ]

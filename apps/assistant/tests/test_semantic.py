@@ -31,7 +31,7 @@ class SemanticFindTests(SimpleTestCase):
         ]
         self.extraction = mock.Mock()
         self.extraction.has_paragraphs.return_value = True
-        self.extraction.embed.return_value = [0.0] * 768
+        self.extraction.embed.return_value = [0.0] * 1024
         self.extraction.search_paragraphs.return_value = self.candidates
         self.extraction.page_size.return_value = (595.0, 842.0)
 

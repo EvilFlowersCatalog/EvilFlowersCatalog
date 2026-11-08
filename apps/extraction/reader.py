@@ -9,16 +9,12 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from django.conf import settings
 from pgvector.django import CosineDistance
 
 from apps.extraction.models import ExtractionRun, Paragraph, ParagraphLink, Region, Sentence
 from apps.extraction.services import active_run
-from evil_flowers_catalog.celery import app
 
 logger = logging.getLogger(__name__)
-
-_EMBED_TASK = "evilflowers_text_worker.embed_query"
 
 
 class EmbeddingUnavailable(Exception):
@@ -123,16 +119,16 @@ class ReaderExtraction:
     def has_paragraphs(self) -> bool:
         return self.run.paragraphs.filter(embedding__isnull=False).exists()
 
-    def embed(self, text: str) -> List[float]:
-        """The request, embedded by text-service with the model that embedded this run."""
+    def embed(self, text: str, task: str = "passages") -> List[float]:
+        """The request, embedded by `tei-embed` (IP-021) — the model that embeds the paragraphs.
+
+        Replaces the Celery round-trip to text-service's embed worker (30 s wait).
+        """
+        from apps.core.search import embeddings
+
         try:
-            result = app.send_task(
-                _EMBED_TASK,
-                args=[text, self.embedding_model],
-                queue=settings.EVILFLOWERS_EXTRACTION_EMBED_QUEUE,
-            )
-            return result.get(timeout=settings.EVILFLOWERS_EXTRACTION_EMBED_TIMEOUT)
-        except Exception as error:
+            return embeddings.embed_query(text, task)
+        except embeddings.EmbeddingError as error:
             raise EmbeddingUnavailable(str(error)) from error
 
     def search_paragraphs(self, vector: List[float], min_score: float, limit: int) -> List[Candidate]:

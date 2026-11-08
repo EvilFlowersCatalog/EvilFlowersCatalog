@@ -78,7 +78,8 @@ class SearchApiTests(SearchFixtureMixin, TestCase):
     def test_metadata_reports_strict_search(self):
         search = self.entries(query="climate")["metadata"]["search"]
         self.assertEqual(search["query"], "climate")
-        self.assertEqual(search["mode"], "fulltext")
+        # `bm25` where pg_search is installed (IP-021), `fulltext` (ts_rank_cd) elsewhere; no TEI here.
+        self.assertIn(search["mode"], ("fulltext", "bm25"))
         self.assertFalse(search["relaxed"])
         self.assertIsNone(search["fallback"])
         self.assertEqual(search["total"], 2)
@@ -99,6 +100,10 @@ class SearchApiTests(SearchFixtureMixin, TestCase):
         payload = self.entries(query="qqqxxxzzz")
         self.assertEqual(payload["items"], [])
         self.assertEqual(payload["metadata"]["search"]["total"], 0)
+
+    def test_negated_word_is_excluded_in_every_language(self):
+        ids = [item["id"] for item in self.entries(query="climate -architecture")["items"]]
+        self.assertEqual(ids, [str(self.keys["climate"])])
 
     def test_list_without_query_has_no_search_block(self):
         payload = self.entries()

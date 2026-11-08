@@ -294,10 +294,14 @@ class EntrySearchHit(Serializer):
 
 class EntrySearchMetadata(Serializer):
     query: str
+    #: `hybrid` (words + meaning, IP-021), `bm25` or `fulltext` (words only), `semantic` (meaning only)
     mode: str = "fulltext"
+    #: True when embeddings are configured but the query could not be embedded: words only this time
+    degraded: bool = False
     #: True when no entry contained every word and the results come from a fallback
     relaxed: bool = False
-    #: `any_word` (OR of the words) or `similar` (trigram similarity of title/authors), null when strict
+    #: `any_word` (OR of the words), `similar` (trigram similarity of title/authors) or `semantic`
+    #: (only entries close in meaning), null when every word matched
     fallback: Optional[str] = None
     did_you_mean: Optional[str] = None
     total: int

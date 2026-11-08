@@ -30,11 +30,26 @@ LANGUAGE_CONFIGS = {
 }
 
 _available: Optional[list[str]] = None
+_bm25: Optional[bool] = None
 
 
 def reset_config_cache() -> None:
-    global _available
+    global _available, _bm25
     _available = None
+    _bm25 = None
+
+
+def bm25_available(connection=None) -> bool:
+    """The BM25 index on `entries` exists (pg_search installed and indexed; cached per process)."""
+    global _bm25
+    if _bm25 is None:
+        from apps.core.search.ddl import BM25_INDEX
+
+        connection = connection or default_connection
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1 FROM pg_indexes WHERE indexname = %s", [BM25_INDEX])
+            _bm25 = cursor.fetchone() is not None
+    return _bm25
 
 
 def available_configs(connection=None) -> list[str]:
@@ -63,22 +78,29 @@ def _vector(part: str) -> str:
 REFRESH_SQL = f"""
 UPDATE entries AS e
 SET search_config = s.cfg,
+    search_authors = NULLIF(s.authors, ''),
+    search_subjects = NULLIF(s.subjects, ''),
+    search_summary = NULLIF(s.summary, ''),
     search_vector = setweight({_vector('s.a')}, 'A')
                  || setweight({_vector('s.b')}, 'B')
                  || setweight({_vector('s.c')}, 'C')
 FROM (
-    SELECT
-        x.id,
-        COALESCE(%(configs)s::jsonb ->> l.alpha2, '{SIMPLE_CONFIG}') AS cfg,
-        COALESCE(x.title, '') AS a,
-        concat_ws(
-            ' ',
-            (
-                SELECT string_agg(concat_ws(' ', au.name, au.surname), ' ')
+    SELECT t.*,
+           t.title AS a,
+           concat_ws(' ', t.authors, t.subjects) AS b,
+           concat_ws(' ', t.publisher, t.summary) AS c
+    FROM (
+        SELECT
+            x.id,
+            COALESCE(%(configs)s::jsonb ->> l.alpha2, '{SIMPLE_CONFIG}') AS cfg,
+            COALESCE(x.title, '') AS title,
+            x.publisher,
+            COALESCE((
+                SELECT string_agg(concat_ws(' ', au.name, au.surname), ' ' ORDER BY ea.position)
                 FROM entry_authors ea JOIN authors au ON au.id = ea.author_id
                 WHERE ea.entry_id = x.id
-            ),
-            (
+            ), '') AS authors,
+            COALESCE((
                 SELECT string_agg(
                     concat_ws(
                         ' ',
@@ -93,12 +115,12 @@ FROM (
                 )
                 FROM entry_categories ec JOIN categories c ON c.id = ec.category_id
                 WHERE ec.entry_id = x.id
-            )
-        ) AS b,
-        concat_ws(' ', x.publisher, regexp_replace(x.summary, '<[^>]*>', ' ', 'g')) AS c
-    FROM entries x
-    LEFT JOIN languages l ON l.id = x.language_id
-    WHERE %(all)s OR x.id = ANY(%(ids)s)
+            ), '') AS subjects,
+            COALESCE(btrim(regexp_replace(x.summary, '<[^>]*>', ' ', 'g')), '') AS summary
+        FROM entries x
+        LEFT JOIN languages l ON l.id = x.language_id
+        WHERE %(all)s OR x.id = ANY(%(ids)s)
+    ) AS t
 ) AS s
 WHERE e.id = s.id
 """
@@ -126,6 +148,7 @@ def refresh_search_vectors(entry_ids: Optional[Iterable] = None, connection=None
 __all__ = [
     "LANGUAGE_CONFIGS",
     "available_configs",
+    "bm25_available",
     "language_configs",
     "refresh_search_vectors",
     "reset_config_cache",

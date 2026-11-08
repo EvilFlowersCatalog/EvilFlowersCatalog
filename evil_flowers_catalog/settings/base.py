@@ -372,8 +372,9 @@ EVILFLOWERS_ASSISTANT_TRIM_MESSAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_TRIM_
 # containers and stores what they report; off until those services run next to it.
 EVILFLOWERS_EXTRACTION_ENABLED = bool(int(os.getenv("EVILFLOWERS_EXTRACTION_ENABLED", "0")))
 # Bumped whenever the pinned service images change their output, so
-# `backfill_extraction --outdated` re-extracts.
-EVILFLOWERS_EXTRACTION_PIPELINE_VERSION = int(os.getenv("EVILFLOWERS_EXTRACTION_PIPELINE_VERSION", 1))
+# `backfill_extraction --outdated` re-extracts. 2: paragraphs embedded with
+# multilingual-e5-large-instruct through tei-embed (IP-021).
+EVILFLOWERS_EXTRACTION_PIPELINE_VERSION = int(os.getenv("EVILFLOWERS_EXTRACTION_PIPELINE_VERSION", 2))
 # Queue of the entry service (analyzer).
 EVILFLOWERS_EXTRACTION_QUEUE = os.getenv("EVILFLOWERS_EXTRACTION_QUEUE", "evilflowers_analyzer")
 # text-service embeds highlight requests on this queue with the model of the
@@ -485,11 +486,23 @@ EVILFLOWERS_CAPABILITY_TOKEN_LCPL_FEED_TTL_SECONDS = int(
 EVILFLOWERS_OPDS2_PAGE_SIZE = int(os.getenv("EVILFLOWERS_OPDS2_PAGE_SIZE", 50))
 EVILFLOWERS_OPDS2_MAX_PAGE_SIZE = int(os.getenv("EVILFLOWERS_OPDS2_MAX_PAGE_SIZE", 100))
 
-# Search service (IP-008 Phase 6 F1). Consumed by
-# `apps/api/services/search_service_client.py::SearchServiceClient`
-# and the OPDS 2.0 search view when `?mode=keyword|semantic` is set.
-SEARCH_SERVICE_URL = os.getenv("SEARCH_SERVICE_URL", "")
-SEARCH_SERVICE_TIMEOUT_SECONDS = int(os.getenv("SEARCH_SERVICE_TIMEOUT_SECONDS", 10))
+# Embeddings (IP-021): the shared Text Embeddings Inference server (`tei-embed`,
+# intfloat/multilingual-e5-large-instruct, 1024 dims). Empty URL: no vectors, search stays lexical.
+# k8s: http://tei-embed.shared.svc.cluster.local; VPN: http://tei-embed.shared.stu.k8s.internal.
+# Key: 1Password ELVIRA/stu.inference.tei/api_key.
+EVILFLOWERS_EMBEDDING_URL = os.getenv("EVILFLOWERS_EMBEDDING_URL", "")
+EVILFLOWERS_EMBEDDING_API_KEY = os.getenv("EVILFLOWERS_EMBEDDING_API_KEY", "")
+# Host header for the Compose path through the internal gateway (`embed.elvira.internal`); empty in k8s.
+EVILFLOWERS_EMBEDDING_HOST = os.getenv("EVILFLOWERS_EMBEDDING_HOST", "")
+# `model@revision` stored with every vector; empty = read from TEI's /info.
+EVILFLOWERS_EMBEDDING_MODEL = os.getenv("EVILFLOWERS_EMBEDDING_MODEL", "")
+# Hybrid search (IP-021): entries whose cosine similarity to the query is at least this, at most
+# this many, are fused with the lexical results by Reciprocal Rank Fusion (k).
+EVILFLOWERS_SEARCH_VECTOR_MIN_SCORE = float(os.getenv("EVILFLOWERS_SEARCH_VECTOR_MIN_SCORE", 0.8))
+EVILFLOWERS_SEARCH_VECTOR_CANDIDATES = int(os.getenv("EVILFLOWERS_SEARCH_VECTOR_CANDIDATES", 100))
+EVILFLOWERS_SEARCH_RRF_K = int(os.getenv("EVILFLOWERS_SEARCH_RRF_K", 60))
+# Weight of the vector channel in the fusion (the words weigh 1.0).
+EVILFLOWERS_SEARCH_VECTOR_WEIGHT = float(os.getenv("EVILFLOWERS_SEARCH_VECTOR_WEIGHT", 0.5))
 
 
 def _bool_env(name: str, default: bool = False) -> bool:

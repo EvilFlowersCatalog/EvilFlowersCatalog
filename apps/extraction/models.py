@@ -8,15 +8,15 @@ original file: 1-based page, boxes as fractions of the page, origin top-left.
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from pgvector.django import HnswIndex, VectorField
+from pgvector.django import HalfVectorField, HnswIndex
 
 from apps.core.models import Acquisition
 from apps.core.models.base import BaseModel
 
-#: Dimension of `EMBEDDING_MODEL` in text-service. Snowflake Arctic Embed
-#: M v2.0 (the default) and stsb-xlm-r-multilingual are 768; a model of another
-#: dimension needs a migration of this column and a pipeline version bump.
-EMBEDDING_DIMENSIONS = 768
+#: One embedding model for entries, paragraphs and queries (IP-021): multilingual-e5-large-instruct,
+#: 1024 dimensions, served by `tei-embed`. Stored as `halfvec`. A model of another dimension needs a
+#: migration of these columns and a pipeline version bump.
+EMBEDDING_DIMENSIONS = 1024
 
 
 class ExtractionRun(BaseModel):
@@ -37,7 +37,7 @@ class ExtractionRun(BaseModel):
             models.UniqueConstraint(fields=["acquisition", "pipeline_version"], name="extraction_run_version"),
         ]
         indexes = [
-            HnswIndex(name="extraction_run_embedding", fields=["embedding"], opclasses=["vector_cosine_ops"]),
+            HnswIndex(name="extraction_run_embedding", fields=["embedding"], opclasses=["halfvec_cosine_ops"]),
         ]
         verbose_name = _("Extraction run")
         verbose_name_plural = _("Extraction runs")
@@ -66,7 +66,7 @@ class ExtractionRun(BaseModel):
     provenance = models.JSONField(default=dict)
     error = models.TextField(null=True)
     #: The publication's vector: mean of its paragraph embeddings, for recommendations (IP-018 Phase 8).
-    embedding = VectorField(dimensions=EMBEDDING_DIMENSIONS, null=True)
+    embedding = HalfVectorField(dimensions=EMBEDDING_DIMENSIONS, null=True)
     started_at = models.DateTimeField(null=True)
     finished_at = models.DateTimeField(null=True)
 
@@ -131,7 +131,7 @@ class Paragraph(BaseModel):
             HnswIndex(
                 name="extraction_paragraph_embedding",
                 fields=["embedding"],
-                opclasses=["vector_cosine_ops"],
+                opclasses=["halfvec_cosine_ops"],
             ),
         ]
         verbose_name = _("Paragraph")
@@ -145,7 +145,7 @@ class Paragraph(BaseModel):
     section = models.TextField(null=True)
     bbox = models.JSONField()
     text = models.TextField()
-    embedding = VectorField(dimensions=EMBEDDING_DIMENSIONS, null=True)
+    embedding = HalfVectorField(dimensions=EMBEDDING_DIMENSIONS, null=True)
 
 
 class Sentence(BaseModel):

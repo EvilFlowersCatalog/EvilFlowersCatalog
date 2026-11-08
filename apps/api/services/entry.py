@@ -200,11 +200,9 @@ def attach_acquisition(entry: Entry, uploaded_file, *, mime: str, relation: str 
     Shared by `POST /api/v1/catalogs/{c}/entries/{e}` and the MCP upload link so
     both paths trigger the same side effects: saving the content fires
     `touch_entry` → `Entry.post_save`, which queues Readium LCP encryption when
-    the entry has `readium_enabled`, and a PDF is handed to the text service.
+    the entry has `readium_enabled`, and a PDF is queued for extraction (IP-018).
+    The search-service indexing (`process_pdf`) is gone (IP-021): search runs in PostgreSQL.
     """
-    import logging
-
-    from apps.dataverse.services.text_publish import TextServiceClient
     from apps.extraction import services as extraction
 
     acquisition = Acquisition(
@@ -217,13 +215,6 @@ def attach_acquisition(entry: Entry, uploaded_file, *, mime: str, relation: str 
     acquisition.content.save(f"{uuid.uuid4()}{mimetypes.guess_extension(mime)}", uploaded_file)
 
     if acquisition.mime == Acquisition.AcquisitionMIME.PDF:
-        try:
-            TextServiceClient().process_acquisition(acquisition.content.name, str(entry.pk))
-        except Exception:
-            # Text extraction is best-effort; it must never fail the upload.
-            logging.getLogger("apps.api.services.entry").exception(
-                "Failed to enqueue text processing task for acquisition_id=%s", acquisition.pk
-            )
         # IP-018: figures, tables, equations and the paragraph index.
         extraction.queue(acquisition)
         # The outline (chapters) and page count shown in the entry detail.
