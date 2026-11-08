@@ -26,6 +26,7 @@ changes are documented before implementation.
 | IP-017 | [Multilingual Feed Titles and Category Labels](posts/ip-017-multilingual-titles.md) | 📝 Draft (implemented, awaiting review answers) | 2026-10-27 |
 | IP-018 | [Intelligent Viewer](posts/ip-018-intelligent-viewer.md) | 📝 Draft, Phases 1–6b implemented (catalog `ai-update`, services `main`); not yet run end to end, Phase 7 open | 2026-11-03 |
 | IP-019 | [OpenTelemetry Observability for the Elvira LGTM Stack](posts/ip-019-opentelemetry-observability.md) | ✅ Implemented (verified locally; review questions answered; not yet deployed) | 2026-11-06 |
+| IP-020 | [Catalog Search Phase 1 — In-Database Full-Text Search, Relevance, Highlights and Facets](posts/ip-020-catalog-search-phase-1.md) | 📝 Draft (implemented and tested locally, awaiting review answers; dev timings and Thorium check open) | 2026-11-08 |
 
 **Note on the Readium cluster.** IP-001, IP-003 (feature scope), IP-004, IP-007, IP-008,
 IP-009, and IP-011 together constitute the completed Readium LCP delivery and are all

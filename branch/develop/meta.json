@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "cbebeef04d0cdfc1ee9134a8bb9566e35878665b",
-    "short": "cbebeef",
-    "message": "feat(extraction): admin view of an entry's AI processing, list filter and sort",
-    "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/cbebeef04d0cdfc1ee9134a8bb9566e35878665b"
+    "sha": "b2343c11bb5906d04bf8e5fcfba79e7bccc2664f",
+    "short": "b2343c1",
+    "message": "Merge remote-tracking branch 'origin/develop' into develop",
+    "author": "Jakub Dubec",
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/b2343c11bb5906d04bf8e5fcfba79e7bccc2664f"
   },
-  "deployed_at": "2026-11-08T20:21:36Z",
+  "deployed_at": "2026-11-08T22:41:47Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
