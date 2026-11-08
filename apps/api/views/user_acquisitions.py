@@ -71,9 +71,11 @@ class UserAcquisitionManagement(SecuredView):
             ).first()
 
             if user_acquisition:
+                # Relative on purpose: behind the k8s gateway Django sees http, and an
+                # absolute http:// Location is blocked as mixed content on the https portal.
                 return SeeOtherResponse(
-                    redirect_to=request.build_absolute_uri(
-                        f"{reverse('api:user-acquisition-detail', kwargs={'user_acquisition_id': user_acquisition.pk})}"
+                    redirect_to=reverse(
+                        "api:user-acquisition-detail", kwargs={"user_acquisition_id": user_acquisition.pk}
                     )
                 )
 
