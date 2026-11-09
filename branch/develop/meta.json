@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "ea748807de3eb11b80c1b4bf73962cca0d124065",
-    "short": "ea74880",
-    "message": "Performance optimizations",
-    "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/ea748807de3eb11b80c1b4bf73962cca0d124065"
+    "sha": "b6fda20611802971c8f3c35ee887b8d6b352adcd",
+    "short": "b6fda20",
+    "message": "feat: GET /api/v1/reviews lists reviews for moderation (IP-023)",
+    "author": "Tomáš Kordoš",
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/b6fda20611802971c8f3c35ee887b8d6b352adcd"
   },
-  "deployed_at": "2026-11-09T23:08:00Z",
+  "deployed_at": "2026-11-09T23:42:09Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
