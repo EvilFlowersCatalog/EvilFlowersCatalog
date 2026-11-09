@@ -167,6 +167,52 @@ class ModerationTests(ReviewTestCase):
         self.assertEqual(self.moderate(self.owner, self.review, state="deleted").status_code, 422)
 
 
+class ReviewListTests(ReviewTestCase):
+    """`GET /api/v1/reviews`: every review a moderator may moderate, across entries."""
+
+    def setUp(self):
+        self.put_review(self.reader, self.book, rating=1, body="Abusive text")
+        self.put_review(self.reader, self.secret, rating=4, title="Closed but good")
+        self.put_review(self.other, self.book, rating=5)
+        self.hidden = EntryReview.objects.get(entry=self.book, user=self.reader)
+        self.moderate(self.owner, self.hidden, state="hidden", moderation_note="Off-topic")
+
+    def list(self, user, query=""):
+        return self.client.get(f"/api/v1/reviews{query}", headers=self.auth(user))
+
+    def test_a_manager_sees_reviews_of_managed_catalogs(self):
+        response = self.list(self.owner)
+        self.assertEqual(response.status_code, 200)
+        items = response.json()["items"]
+        self.assertEqual(len(items), 3)
+        self.assertEqual({item["entry"]["title"] for item in items}, {"Open book", "Closed book"})
+        self.assertIn("moderation_note", items[0])
+
+    def test_a_manager_of_one_catalog_sees_only_that_catalog(self):
+        UserCatalog.objects.create(catalog=self.private, user=self.other, mode=UserCatalog.Mode.MANAGE)
+        items = self.list(self.other).json()["items"]
+        self.assertEqual([item["entry"]["id"] for item in items], [str(self.secret.pk)])
+
+    def test_filters_and_ordering(self):
+        hidden = self.list(self.owner, "?state=hidden").json()["items"]
+        self.assertEqual([item["moderation_note"] for item in hidden], ["Off-topic"])
+
+        by_entry = self.list(self.owner, f"?entry_id={self.secret.pk}").json()["items"]
+        self.assertEqual([item["rating"] for item in by_entry], [4])
+
+        found = self.list(self.owner, "?query=closed").json()["items"]
+        self.assertEqual([item["entry"]["id"] for item in found], [str(self.secret.pk)])
+
+        best_first = self.list(self.owner, "?order_by=-rating").json()["items"]
+        self.assertEqual([item["rating"] for item in best_first], [5, 4, 1])
+
+        self.assertEqual(self.list(self.owner, "?order_by=title").status_code, 400)
+
+    def test_readers_and_anonymous_are_refused(self):
+        self.assertEqual(self.list(self.reader).status_code, 403)
+        self.assertEqual(self.client.get("/api/v1/reviews").status_code, 401)
+
+
 class EntryRatingTests(ReviewTestCase):
     def test_rating_block_on_list_and_detail(self):
         self.put_review(self.reader, self.book, rating=4)

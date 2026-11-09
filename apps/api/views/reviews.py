@@ -7,11 +7,12 @@ from django.conf import settings
 from django.utils.translation import gettext as _
 
 from apps import openapi
+from apps.api.filters.reviews import EntryReviewFilter
 from apps.api.forms.reviews import EntryReviewForm, EntryReviewModerationForm
 from apps.api.response import Ordering, PaginationResponse, SingleResponse
 from apps.api.serializers.reviews import EntryReviewSerializer
 from apps.core.errors import DetailType, ProblemDetailException, UnauthorizedException, ValidationException
-from apps.core.models import Entry, EntryReview
+from apps.core.models import Entry, EntryReview, UserCatalog
 from apps.core.services.reviews import ReviewService, can_moderate, can_read_entry
 from apps.core.views import SecuredView
 
@@ -84,6 +85,44 @@ class EntryReviewList(SecuredView):
             EntryReviewSerializer.Moderated if can_moderate(request.user, entry) else EntryReviewSerializer.Base
         )
         return PaginationResponse(request, reviews, serializer=serializer, ordering=Ordering(ORDERINGS[order_by]))
+
+
+class ReviewList(SecuredView):
+    @openapi.metadata(
+        description=(
+            "Reviews across entries, for moderation: superusers see every review, catalog managers the reviews "
+            "of entries in the catalogs they manage (published and hidden). Others get 403. Filters: `state`, "
+            "`catalog_id`, `entry_id`, `user_id`, `rating`, `rating__lte`, `query`. `order_by` accepts "
+            "`created_at`, `-created_at` (default), `rating` and `-rating`."
+        ),
+        tags=["Reviews"],
+        summary="List reviews for moderation",
+    )
+    def get(self, request):
+        _require_enabled()
+        if not request.user.is_authenticated:
+            raise UnauthorizedException(detail=_("You need to be logged in"))
+        if not request.user.is_superuser and not UserCatalog.objects.filter(
+            user=request.user, mode=UserCatalog.Mode.MANAGE
+        ).exists():
+            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+
+        order_by = request.GET.get("order_by", "-created_at")
+        if order_by not in ORDERINGS:
+            raise ProblemDetailException(
+                _("Invalid order_by"),
+                status=HTTPStatus.BAD_REQUEST,
+                detail=_("Reviews can be sorted by %(columns)s.") % {"columns": ", ".join(ORDERINGS)},
+            )
+
+        reviews = EntryReviewFilter(
+            request.GET,
+            queryset=EntryReview.objects.select_related("user", "language", "entry"),
+            request=request,
+        ).qs
+        return PaginationResponse(
+            request, reviews, serializer=EntryReviewSerializer.Admin, ordering=Ordering(ORDERINGS[order_by])
+        )
 
 
 class OwnEntryReview(SecuredView):

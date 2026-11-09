@@ -72,6 +72,7 @@ urlpatterns = [
     # IP-023: ratings and reviews
     path("entries/<uuid:entry_id>/reviews", reviews.EntryReviewList.as_view(), name="entry-reviews"),
     path("entries/<uuid:entry_id>/reviews/mine", reviews.OwnEntryReview.as_view(), name="entry-review-mine"),
+    path("reviews", reviews.ReviewList.as_view(), name="review-list"),
     path("reviews/<uuid:review_id>", reviews.EntryReviewDetail.as_view(), name="review-detail"),
     path("entries/<uuid:entry_id>/figures", extraction_discovery.EntryFigures.as_view(), name="entry-figures"),
     # Extraction for the entry's managers: status, runs, queue, (re)processing (IP-018 admin)

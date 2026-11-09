@@ -31,6 +31,20 @@ class EntryReviewSerializer:
         moderated_at: Optional[datetime] = None
         moderation_note: str = ""
 
+    class Admin(Moderated):
+        """`GET /api/v1/reviews`: moderation details plus the reviewed entry."""
+
+        entry: "ReviewedEntrySerializer"
+
+
+class ReviewedEntrySerializer(Serializer):
+    id: UUID
+    title: str
+    catalog_id: UUID
+
+
+EntryReviewSerializer.Admin.model_rebuild()
+
 
 class EntryRatingSerializer(Serializer):
     average: Optional[float]
