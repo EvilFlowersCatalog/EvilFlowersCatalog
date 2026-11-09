@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "833984f4ed3003fc35efbb9056900c498c7777b7",
-    "short": "833984f",
-    "message": "Reviews (IP-023)",
+    "sha": "af0b442436d21a1cedcc47fcf4b0c830b4057892",
+    "short": "af0b442",
+    "message": "Fixies #109 and #110",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/833984f4ed3003fc35efbb9056900c498c7777b7"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/af0b442436d21a1cedcc47fcf4b0c830b4057892"
   },
-  "deployed_at": "2026-11-09T11:06:12Z",
+  "deployed_at": "2026-11-09T11:18:47Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

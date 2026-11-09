@@ -129,13 +129,23 @@ in the Readium surface — clients that PATCH receive 405.
 | Reader app renew (LSD spec, `renew_custom_url`) | `POST /readium/v1/licenses/{id}/renewals` with `{requested_end}` |
 | Reader app renew (LSD proxy passthrough) | `PUT /readium/v1/licenses/{id}/renew?end=…` |
 
-`evaluate_renew` denies (403 + RFC 7807) when:
+`evaluate_renew` denies (403 + RFC 7807) when the following hold. Each denial carries a stable
+`additional_data.code`, so clients translate the reason instead of showing the English `detail`:
 
-- The license is in a terminal state (`returned / expired / revoked / cancelled`).
-- `renewal_count >= EVILFLOWERS_READIUM_MAX_RENEWALS` (when configured; default uncapped).
-- A reservation queue exists on the entry.
-- The license is inside the post-acquisition embargo (`EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS`).
-- `requested_end` exceeds `EVILFLOWERS_READIUM_MAX_RENEW_DAYS` from now.
+| `code` | When | Extra `additional_data` |
+|---|---|---|
+| `terminal_state` | The license is in a terminal state (`expired / revoked / cancelled`). | `state` |
+| `renewal_cap` | `renewal_count >= EVILFLOWERS_READIUM_MAX_RENEWALS` (when configured; default uncapped). | `renewal_count`, `max_renewals` |
+| `queue` | A reservation queue exists on the entry. | — |
+| `embargo` | The post-acquisition embargo has not lifted yet. | `renewable_from` |
+| `exceeds_max_window` | `requested_end` exceeds `EVILFLOWERS_READIUM_MAX_RENEW_DAYS` from now. | `max_renew_days` |
+| `end_in_past` | `requested_end` is not in the future. | — |
+
+The embargo is `EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS`, capped at half the loan and counted from
+`starts_at`, and it only guards the first renewal. A 1-week loan under a 7-day embargo is therefore
+renewable after 3.5 days; before #110 it could never be renewed. Every license carries the
+resulting moment as `renewable_from` (`null` when no embargo applies) — clients gate the renew
+button on it, not on `renew_policy.embargo_days`, which is only the upper bound.
 
 ## Entry pagination contract — LCP-aware fields
 
@@ -173,6 +183,7 @@ read the inlined fields.
   "expires_at": "2026-06-08T10:00:00Z",
   "renewal_count": 0,
   "renewals_remaining": null,
+  "renewable_from": "2026-06-01T10:00:00Z",
   "download_url": "https://…/readium/v1/licenses/…/?token=…",
   "reader_requirements": { … },
   "created_at": "…",
@@ -227,7 +238,7 @@ Scope and replay protection:
 |---|---|---|
 | `license_created` | New License row created | `download_url`, `expires_at`, … |
 | `license_renewed` | Successful renew | `expires_at`, `renewal_count` |
-| `license_returned` | License → RETURNED | `entry_title`, `license_id` |
+| `license_returned` | License → RETURNED or CANCELLED (LSD cancels the return of a never-opened `ready` loan) | `entry_title`, `license_id` |
 | `license_revoked` | License → REVOKED | `entry_title`, `reason` |
 | `license_expiring_soon` | Sweep, ≤ `EXPIRY_REMINDER_DAYS` | `expires_at`, `days_left` |
 | `reservation_placed` | New reservation (QUEUED) | `position`, `claim_window_hours`, `estimated_available_from`, `estimated_available_until` |
