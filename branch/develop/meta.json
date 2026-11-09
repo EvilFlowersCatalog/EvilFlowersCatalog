@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "aecbc17de06ccde7167ec5f100a7e0c4784b390c",
-    "short": "aecbc17",
-    "message": "Implementing #106 and #107",
+    "sha": "833984f4ed3003fc35efbb9056900c498c7777b7",
+    "short": "833984f",
+    "message": "Reviews (IP-023)",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/aecbc17de06ccde7167ec5f100a7e0c4784b390c"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/833984f4ed3003fc35efbb9056900c498c7777b7"
   },
-  "deployed_at": "2026-11-09T00:45:37Z",
+  "deployed_at": "2026-11-09T11:06:12Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

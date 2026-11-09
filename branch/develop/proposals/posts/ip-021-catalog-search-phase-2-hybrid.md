@@ -135,6 +135,13 @@ channels), the `process_pdf` send in `text_publish.py`, `reindex_acquisitions`, 
 - [X] `entries.embedding` + HNSW, Celery task after commit, `embed_entries` command
 - [X] Hybrid fusion, fallback semantics, `matched: semantic`, `degraded`
 - [X] OPDS 2 `mode=keyword|semantic` as channels
+- [X] Search inside publications (#60): `GET /api/v1/entries/passages?query=` ranks the paragraphs of the
+      caller's visible processed PDFs (access and `/entries` filters before ranking), best paragraph per
+      publication, `per_entry` ≤ 3, `EVILFLOWERS_SEARCH_PASSAGE_MIN_SCORE` = 0.8 (uncalibrated). Text withheld
+      for Readium LCP entries and outside the entry's IP ranges (IP-018 Q18/Q19); `degraded` without TEI;
+      `indexed` counts searchable publications. Paragraphs are matched by exact
+      `provenance.paragraphs.embedding_model == model_id()`, so text-service must write `model@revision`
+      as the catalog reads it from TEI `/info` (Phase 3)
 - [X] `/entries/{id}/similar` by entry vector
 
 ### Phase 3: One model for paragraphs
@@ -379,3 +386,4 @@ embed in Tempo; together with BM25 and the vector scan the 150 ms p95 target is 
 |------|--------|---------|
 | 2026-11-09 | jdubec | Initial draft from issue #102; catalog implementation of phases 1–4 and tests (Claude) |
 | 2026-11-09 | jdubec | Added Review Questions section |
+| 2026-11-09 | jdubec | Phase 2: search inside publications, `GET /api/v1/entries/passages` (closes the last catalog part of #60) |

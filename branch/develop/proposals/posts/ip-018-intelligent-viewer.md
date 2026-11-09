@@ -315,7 +315,8 @@ catalog only through a compose image reference.
       `output_dir`).
 - [x] Remove the acquisition's `extraction/` folder in `AcquisitionStorageService.delete`.
 - [x] Dispatch in `apps/extraction/services.py`: `send_task("evilflowers_analyzer.extract")` to
-      `EVILFLOWERS_EXTRACTION_QUEUE` with task id `extract:<acquisition_id>:v<pipeline_version>`,
+      `EVILFLOWERS_EXTRACTION_QUEUE` with task id `uuid5(namespace, "extract:<acquisition_id>:v<pipeline_version>")`
+      (`services.task_id`; a UUID because `JobProtocol` and the event listener require one, #108),
       sent once the transaction commits. Creates the `ExtractionRun` with `status = queued`; a failed
       run of the same version is reset and sent again. Off unless `EVILFLOWERS_EXTRACTION_ENABLED`.
 - [x] Ingestion endpoints under `/extraction/v1/runs/{id}` (`start`, `regions`, `paragraphs`,
@@ -1699,3 +1700,4 @@ highlights. Already the behaviour; no code change.
 | 2026-11-05 | kordostomas | Added Q19 (may licensed Readium LCP titles be extracted, embedded and summarised by AI); recorded that today all are processed and Q18 hides their figures in the entry detail |
 | 2026-11-05 | kordostomas | Answered Q18 and Q19: licensed titles are embedded and recommended, but never show figures and are never read by AI (already the behaviour) |
 | 2026-11-05 | kordostomas | Phase 8 ticked as shipped (except verifying the semantic highlight path on dev); text drawn twice over tables closed as a corrupted file; `search_pdf` gained a regex mode and every agent is told about semantic and word/regex search; Phase 6b `search_paragraphs` ticked; backfill on hold until extraction and embeddings are checked further |
+| 2026-11-09 | jdubec | Phase 1 dispatch: the analyzer task id is now a deterministic UUID (`uuid5` of `extract:<acquisition_id>:v<N>`), because the `extract:…` string crashed `celery_event_handler` on dev (#108) |
