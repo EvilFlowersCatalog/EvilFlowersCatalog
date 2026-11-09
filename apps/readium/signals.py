@@ -70,7 +70,11 @@ def _notify_license_transitions(sender, instance: License, created: bool, **kwar
         "license_id": str(instance.pk),
     }
 
-    if instance.state == License.LicenseState.RETURNED:
+    # The Status Server turns the return of a never-opened (`ready`) loan into
+    # `cancelled`, so most portal returns end there — without this branch the
+    # reader got no confirmation at all (#109). Staff `cancel` lands here too and
+    # sends the same "loan returned" text, which reads correctly for both.
+    if instance.state in (License.LicenseState.RETURNED, License.LicenseState.CANCELLED):
         _enqueue("license_returned", instance.user, base_context)
     elif instance.state == License.LicenseState.REVOKED:
         _enqueue("license_revoked", instance.user, base_context | {"reason": ""})

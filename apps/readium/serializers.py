@@ -146,12 +146,29 @@ class LicenseSerializer:
             refused (`requested_end` is capped at `now + max_renew_days`) and
             could not explain the embargo to the user. Publishing the policy keeps
             one source of truth: `evaluate_renew` and the UI read the same numbers.
+
+            `embargo_days` is an upper bound: the embargo is capped at half the
+            loan. Use `renewable_from` for this loan's actual date (#110).
             """
             return {
                 "max_renew_days": settings.EVILFLOWERS_READIUM_MAX_RENEW_DAYS,
                 "embargo_days": settings.EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS,
                 "max_renewals": getattr(settings, "EVILFLOWERS_READIUM_MAX_RENEWALS", None),
             }
+
+        @computed_field
+        @property
+        def renewable_from(self) -> Optional[datetime]:
+            """When the renewal embargo lifts for this loan; `None` if it does not apply.
+
+            Computed by the same helper `evaluate_renew` uses, so a client that
+            disables "renew" until this moment never offers a renewal the API
+            refuses for the embargo — and never withholds one it would allow.
+            Other denials (queue, cap) still come back as a 403 with a `code`.
+            """
+            from apps.readium.services.renew_policy import renewable_from
+
+            return renewable_from(self.starts_at, self.expires_at, self.renewal_count)
 
         @computed_field
         @property

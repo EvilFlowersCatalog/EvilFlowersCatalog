@@ -332,6 +332,7 @@ class RenewProxyView(StatusProxyView):
                 detail=decision.reason,
                 status=HTTPStatus.FORBIDDEN,
                 detail_type=DetailType.CONFLICT,
+                additional_data=decision.problem_data,
             )
 
         from apps.readium.services import LicenseService

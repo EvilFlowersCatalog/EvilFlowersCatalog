@@ -7,7 +7,7 @@ Rendered from `apps/notifications/templates/notifications/*.txt` with sample val
 | 1 | `license_created` | Reader borrows a book (or claims a reservation) — a new loan is issued. |
 | 2 | `license_expiring_soon` | 3 days before a loan ends (daily sweep, once per loan per day). |
 | 3 | `license_renewed` | Reader renews a loan. |
-| 4 | `license_returned` | Reader returns a loan early (from the reading app or the portal). |
+| 4 | `license_returned` | Reader returns a loan early (from the reading app or the portal) — including a never-opened loan, which the Status Server records as `cancelled`. Staff cancelling a loan sends it too. |
 | 5 | `license_revoked` | Library staff revokes a loan. |
 | 6 | `reservation_placed` | Reader joins the waiting list for a fully-borrowed book. |
 | 7 | `reservation_available` | A copy is freed and the reader is first in line — the 48-hour claim window opens. |
@@ -90,7 +90,7 @@ This is an automated notification from Digitálna knižnica Elvíra / Digital Li
 
 ## 4. `license_returned`
 
-**Sent when:** Reader returns a loan early (from the reading app or the portal).
+**Sent when:** Reader returns a loan early (from the reading app or the portal) — including a never-opened loan, which the Status Server records as `cancelled`. Staff cancelling a loan sends it too.
 
 **Subject:** Loan returned: "Managing Protected Areas in Central and Eastern Europe Under Climate Change"
 

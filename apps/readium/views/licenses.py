@@ -35,6 +35,7 @@ from apps.readium.services import (
     NotLendableError,
     NotReadiumEnabledError,
     PassphraseRequiredError,
+    StatusServerSyncService,
 )
 from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
 from apps.readium.services.renew_policy import evaluate_renew
@@ -220,7 +221,13 @@ class LicenseDetail(LicenseLookupMixin, SecuredView):
         )
 
     @openapi.metadata(
-        description="Update license state and properties. Supports state transitions like 'active', 'returned', 'renewed' etc. LCP operations are handled automatically based on state changes.",
+        description=(
+            "Update license state and properties. Supports state transitions like 'active', 'returned', "
+            "'renewed' etc. LCP operations are handled automatically based on state changes. "
+            "'active' only refreshes the license from the Status Server — a loan becomes active when a "
+            "reading app opens it — and answers 409 (`code: activation_by_device_only`) while it is still "
+            "'ready'. A renewal denial answers 403 with a stable `code` (`embargo` carries `renewable_from`)."
+        ),
         tags=["Licenses"],
         summary="Update license state",
     )
@@ -274,11 +281,28 @@ class LicenseDetail(LicenseLookupMixin, SecuredView):
     def _dispatch_action(self, license: License, action: str, data: dict):
         """Dispatch a `LicenseAction` to the service layer (IP-009 Phase 1)."""
 
-        if action == LicenseAction.ACTIVATE and license.state == License.LicenseState.READY:
-            # Device registration is canonically driven by the Status
-            # Server proxy; the PUT path is a UI shortcut.
-            license.state = License.LicenseState.ACTIVE
-            license.device_count += 1
+        if action == LicenseAction.ACTIVATE:
+            # `ready → active` happens on the Status Server when a reading app
+            # registers a device (`DeviceRegistrationProxyView`). Flipping only
+            # the local row here made the admin UI show "active" for a loan LSD
+            # still held as `ready`, and a later return still ended `cancelled`
+            # (#109). Refresh from LSD instead and refuse while it is still `ready`.
+            # Any other state LSD reports is kept: raising would roll it back.
+            if license.state != License.LicenseState.READY:
+                return
+            if license.lcp_license_id:
+                StatusServerSyncService().reconcile(license)
+            if license.state == License.LicenseState.READY:
+                raise ProblemDetailException(
+                    _("License cannot be activated"),
+                    detail=(
+                        "A loan becomes active when it is opened in a reading app; "
+                        f"the Status Server reports it as '{license.state}'."
+                    ),
+                    status=HTTPStatus.CONFLICT,
+                    detail_type=DetailType.CONFLICT,
+                    additional_data={"code": "activation_by_device_only", "state": license.state},
+                )
             return
 
         if action == LicenseAction.RETURN:
@@ -310,6 +334,7 @@ class LicenseDetail(LicenseLookupMixin, SecuredView):
                     detail=decision.reason,
                     status=HTTPStatus.FORBIDDEN,
                     detail_type=DetailType.CONFLICT,
+                    additional_data=decision.problem_data,
                 )
 
             try:
@@ -405,6 +430,7 @@ class LicenseRenewalsView(SecuredView):
                 detail=decision.reason,
                 status=HTTPStatus.FORBIDDEN,
                 detail_type=DetailType.CONFLICT,
+                additional_data=decision.problem_data,
             )
 
         # IP-008 Phase 3 C7: pass the exact decision datetime through;

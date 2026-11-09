@@ -12,13 +12,12 @@ from django.core.checks import Error, Warning, register
 
 @register()
 def check_renew_embargo_shorter_than_loan(app_configs, **kwargs):
-    """`readium.E001` — an embargo that outlives the loan makes renewal unreachable.
+    """`readium.E001` — an embargo as long as the default loan is a misconfiguration.
 
-    `evaluate_renew` denies while `created_at + embargo > now`, and separately
-    denies once the license reaches the terminal `expired` state. If the embargo
-    is not shorter than the loan, every loan expires before its embargo lifts,
-    so the two rules overlap to reject *every* renewal — with a misleading
-    "acquired within the last N days" reason.
+    `evaluate_renew` caps the embargo at half of each loan (`renewable_from`,
+    #110), so renewal is no longer unreachable — but an embargo of at least the
+    default loan means the configured value never applies, which is not what
+    the operator asked for. Fail loudly rather than silently ignore it.
     """
     embargo = getattr(settings, "EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS", 0)
     duration = getattr(settings, "EVILFLOWERS_READIUM_DEFAULT_BORROW_DURATION_DAYS", 0)
@@ -30,9 +29,9 @@ def check_renew_embargo_shorter_than_loan(app_configs, **kwargs):
                 f"({embargo}) must be less than "
                 f"EVILFLOWERS_READIUM_DEFAULT_BORROW_DURATION_DAYS ({duration}).",
                 hint=(
-                    "With this combination no loan can ever be renewed: it reaches the "
-                    "terminal `expired` state before the renewal embargo lifts. Lower the "
-                    "embargo below the loan duration, or set it to 0 to disable it."
+                    "The embargo is capped at half of each loan, so with this combination "
+                    "the configured value never takes effect. Lower the embargo below the "
+                    "loan duration, or set it to 0 to disable it."
                 ),
                 id="readium.E001",
             )

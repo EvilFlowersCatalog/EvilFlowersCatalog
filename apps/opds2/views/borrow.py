@@ -201,6 +201,7 @@ class RenewView(Opds2CatalogView):
                 detail=decision.reason,
                 status=HTTPStatus.FORBIDDEN,
                 detail_type=DetailType.CONFLICT,
+                additional_data=decision.problem_data,
             )
 
         try:

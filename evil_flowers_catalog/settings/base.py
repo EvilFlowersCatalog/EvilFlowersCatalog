@@ -443,12 +443,11 @@ EVILFLOWERS_READIUM_COPY_LIMIT_CHARS = int(os.getenv("EVILFLOWERS_READIUM_COPY_L
 
 # IP-003: renewal policy
 EVILFLOWERS_READIUM_MAX_RENEW_DAYS = int(os.getenv("EVILFLOWERS_READIUM_MAX_RENEW_DAYS", 14))
-# Freshly-acquired titles cannot be renewed immediately. This MUST stay below
-# EVILFLOWERS_READIUM_DEFAULT_BORROW_DURATION_DAYS: an embargo that outlives the
-# loan makes renewal unreachable, because the loan hits the terminal `expired`
-# state (which `evaluate_renew` refuses) before the embargo ever lifts. The old
-# default of 30 against a 14-day loan did exactly that. `readium.E001` enforces
-# the invariant at startup.
+# Freshly-acquired titles cannot be renewed immediately. Upper bound: the
+# embargo is capped at half of each loan and counted from `starts_at`
+# (`renew_policy.renewable_from`), so a 1-week loan is renewable after 3.5 days
+# (#110). It only guards the first renewal. Keep it below
+# EVILFLOWERS_READIUM_DEFAULT_BORROW_DURATION_DAYS — `readium.E001` enforces that.
 EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS = int(os.getenv("EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS", 7))
 
 # IP-003: oversharing detection
