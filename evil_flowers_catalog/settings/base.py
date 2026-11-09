@@ -190,7 +190,17 @@ SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION = timedelta(
 
 LANGUAGE_CODE = "en"
 
+# Every process runs in UTC (#107). Django exports TIME_ZONE to the process
+# (os.environ["TZ"] + time.tzset()), and Celery stamps each worker event with
+# that process's utcoffset. A catalog worker in Europe/Bratislava sent
+# utcoffset=-1, Flower (UTC) shifted every heartbeat an hour into the future
+# and kept dead workers "Online". Do not override TIME_ZONE per environment;
+# convert to EVILFLOWERS_DISPLAY_TIME_ZONE where a person reads a local time.
 TIME_ZONE = "UTC"
+
+# Time zone in which readers see dates and times (notification e-mails) and
+# in which the assistant's quota day starts.
+EVILFLOWERS_DISPLAY_TIME_ZONE = os.getenv("EVILFLOWERS_DISPLAY_TIME_ZONE", "Europe/Bratislava")
 
 DATETIME_INPUT_FORMATS = ("%Y-%m-%dT%H:%M:%S%z",)
 

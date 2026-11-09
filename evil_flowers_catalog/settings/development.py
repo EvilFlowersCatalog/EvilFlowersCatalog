@@ -2,8 +2,6 @@ from .base import *
 
 DEBUG = True
 
-TIME_ZONE = "Europe/Bratislava"
-
 ALLOWED_HOSTS = ["*"]
 
 # The dev instance sits behind the same TLS-terminating proxy as production.

@@ -19,6 +19,12 @@ class IsoDateFilterTests(SimpleTestCase):
         self.assertNotIn(".487565", rendered)
         self.assertIn("2026", rendered)
 
+    @override_settings(TIME_ZONE="UTC", EVILFLOWERS_DISPLAY_TIME_ZONE="Europe/Bratislava")
+    def test_rendered_in_display_time_zone_not_process_zone(self):
+        # #107: processes run in UTC; readers still get Bratislava time (CEST in September, CET in November).
+        self.assertEqual(isodatetime("2026-09-10T06:49:49+00:00"), "10.09.2026 08:49")
+        self.assertEqual(isodatetime("2026-11-09T06:49:49+00:00"), "09.11.2026 07:49")
+
     def test_date_variant(self):
         self.assertNotIn(":", isodate("2026-09-10T06:49:49+00:00"))
 

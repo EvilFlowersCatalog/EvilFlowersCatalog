@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.db.models import Sum
@@ -73,8 +74,11 @@ def assert_not_blocked(user) -> None:
 
 
 def day_start() -> "timezone.datetime":
-    """Start of the current quota day, honouring the configured reset hour."""
-    now = timezone.localtime()
+    """Start of the current quota day: midnight in EVILFLOWERS_DISPLAY_TIME_ZONE.
+
+    The processes run in UTC (#107); the reader's day starts at their midnight.
+    """
+    now = timezone.localtime(timezone=ZoneInfo(settings.EVILFLOWERS_DISPLAY_TIME_ZONE))
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     if now < start:
         start -= timedelta(days=1)
