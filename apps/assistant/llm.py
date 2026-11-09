@@ -101,12 +101,34 @@ class Delta:
         return self.prompt_tokens + self.completion_tokens
 
 
+def _optional_bool(value) -> Optional[bool]:
+    """'0'/'1'/'' (or a bool) as False/True/None — None means "do not send"."""
+    if isinstance(value, bool) or value is None:
+        return value
+    value = str(value).strip().lower()
+    if value in ("", "none"):
+        return None
+    return value not in ("0", "false", "no", "off")
+
+
+def _optional_float(value) -> Optional[float]:
+    if value is None or str(value).strip() == "":
+        return None
+    return float(value)
+
+
 class OllamaClient:
     def __init__(self):
         self.endpoint = settings.EVILFLOWERS_ASSISTANT_OLLAMA_ENDPOINT
         self.model = settings.EVILFLOWERS_ASSISTANT_OLLAMA_MODEL
         self.api_key = settings.EVILFLOWERS_ASSISTANT_OLLAMA_API_KEY
         self.timeout = settings.EVILFLOWERS_ASSISTANT_OLLAMA_TIMEOUT
+        self.connect_timeout = getattr(settings, "EVILFLOWERS_ASSISTANT_OLLAMA_CONNECT_TIMEOUT", 10)
+        self.host = getattr(settings, "EVILFLOWERS_ASSISTANT_OLLAMA_HOST", "")
+        self.think = _optional_bool(getattr(settings, "EVILFLOWERS_ASSISTANT_OLLAMA_THINK", "0"))
+        self.num_ctx = int(getattr(settings, "EVILFLOWERS_ASSISTANT_OLLAMA_NUM_CTX", 0) or 0)
+        self.keep_alive = str(getattr(settings, "EVILFLOWERS_ASSISTANT_OLLAMA_KEEP_ALIVE", "") or "").strip()
+        self.temperature = _optional_float(getattr(settings, "EVILFLOWERS_ASSISTANT_OLLAMA_TEMPERATURE", ""))
 
     @property
     def configured(self) -> bool:
@@ -119,9 +141,48 @@ class OllamaClient:
         # the key is omitted entirely when unset.
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        # The Compose catalog reaches the cluster's Ollama through the internal
+        # Gateway, which routes by Host (as EVILFLOWERS_EMBEDDING_HOST does for TEI).
+        if self.host:
+            headers["Host"] = self.host
         return headers
 
-    def chat(self, messages: List[dict], tools: Optional[List[dict]] = None) -> Iterator[Delta]:
+    def payload(self, messages: List[dict], tools: Optional[List[dict]] = None, response_format=None) -> dict:
+        """The `/api/chat` request body.
+
+        Everything here is per deployment, never per request, so two requests
+        with the same messages render the same prompt and hit the same cache.
+        `response_format` is Ollama's `format`: "json" or a JSON Schema the
+        answer is constrained to (only for callers that offer no tools).
+        """
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+        }
+        if tools:
+            payload["tools"] = tools
+        if response_format is not None:
+            payload["format"] = response_format
+        if self.think is not None:
+            payload["think"] = self.think
+        if self.keep_alive:
+            # Ollama takes a duration string ("10m") or a number of seconds (-1 = forever).
+            try:
+                payload["keep_alive"] = int(self.keep_alive)
+            except ValueError:
+                payload["keep_alive"] = self.keep_alive
+
+        options = {}
+        if self.num_ctx:
+            options["num_ctx"] = self.num_ctx
+        if self.temperature is not None:
+            options["temperature"] = self.temperature
+        if options:
+            payload["options"] = options
+        return payload
+
+    def chat(self, messages: List[dict], tools: Optional[List[dict]] = None, response_format=None) -> Iterator[Delta]:
         """Stream a completion, yielding a `Delta` per event.
 
         `messages` is sent verbatim and in full. Callers must not rewrite
@@ -131,13 +192,7 @@ class OllamaClient:
         if not self.configured:
             raise LLMUnavailable(_("The assistant is not configured: set the Ollama endpoint and model."))
 
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "stream": True,
-        }
-        if tools:
-            payload["tools"] = tools
+        payload = self.payload(messages, tools, response_format)
 
         # One CLIENT span for the model call (IP-019). It is not made current
         # across the `yield`s below — a generator resumes in its consumer's
@@ -147,6 +202,7 @@ class OllamaClient:
         span = _tracer.start_span(f"{OPERATION_NAME} {self.model}", kind=SpanKind.CLIENT, attributes=attributes)
         stopwatch = telemetry.Stopwatch()
         error_type = None
+        thinking_chunks = 0
 
         try:
             try:
@@ -156,7 +212,9 @@ class OllamaClient:
                         json=payload,
                         headers=self._headers(),
                         stream=True,
-                        timeout=self.timeout,
+                        # (connect, read): the read timeout applies between bytes, so
+                        # it is what a slow prompt evaluation before the first token hits.
+                        timeout=(self.connect_timeout, self.timeout),
                     )
                     response.raise_for_status()
             except requests.RequestException as error:
@@ -182,6 +240,10 @@ class OllamaClient:
                         raise LLMUnavailable(str(event["error"]))
 
                     message = event.get("message") or {}
+                    if message.get("thinking"):
+                        # Reasoning is never shown or stored; it only costs time. Counted,
+                        # so a model that thinks despite `think: false` shows in traces.
+                        thinking_chunks += 1
                     delta = Delta(
                         content=message.get("content") or "",
                         tool_calls=message.get("tool_calls") or [],
@@ -191,6 +253,9 @@ class OllamaClient:
                     )
                     if delta.done:
                         self._record_usage(span, attributes, event, delta)
+                        if thinking_chunks:
+                            span.set_attribute("evilflowers.assistant.thinking_chunks", thinking_chunks)
+                        self._record_timings(span, event)
 
                     yield delta
             except requests.RequestException as error:
@@ -230,6 +295,15 @@ class OllamaClient:
         if response is not None and response.status_code:
             return str(response.status_code)
         return type(error).__qualname__
+
+    @staticmethod
+    def _record_timings(span, event: dict) -> None:
+        """Ollama's own durations (nanoseconds) on the span: on CPU, prompt evaluation
+        is the number to watch (#104), and it is not separable from the wall clock."""
+        for key in ("load_duration", "prompt_eval_duration", "eval_duration"):
+            value = event.get(key)
+            if value:
+                span.set_attribute(f"evilflowers.ollama.{key}_s", round(value / 1e9, 3))
 
     @staticmethod
     def _record_usage(span, attributes: dict, event: dict, delta: Delta) -> None:

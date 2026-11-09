@@ -37,7 +37,26 @@ SYSTEM_PROMPT = (
     '"keep": [{"id": <sentence number>, "note": "<why it is relevant, one short sentence>"}]}'
 )
 
+#: The answer's shape, for Ollama's `format` (IP-022): constrained, not parsed out of prose.
+KEEP_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "keep": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"id": {"type": "integer"}, "note": {"type": "string"}},
+                "required": ["id", "note"],
+            },
+        },
+    },
+    "required": ["summary", "keep"],
+}
+
 #: Characters of candidate text per model call; longer candidate sets are sent in batches.
+#: ~6-8K tokens: on CPU inference each batch costs a minute or more of prompt evaluation
+#: (it runs in a Celery task, not in front of the reader).
 BATCH_CHARS = 24000
 
 _JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
@@ -96,7 +115,7 @@ def find(document, *, prompt: str, language: Optional[str] = None) -> Optional[S
     kept = {}
     summaries = []
     for batch in _batches(numbered):
-        content, _tool_calls, used = _complete(client, _messages(batch, prompt, language), None)
+        content, _tool_calls, used = _complete(client, _messages(batch, prompt, language), None, KEEP_SCHEMA)
         result.tokens_used += used
         data = _json(content)
         if data.get("summary"):

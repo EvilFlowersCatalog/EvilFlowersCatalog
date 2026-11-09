@@ -365,6 +365,22 @@ EVILFLOWERS_ASSISTANT_OLLAMA_ENDPOINT = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_
 EVILFLOWERS_ASSISTANT_OLLAMA_MODEL = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_MODEL")
 EVILFLOWERS_ASSISTANT_OLLAMA_API_KEY = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_API_KEY")
 EVILFLOWERS_ASSISTANT_OLLAMA_TIMEOUT = int(os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_TIMEOUT", 300))
+# Seconds to open the connection; the timeout above is per socket read, so on CPU inference
+# it must cover the prompt evaluation before the first token (#104).
+EVILFLOWERS_ASSISTANT_OLLAMA_CONNECT_TIMEOUT = float(os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_CONNECT_TIMEOUT", 10))
+# Host header for reaching the k8s Ollama through the internal Gateway from Compose
+# (http://192.168.122.227:8081 + Host: llm.elvira.internal), like EVILFLOWERS_EMBEDDING_HOST.
+EVILFLOWERS_ASSISTANT_OLLAMA_HOST = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_HOST", "")
+# Reasoning models (Qwen3.x) think before answering unless told not to; on CPU that is minutes
+# of hidden tokens per round. 0 sends `"think": false`, 1 `"think": true`, empty sends nothing.
+EVILFLOWERS_ASSISTANT_OLLAMA_THINK = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_THINK", "0")
+# options.num_ctx per request. Equal to the server's OLLAMA_CONTEXT_LENGTH (and the
+# elvira-assistant Modelfile), so Ollama never reloads the model for another size. 0 = not sent.
+EVILFLOWERS_ASSISTANT_OLLAMA_NUM_CTX = int(os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_NUM_CTX", 32768))
+# keep_alive per request: -1 keeps the model loaded. Empty = not sent (server default).
+EVILFLOWERS_ASSISTANT_OLLAMA_KEEP_ALIVE = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_KEEP_ALIVE", "-1")
+# Sampling temperature for chat and the JSON-only callers. Empty = the model's default.
+EVILFLOWERS_ASSISTANT_OLLAMA_TEMPERATURE = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_TEMPERATURE", "")
 
 # Distinct pages of the reader's copy one request (chat turn, explanation) may
 # read (IP-018 Q5). Tool calls are not limited; reading is.
@@ -378,8 +394,11 @@ EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE = float(os.getenv("EVILFLOWERS_ASSISTA
 EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES = int(os.getenv("EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES", 40))
 
 # Daily per-user quota. Overridable per user via `AssistantUserPolicy`.
+# Tokens are booked per model round (prompt + output), and a turn takes 2-4 rounds of a
+# ~1.5-2.5K-token prompt, so 50K ran out after ~8 questions (IP-022 Q1). Self-hosted, the
+# scarce resource is CPU time; the message limit is the real brake.
 EVILFLOWERS_ASSISTANT_DAILY_LIMIT_MESSAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_DAILY_LIMIT_MESSAGES", 100))
-EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS = int(os.getenv("EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS", 50000))
+EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS = int(os.getenv("EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS", 200000))
 
 # Context policy (IP-015 D3). While a conversation is warm the full history is
 # replayed unchanged so the prompt prefix stays byte-identical and Ollama can

@@ -60,6 +60,24 @@ SYSTEM_PROMPT = (
 )
 
 
+#: The answer's shape, for Ollama's `format` on the retry without tools (IP-022).
+QUOTES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "quotes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"page": {"type": "integer"}, "text": {"type": "string"}, "note": {"type": "string"}},
+                "required": ["page", "text"],
+            },
+        },
+    },
+    "required": ["summary", "quotes"],
+}
+
+
 @dataclass
 class Quote:
     page: int
@@ -111,7 +129,7 @@ def highlight(
         # Out of rounds, or prose instead of JSON: ask once more for the answer only.
         messages.append({"role": "assistant", "content": content})
         messages.append({"role": "user", "content": "Stop reading now and answer with the JSON object only."})
-        content, _tool_calls, used = _complete(client, messages, None)
+        content, _tool_calls, used = _complete(client, messages, None, QUOTES_SCHEMA)
         tokens += used
         data = _json(content) or {}
 

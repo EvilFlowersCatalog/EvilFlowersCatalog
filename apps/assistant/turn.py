@@ -71,7 +71,8 @@ def run(
 
 
 def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=None) -> Iterator[str]:
-    specifications = tools.specifications()
+    # Fixed for the session (IP-022): the tool list is part of the cached prompt prefix.
+    specifications = tools.specifications(authenticated=request.user.is_authenticated)
     if document is not None:
         specifications = specifications + explain.TOOL_SPECIFICATIONS
         if chat.user_acquisition_id and chat.user_acquisition.user_id == chat.user_id:
@@ -84,6 +85,8 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
     displayed: List[str] = []
     pages_read: List[int] = []
     annotations: List[str] = []
+    # Tool calls made in this turn, by (name, arguments): a repeat is answered with a hint.
+    seen_calls: set = set()
 
     for _round in range(MAX_TOOL_ROUNDS):
         messages = services.conversation(chat, document)
@@ -92,6 +95,9 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
             # Last, after the history: the cached prefix stays the same.
             messages.append({"role": "system", "content": instruction})
 
+        # On CPU inference a round can spend tens of seconds evaluating the prompt
+        # before its first token (#104): tell the client something is happening.
+        yield sse("status", {"state": "thinking", "round": _round + 1})
         content, tool_calls, tokens = yield from _stream(client, messages, specifications)
 
         if not tool_calls:
@@ -129,7 +135,8 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
         )
 
         for call in tool_calls:
-            for entry_id in (yield from _run_tool(request, chat, call, document, pages_read, annotations, language)):
+            run = _run_tool(request, chat, call, document, pages_read, annotations, language, seen_calls)
+            for entry_id in (yield from run):
                 if entry_id not in displayed:
                     displayed.append(entry_id)
 
@@ -253,6 +260,40 @@ def _stream(client: OllamaClient, messages: List[dict], specifications: List[dic
     return content, tool_calls, tokens
 
 
+REPEATED_CALL = json.dumps(
+    {
+        "error": "You already called this tool with these arguments in this answer; its result is above. "
+        "Answer from it, or call it with different arguments."
+    }
+)
+
+
+def _arguments(arguments) -> dict:
+    """Ollama returns arguments as an object, but a model can still emit a JSON
+    string; accept both rather than failing the turn over formatting."""
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except json.JSONDecodeError:
+            return {}
+    return arguments if isinstance(arguments, dict) else {}
+
+
+def _repeated(seen_calls: Optional[set], name: str, arguments: dict) -> bool:
+    """Whether this call was already made in this turn; records it otherwise.
+
+    Small models loop on a call whose result disappointed them (#104 saw it with
+    Qwen3.6 in long tool sessions). Running it again changes nothing; saying so does.
+    """
+    if seen_calls is None:
+        return False
+    key = (name, json.dumps(tools.clean_arguments(arguments), sort_keys=True, default=str))
+    if key in seen_calls:
+        return True
+    seen_calls.add(key)
+    return False
+
+
 def _run_tool(
     request,
     chat: Chat,
@@ -261,19 +302,18 @@ def _run_tool(
     pages_read: Optional[List[int]] = None,
     annotations: Optional[List[str]] = None,
     language: Optional[str] = None,
+    seen_calls: Optional[set] = None,
 ) -> Generator[str, None, List[str]]:
     """Run one tool call, yielding SSE frames; returns publication ids to display."""
     function = call.get("function") or {}
     name = function.get("name") or ""
-    arguments = function.get("arguments") or {}
+    arguments = _arguments(function.get("arguments"))
 
-    # Ollama returns arguments as an object, but a model can still emit a JSON
-    # string; accept both rather than failing the turn over formatting.
-    if isinstance(arguments, str):
-        try:
-            arguments = json.loads(arguments)
-        except json.JSONDecodeError:
-            arguments = {}
+    if not tools.is_display_books(name):
+        if _repeated(seen_calls, name, arguments):
+            ChatMessage.objects.create(chat=chat, user=chat.user, role=ChatMessage.Role.TOOL, text=REPEATED_CALL)
+            return []
+        yield sse("status", {"state": "tool", "tool": name})
 
     if tools.is_display_books(name):
         entry_ids = [str(entry_id) for entry_id in (arguments.get("entry_ids") or [])]
@@ -303,13 +343,8 @@ def _run_tool(
         return []
 
     try:
-        payload = tools.call(request, name, arguments)
-        text = json.dumps(payload, default=str)
-    except (tools.UnknownTool, tools.ToolNotPermitted) as error:
-        # Hand the refusal to the model verbatim so it can correct itself
-        # instead of failing the whole turn.
-        text = json.dumps({"error": str(error)})
-        payload = None
+        # The model sees a slim result; the full payload is kept on the row (IP-022).
+        payload, text = tools.run(request, name, arguments)
     except Exception:
         logger.exception("Assistant tool '%s' raised", name)
         text = json.dumps({"error": "The tool failed."})

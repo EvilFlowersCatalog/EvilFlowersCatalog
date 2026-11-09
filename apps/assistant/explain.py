@@ -234,7 +234,7 @@ def explain(
             "content": f"Stop reading now and answer with the JSON object. {_language_instruction(language)}",
         }
     )
-    content, _tool_calls, used = _complete(client, messages, None)
+    content, _tool_calls, used = _complete(client, messages, None, ANSWER_SCHEMA)
     return _parse(content, pages_read, tokens + used)
 
 
@@ -277,11 +277,34 @@ def _language_instruction(language: Optional[str]) -> str:
     return instruction
 
 
-def _complete(client: OllamaClient, messages: List[dict], specifications: Optional[List[dict]]):
+#: The explanation's shape, for Ollama's `format` when no tools are offered (IP-022): the
+#: answer is constrained to it rather than parsed out of free text.
+ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "simple": {"type": "string"},
+        "examples": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"label": {"type": "string"}, "description": {"type": "string"}},
+                "required": ["label", "description"],
+            },
+        },
+    },
+    "required": ["simple", "examples"],
+}
+
+
+def _complete(client: OllamaClient, messages: List[dict], specifications: Optional[List[dict]], response_format=None):
     content = ""
     tool_calls: List[dict] = []
     tokens = 0
-    for delta in client.chat(messages, tools=specifications):
+    # A constrained format and tools do not mix: with tools offered the model must
+    # be free to emit a call instead of the JSON answer.
+    if specifications:
+        response_format = None
+    for delta in client.chat(messages, tools=specifications, response_format=response_format):
         content += delta.content
         tool_calls.extend(delta.tool_calls)
         if delta.done:
