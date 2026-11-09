@@ -1,5 +1,6 @@
 import base64
 import ipaddress
+import logging
 import uuid
 from collections import defaultdict
 from http import HTTPStatus
@@ -25,6 +26,18 @@ from apps.core.views import SecuredView
 from apps.files.ranges import is_continuation, ranged_file_response
 from apps.files.services import AcquisitionStorageError, AcquisitionStorageService
 from evil_flowers_catalog import domain_metrics
+
+logger = logging.getLogger(__name__)
+
+
+def _stored_size(content) -> int:
+    """Bytes of a stored file; 0 when it is missing or empty (#112)."""
+    if not content:
+        return 0
+    try:
+        return content.storage.size(content.name)
+    except (FileNotFoundError, OSError):
+        return 0
 
 
 def _get_client_ip(request) -> str:
@@ -238,8 +251,16 @@ class UserAcquisitionDownload(SecuredView):
                 )
             except InvalidPage:
                 raise ProblemDetailException(_("Page not found"), status=HTTPStatus.NOT_FOUND)
+            except Exception as exc:
+                # An empty or damaged stored file (#112): the copy cannot be made, and retrying will not help.
+                logger.exception("Could not personalise acquisition %s", user_acquisition.acquisition_id)
+                raise ProblemDetailException(
+                    _("The file of this publication is damaged or missing."), status=HTTPStatus.GONE
+                ) from exc
         else:
             content = user_acquisition.acquisition.content
+            if not _stored_size(content):
+                raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND)
 
         mime = user_acquisition.acquisition.mime
         if request.GET.get("format", None) == "base64":

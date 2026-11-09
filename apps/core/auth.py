@@ -5,7 +5,6 @@ import uuid
 from datetime import timedelta
 from http import HTTPStatus
 from typing import Optional, TypedDict, Dict
-from urllib.parse import urlparse, urlunparse
 
 import ldap
 from joserfc import jwt
@@ -22,6 +21,7 @@ from django.utils.translation import gettext as _
 
 from apps.core.errors import ProblemDetailException
 from apps.core.models import ApiKey, User, AuthSource, UserCatalog
+from apps.core.services.ldap_directory import apply_profile, ldap_initialize, requested_attributes, search_profile
 
 
 def _jwt_key() -> KeyFlexible:
@@ -158,25 +158,7 @@ class BasicBackend(ModelBackend):
 
     @staticmethod
     def _ldap_initialize(config: "BasicBackend.LdapConfig") -> ldap.ldapobject.LDAPObject:
-        uri = config["URI"]
-        parsed = urlparse(uri)
-
-        # Apply default port based on protocol if not specified in URI
-        if not parsed.port:
-            default_port = 636 if parsed.scheme == "ldaps" else 389
-            uri = urlunparse(parsed._replace(netloc=f"{parsed.hostname}:{default_port}"))
-
-        connection = ldap.initialize(uri=uri)
-        connection.set_option(ldap.OPT_REFERRALS, 0)
-
-        if parsed.scheme == "ldaps":
-            connection.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_DEMAND)
-            ca_cert_file = config.get("CA_CERT_FILE")
-            if ca_cert_file:
-                connection.set_option(ldap.OPT_X_TLS_CACERTFILE, ca_cert_file)
-            connection.set_option(ldap.OPT_X_TLS_NEWCTX, 0)
-
-        return connection
+        return ldap_initialize(config)
 
     def _ldap(self, username: str, password: str, auth_source: AuthSource) -> Optional[User]:
         config: BasicBackend.LdapConfig = auth_source.content
@@ -236,35 +218,14 @@ class BasicBackend(ModelBackend):
             user.set_unusable_password()
             user.save()
 
-        result = connection.search(
-            f"{config['ROOT_DN']}",
-            ldap.SCOPE_SUBTREE,
-            config["FILTER"].format(username=username),
-            ["*"],
-        )
+        # Attributes are requested by name: ldap.stuba.sk filters `*` for
+        # anonymous binds, and servers keep an operational `memberOf` out of it.
+        attrs = search_profile(connection, config, username, requested_attributes(config))
 
-        user_type, profiles = connection.result(result, 60)
-
-        if profiles:
-            name, attrs = profiles[0]
-
-            # LDAP properties
-            for model_property, ldap_property in config["USER_ATTR_MAP"].items():
-                # May not exist in LDAP profile
-                if ldap_property in attrs:
-                    setattr(user, model_property, attrs[ldap_property][0].decode())
-
-            # Notification contacts (NOTIFICATION_CONTACT_MAP)
-            for contact_type, ldap_attr in config.get("NOTIFICATION_CONTACT_MAP", {}).items():
-                if ldap_attr in attrs:
-                    from apps.notifications.models import NotificationContact
-
-                    contact_value = attrs[ldap_attr][0].decode()
-                    NotificationContact.objects.update_or_create(
-                        user=user,
-                        type=contact_type,
-                        defaults={"value": contact_value, "is_primary": True},
-                    )
+        if attrs is not None:
+            # Profile attributes and notification contacts — shared with the
+            # background sync (`sync_ldap_profiles`, IP-025).
+            apply_profile(user, attrs, config)
 
             # LDAP groups
             user.groups.clear()

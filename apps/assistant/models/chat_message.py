@@ -98,6 +98,15 @@ class ChatMessage(BaseModel):
 
     #: Agent annotation ids the assistant created during the turn this message closes (IP-018 Phase 8).
     annotations = models.JSONField(null=True, blank=True)
+
+    #: Evidence labels the answer cites, resolved to publication and page (IP-024), in order of first
+    #: appearance: `[{"label": "E3", "entry_id": …, "title": …, "page": 47, "section": …}]`. The labels stay
+    #: in `text` as written; clients turn the known ones into links.
+    citations = models.JSONField(null=True, blank=True)
+
+    #: Hash of the system prompt and tool list the model was given for this assistant message (#116), so a
+    #: change in behaviour can be traced to a change in prompt. Empty for user and tool rows.
+    prompt_fingerprint = models.CharField(max_length=12, blank=True, default="")
     tokens_used = models.IntegerField(default=0)
 
     objects = ChatMessageQuerySet.as_manager()

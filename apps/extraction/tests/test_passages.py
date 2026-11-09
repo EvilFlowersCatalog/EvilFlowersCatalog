@@ -107,3 +107,42 @@ class PassageSearchTests(SearchFixtureMixin, TestCase):
 
     def test_query_is_required(self):
         self.search(status=400, query="  ")
+
+    # --- #113: words, snippets, catalog ---
+
+    def test_a_phrase_only_in_the_text_is_found_with_a_marked_snippet(self):
+        # Far from the query by meaning (axis 5), so only the word channel can find it.
+        self.paragraph(self.keys["climate"], [(12, "Teória a prax vzdelávania dospelých <v praxi>.", axis(5))])
+        result = self.search(vector=axis(9), query='"vzdelavania dospelych"')
+        (item,) = result["items"]
+        self.assertEqual(item["entry_id"], str(self.keys["climate"]))
+        self.assertEqual(item["catalog_id"], str(Entry.objects.get(pk=self.keys["climate"]).catalog_id))
+        (passage,) = item["passages"]
+        self.assertEqual(passage["page"], 12)
+        self.assertEqual(passage["matched"], ["words"])
+        self.assertIn("<mark>vzdelávania</mark>", passage["snippet"])
+        # The text is escaped: `<mark>` is the only markup.
+        self.assertIn("&lt;v praxi", passage["snippet"])
+        self.assertNotIn("<v", passage["snippet"])
+
+    def test_words_still_work_when_embeddings_are_down(self):
+        result = self.search(vector=None, query="Neural networks")
+        self.assertTrue(result["degraded"])
+        self.assertEqual([item["entry_id"] for item in result["items"]], [str(self.keys["ml"])])
+        # rudin's paragraphs were embedded by another model: not searchable by meaning, but by words.
+        self.assertEqual(result["searchable"], 4)
+
+    def test_both_channels_agree(self):
+        passage = self.search(query="neural networks")["items"][0]["passages"][0]
+        self.assertEqual(passage["matched"], ["semantic", "words"])
+        self.assertEqual(passage["score"], 1.0)
+
+    def test_licensed_text_is_found_by_words_but_neither_text_nor_snippet_is_shown(self):
+        Entry.objects.filter(pk=self.keys["ml"]).update(config={"readium_enabled": True})
+        passage = self.search(vector=None, query="Neural networks")["items"][0]["passages"][0]
+        self.assertIsNone(passage["text"])
+        self.assertIsNone(passage["snippet"])
+
+    def test_hidden_catalogs_stay_hidden_from_words_too(self):
+        result = self.search(vector=None, query="Secret")
+        self.assertEqual(result["items"], [])

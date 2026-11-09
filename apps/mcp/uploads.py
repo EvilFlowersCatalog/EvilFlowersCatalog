@@ -122,16 +122,14 @@ def _mime(uploaded) -> str:
 
 
 def _sniff(uploaded, mime: str) -> None:
-    """Refuse a file whose first bytes contradict its type — a mislabelled upload
-    would otherwise be encrypted and lent as a book nobody can open."""
-    head = uploaded.read(4)
-    uploaded.seek(0)
-    expected = b"%PDF" if mime == Acquisition.AcquisitionMIME.PDF else b"PK\x03\x04"
-    if head != expected:
-        raise UploadRefused(
-            HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-            _("The file does not look like %(type)s.") % {"type": mime},
-        )
+    """Refuse an empty file, or one whose first bytes contradict its type — a mislabelled upload would
+    otherwise be encrypted and lent as a book nobody can open. The same check as the REST upload (#112)."""
+    from apps.api.services.entry import InvalidAcquisitionFile, check_acquisition_file
+
+    try:
+        check_acquisition_file(uploaded, mime)
+    except InvalidAcquisitionFile as error:
+        raise UploadRefused(error.status, str(error))
 
 
 def _encryption(acquisition: Acquisition) -> Optional[dict]:

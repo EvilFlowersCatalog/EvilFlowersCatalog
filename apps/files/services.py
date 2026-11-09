@@ -143,6 +143,13 @@ class AcquisitionStorageService:
 
         if not acquisition.content:
             raise AcquisitionStorageError(f"Acquisition {acquisition.pk} has no content stored")
+        # A missing or empty file is "not found", not a server error (#112).
+        try:
+            size = acquisition.content.storage.size(acquisition.content.name)
+        except (FileNotFoundError, OSError) as exc:
+            raise AcquisitionStorageError(f"Acquisition {acquisition.pk}: file missing from storage") from exc
+        if not size:
+            raise AcquisitionStorageError(f"Acquisition {acquisition.pk}: stored file is empty")
 
         return ranged_file_response(
             request,

@@ -73,16 +73,22 @@ class PassageSerializer(Serializer):
     #: Page of the original PDF, 1-based (as the viewer shows an open-access entry).
     page: int
     section: Optional[str]
-    #: Cosine similarity, 0-1.
+    #: Cosine similarity, 0-1, when the passage matched by meaning; else its word-match rank, 0-1.
     score: float
     #: The paragraph, cut at 600 characters; None when the reader may not read it here
     #: (licensed through Readium LCP, or outside the entry's allowed IP ranges).
     text: Optional[str]
     truncated: bool = False
+    #: HTML-escaped excerpt with `<mark>` around the query's words, the same convention as
+    #: `search.highlights` on entries (#113); None where `text` is None.
+    snippet: Optional[str] = None
+    #: How the passage matched: `semantic` (by meaning), `words` (the query's words, accents ignored), or both.
+    matched: List[str] = []
 
 
 class PassageHitSerializer(Serializer):
     entry_id: UUID
+    catalog_id: Optional[UUID] = None
     #: The best passage's score.
     score: float
     passages: List[PassageSerializer]
@@ -90,10 +96,12 @@ class PassageHitSerializer(Serializer):
 
 class PassageSearchSerializer(Serializer):
     query: str
-    #: True when the query could not be embedded (tei-embed unconfigured or down): no results.
+    #: True when the query could not be embedded (tei-embed unconfigured or down): only word matches.
     degraded: bool
     #: Publications the caller may see whose paragraphs are embedded by the current model.
     indexed: int
+    #: Publications the caller may see with a processed PDF: searchable by words (#113).
+    searchable: int = 0
     items: List[PassageHitSerializer]
 
 
@@ -288,14 +296,18 @@ def _may_read_text(request, entry: Entry) -> bool:
 class EntryPassages(SecuredView):
     @openapi.metadata(
         description=(
-            "Search inside publications: the `query` is embedded with multilingual-e5 (IP-021) and ranked "
-            "against the paragraphs of every processed PDF the caller may see (IP-018), grouped per "
-            "publication by its best paragraph, best first. Other parameters of `GET /api/v1/entries` "
-            "(e.g. `catalog_id`, `category_id`, `language`) narrow the publications searched. `per_entry` "
-            "(1-3) passages per publication, `limit` publications (at most 24). A passage's `text` is "
-            "null for entries lent through Readium LCP and outside the entry's allowed IP ranges; its "
-            "`page` and score are still given. `degraded` is true when the query could not be embedded; "
-            "`indexed` counts the publications searchable this way. Resolve entries with "
+            "Search inside publications (#113). Two rankings over the paragraphs of every processed PDF the "
+            "caller may see (IP-018), fused by reciprocal rank: by meaning (the `query` embedded with "
+            'multilingual-e5, IP-021) and by words (accents ignored; `"a phrase"`, `-excluded` and `or` as in '
+            "entry search). Passages are grouped per publication by its best paragraph, best first; each "
+            "says how it `matched` (`semantic`, `words`) and carries a `snippet`: HTML-escaped text with "
+            "`<mark>` around the query's words, as `search.highlights` on entries. Other parameters of "
+            "`GET /api/v1/entries` (e.g. `catalog_id`, `category_id`, `language`) narrow the publications "
+            "searched. `per_entry` (1-3) passages per publication, `limit` publications (at most 24). A "
+            "passage's `text` and `snippet` are null for entries lent through Readium LCP and outside the "
+            "entry's allowed IP ranges; its `page` and score are still given. `degraded` is true when the "
+            "query could not be embedded (word matches only); `indexed` counts the publications searchable "
+            "by meaning, `searchable` those searchable by words. Resolve entries with "
             "`GET /api/v1/entries?id=...`."
         ),
         tags=["Entries"],
@@ -335,6 +347,7 @@ def search_passages(
     may not read it outside the viewer (`_may_read_text`: Readium LCP, IP block).
     """
     from apps.core.search import embeddings
+    from apps.core.search.query import rrf
 
     text = (text or "").strip()[:MAX_PASSAGE_CHARS]
     limit = max(1, min(limit, MAX_LIMIT))
@@ -342,6 +355,9 @@ def search_passages(
     visible = EntryFilter(scope if scope is not None else {}, queryset=Entry.objects.all(), request=request).qs.values(
         "pk"
     )
+    # Every paragraph of an active run is searchable by words; by meaning only those embedded by the current model.
+    active = Paragraph.objects.filter(run__is_active=True, run__acquisition__entry__in=visible)
+    searchable = active.values("run__acquisition__entry_id").distinct().count()
 
     vector = embeddings.try_embed_query(text, "passages") if text else None
     model = None
@@ -350,43 +366,129 @@ def search_passages(
             model = embeddings.model_id()
         except embeddings.EmbeddingError:
             vector = None
-    if vector is None:
-        return PassageSearchSerializer(query=text, degraded=True, indexed=0, items=[])
 
-    paragraphs = _embedded_paragraphs(model).filter(run__acquisition__entry__in=visible)
-    indexed = paragraphs.values("run__acquisition__entry_id").distinct().count()
-    ranked = (
-        paragraphs.annotate(distance=CosineDistance("embedding", vector))
-        .filter(distance__lte=1 - settings.EVILFLOWERS_SEARCH_PASSAGE_MIN_SCORE)
-        .order_by("distance")
-        .values("pk", "page", "section", "text", "distance", "run__acquisition__entry_id")[:PASSAGE_PARAGRAPHS]
-    )
+    by_meaning: Dict = {}
+    indexed = 0
+    if vector is not None:
+        paragraphs = _embedded_paragraphs(model).filter(run__acquisition__entry__in=visible)
+        indexed = paragraphs.values("run__acquisition__entry_id").distinct().count()
+        by_meaning = dict(
+            paragraphs.annotate(distance=CosineDistance("embedding", vector))
+            .filter(distance__lte=1 - settings.EVILFLOWERS_SEARCH_PASSAGE_MIN_SCORE)
+            .order_by("distance")
+            .values_list("pk", "distance")[:PASSAGE_PARAGRAPHS]
+        )
+    by_words = _word_matches(active, text) if text else {}
+
+    # Reciprocal rank fusion (IP-021's k): a passage both channels rank high comes first.
+    fused = [pk for pk, _score in rrf([list(by_meaning), list(by_words)], k=RRF_K)][:PASSAGE_PARAGRAPHS]
+    rows = {
+        row["pk"]: row
+        for row in Paragraph.objects.filter(pk__in=fused).values(
+            "pk", "page", "section", "text", "run__acquisition__entry_id", "run__acquisition__entry__catalog_id"
+        )
+    }
 
     hits: Dict = {}
-    for row in ranked:
-        passages = hits.setdefault(row["run__acquisition__entry_id"], [])
+    catalogs: Dict = {}
+    for pk in fused:
+        row = rows.get(pk)
+        if row is None:
+            continue
+        entry_id = row["run__acquisition__entry_id"]
+        catalogs[entry_id] = row["run__acquisition__entry__catalog_id"]
+        passages = hits.setdefault(entry_id, [])
         if len(passages) < per_entry:
             passages.append(row)
         if len(hits) >= limit and all(len(p) >= per_entry for p in hits.values()):
             break
     entry_ids = list(hits)[:limit]
     readable = {entry.pk: _may_read_text(request, entry) for entry in Entry.objects.filter(pk__in=entry_ids)}
+    snippets = _snippets(
+        text, [row["pk"] for entry_id in entry_ids if readable.get(entry_id) for row in hits[entry_id]]
+    )
 
     items = []
     for entry_id in entry_ids:
-        passages = [
-            PassageSerializer(
-                paragraph_id=row["pk"],
-                page=row["page"],
-                section=row["section"],
-                score=round(1 - row["distance"], 4),
-                text=row["text"][:PASSAGE_TEXT_CHARS] if readable.get(entry_id) else None,
-                truncated=bool(readable.get(entry_id)) and len(row["text"]) > PASSAGE_TEXT_CHARS,
+        passages = []
+        for row in hits[entry_id]:
+            may_read = bool(readable.get(entry_id))
+            distance = by_meaning.get(row["pk"])
+            matched = (["semantic"] if distance is not None else []) + (["words"] if row["pk"] in by_words else [])
+            score = 1 - distance if distance is not None else by_words.get(row["pk"], 0.0)
+            passages.append(
+                PassageSerializer(
+                    paragraph_id=row["pk"],
+                    page=row["page"],
+                    section=row["section"],
+                    score=round(score, 4),
+                    text=row["text"][:PASSAGE_TEXT_CHARS] if may_read else None,
+                    truncated=may_read and len(row["text"]) > PASSAGE_TEXT_CHARS,
+                    snippet=snippets.get(row["pk"]) if may_read else None,
+                    matched=matched,
+                )
             )
-            for row in hits[entry_id]
-        ]
-        items.append(PassageHitSerializer(entry_id=entry_id, score=passages[0].score, passages=passages))
-    return PassageSearchSerializer(query=text, degraded=False, indexed=indexed, items=items)
+        items.append(
+            PassageHitSerializer(
+                entry_id=entry_id, catalog_id=catalogs.get(entry_id), score=passages[0].score, passages=passages
+            )
+        )
+    return PassageSearchSerializer(
+        query=text, degraded=vector is None, indexed=indexed, searchable=searchable, items=items
+    )
+
+
+#: Fusion constant of the two passage rankings (the usual 60, as in entry search).
+RRF_K = 60
+
+#: `ts_headline` options of a passage snippet: up to two fragments around the query's words.
+SNIPPET_OPTIONS = 'MaxFragments=2, MinWords=8, MaxWords=30, FragmentDelimiter=" … ", StartSel=<mark>, StopSel=</mark>'
+
+
+def _document(column: str) -> str:
+    """The indexed text search document of a paragraph (migration 0005: accents folded, no stemming)."""
+    from apps.core.search.ddl import SIMPLE_CONFIG
+
+    return f"to_tsvector('{SIMPLE_CONFIG}'::regconfig, {column})"
+
+
+def _tsquery() -> str:
+    from apps.core.search.ddl import SIMPLE_CONFIG
+
+    # Quotes for a phrase, `-word` to exclude, `or`: the same syntax as entry search.
+    return f"websearch_to_tsquery('{SIMPLE_CONFIG}'::regconfig, %s)"
+
+
+def _word_matches(paragraphs, text: str) -> Dict:
+    """`{paragraph id: rank 0-1}` of paragraphs containing the query's words, best first (#113)."""
+    from django.db.models import FloatField
+    from django.db.models.expressions import RawSQL
+
+    document = _document(f'"{Paragraph._meta.db_table}"."text"')
+    return dict(
+        paragraphs.extra(where=[f"{document} @@ {_tsquery()}"], params=[text])
+        .annotate(rank=RawSQL(f"ts_rank_cd({document}, {_tsquery()}, 32)", [text], output_field=FloatField()))
+        .order_by("-rank")
+        .values_list("pk", "rank")[:PASSAGE_PARAGRAPHS]
+    )
+
+
+def _snippets(text: str, paragraph_ids: List) -> Dict:
+    """HTML-escaped excerpts of these paragraphs with `<mark>` around the query's words."""
+    from django.db import connection
+
+    from apps.core.search.ddl import SIMPLE_CONFIG
+
+    if not paragraph_ids or not text:
+        return {}
+    escaped = "replace(replace(replace(text, '&', '&amp;'), '<', '&lt;'), '>', '&gt;')"
+    sql = (
+        f"SELECT id, ts_headline('{SIMPLE_CONFIG}'::regconfig, {escaped}, {_tsquery()}, '{SNIPPET_OPTIONS}') "
+        f"FROM {Paragraph._meta.db_table} WHERE id = ANY(%s)"
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(sql, [text, list(paragraph_ids)])
+        return dict(cursor.fetchall())
 
 
 class EntryFigures(ReaderView):

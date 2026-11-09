@@ -14,9 +14,7 @@ Only quotes that occur in a page the agent actually read are kept
 cannot be placed on the page.
 """
 
-import json
 import logging
-import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -30,6 +28,7 @@ from apps.assistant.explain import (
     _complete,
     run_document_tool,
 )
+from apps.assistant import prompts, structured
 from apps.assistant.llm import OllamaClient
 from apps.assistant.pdf import ReaderDocument
 from apps.assistant.quotes import collapse, quote_in_text
@@ -39,24 +38,13 @@ logger = logging.getLogger(__name__)
 #: Quotes kept per request; the rest of a longer answer is dropped.
 MAX_QUOTES = 20
 
-SYSTEM_PROMPT = (
-    "You find and mark passages in a publication for a reader who will read them in a PDF viewer. "
-    "The reader tells you what to look for. You do not explain or summarise the book: you point the "
-    "reader to the exact sentences so they read them themselves.\n\n"
-    f"Find passages by meaning with `{SEARCH_PARAGRAPHS}` and by words with `{SEARCH_PDF}` (with "
-    "`regex: true` for a pattern). Try several queries: the reader's own words, synonyms, "
-    "related terms, and the terms the book itself uses once you have seen them. Search results are "
-    f"only snippets; read every page you quote from with `{READ_PDF_PAGE}`. The outline helps you "
-    "find the right chapter.\n\n"
-    "Quote only what the pages say, copied character for character from the page text you read: "
-    "one to three consecutive sentences per quote, never shortened, merged or reworded. A quote "
-    "that is not literally on its page is discarded.\n\n"
-    "When you are done reading, answer with a single JSON object and nothing else:\n"
-    '{"summary": "<one sentence on what you marked>", '
-    '"quotes": [{"page": <the page you read it on>, "text": "<the exact sentence(s)>", '
-    '"note": "<why it is relevant, one short sentence>"}]}\n'
-    f"Give the quotes in reading order, at most {MAX_QUOTES}. Return an empty list when the "
-    "publication does not address the request."
+#: `prompts/highlight.md` (#116).
+SYSTEM_PROMPT = prompts.render(
+    "highlight",
+    search_paragraphs=SEARCH_PARAGRAPHS,
+    search_pdf=SEARCH_PDF,
+    read_pdf_page=READ_PDF_PAGE,
+    max_quotes=MAX_QUOTES,
 )
 
 
@@ -147,27 +135,17 @@ def _opening(document: ReaderDocument, prompt: str, title: str, authors: str, la
 
     parts.append(f'The reader asks you to mark:\n"""\n{prompt}\n"""')
 
-    name = LANGUAGE_NAMES.get((language or "").split("-")[0].lower())
+    name = prompts.language_name(language)
     if name:
-        instruction = f"Write `summary` and every `note` in {name}; keep quotes in the language of the publication."
-        if name == "Slovak":
-            instruction += " It must be Slovak, never Czech."
-        parts.append(instruction)
+        parts.append(
+            f"Write `summary` and every `note` in {name}; keep quotes in the language of the publication."
+            + prompts.not_czech(language)
+        )
     return "\n\n".join(parts)
 
 
-_JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
-
-
 def _json(content: str) -> Optional[dict]:
-    match = _JSON_OBJECT.search(content or "")
-    if not match:
-        return None
-    try:
-        data = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return None
-    return data if isinstance(data, dict) and isinstance(data.get("quotes"), list) else None
+    return structured.parse_object(content, lambda data: isinstance(data.get("quotes"), list))
 
 
 def _gate(document: ReaderDocument, data: dict, pages_read: List[int], tokens: int) -> Highlights:

@@ -93,6 +93,16 @@ def highlight_annotation(annotation_id: str, language: Optional[str] = None) -> 
         Annotation.objects.filter(pk=annotation_id).update(status=Annotation.Status.FAILED)
 
 
+@shared_task
+def summarise_chapters(entry_id: str, force: bool = False) -> dict:
+    """Generate the chapter summaries of one publication that are missing or stale (#119)."""
+    from apps.assistant.chapters import summarise_entry
+
+    report = summarise_entry(entry_id, force=force)
+    logger.info("Chapter summaries of entry %s: %s", entry_id, report)
+    return report
+
+
 def _store_semantic(annotation, found) -> None:
     """One item per kept sentence, with the quads stored at extraction (`match = exact`)."""
     from apps.assistant import quotes

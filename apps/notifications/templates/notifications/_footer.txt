@@ -1,0 +1,4 @@
+{% autoescape off %}--
+{% if brand.footer_text %}{{ brand.footer_text }}
+{% endif %}{% if brand.website_url %}{{ brand.website_url }}
+{% endif %}This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.{% endautoescape %}

@@ -12,30 +12,21 @@ Returns None when the publication has no paragraph index yet, or the request
 cannot be embedded; the caller then falls back to agentic search (Phase 6).
 """
 
-import json
 import logging
-import re
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 from django.conf import settings
 
-from apps.assistant.explain import LANGUAGE_NAMES, _complete
+from apps.assistant import prompts, structured
+from apps.assistant.explain import _complete
 from apps.assistant.highlight import MAX_QUOTES
 from apps.assistant.llm import OllamaClient
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    "You mark sentences in a publication for a reader who will read them in a PDF viewer. The reader "
-    "tells you what to look for. You are given candidate passages found by meaning, each sentence "
-    "numbered, with a relevance score of its passage. Keep the sentences that answer the request or "
-    "directly support the answer, and discard the rest. Keep a sentence only for what it says itself; "
-    "a sentence that is merely on the topic is discarded. You may discard every sentence.\n\n"
-    "Answer with a single JSON object and nothing else:\n"
-    '{"summary": "<one sentence on what you marked>", '
-    '"keep": [{"id": <sentence number>, "note": "<why it is relevant, one short sentence>"}]}'
-)
+#: `prompts/semantic.md` (#116).
+SYSTEM_PROMPT = prompts.render("semantic")
 
 #: The answer's shape, for Ollama's `format` (IP-022): constrained, not parsed out of prose.
 KEEP_SCHEMA = {
@@ -58,8 +49,6 @@ KEEP_SCHEMA = {
 #: ~6-8K tokens: on CPU inference each batch costs a minute or more of prompt evaluation
 #: (it runs in a Celery task, not in front of the reader).
 BATCH_CHARS = 24000
-
-_JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 
 
 @dataclass
@@ -175,20 +164,11 @@ def _messages(batch, prompt: str, language: Optional[str]) -> List[dict]:
         lines.append(f"{number}. {text}")
 
     request = f'The reader asks you to mark:\n"""\n{prompt}\n"""\n\nCandidate sentences:' + "\n".join(lines)
-    name = LANGUAGE_NAMES.get((language or "").split("-")[0].lower())
+    name = prompts.language_name(language)
     if name:
-        request += f"\n\nWrite `summary` and every `note` in {name}."
-        if name == "Slovak":
-            request += " It must be Slovak, never Czech."
+        request += f"\n\nWrite `summary` and every `note` in {name}." + prompts.not_czech(language)
     return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": request}]
 
 
 def _json(content: str) -> dict:
-    match = _JSON_OBJECT.search(content or "")
-    if not match:
-        return {}
-    try:
-        data = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
+    return structured.parse_object(content) or {}

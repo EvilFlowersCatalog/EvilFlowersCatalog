@@ -246,6 +246,21 @@ CACHES = {
     }
 }
 
+# Rate limits (#21, IP-026): requests per client per window, counted in the cache above. Off by default: an
+# anonymous budget is per IP, and a campus NAT puts many readers behind one address, so set it per deployment.
+EVILFLOWERS_RATE_LIMIT_ENABLED = os.getenv("EVILFLOWERS_RATE_LIMIT_ENABLED", "0").lower() in ("1", "true")
+EVILFLOWERS_RATE_LIMIT_WINDOW = int(os.getenv("EVILFLOWERS_RATE_LIMIT_WINDOW", 3600))
+EVILFLOWERS_RATE_LIMIT_ANONYMOUS = int(os.getenv("EVILFLOWERS_RATE_LIMIT_ANONYMOUS", 3000))
+EVILFLOWERS_RATE_LIMIT_AUTHENTICATED = int(os.getenv("EVILFLOWERS_RATE_LIMIT_AUTHENTICATED", 5000))
+# `user`: one budget per account; `api_key`: one per API key (an account's web session shares the `user` budget).
+EVILFLOWERS_RATE_LIMIT_KEY = os.getenv("EVILFLOWERS_RATE_LIMIT_KEY", "user")
+EVILFLOWERS_RATE_LIMIT_EXEMPT_SUPERUSERS = os.getenv("EVILFLOWERS_RATE_LIMIT_EXEMPT_SUPERUSERS", "1").lower() in (
+    "1",
+    "true",
+)
+# Proxies in front of the catalog that append to X-Forwarded-For (k8s: the ingress, 1). 0 = the socket address.
+EVILFLOWERS_RATE_LIMIT_PROXY_COUNT = int(os.getenv("EVILFLOWERS_RATE_LIMIT_PROXY_COUNT", 1))
+
 # Pagination
 EVILFLOWERS_PAGINATION_DEFAULT_LIMIT = int(os.getenv("EVILFLOWERS_PAGINATION_DEFAULT_LIMIT", 10))
 
@@ -407,6 +422,9 @@ EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS = int(os.getenv("EVILFLOWERS_ASSISTANT_
 # stable prefix.
 EVILFLOWERS_ASSISTANT_CACHE_TTL = int(os.getenv("EVILFLOWERS_ASSISTANT_CACHE_TTL", 3600))
 EVILFLOWERS_ASSISTANT_TRIM_MESSAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_TRIM_MESSAGES", 20))
+# Directory of prompt templates that replace the bundled ones in apps/assistant/prompts (#116), file by file.
+# Read at startup; every change alters the cached prompt prefix, so run `assistant_eval` before and after.
+EVILFLOWERS_ASSISTANT_PROMPTS_DIR = os.getenv("EVILFLOWERS_ASSISTANT_PROMPTS_DIR", "")
 
 # Extraction (IP-018). The catalog only queues PDFs for the `evilflowers-*-service`
 # containers and stores what they report; off until those services run next to it.
@@ -615,6 +633,19 @@ EVILFLOWERS_BASE_URL = os.getenv("EVILFLOWERS_BASE_URL", EVILFLOWERS_READIUM_BAS
 # Library name shown in the notification header / footer ("Digitálna knižnica
 # Elvíra / Digital Library Elvira" on STU deployments).
 EVILFLOWERS_NOTIFICATION_LIBRARY_NAME = os.getenv("EVILFLOWERS_NOTIFICATION_LIBRARY_NAME", "Evil Flowers Catalog")
+# IP-025: deployment-owned notification overrides, mounted as a volume by IaC
+# (knowledge repository, Ansible). Layout:
+#   <dir>/templates/notifications/<type>.mjml|.txt, subjects/<type>.txt, base.mjml
+#       — found before the built-in templates (prepended to TEMPLATES DIRS);
+#   <dir>/assets/<name>.png|.jpg|.gif
+#       — served publicly at /notifications/v1/assets/<name>, so mail clients
+#         can load a logo without credentials; branding refers to them by name.
+EVILFLOWERS_NOTIFICATION_OVERRIDES_DIR = os.getenv("EVILFLOWERS_NOTIFICATION_OVERRIDES_DIR", "")
+if EVILFLOWERS_NOTIFICATION_OVERRIDES_DIR:
+    TEMPLATES[0]["DIRS"].insert(0, Path(EVILFLOWERS_NOTIFICATION_OVERRIDES_DIR) / "templates")
+# IP-025: refresh LDAP profiles / notification e-mails of users who have not
+# logged in recently (cron syntax; empty disables).
+EVILFLOWERS_LDAP_SYNC_SCHEDULE = os.getenv("EVILFLOWERS_LDAP_SYNC_SCHEDULE", "15 4 * * *")
 
 # Ratings and reviews (IP-023)
 EVILFLOWERS_REVIEWS_ENABLED = _bool_env("EVILFLOWERS_REVIEWS_ENABLED", default=True)
@@ -721,6 +752,8 @@ _instance_origin = _origin(EVILFLOWERS_BASE_URL)
 # entry. Allowing every origin is an explicit opt-in.
 CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "0").lower() in ("1", "true")
 CORS_ALLOWED_ORIGINS = _origins_from_env("CORS_ALLOWED_ORIGINS", [_portal_origin] if _portal_origin else [])
+# A browser client can read only the response headers listed here: the portal needs the rate limit (#21).
+CORS_EXPOSE_HEADERS = ["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After"]
 
 # Browser origins allowed to reach the MCP endpoint (DNS-rebinding guard,
 # issue #100). Comma-separated; defaults to the instance's own origin

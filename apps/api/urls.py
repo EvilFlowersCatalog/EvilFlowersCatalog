@@ -40,6 +40,7 @@ urlpatterns = [
     # Users
     path("users", users.UserManagement.as_view()),
     path("users/me", users.UserMe.as_view()),
+    path("users/me/password", users.UserPassword.as_view(), name="user-password"),
     path("users/<uuid:user_id>", users.UserDetail.as_view()),
     # Catalogs
     path("catalogs", catalogs.CatalogManagement.as_view()),

@@ -12,7 +12,7 @@ from apps.core.errors import (
     DetailType,
 )
 from apps.api.filters.users import UserFilter
-from apps.api.forms.users import UserForm, CreateUserForm
+from apps.api.forms.users import UserForm, CreateUserForm, PasswordChangeForm
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.users import UserSerializer
 from apps.core.models import User, AuthSource
@@ -55,6 +55,7 @@ class UserManagement(SecuredView):
         form.populate(user)
         user.set_password(form.cleaned_data["password"])
         _apply_role(request, form, user)
+        user.password_change_required = bool(form.cleaned_data.get("password_change_required"))
         user.save()
 
         return SingleResponse(request, data=UserSerializer.Base.model_validate(user), status=HTTPStatus.CREATED)
@@ -128,6 +129,11 @@ class UserDetail(SecuredView):
         if form.cleaned_data.get("password"):
             user.set_password(form.cleaned_data["password"])
         _apply_role(request, form, user)
+        # An administrator may require someone else to change their password (#8); a user cannot lift it
+        # for themselves this way — only by changing the password.
+        if "password_change_required" in form.cleaned_data and user.pk != request.user.pk:
+            if form.cleaned_data["password_change_required"] is not None:
+                user.password_change_required = bool(form.cleaned_data["password_change_required"])
 
         # Handle LCP passphrase - hash before storing
         if "lcp_passphrase" in form.cleaned_data and form.cleaned_data["lcp_passphrase"]:
@@ -152,6 +158,9 @@ class UserDetail(SecuredView):
 
 
 class UserMe(SecuredView):
+    # The client reads `password_change_required` here to know it must ask for a new password (#8).
+    allowed_while_password_change_required = True
+
     @openapi.metadata(
         description="Get detailed information about the currently authenticated user including profile data, permissions, and accessible catalogs. This endpoint allows users to view their own account information.",
         tags=["Users"],
@@ -162,3 +171,63 @@ class UserMe(SecuredView):
             raise UnauthorizedException(detail=_("You have to log in!"))
 
         return SingleResponse(request, data=UserSerializer.Detailed.model_validate(request.user))
+
+
+class UserPassword(SecuredView):
+    allowed_while_password_change_required = True
+
+    @openapi.metadata(
+        description=(
+            "Change the signed-in user's password (#8). Requires the current password; the new one must pass the "
+            "configured password validators. Clears `password_change_required`. Accounts from a directory (LDAP) "
+            "change their password there and are refused with 409."
+        ),
+        tags=["Users"],
+        summary="Change own password",
+    )
+    def post(self, request):
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        if request.user.is_anonymous:
+            raise UnauthorizedException(detail=_("You have to log in!"))
+
+        user = request.user
+        if user.auth_source is None or user.auth_source.driver != AuthSource.Driver.DATABASE:
+            raise ProblemDetailException(
+                _("This account's password is managed by the directory (LDAP); change it there."),
+                status=HTTPStatus.CONFLICT,
+                detail_type=DetailType.CONFLICT,
+            )
+
+        form = PasswordChangeForm.create_from_request(request)
+        if not form.is_valid():
+            raise ValidationException(form)
+
+        if not user.check_password(form.cleaned_data["current_password"]):
+            raise ProblemDetailException(
+                _("The current password is not correct."),
+                status=HTTPStatus.FORBIDDEN,
+                detail_type=DetailType.FORBIDDEN,
+            )
+
+        new_password = form.cleaned_data["new_password"]
+        if new_password == form.cleaned_data["current_password"]:
+            raise ProblemDetailException(
+                _("The new password must differ from the current one."),
+                status=HTTPStatus.UNPROCESSABLE_ENTITY,
+                detail_type=DetailType.VALIDATION_ERROR,
+            )
+        try:
+            validate_password(new_password, user)
+        except DjangoValidationError as error:
+            raise ProblemDetailException(
+                " ".join(error.messages),
+                status=HTTPStatus.UNPROCESSABLE_ENTITY,
+                detail_type=DetailType.VALIDATION_ERROR,
+            )
+
+        user.set_password(new_password)
+        user.password_change_required = False
+        user.save(update_fields=["password", "password_change_required"])
+        return SingleResponse(request, data=UserSerializer.Detailed.model_validate(user))

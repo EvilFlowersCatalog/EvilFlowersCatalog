@@ -9,6 +9,8 @@ class UserForm(Form):
             "lcp_passphrase": "django_api_forms.population_strategies.IgnoreStrategy",
             # Role changes are applied by the view, for superusers only.
             "is_superuser": "django_api_forms.population_strategies.IgnoreStrategy",
+            # Applied by the view, by an administrator on someone else's account only (#8).
+            "password_change_required": "django_api_forms.population_strategies.IgnoreStrategy",
         }
 
     name = forms.CharField(max_length=30)
@@ -16,6 +18,7 @@ class UserForm(Form):
     password = forms.CharField(required=False)
     is_active = BooleanField(required=False)
     is_superuser = BooleanField(required=False)
+    password_change_required = BooleanField(required=False)
     lcp_passphrase = forms.CharField(required=False, min_length=4, max_length=255)
     lcp_passphrase_hint = forms.CharField(required=False, max_length=255)
 
@@ -23,3 +26,10 @@ class UserForm(Form):
 class CreateUserForm(UserForm):
     username = forms.CharField(max_length=200)
     password = forms.CharField(required=True)
+
+
+class PasswordChangeForm(Form):
+    """`POST /api/v1/users/me/password` (#8)."""
+
+    current_password = forms.CharField()
+    new_password = forms.CharField()

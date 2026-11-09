@@ -133,6 +133,12 @@ app.conf.beat_schedule["readium-reservation-claim-reminder"] = {
     "task": "apps.readium.tasks.reservation_claim_reminder_sweep",
     "schedule": crontab(minute="*/15"),
 }
+# IP-025: import LDAP e-mails of users who have not logged in since the mapping changed.
+if settings.EVILFLOWERS_LDAP_SYNC_SCHEDULE:
+    app.conf.beat_schedule["core-sync-ldap-profiles"] = {
+        "task": "apps.tasks.tasks.sync_ldap_profiles",
+        "schedule": _cron(settings.EVILFLOWERS_LDAP_SYNC_SCHEDULE),
+    }
 # IP-016: drop personal activity history older than the retention window.
 app.conf.beat_schedule["core-prune-user-activity"] = {
     "task": "apps.tasks.tasks.prune_user_activity",

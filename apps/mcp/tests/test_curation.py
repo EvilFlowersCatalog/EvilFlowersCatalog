@@ -88,6 +88,10 @@ class WriteSurfaceSweepTests(ManagementTestCase):
             "delete_user": {"user_id": str(self.manager.pk), "confirm_username": self.manager.username},
             "create_api_key": {"name": "sweep", "user_id": str(self.manager.pk)},
             "revoke_api_key": {"api_key_id": str(ApiKey.objects.create(user=self.manager, name="sweep").pk)},
+            # IP-025: deployment-wide notification settings are superuser-only.
+            "update_notification_branding": {"library_name": "Sweep"},
+            "send_test_notification": {"notification_type": "license_created"},
+            "sync_ldap_profiles": {"dry_run": True},
         }
 
     def test_every_write_tool_refuses_a_reader_of_the_catalog(self):

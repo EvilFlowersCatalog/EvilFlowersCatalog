@@ -44,6 +44,22 @@ def cleanup_orphans() -> dict:
 
 
 @shared_task
+def sync_ldap_profiles() -> dict:
+    """IP-025: import e-mails (and names) of LDAP users who have not logged in since the mapping changed."""
+    from apps.core.models import AuthSource
+    from apps.core.services.ldap_directory import DirectorySyncError, sync_users
+
+    summaries = {}
+    for source in AuthSource.objects.filter(driver=AuthSource.Driver.LDAP, is_active=True):
+        try:
+            summaries[source.name] = sync_users(source).summary
+        except DirectorySyncError as error:
+            logger.warning("ldap.sync_failed auth_source=%s error=%s", source.name, error)
+            summaries[source.name] = {"error": str(error)}
+    return summaries
+
+
+@shared_task
 def prune_user_activity() -> int:
     from apps.core.services.activity import ActivityService
 

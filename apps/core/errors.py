@@ -22,6 +22,8 @@ class DetailType(Enum):
     PASSPHRASE_REQUIRED = "/passphrase-required"
     READIUM_AMOUNT_BELOW_ACTIVE_COUNT = "/readium-amount-below-active-count"
     FEED_URL_NAME_TAKEN = "/feed-url-name-taken"
+    PASSWORD_CHANGE_REQUIRED = "/password-change-required"
+    RATE_LIMITED = "/rate-limited"
 
 
 class ProblemDetail(Serializer):
@@ -156,7 +158,8 @@ class ValidationException(ProblemDetailException):
                 ValidationErrorItem(
                     code=item.code,
                     message=item.message % (item.params or ()),
-                    path=getattr(item, "path", ["$body"]),
+                    # A list index in the path (`prices.0.value`) is an int; the schema says strings.
+                    path=[str(part) for part in getattr(item, "path", ["$body"])],
                 )
                 for item in self._form.errors
             ],

@@ -10,5 +10,4 @@ The claim window closes at {{ claim_deadline|isodatetime }}. If you don't claim 
 
 Claim here: {{ claim_url }}
 
---
-This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.
+{% include "notifications/_footer.txt" %}

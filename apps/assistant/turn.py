@@ -16,7 +16,7 @@ from typing import Generator, Iterator, List, Optional
 
 from django.utils.translation import gettext as _
 
-from apps.assistant import explain, services, tools
+from apps.assistant import evidence, explain, prompts, services, tools
 from apps.assistant.llm import Delta, LLMUnavailable, OllamaClient
 from apps.assistant.models import Chat, ChatMessage
 
@@ -87,6 +87,13 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
     annotations: List[str] = []
     # Tool calls made in this turn, by (name, arguments): a repeat is answered with a hint.
     seen_calls: set = set()
+    # Evidence labels issued in this chat so far; this turn's passages continue the numbering (IP-024).
+    ledger = evidence.Ledger.for_chat(chat)
+    # What the model is told before the conversation, as a short hash on every assistant row (#116).
+    fingerprint = prompts.fingerprint(services.SYSTEM_PROMPT, specifications)
+
+    def close(text: str = "", tokens: int = 0, keep_empty: bool = False) -> Iterator[str]:
+        yield from _close(chat, ledger, text, displayed, pages_read, annotations, tokens, keep_empty, fingerprint)
 
     for _round in range(MAX_TOOL_ROUNDS):
         messages = services.conversation(chat, document)
@@ -101,17 +108,7 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
         content, tool_calls, tokens = yield from _stream(client, messages, specifications)
 
         if not tool_calls:
-            ChatMessage.objects.create(
-                chat=chat,
-                user=chat.user,
-                role=ChatMessage.Role.ASSISTANT,
-                text=content,
-                displayed_entries=displayed or None,
-                pages_read=pages_read or None,
-                annotations=annotations or None,
-                tokens_used=tokens,
-            )
-            yield from _pages_frame(pages_read)
+            yield from close(content, tokens)
             return
 
         # Showing cards is the answer, not a lookup: when displayBooks is all the
@@ -132,38 +129,22 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
             text="" if only_display else content,
             tool_calls=tool_calls,
             tokens_used=tokens,
+            prompt_fingerprint=fingerprint,
         )
 
         for call in tool_calls:
-            run = _run_tool(request, chat, call, document, pages_read, annotations, language, seen_calls)
+            run = _run_tool(request, chat, call, document, pages_read, annotations, language, seen_calls, ledger)
             for entry_id in (yield from run):
                 if entry_id not in displayed:
                     displayed.append(entry_id)
 
         if only_display:
-            ChatMessage.objects.create(
-                chat=chat,
-                user=chat.user,
-                role=ChatMessage.Role.ASSISTANT,
-                text=content,
-                displayed_entries=displayed or None,
-                pages_read=pages_read or None,
-                annotations=annotations or None,
-            )
-            yield from _pages_frame(pages_read)
+            yield from close(content)
             return
 
     if displayed or annotations:
         # Out of rounds, but publications were already shown — that is an answer.
-        ChatMessage.objects.create(
-            chat=chat,
-            user=chat.user,
-            role=ChatMessage.Role.ASSISTANT,
-            displayed_entries=displayed,
-            pages_read=pages_read or None,
-            annotations=annotations or None,
-        )
-        yield from _pages_frame(pages_read)
+        yield from close(keep_empty=True)
         return
 
     # Out of rounds with nothing to show: say so rather than leaving the reader with silence.
@@ -172,6 +153,7 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
         user=chat.user,
         role=ChatMessage.Role.ASSISTANT,
         text=str(_("I could not complete that search. Could you rephrase it?")),
+        prompt_fingerprint=fingerprint,
     )
     yield sse("message", {"text": str(_("I could not complete that search. Could you rephrase it?"))})
 
@@ -231,6 +213,43 @@ def _create_highlights(chat: Chat, arguments: dict, annotations: List[str], lang
             "note": "The highlights are being prepared and will appear in the reader's viewer.",
         }
     )
+
+
+def _close(
+    chat: Chat,
+    ledger: "evidence.Ledger",
+    text: str,
+    displayed: List[str],
+    pages_read: List[int],
+    annotations: List[str],
+    tokens: int = 0,
+    keep_empty: bool = False,
+    fingerprint: str = "",
+) -> Iterator[str]:
+    """Store the answer that closes the turn, with what it showed, read and cited.
+
+    The evidence labels in `text` are resolved against the chat's ledger (IP-024). The text is stored as it was
+    streamed: an unknown label is reported, not removed, so the stored answer is the one the reader saw.
+    """
+    citations, unknown = ledger.cite(text)
+    if unknown:
+        logger.warning("Assistant answer cites unknown evidence labels %s (chat %s)", unknown, chat.pk)
+    ChatMessage.objects.create(
+        chat=chat,
+        user=chat.user,
+        role=ChatMessage.Role.ASSISTANT,
+        text=text,
+        # An empty list (rather than None) keeps a textless answer visible (`visible_q`).
+        displayed_entries=displayed if keep_empty else (displayed or None),
+        pages_read=pages_read or None,
+        annotations=annotations or None,
+        citations=citations or None,
+        tokens_used=tokens,
+        prompt_fingerprint=fingerprint,
+    )
+    yield from _pages_frame(pages_read)
+    if citations or unknown:
+        yield sse("citations", {"citations": citations, "unknown": unknown})
 
 
 def _pages_frame(pages_read: List[int]) -> Iterator[str]:
@@ -303,6 +322,7 @@ def _run_tool(
     annotations: Optional[List[str]] = None,
     language: Optional[str] = None,
     seen_calls: Optional[set] = None,
+    ledger: Optional["evidence.Ledger"] = None,
 ) -> Generator[str, None, List[str]]:
     """Run one tool call, yielding SSE frames; returns publication ids to display."""
     function = call.get("function") or {}
@@ -344,7 +364,7 @@ def _run_tool(
 
     try:
         # The model sees a slim result; the full payload is kept on the row (IP-022).
-        payload, text = tools.run(request, name, arguments)
+        payload, text = tools.run(request, name, arguments, ledger=ledger)
     except Exception:
         logger.exception("Assistant tool '%s' raised", name)
         text = json.dumps({"error": "The tool failed."})

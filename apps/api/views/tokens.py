@@ -20,6 +20,9 @@ from apps.core.views import SecuredView
 
 
 class AccessTokenManagement(SecuredView):
+    # Signing in is how a user whose password must change gets to `users/me/password` (#8).
+    allowed_while_password_change_required = True
+
     @openapi.metadata(
         description="Generate a new access token and refresh token pair using username and password authentication. Returns both an access token for immediate API access and a refresh token for obtaining new access tokens. Requires valid user credentials and creates a cached refresh token session.",
         tags=["Tokens"],

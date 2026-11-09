@@ -10,5 +10,4 @@ Claim it before {{ claim_deadline|isodatetime }} or it will be passed to the nex
 
 Claim here: {{ claim_url }}
 
---
-This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.
+{% include "notifications/_footer.txt" %}

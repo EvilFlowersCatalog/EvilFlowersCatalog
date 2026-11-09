@@ -6,7 +6,7 @@ instead of raw ISO-8601 strings, and a "do not reply" footer.
 """
 
 from django.template import Context, Template
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from apps.notifications.services import NotificationService
 from apps.notifications.templatetags.notification_extras import isodate, isodatetime
@@ -45,7 +45,8 @@ class IsoDateFilterTests(SimpleTestCase):
     EVILFLOWERS_CONTACT_EMAIL="elvira@stuba.sk",
     EVILFLOWERS_PORTAL_URL="https://elvira.stuba.sk/",
 )
-class RenderContextTests(SimpleTestCase):
+class RenderContextTests(TestCase):
+    # IP-025: rendering reads the NotificationBranding row, hence TestCase.
     def test_deployment_values_are_injected_and_event_context_wins(self):
         ctx = NotificationService.render_context({"user_name": "Alena", "portal_url": "override"})
         self.assertEqual(ctx["library_name"], "Digitálna knižnica Elvíra / Digital Library Elvira")

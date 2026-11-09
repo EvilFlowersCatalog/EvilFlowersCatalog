@@ -1,6 +1,7 @@
 import mimetypes
 import uuid
 from functools import reduce
+from http import HTTPStatus
 from io import BytesIO
 from operator import or_
 
@@ -12,6 +13,7 @@ from django.conf import settings
 from django.core.files import File
 from django.db import transaction
 from django.db.models import Q
+from django.utils.translation import gettext as _
 from isbnlib.registry import bibformatters
 
 from apps.api.forms.entries import EntryForm
@@ -194,6 +196,40 @@ def set_cover(entry: Entry, uploaded_image, *, mime: str) -> Entry:
     return entry
 
 
+class InvalidAcquisitionFile(Exception):
+    """An uploaded acquisition file that cannot be a publication (#112). `status` is the HTTP answer."""
+
+    def __init__(self, message: str, status: HTTPStatus):
+        self.status = status
+        super().__init__(message)
+
+
+#: The first bytes every file of a type starts with. A type not listed here is only checked for being non-empty.
+ACQUISITION_MAGIC = {
+    Acquisition.AcquisitionMIME.PDF: b"%PDF-",
+    Acquisition.AcquisitionMIME.EPUB: b"PK\x03\x04",
+    Acquisition.AcquisitionMIME.READIUM_PACKAGE: b"PK\x03\x04",
+}
+
+
+def check_acquisition_file(uploaded_file, mime: str) -> None:
+    """Refuse an empty file, and one whose first bytes contradict its declared type.
+
+    Either would be stored, then fail extraction and LCP encryption and break every download (#112): an aborted
+    upload or a proxy that drops the body arrives as a 0-byte file with a perfectly good content type.
+    """
+    size = getattr(uploaded_file, "size", None)
+    head = uploaded_file.read(8)
+    uploaded_file.seek(0)
+    if size == 0 or not head:
+        raise InvalidAcquisitionFile(_("The file is empty."), HTTPStatus.BAD_REQUEST)
+    magic = ACQUISITION_MAGIC.get(mime)
+    if magic and not head.startswith(magic):
+        raise InvalidAcquisitionFile(
+            _("The file does not look like %(type)s.") % {"type": mime}, HTTPStatus.UNSUPPORTED_MEDIA_TYPE
+        )
+
+
 def attach_acquisition(entry: Entry, uploaded_file, *, mime: str, relation: str = None) -> Acquisition:
     """Store `uploaded_file` as a new acquisition of `entry`.
 
@@ -202,8 +238,12 @@ def attach_acquisition(entry: Entry, uploaded_file, *, mime: str, relation: str 
     `touch_entry` → `Entry.post_save`, which queues Readium LCP encryption when
     the entry has `readium_enabled`, and a PDF is queued for extraction (IP-018).
     The search-service indexing (`process_pdf`) is gone (IP-021): search runs in PostgreSQL.
+
+    Raises `InvalidAcquisitionFile` before anything is stored when the file is empty or not of its type.
     """
     from apps.extraction import services as extraction
+
+    check_acquisition_file(uploaded_file, mime)
 
     acquisition = Acquisition(
         entry=entry,

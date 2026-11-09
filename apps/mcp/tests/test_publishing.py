@@ -351,6 +351,17 @@ class UploadLinkTests(PublishingTestCase):
         self.assertEqual(self.upload(url, content=b"not a pdf at all").status_code, 415)
         self.assertEqual(self.upload(url).status_code, 201)
 
+    def test_an_empty_file_is_refused_and_the_link_survives(self):
+        # #112: an aborted upload arrives as 0 bytes with a good content type.
+        entry = self.create()
+        url = self.ok("create_upload_link", {"entry_id": entry["id"]}, self.manager)["upload_url"]
+
+        response = self.upload(url, content=b"")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("empty", response.json()["error"])
+        self.assertFalse(Acquisition.objects.filter(entry_id=entry["id"]).exists())
+        self.assertEqual(self.upload(url).status_code, 201)
+
     def test_octet_stream_falls_back_to_the_file_name(self):
         entry = self.create()
         url = self.ok("create_upload_link", {"entry_id": entry["id"]}, self.manager)["upload_url"]

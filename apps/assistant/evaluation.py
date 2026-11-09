@@ -12,6 +12,12 @@ A case is a question plus what a good turn looks like:
 - `tools_none`: none of these is called.
 - `displays`: publications are (true) / are not (false) shown as cards.
 - `answer_language`: "sk" or "en"; defaults to the case's `language`.
+- `cites`: the answer cites at least one evidence label that resolves (IP-024).
+- `cites_entries`: every one of these publication ids is cited.
+- `cites_any_entry`: at least one of these publication ids is cited (gold cases, #118).
+
+Whatever the case expects, an answer citing a label it was never given (`[E9]` when only E1-E3 were issued)
+fails: that label is an invention, and catching it needs no gold data.
 
 Each case runs as a real turn (`turn.run`) in a throw-away chat of the given
 user, against whatever model the settings point at, and is scored on what the
@@ -67,6 +73,14 @@ class Outcome:
     first_token_s: Optional[float] = None
     total_s: float = 0.0
     tokens: int = 0
+    #: Publication ids of the resolved citations, in order of first appearance.
+    cited_entries: List[str] = field(default_factory=list)
+    citations: int = 0
+    unknown_labels: List[str] = field(default_factory=list)
+    #: The prompt the case ran with (#116): system prompt + tool list, hashed.
+    prompt_fingerprint: str = ""
+    #: Support verdicts per citation, with `run --verify` (#117).
+    support: List[dict] = field(default_factory=list)
 
 
 def parse_frames(frames: Iterable[str]) -> List[tuple]:
@@ -109,15 +123,29 @@ def score(case: dict, outcome: Outcome) -> Outcome:
         failures.append(f"answered in {outcome.answer_language}, wanted {wanted}")
     if outcome.rounds > MAX_ROUNDS_OK:
         failures.append(f"{outcome.rounds} model rounds (loop?)")
+    if outcome.unknown_labels:
+        failures.append(f"cited unknown labels {', '.join(outcome.unknown_labels)}")
+    if expect.get("cites") and not outcome.citations:
+        failures.append("no citation")
+    missing = [entry_id for entry_id in expect.get("cites_entries") or [] if entry_id not in outcome.cited_entries]
+    if missing:
+        failures.append(f"not cited: {', '.join(missing)}")
+    acceptable = expect.get("cites_any_entry") or []
+    if acceptable and not set(acceptable) & set(outcome.cited_entries):
+        failures.append("no gold publication cited")
 
     outcome.failures = failures
     outcome.passed = not failures
     return outcome
 
 
-def run_case(user, case: dict) -> Outcome:
-    """Run one case as a real turn in a throw-away chat, then delete the chat."""
-    from apps.assistant import turn
+def run_case(user, case: dict, verify: bool = False) -> Outcome:
+    """Run one case as a real turn in a throw-away chat, then delete the chat.
+
+    With `verify`, every citation of the answer is checked against its passage (#117) before the chat goes.
+    """
+    from apps.assistant import support, turn
+    from apps.assistant.evidence import Ledger
     from apps.assistant.models import Chat
 
     outcome = Outcome(id=str(case.get("id") or case["question"][:40]), question=case["question"])
@@ -138,10 +166,24 @@ def run_case(user, case: dict) -> Outcome:
                 outcome.displayed += len(data.get("entry_ids") or [])
             elif event == "message":
                 outcome.answer = data.get("text") or outcome.answer
+            elif event == "citations":
+                citations = data.get("citations") or []
+                outcome.citations = len(citations)
+                outcome.cited_entries = list(dict.fromkeys(str(c.get("entry_id")) for c in citations))
+                outcome.unknown_labels = list(data.get("unknown") or [])
             elif event == "error":
                 outcome.error = data.get("error")
         outcome.total_s = round(time.monotonic() - started, 2)
         outcome.tokens = _tokens(chat)
+        outcome.prompt_fingerprint = (
+            chat.messages.exclude(prompt_fingerprint="")
+            .order_by("-created_at")
+            .values_list("prompt_fingerprint", flat=True)
+            .first()
+            or ""
+        )
+        if verify and outcome.citations:
+            outcome.support = support.as_dicts(support.verify(outcome.answer, Ledger.for_chat(chat)))
     finally:
         chat.delete()
 
@@ -172,21 +214,105 @@ def summary(outcomes: List[Outcome]) -> dict:
             return None
         return values[min(len(values) - 1, int(round(p * (len(values) - 1))))]
 
+    verdicts: dict = {}
+    for outcome in outcomes:
+        for item in outcome.support:
+            verdicts[item["verdict"]] = verdicts.get(item["verdict"], 0) + 1
+
     return {
+        "support": verdicts,
         "cases": len(outcomes),
         "passed": len(passed),
         "czech_answers": sum(1 for outcome in outcomes if outcome.answer_language == "cs"),
         "errors": sum(1 for outcome in outcomes if outcome.error),
+        "cases_with_citations": sum(1 for outcome in outcomes if outcome.citations),
+        "unknown_labels": sum(len(outcome.unknown_labels) for outcome in outcomes),
         "first_token_s_p50": percentile(first, 0.5),
         "first_token_s_p95": percentile(first, 0.95),
         "total_s_p50": percentile(total, 0.5),
         "total_s_p95": percentile(total, 0.95),
         "tokens": sum(outcome.tokens for outcome in outcomes),
+        # One per tool list (signed in or not); two runs compare only when these match.
+        "prompt_fingerprints": sorted({outcome.prompt_fingerprint for outcome in outcomes} - {""}),
     }
 
 
 def report(outcomes: List[Outcome], settings_snapshot: dict) -> dict:
     return {"settings": settings_snapshot, "summary": summary(outcomes), "cases": [asdict(o) for o in outcomes]}
+
+
+def export_pairs(limit: int) -> List[dict]:
+    """(sentence, cited passage) pairs from real answers, for a person to label `supported` (#117).
+
+    `supported` is left null; fill it with true (the passage states or directly implies what the sentence
+    attributes to it) or false, following the rubric in `prompts/support.md`.
+    """
+    from apps.assistant import support
+    from apps.assistant.evidence import Ledger
+    from apps.assistant.models import ChatMessage
+
+    rows = (
+        ChatMessage.objects.filter(role=ChatMessage.Role.ASSISTANT, citations__isnull=False)
+        .exclude(chat__title__startswith="[evaluation]")
+        .select_related("chat")
+        .order_by("-created_at")
+    )
+    ledgers, exported = {}, []
+    for row in rows.iterator(chunk_size=50):
+        ledger = ledgers.get(row.chat_id) or ledgers.setdefault(row.chat_id, Ledger.for_chat(row.chat))
+        for pair in support.pairs(row.text, ledger):
+            source = ledger.sources.get(pair.label) or {}
+            exported.append(
+                {
+                    "id": f"{row.pk}:{pair.label}",
+                    "sentence": pair.sentence,
+                    "context": pair.context,
+                    "passage": pair.passage,
+                    "entry_id": source.get("entry_id"),
+                    "page": source.get("page"),
+                    "supported": None,
+                }
+            )
+            if len(exported) >= limit:
+                return exported
+    return exported
+
+
+def held_out(pair_id: str) -> bool:
+    """A fixed half of the labelled pairs, by id, kept for testing a threshold chosen on the other half."""
+    import hashlib
+
+    return hashlib.sha256(pair_id.encode()).digest()[0] % 2 == 1
+
+
+def calibrate(labelled: List[dict], threshold: Optional[int] = None, client=None) -> dict:
+    """Score labelled pairs with the verifier; precision/recall per threshold on the tuning half.
+
+    Choose the threshold from the tuning half's table and write it into IP-024 first. Then run again with
+    `threshold` to get the held-out half's numbers — the ones that decide whether the check may gate anything.
+    """
+    from apps.assistant import support
+
+    if client is None:
+        from apps.assistant.llm import OllamaClient
+
+        client = OllamaClient()
+
+    tuning, testing, skipped = [], [], 0
+    for item in labelled:
+        if item.get("supported") is None:
+            skipped += 1
+            continue
+        pair = support.Pair("E1", item["sentence"], item.get("context") or "", item["passage"])
+        verdict, score, _reason, _tokens = support.check_pair(client, pair)
+        row = (bool(item["supported"]), score)
+        (testing if held_out(str(item["id"])) else tuning).append(row)
+
+    result = {"tuning_pairs": len(tuning), "held_out_pairs": len(testing), "unlabelled": skipped}
+    result["tuning"] = support.calibrate(tuning)
+    if threshold is not None:
+        result["held_out"] = support.calibrate(testing, thresholds=[threshold])[0]
+    return result
 
 
 def export_questions(limit: int) -> List[dict]:

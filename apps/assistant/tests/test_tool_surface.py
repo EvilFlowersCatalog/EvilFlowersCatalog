@@ -43,9 +43,12 @@ class OfferedToolsTests(SimpleTestCase):
         self.assertEqual(first, json.dumps(tools.specifications(authenticated=True)))
 
     def test_first_round_prefix_stays_within_the_cpu_budget(self):
-        # #104: ≤ 3K tokens for the first round of a plain chat (~4 characters a token).
-        chars = len(json.dumps(tools.specifications(authenticated=True))) + len(services.SYSTEM_PROMPT)
-        self.assertLess(chars // 4, 2000)
+        # #114: ≤ 1.5K tokens for the first round of a plain chat (~4 characters a token). The app-01 benchmark
+        # measured ~25 s of cold prompt evaluation per 1K tokens. A tool or prompt section that does not fit has
+        # to replace something, or ride on an existing result (chapter summaries on `get_entry`, #119).
+        for authenticated in (False, True):
+            specs = json.dumps(tools.specifications(authenticated=authenticated), ensure_ascii=False)
+            self.assertLessEqual((len(specs) + len(services.SYSTEM_PROMPT)) // 4, 1500, authenticated)
 
     def test_advertised_search_arguments_are_accepted_by_the_handler(self):
         from apps.mcp.tools.entries import SEARCH_ARGUMENTS

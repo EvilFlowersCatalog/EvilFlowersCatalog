@@ -175,6 +175,10 @@ class ToolNotPermitted(Exception):
 
 
 def _catalog_tools() -> List[Tool]:
+    # Tools register themselves on import. A web process imports them through the URLconf; a management
+    # command (`assistant_eval`) or a Celery worker may never load it, and would find the registry empty.
+    import apps.mcp.tools  # noqa: F401
+
     tools = []
     for name in ALLOWED_TOOLS:
         tool = registry.get(name)
@@ -289,8 +293,12 @@ def _every_page(tool: Tool, request, arguments: dict) -> dict:
     return {"items": items, "metadata": {"total": total, "limit": len(items), "has_next_page": len(items) < total}}
 
 
-def run(request, name: str, arguments: dict) -> tuple:
-    """Run a tool for the chat: `(payload or None, text the model sees)`."""
+def run(request, name: str, arguments: dict, ledger=None) -> tuple:
+    """Run a tool for the chat: `(payload or None, text the model sees)`.
+
+    `ledger` is the chat's evidence ledger (IP-024): passages of `search_library_text` get labels from it that
+    the model cites in its answer. Without one, passages are returned unlabelled.
+    """
     try:
         payload = call(request, name, arguments)
     except (UnknownTool, ToolNotPermitted) as error:
@@ -301,6 +309,10 @@ def run(request, name: str, arguments: dict) -> tuple:
         # Validation and not-found messages are written for a model ("Unknown
         # argument(s): …. Accepted arguments: …"), so they are the best hint it can get.
         return None, json.dumps({"error": str(error)})
+    if name == SEARCH_PASSAGES and ledger is not None and isinstance(payload, dict):
+        from apps.assistant.evidence import label_passages
+
+        label_passages(payload, ledger)
     return payload, json.dumps(slim(name, payload), ensure_ascii=False, default=str)
 
 
@@ -370,7 +382,8 @@ def _search_passages(request, arguments: dict) -> dict:
         scope["category_term"] = str(arguments["category_term"])
 
     result = search_passages(request, query, limit=5, per_entry=2, scope=scope)
-    if result.degraded:
+    if result.degraded and not result.items:
+        # Search by meaning is down and no passage has the query's words (#113).
         return {"items": [], "note": "Passage search is unavailable right now; use search_entries."}
 
     titles = {
@@ -387,6 +400,9 @@ def _search_passages(request, arguments: dict) -> dict:
                     {
                         key: value
                         for key, value in (
+                            # Kept in the full payload so a passage found again keeps its evidence
+                            # label (IP-024); `slim` drops it from the model's view.
+                            ("paragraph_id", str(passage.paragraph_id) if passage.paragraph_id else None),
                             ("page", passage.page),
                             ("section", passage.section),
                             ("score", passage.score),
@@ -462,9 +478,14 @@ _ENTRY_DETAIL_DROP = (
 
 
 def _slim_entry_detail(payload: dict) -> dict:
+    from apps.assistant.chapters import outline_for_model
+
     entry = {key: value for key, value in (payload.get("entry") or {}).items() if key not in _ENTRY_DETAIL_DROP}
     if entry.get("availability"):
         entry["availability"] = _pick(entry["availability"], _AVAILABILITY_KEYS)
+    if entry.get("id"):
+        # Chapter summaries, when the publication has them, replace the bare outline (#119).
+        entry.update(outline_for_model(entry["id"], entry.pop("table_of_contents", None)))
     return {"entry": entry}
 
 
@@ -484,9 +505,28 @@ def _slim_categories(payload: dict) -> dict:
     return {"total": _total(payload, items), "items": items}
 
 
+def _slim_passages(payload: dict) -> dict:
+    """Passages without the bookkeeping: the evidence map and paragraph ids are for resolving citations."""
+    from apps.assistant.evidence import EVIDENCE_KEY
+
+    slim_payload = {key: value for key, value in payload.items() if key != EVIDENCE_KEY}
+    slim_payload["items"] = [
+        {
+            **item,
+            "passages": [
+                {key: value for key, value in passage.items() if key != "paragraph_id"}
+                for passage in item.get("passages") or []
+            ],
+        }
+        for item in payload.get("items") or []
+    ]
+    return slim_payload
+
+
 _SLIMMERS: Dict[str, Callable[[dict], dict]] = {
     "search_entries": _slim_entries,
     FIND_SIMILAR: _slim_entries,
+    SEARCH_PASSAGES: _slim_passages,
     "get_entry": _slim_entry_detail,
     "get_my_shelf": _slim_shelf,
     "list_my_loans": _slim_loans,

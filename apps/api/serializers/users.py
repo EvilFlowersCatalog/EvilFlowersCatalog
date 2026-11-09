@@ -18,6 +18,8 @@ class UserSerializer:
     class Base(Minimal):
         is_superuser: bool
         is_active: bool
+        #: The user must change their password before anything else (#8).
+        password_change_required: bool = False
         last_login: Optional[datetime]
         created_at: datetime
         updated_at: datetime

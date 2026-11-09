@@ -1,4 +1,3 @@
-import json
 from http import HTTPStatus
 from typing import Optional
 from uuid import UUID
@@ -16,7 +15,7 @@ from apps.api.services.suggest import EntrySuggestService
 from apps.api.utils.parse import parse_int_query
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.api.filters.entries import EntryFilter
-from apps.api.forms.entries import EntryForm, AcquisitionMetaForm
+from apps.api.forms.entries import EntryForm
 from apps.api.response import (
     Ordering,
     PaginationModel,
@@ -31,9 +30,9 @@ from apps.api.serializers.entries import (
     EntrySerializer,
     EntrySuggestionSerializer,
 )
-from apps.api.services.entry import EntryService, attach_acquisition
+from apps.api.services.entry import EntryService
 from apps.core.search.query import describe_hits
-from apps.core.models import Entry, Price, Catalog, ShelfRecord, User
+from apps.core.models import Entry, Catalog, ShelfRecord, User
 from apps.core.services.reviews import own_ratings, rating_score
 from apps.core.views import SecuredView
 from apps.extraction import admin_views as extraction_admin
@@ -369,38 +368,10 @@ class EntryDetail(SecuredView):
         summary="Create acquisition file for entry",
     )
     def post(self, request, catalog_id: UUID, entry_id: UUID):
+        from apps.api.views.acquisitions import create_acquisition
+
         entry = self.get_entry(request, catalog_id, entry_id)
-
-        try:
-            metadata = json.loads(request.POST.get("metadata", "{}"))
-        except json.JSONDecodeError as e:
-            raise ProblemDetailException(
-                title=_("Unable to parse metadata for request file"),
-                status=HTTPStatus.BAD_REQUEST,
-                previous=e,
-            )
-
-        form = AcquisitionMetaForm(metadata, request)
-
-        if not form.is_valid():
-            raise ValidationException(form)
-
-        if "content" not in request.FILES:
-            raise ProblemDetailException(_("Missing `content` file"), status=HTTPStatus.BAD_REQUEST)
-
-        acquisition = attach_acquisition(
-            entry,
-            request.FILES["content"],
-            mime=request.FILES["content"].content_type,
-            relation=form.cleaned_data.get("relation"),
-        )
-
-        for price in form.cleaned_data.get("prices", []):
-            Price.objects.create(
-                acquisition=acquisition,
-                currency=price["currency_code"],
-                value=price["value"],
-            )
+        acquisition = create_acquisition(request, entry)
 
         return SingleResponse(
             request,

@@ -15,6 +15,7 @@ from apps.mcp.tools import (  # noqa: F401  (registration side effect)
     entries,
     feeds,
     library,
+    notifications,
     publishing,
     users,
 )

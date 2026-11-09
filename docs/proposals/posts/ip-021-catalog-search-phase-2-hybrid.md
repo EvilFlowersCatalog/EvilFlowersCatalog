@@ -387,3 +387,4 @@ embed in Tempo; together with BM25 and the vector scan the 150 ms p95 target is 
 | 2026-11-09 | jdubec | Initial draft from issue #102; catalog implementation of phases 1–4 and tests (Claude) |
 | 2026-11-09 | jdubec | Added Review Questions section |
 | 2026-11-09 | jdubec | Phase 2: search inside publications, `GET /api/v1/entries/passages` (closes the last catalog part of #60) |
+| 2026-11-09 | jdubec | #113: `/entries/passages` adds a word channel (GIN index on paragraph text in `evilflowers_simple`, extraction `0005`) fused with the vector ranking by RRF; `snippet` with `<mark>`, `matched`, `catalog_id`, `searchable`; word matches still work when TEI is down. LCP rule unchanged: page and score, never text or snippet |

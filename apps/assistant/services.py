@@ -11,7 +11,7 @@ from django.db.models import Sum
 from django.utils import timezone
 from django.utils.html import strip_tags
 
-from apps.assistant import contexts
+from apps.assistant import contexts, prompts
 from apps.assistant.models import Chat, ChatMessage
 from apps.assistant.tools import DISPLAY_BOOKS, FIND_SIMILAR, SEARCH_PASSAGES
 
@@ -20,35 +20,10 @@ logger = logging.getLogger(__name__)
 #: IP-022. Sections in a fixed order: role, tool policy, grounding, language,
 #: limits, style. Nothing per request goes in here — it is the head of the
 #: cached prefix (IP-015 D3); the reader's language is pinned by the last
-#: message of every request instead (`language_instruction`).
-SYSTEM_PROMPT = (
-    "You are Elvíra, the assistant of a university's digital library. You help readers find "
-    "publications in this library and answer questions about them.\n\n"
-    "# Tools\n"
-    "- For any request about publications or a topic, call `search_entries` first. It matches by meaning "
-    "in any language; when the results do not fit, search once more with English keywords (most records "
-    "are in English) before saying the library has nothing.\n"
-    "- For a subject or field, `list_categories` gives the exact `category_term` to filter by.\n"
-    "- For 'what can I borrow now' use `lcp_states: [\"available_now\"]`.\n"
-    f"- For a detailed question that titles and summaries do not answer, use `{SEARCH_PASSAGES}`.\n"
-    f"- For 'something like this', or when a publication is fully borrowed, use `{FIND_SIMILAR}`.\n"
-    "- For the reader's own loans or shelf use `list_my_loans` or `get_my_shelf`; if they are not "
-    "offered, the reader is not signed in.\n"
-    "- Do not call a tool again with the same arguments; change the words or the filters instead.\n\n"
-    "# Grounding\n"
-    "Use only what tool results say: never invent titles, authors, ids, pages or availability. Use ids "
-    "exactly as a result gives them. Say so plainly when nothing fits.\n\n"
-    "# Answer\n"
-    f"Show the publications you recommend (at most 5) with `{DISPLAY_BOOKS}`; the cards show title, "
-    "author and availability. In your text say in a sentence or two why they fit and whether they can be "
-    "borrowed now; do not list titles and authors. Cite a passage as the publication's title and page. "
-    "Plain sentences, no tables.\n\n"
-    "# Language\n"
-    "Answer in the language the reader writes in. A reader writing in Slovak gets Slovak, never Czech.\n\n"
-    "# Limits\n"
-    "You cannot borrow, reserve or return anything; the reader does that in the library interface. "
-    "If asked about something unrelated to the library, look for publications on the topic and say "
-    "that finding publications is what you are for."
+#: message of every request instead (`language_instruction`). The text is
+#: `prompts/chat.md` (#116).
+SYSTEM_PROMPT = prompts.render(
+    "chat", search_passages=SEARCH_PASSAGES, find_similar=FIND_SIMILAR, display_books=DISPLAY_BOOKS
 )
 
 
@@ -241,8 +216,7 @@ def reader_notes(row: ChatMessage) -> str:
     return "\n".join(notes)
 
 
-#: UI languages the reader can switch between, by code.
-LANGUAGE_NAMES = {"sk": "Slovak", "en": "English"}
+LANGUAGE_NAMES = prompts.LANGUAGE_NAMES
 
 
 def language_instruction(language: Optional[str]) -> Optional[str]:
@@ -252,17 +226,13 @@ def language_instruction(language: Optional[str]) -> Optional[str]:
     changes the cached prefix. Small models drift (Slovak into Czech, a DRM
     notice into Russian), so the language is named and Czech is ruled out.
     """
-    code = (language or "").split("-")[0].lower()
-    name = LANGUAGE_NAMES.get(code)
+    name = prompts.language_name(language)
     if name is None:
         return None
-    instruction = (
+    return (
         f"Write your answer in {name}, whatever language the reader's message, the publication or a tool "
-        "result is in."
+        "result is in." + prompts.not_czech(language)
     )
-    if code == "sk":
-        instruction += " It must be Slovak, never Czech."
-    return instruction
 
 
 def start_agent_annotation(user_acquisition, prompt: str, language: Optional[str] = None):

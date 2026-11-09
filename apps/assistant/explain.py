@@ -15,12 +15,12 @@ loop runs in memory and the answer is returned whole.
 import json
 import uuid
 import logging
-import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
 from django.conf import settings
 
+from apps.assistant import prompts, structured
 from apps.assistant.llm import OllamaClient
 from apps.assistant.pdf import ReaderDocument
 
@@ -51,20 +51,9 @@ MAX_PARAGRAPH_RESULTS = 8
 #: Characters of each paragraph `search_paragraphs` returns.
 MAX_PARAGRAPH_CHARS = 1200
 
-SYSTEM_PROMPT = (
-    "You explain passages from a publication to a reader who selected them in a PDF viewer. "
-    "The reader is in the middle of reading and wants to understand what the passage means in "
-    "context — what it refers to, what the terms mean and why it matters at this point.\n\n"
-    "You are given the page the passage is on. When it refers to something defined elsewhere "
-    f'("this method", "the theorem above", an abbreviation), find it: use `{SEARCH_PARAGRAPHS}` to '
-    f"find passages by meaning, `{SEARCH_PDF}` to locate where a term is introduced (with "
-    f"`regex: true` for a pattern) and `{READ_PDF_PAGE}` to read earlier pages. Read only "
-    "what you need. Base the explanation on what the book says; never invent its content.\n\n"
-    "When you are done reading, answer with a single JSON object and nothing else:\n"
-    '{"simple": "<a short plain-language explanation, 2-5 sentences>", '
-    '"examples": [{"label": "<short title>", "description": "<a concrete example or analogy>"}]}\n'
-    "Give 1-3 examples. Do not mention page numbers: the viewer's numbering differs from the "
-    "numbers printed in the book, and small raised numbers in the text are footnote markers."
+#: `prompts/explain.md` (#116).
+SYSTEM_PROMPT = prompts.render(
+    "explain", search_paragraphs=SEARCH_PARAGRAPHS, search_pdf=SEARCH_PDF, read_pdf_page=READ_PDF_PAGE
 )
 
 #: Tools run against the reader's copy, in explain, highlight and bound chats.
@@ -221,6 +210,16 @@ def explain(
         tokens += used
 
         if not tool_calls:
+            if structured.parse_object(content, _valid) is None:
+                # Tools were offered, so `format` was not: once, ask again constrained to the schema (IP-024).
+                messages.append({"role": "assistant", "content": content})
+                messages.append(
+                    {"role": "user", "content": f"{structured.RETRY_INSTRUCTION} {_language_instruction(language)}"}
+                )
+                retry, _tool_calls, used = _complete(client, messages, None, ANSWER_SCHEMA)
+                tokens += used
+                if structured.parse_object(retry, _valid) is not None:
+                    content = retry
             return _parse(content, pages_read, tokens)
 
         messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
@@ -256,8 +255,7 @@ def _opening(document, text, page, title, authors, language, pages_read) -> str:
     return "\n\n".join(parts)
 
 
-#: UI languages the reader can switch between, by code.
-LANGUAGE_NAMES = {"sk": "Slovak", "en": "English"}
+LANGUAGE_NAMES = prompts.LANGUAGE_NAMES
 
 
 def _language_instruction(language: Optional[str]) -> str:
@@ -266,15 +264,13 @@ def _language_instruction(language: Optional[str]) -> str:
     A bare code is not enough: asked for `sk`, small models drift into Czech, so
     the language is named and Czech is ruled out explicitly.
     """
-    code = (language or "").split("-")[0].lower()
-    name = LANGUAGE_NAMES.get(code)
+    name = prompts.language_name(language)
     if name is None:
         return "Write the explanation in the language of the selected passage."
-
-    instruction = f"Write `simple` and every example in {name}, even when the publication is in another language."
-    if code == "sk":
-        instruction += " It must be Slovak, never Czech."
-    return instruction
+    return (
+        f"Write `simple` and every example in {name}, even when the publication is in another language."
+        + prompts.not_czech(language)
+    )
 
 
 #: The explanation's shape, for Ollama's `format` when no tools are offered (IP-022): the
@@ -460,25 +456,20 @@ def _clip(text: str) -> str:
     return text[:MAX_PAGE_CHARS] + " […]"
 
 
-_JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
+def _valid(data: dict) -> bool:
+    return isinstance(data.get("simple"), str)
 
 
 def _parse(content: str, pages_read: List[int], tokens: int) -> Explanation:
     """The model's JSON answer, or its prose when it did not follow the format."""
-    match = _JSON_OBJECT.search(content or "")
-    if match:
-        try:
-            data = json.loads(match.group(0))
-        except json.JSONDecodeError:
-            data = None
-
-        if isinstance(data, dict) and isinstance(data.get("simple"), str):
-            examples = [
-                {"label": str(example.get("label") or ""), "description": str(example.get("description") or "")}
-                for example in data.get("examples") or []
-                if isinstance(example, dict)
-            ]
-            return Explanation(simple=data["simple"].strip(), examples=examples, pages=pages_read, tokens_used=tokens)
+    data = structured.parse_object(content, _valid)
+    if data is not None:
+        examples = [
+            {"label": str(example.get("label") or ""), "description": str(example.get("description") or "")}
+            for example in data.get("examples") or []
+            if isinstance(example, dict)
+        ]
+        return Explanation(simple=data["simple"].strip(), examples=examples, pages=pages_read, tokens_used=tokens)
 
     logger.warning("Explain answer was not the expected JSON: %r", (content or "")[:200])
     return Explanation(simple=(content or "").strip(), pages=pages_read, tokens_used=tokens)

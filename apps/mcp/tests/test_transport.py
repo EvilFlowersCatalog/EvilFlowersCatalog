@@ -28,6 +28,7 @@ READ_TOOLS = {
     "get_entry",
     "get_feed",
     "get_my_shelf",
+    "get_notification_branding",
     "get_user",
     "list_api_keys",
     "list_authors",
@@ -37,6 +38,7 @@ READ_TOOLS = {
     "list_feeds",
     "list_my_loans",
     "list_users",
+    "preview_notification",
     "search_entries",
     "whoami",
 }
@@ -61,10 +63,13 @@ WRITE_TOOLS = {
     "remove_entries_from_feed",
     "requeue_encryption",
     "revoke_api_key",
+    "send_test_notification",
+    "sync_ldap_profiles",
     "update_catalog",
     "update_category",
     "update_entry",
     "update_feed",
+    "update_notification_branding",
     "update_user",
 }
 

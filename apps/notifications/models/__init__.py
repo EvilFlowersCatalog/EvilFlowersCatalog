@@ -1,2 +1,3 @@
+from .notification_branding import NotificationBranding
 from .notification_contact import NotificationContact
 from .notification_log import NotificationLog

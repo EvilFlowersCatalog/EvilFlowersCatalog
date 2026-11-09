@@ -23,6 +23,8 @@ class ChatMessageSerializer:
         displayed_entries: Optional[list]
         #: Agent annotation ids created by the assistant in this turn.
         annotations: Optional[List[str]] = None
+        #: Evidence labels cited in `text` (`[E3]`), resolved to publication and page (IP-024).
+        citations: Optional[List[dict]] = None
         tokens_used: int
         created_at: datetime
 

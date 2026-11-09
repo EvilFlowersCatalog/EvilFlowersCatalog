@@ -1,3 +1,4 @@
+import json
 from http import HTTPStatus
 from uuid import UUID
 
@@ -7,21 +8,85 @@ from object_checker.base_object_checker import has_object_permission
 from apps import openapi
 from apps.api.filters.acquisitions import AcquisitionFilter
 from apps.api.forms.entries import AcquisitionMetaForm
-from apps.core.errors import ProblemDetailException, ValidationException
+from apps.api.services.entry import InvalidAcquisitionFile, attach_acquisition
+from apps.core.errors import DetailType, ProblemDetailException, ValidationException
 from apps.api.response import SingleResponse, PaginationResponse
 from apps.api.serializers.entries import AcquisitionSerializer
-from apps.core.models import Acquisition
+from apps.core.models import Acquisition, Entry, Price
 from apps.core.views import SecuredView
+
+
+def create_acquisition(request, entry: Entry) -> Acquisition:
+    """A new acquisition of `entry` from a multipart request: `content` (the file) and `metadata` (JSON).
+
+    Shared by `POST /api/v1/acquisitions` and `POST /api/v1/catalogs/{c}/entries/{e}`. The caller checks that
+    the requester may manage the entry.
+    """
+    try:
+        metadata = json.loads(request.POST.get("metadata", "{}"))
+    except json.JSONDecodeError as e:
+        raise ProblemDetailException(
+            title=_("Unable to parse metadata for request file"),
+            status=HTTPStatus.BAD_REQUEST,
+            previous=e,
+        )
+
+    form = AcquisitionMetaForm(metadata, request)
+    if not form.is_valid():
+        raise ValidationException(form)
+
+    if "content" not in request.FILES:
+        raise ProblemDetailException(_("Missing `content` file"), status=HTTPStatus.BAD_REQUEST)
+
+    try:
+        acquisition = attach_acquisition(
+            entry,
+            request.FILES["content"],
+            mime=request.FILES["content"].content_type,
+            relation=form.cleaned_data.get("relation"),
+        )
+    except InvalidAcquisitionFile as error:
+        # #112: an empty or mislabelled file is refused before it is stored.
+        raise ProblemDetailException(str(error), status=error.status, detail_type=DetailType.VALIDATION_ERROR)
+
+    for price in form.cleaned_data.get("prices", []):
+        Price.objects.create(acquisition=acquisition, currency=price["currency_code"], value=price["value"])
+    return acquisition
 
 
 class AcquisitionManagement(SecuredView):
     @openapi.metadata(
-        description="Create a new acquisition file for an entry. Acquisitions represent downloadable content (PDF, EPUB, etc.) with associated metadata, pricing information, and access controls. Note: This endpoint is currently not implemented.",
+        description=(
+            "Create a new acquisition file for an entry (#7). Multipart form: `entry_id`, `content` (the file) and "
+            "optional `metadata` (JSON: `relation`, `prices`). The same as "
+            "`POST /api/v1/catalogs/{catalog_id}/entries/{entry_id}`; requires `manage` on the entry's catalog. "
+            "An empty file, or one whose first bytes contradict its type, is refused (400 / 415)."
+        ),
         tags=["Acquisitions"],
         summary="Create acquisition file",
     )
+    @openapi.response(HTTPStatus.CREATED, "Acquisition created", AcquisitionSerializer.Detailed)
     def post(self, request):
-        raise ProblemDetailException(_("Not implemented"), status=HTTPStatus.NOT_IMPLEMENTED)
+        try:
+            entry_id = UUID(str(request.POST.get("entry_id") or ""))
+        except ValueError:
+            raise ProblemDetailException(
+                _("Parameter entry_id is required"),
+                status=HTTPStatus.BAD_REQUEST,
+                detail_type=DetailType.VALIDATION_ERROR,
+            )
+        entry = Entry.objects.select_related("catalog").filter(pk=entry_id).first()
+        if entry is None or not has_object_permission("check_catalog_read", request.user, entry.catalog):
+            raise ProblemDetailException(_("Entry not found"), status=HTTPStatus.NOT_FOUND)
+        if not has_object_permission("check_catalog_manage", request.user, entry.catalog):
+            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+
+        acquisition = create_acquisition(request, entry)
+        return SingleResponse(
+            request,
+            data=AcquisitionSerializer.Detailed.model_validate(acquisition, context={"request": request}),
+            status=HTTPStatus.CREATED,
+        )
 
     @openapi.metadata(
         description="Retrieve a paginated list of acquisition files with filtering options. Supports filtering by entry, file type, media type, and availability status. Acquisitions represent downloadable content associated with catalog entries.",

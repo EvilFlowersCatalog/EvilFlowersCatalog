@@ -1,4 +1,6 @@
 import logging
+from dataclasses import dataclass
+from email.utils import formataddr
 
 from mjml import mjml2html
 from django.conf import settings
@@ -8,10 +10,19 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 
 from apps.core.auth import JWTFactory
+from apps.notifications import branding
 from apps.notifications.attachments import EmailAttachment
+from apps.notifications.branding import Branding
 from apps.notifications.models import NotificationContact, NotificationLog
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class RenderedNotification:
+    subject: str
+    text: str
+    html: str
 
 
 class NotificationService:
@@ -45,6 +56,64 @@ class NotificationService:
         return contact
 
     @staticmethod
+    @transaction.atomic
+    def sync_directory_contact(user, contact_type: str, value: str, *, dry_run: bool = False):
+        """Make the directory's address a contact of `user` without overriding the user's own choice.
+
+        - The address already exists as a row → it is marked as directory-owned
+          (`adopted`) — that is how rows imported before IP-025, which carry
+          the default `user` source, are taken over.
+        - Otherwise an earlier directory-owned row is rewritten to the new
+          address (`updated`, the directory changed), or a new one is created.
+        - It becomes primary when the user has no primary contact of the type
+          or the current primary is itself directory-owned (`promoted`). A
+          primary the user entered themselves is never demoted.
+
+        The previous login code did `update_or_create(user=, type=)`, which
+        raised `MultipleObjectsReturned` — and so broke the login — as soon as
+        a user had added a second address through the API.
+        """
+        from apps.core.services.ldap_directory import ContactChange
+
+        ldap_source = NotificationContact.Source.LDAP
+        contacts = NotificationContact.objects.select_for_update().filter(user=user, type=contact_type)
+        current_primary = contacts.filter(is_primary=True).first()
+        should_be_primary = current_primary is None or current_primary.source == ldap_source
+
+        # The importer lower-cases; a legacy row may not be (`Name.Surname@stuba.sk`).
+        contact = contacts.filter(value=value).first() or contacts.filter(value__iexact=value).first()
+        if contact is not None:
+            if contact.source != ldap_source or contact.value != value:
+                action = "adopted"
+            elif should_be_primary and not contact.is_primary:
+                action = "promoted"
+            else:
+                action = "unchanged"
+        else:
+            contact = contacts.filter(source=ldap_source).order_by("-is_primary", "-updated_at").first()
+            action = "updated" if contact is not None else "created"
+
+        is_primary = should_be_primary or (contact is not None and contact.is_primary)
+
+        if dry_run:
+            return ContactChange(contact_type=contact_type, action=action, is_primary=is_primary)
+
+        if contact is None:
+            contact = NotificationContact(user=user, type=contact_type)
+        if action != "unchanged":
+            contact.value = value
+            contact.source = ldap_source
+            contact.is_primary = is_primary
+            contact.save()
+            # Stale directory rows (an address the directory dropped) go away;
+            # rows the user entered stay.
+            contacts.filter(source=ldap_source).exclude(pk=contact.pk).delete()
+            if is_primary:
+                contacts.filter(is_primary=True).exclude(pk=contact.pk).update(is_primary=False)
+
+        return ContactChange(contact_type=contact_type, action=action, is_primary=is_primary)
+
+    @staticmethod
     def generate_scoped_url(
         user_id: str,
         scope: str,
@@ -62,21 +131,38 @@ class NotificationService:
         return f"{effective_base}{resource_path}?access_token={token}"
 
     @staticmethod
-    def render_context(context: dict) -> dict:
+    def render_context(context: dict, brand: "Branding | None" = None) -> dict:
         """Per-notification context plus the deployment-wide values every template needs.
 
         `library_name` is the header/footer brand (STU: "Digitálna knižnica
         Elvíra / Digital Library Elvira"), `contact_email` the address readers
         are told to write to, `portal_url` the reader-facing site when one is
-        configured. Kept out of `context_snapshot` — they are configuration,
-        not event data.
+        configured, `brand` the IP-025 branding tokens (logo, colours, footer).
+        Kept out of `context_snapshot` — they are configuration, not event data.
         """
+        brand = brand if brand is not None else branding.resolve()
         return {
-            "library_name": settings.EVILFLOWERS_NOTIFICATION_LIBRARY_NAME,
+            "library_name": brand.library_name,
             "contact_email": settings.EVILFLOWERS_CONTACT_EMAIL,
             "portal_url": (getattr(settings, "EVILFLOWERS_PORTAL_URL", "") or "").rstrip("/"),
+            "brand": brand.as_context(),
             **context,
         }
+
+    @staticmethod
+    def render(notification_type: str, context: dict, brand: "Branding | None" = None) -> RenderedNotification:
+        """Subject, plain text and HTML of one notification — no recipient, no log, nothing sent."""
+        render_context = NotificationService.render_context(context, brand)
+        subject = " ".join(render_to_string(f"notifications/subjects/{notification_type}.txt", render_context).split())
+        html = mjml2html(render_to_string(f"notifications/{notification_type}.mjml", render_context))
+        text = render_to_string(f"notifications/{notification_type}.txt", render_context)
+        return RenderedNotification(subject=subject, text=text, html=html)
+
+    @staticmethod
+    def from_address(brand: "Branding | None" = None) -> str:
+        brand = brand if brand is not None else branding.resolve()
+        address = settings.EVILFLOWERS_NOTIFICATION_FROM_EMAIL
+        return formataddr((brand.from_name, address)) if brand.from_name else address
 
     @staticmethod
     def send(
@@ -110,23 +196,17 @@ class NotificationService:
         )
 
         try:
-            render_context = NotificationService.render_context(context)
-
-            subject = render_to_string(f"notifications/subjects/{notification_type}.txt", render_context).strip()
-            log.subject = subject
-
-            mjml_content = render_to_string(f"notifications/{notification_type}.mjml", render_context)
-            html_content = mjml2html(mjml_content)
-
-            text_content = render_to_string(f"notifications/{notification_type}.txt", render_context)
+            brand = branding.resolve()
+            rendered = NotificationService.render(notification_type, context, brand)
+            log.subject = rendered.subject
 
             email = EmailMultiAlternatives(
-                subject=subject,
-                body=text_content,
-                from_email=settings.EVILFLOWERS_NOTIFICATION_FROM_EMAIL,
+                subject=rendered.subject,
+                body=rendered.text,
+                from_email=NotificationService.from_address(brand),
                 to=[recipient_email],
             )
-            email.attach_alternative(html_content, "text/html")
+            email.attach_alternative(rendered.html, "text/html")
 
             for attachment in attachments or []:
                 email.attach(attachment.filename, attachment.content, attachment.mimetype)
