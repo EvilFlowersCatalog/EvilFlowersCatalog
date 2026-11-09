@@ -66,6 +66,10 @@ SEARCH_COLUMNS = (
 )
 
 
+#: IP-023: the rating aggregate, written by `apps.core.services.reviews` only.
+RATING_COLUMNS = ("rating_count", "rating_sum")
+
+
 class EntryManager(models.Manager):
     def get_queryset(self):
         # The search columns are only read in SQL. Deferring them keeps them out of every entry
@@ -138,10 +142,14 @@ class Entry(BaseModel):
     citation = models.TextField(null=True)
     touched_at = models.DateTimeField(null=True, auto_now=True)
 
-    # Advanced entry details (issue #50; ratings/reviews deferred to #57)
+    # Advanced entry details (issue #50; ratings/reviews in #57, IP-023)
     page_count = models.PositiveIntegerField(null=True, blank=True)
     table_of_contents = models.JSONField(null=True, blank=True)
     related_entries = models.ManyToManyField("self", symmetrical=False, related_name="related_to", blank=True)
+
+    # IP-023: published reviews of this entry, maintained by `ReviewService` (never by forms or `save()`).
+    rating_count = models.PositiveIntegerField(default=0, editable=False)
+    rating_sum = models.PositiveIntegerField(default=0, editable=False)
 
     # IP-020: maintained by `apps.core.search.index.refresh_search_vectors` (signals), never by forms.
     # `search_config` is the text search configuration (regconfig name) the vector was built with.
@@ -156,6 +164,31 @@ class Entry(BaseModel):
     # that produced it; vectors of two models are never compared.
     embedding = HalfVectorField(dimensions=ENTRY_EMBEDDING_DIMENSIONS, null=True, editable=False)
     embedding_model = models.CharField(max_length=255, null=True, editable=False)
+
+    def save(self, *args, **kwargs):
+        # The rating aggregate is written only by `ReviewService` with a targeted UPDATE. A full save of an
+        # instance loaded before a review changed would put the old numbers back, so it leaves them out.
+        if not self._state.adding and kwargs.get("update_fields") is None and not kwargs.get("force_insert"):
+            skipped = set(RATING_COLUMNS) | self.get_deferred_fields()
+            kwargs["update_fields"] = [
+                field.name
+                for field in self._meta.concrete_fields
+                if not field.primary_key and field.name not in skipped and field.attname not in skipped
+            ]
+        super().save(*args, **kwargs)
+
+    @property
+    def rating_average(self) -> Optional[float]:
+        if not self.rating_count:
+            return None
+        return round(self.rating_sum / self.rating_count, 2)
+
+    @property
+    def rating(self) -> Optional[dict]:
+        """The `rating` block of the API (IP-023); None when reviews are switched off."""
+        if not settings.EVILFLOWERS_REVIEWS_ENABLED:
+            return None
+        return {"average": self.rating_average, "count": self.rating_count}
 
     @property
     def first_author_name(self) -> str:

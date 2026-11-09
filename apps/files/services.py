@@ -14,14 +14,16 @@ ran before the auth branch.
 
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Optional
 
 from django.core.files import File
-from django.http import FileResponse, HttpResponseRedirect, HttpResponse
+from django.http import HttpResponseRedirect
+from django.http.response import HttpResponseBase
 from django.utils.text import slugify
 from mimetypes import guess_extension
 
 from apps.core.models import Acquisition
+from apps.files.ranges import ranged_file_response
 from apps.files.storage import get_storage
 
 
@@ -120,13 +122,14 @@ class AcquisitionStorageService:
     def download_response(
         cls,
         acquisition: Acquisition,
+        request,
         *,
         as_attachment: bool = True,
-    ) -> Union[FileResponse, HttpResponseRedirect, HttpResponse]:
+    ) -> HttpResponseBase:
         """Build the right HTTP response for serving the payload.
 
         - EXTERNAL_URL: 302 redirect to `file_url`.
-        - LOCAL: `FileResponse` streaming the storage backend file.
+        - LOCAL: the stored file, honouring a `Range` request header (#70).
 
         Callers MUST run their auth / IP-block / UserAcquisition
         bookkeeping BEFORE invoking this method.
@@ -141,8 +144,14 @@ class AcquisitionStorageService:
         if not acquisition.content:
             raise AcquisitionStorageError(f"Acquisition {acquisition.pk} has no content stored")
 
-        filename = cls._safe_filename(acquisition)
-        return FileResponse(acquisition.content, as_attachment=as_attachment, filename=filename)
+        return ranged_file_response(
+            request,
+            acquisition.content.storage,
+            acquisition.content.name,
+            content_type=acquisition.mime or None,
+            filename=cls._safe_filename(acquisition),
+            as_attachment=as_attachment,
+        )
 
     @staticmethod
     def _safe_filename(acquisition: Acquisition) -> str:

@@ -18,6 +18,7 @@ from apps.api.views import (
     annotation_items,
     languages,
     notification_contacts,
+    reviews,
 )
 
 # IP-008 Phase 4: the Dataverse integration moved to `apps.dataverse`.
@@ -64,8 +65,13 @@ urlpatterns = [
     path("entries", entries.EntryPaginator.as_view()),
     path("entries/facets", entries.EntryFacets.as_view()),
     path("entries/suggest", entries.EntrySuggest.as_view()),
+    path("entries/passages", extraction_discovery.EntryPassages.as_view(), name="entry-passages"),
     # Recommendations and figures from the extraction index (IP-018 Phase 8)
     path("entries/<uuid:entry_id>/similar", extraction_discovery.EntrySimilar.as_view(), name="entry-similar"),
+    # IP-023: ratings and reviews
+    path("entries/<uuid:entry_id>/reviews", reviews.EntryReviewList.as_view(), name="entry-reviews"),
+    path("entries/<uuid:entry_id>/reviews/mine", reviews.OwnEntryReview.as_view(), name="entry-review-mine"),
+    path("reviews/<uuid:review_id>", reviews.EntryReviewDetail.as_view(), name="review-detail"),
     path("entries/<uuid:entry_id>/figures", extraction_discovery.EntryFigures.as_view(), name="entry-figures"),
     # Extraction for the entry's managers: status, runs, queue, (re)processing (IP-018 admin)
     path("entries/<uuid:entry_id>/extraction", extraction_admin.EntryExtraction.as_view(), name="entry-extraction"),

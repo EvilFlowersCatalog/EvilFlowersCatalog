@@ -17,6 +17,7 @@ from typing import Dict, List, Optional
 from uuid import UUID
 
 from django import forms
+from django.conf import settings
 from django.http import FileResponse
 from django_api_forms import Form
 from django.urls import reverse
@@ -29,6 +30,7 @@ from apps.api.response import SingleResponse
 from apps.api.serializers import Serializer
 from apps.core.errors import DetailType, ProblemDetailException, ValidationException
 from apps.core.models import Entry
+from apps.core.views import SecuredView
 from apps.extraction.models import ExtractionRun, Paragraph, Region
 from apps.extraction.reader import EmbeddingUnavailable, ReaderExtraction
 from apps.extraction.views import ReaderView
@@ -47,6 +49,14 @@ PASSAGE_PARAGRAPHS = 200
 #: Characters of a selection embedded for "similar to this passage".
 MAX_PASSAGE_CHARS = 2000
 
+#: Passage search: paragraphs shown per publication by default, and at most.
+DEFAULT_PER_ENTRY = 1
+MAX_PER_ENTRY = 3
+#: Characters of a paragraph returned as a passage's text.
+PASSAGE_TEXT_CHARS = 600
+#: Query parameters of passage search itself; the rest scope it like `GET /api/v1/entries`.
+PASSAGE_PARAMS = {"query", "limit", "per_entry", "page", "order_by", "include"}
+
 
 class SimilarPassageForm(Form):
     text = forms.CharField(required=False, max_length=20000)
@@ -56,6 +66,35 @@ class SimilarEntrySerializer(Serializer):
     entry_id: UUID
     #: Cosine similarity, 0-1.
     score: float
+
+
+class PassageSerializer(Serializer):
+    paragraph_id: UUID
+    #: Page of the original PDF, 1-based (as the viewer shows an open-access entry).
+    page: int
+    section: Optional[str]
+    #: Cosine similarity, 0-1.
+    score: float
+    #: The paragraph, cut at 600 characters; None when the reader may not read it here
+    #: (licensed through Readium LCP, or outside the entry's allowed IP ranges).
+    text: Optional[str]
+    truncated: bool = False
+
+
+class PassageHitSerializer(Serializer):
+    entry_id: UUID
+    #: The best passage's score.
+    score: float
+    passages: List[PassageSerializer]
+
+
+class PassageSearchSerializer(Serializer):
+    query: str
+    #: True when the query could not be embedded (tei-embed unconfigured or down): no results.
+    degraded: bool
+    #: Publications the caller may see whose paragraphs are embedded by the current model.
+    indexed: int
+    items: List[PassageHitSerializer]
 
 
 class EntryRegionSerializer(Serializer):
@@ -200,11 +239,7 @@ class UserAcquisitionSimilar(ReaderView):
 
         scores: Dict = {}
         paragraphs = (
-            Paragraph.objects.filter(
-                run__is_active=True,
-                embedding__isnull=False,
-                run__provenance__paragraphs__embedding_model=extraction.embedding_model,
-            )
+            _embedded_paragraphs(extraction.embedding_model)
             .exclude(run__acquisition__entry_id=entry_id)
             .annotate(distance=CosineDistance("embedding", vector))
             .order_by("distance")
@@ -213,6 +248,117 @@ class UserAcquisitionSimilar(ReaderView):
         for other_entry_id, distance in paragraphs:
             scores.setdefault(other_entry_id, 1 - distance)
         return SingleResponse(request, data=_ranked(request, scores, limit))
+
+
+def _embedded_paragraphs(model: str):
+    """Paragraphs of active runs embedded by `model`: vectors of two models are never compared."""
+    return Paragraph.objects.filter(
+        run__is_active=True,
+        embedding__isnull=False,
+        run__provenance__paragraphs__embedding_model=model,
+    )
+
+
+def _int_param(request, name: str, default: int, maximum: int) -> int:
+    try:
+        return max(1, min(int(request.GET.get(name) or default), maximum))
+    except ValueError:
+        return default
+
+
+def _may_read_text(request, entry: Entry) -> bool:
+    """Whether a passage's text may be shown outside the reader (IP-018 Q18/Q19, IP block)."""
+    if entry.read_config("readium_enabled"):
+        return False
+    try:
+        _check_ip_block(request, entry)
+    except ProblemDetailException:
+        return False
+    return True
+
+
+class EntryPassages(SecuredView):
+    @openapi.metadata(
+        description=(
+            "Search inside publications: the `query` is embedded with multilingual-e5 (IP-021) and ranked "
+            "against the paragraphs of every processed PDF the caller may see (IP-018), grouped per "
+            "publication by its best paragraph, best first. Other parameters of `GET /api/v1/entries` "
+            "(e.g. `catalog_id`, `category_id`, `language`) narrow the publications searched. `per_entry` "
+            "(1-3) passages per publication, `limit` publications (at most 24). A passage's `text` is "
+            "null for entries lent through Readium LCP and outside the entry's allowed IP ranges; its "
+            "`page` and score are still given. `degraded` is true when the query could not be embedded; "
+            "`indexed` counts the publications searchable this way. Resolve entries with "
+            "`GET /api/v1/entries?id=...`."
+        ),
+        tags=["Entries"],
+        summary="Search inside publications",
+    )
+    @openapi.response(HTTPStatus.OK, "Passages per publication", PassageSearchSerializer)
+    def get(self, request):
+        from apps.core.search import embeddings
+
+        text = (request.GET.get("query") or "").strip()[:MAX_PASSAGE_CHARS]
+        if not text:
+            raise ProblemDetailException(
+                _("Parameter query is required"),
+                status=HTTPStatus.BAD_REQUEST,
+                detail_type=DetailType.VALIDATION_ERROR,
+            )
+        limit = _limit(request)
+        per_entry = _int_param(request, "per_entry", DEFAULT_PER_ENTRY, MAX_PER_ENTRY)
+
+        # Access control (and the caller's filters) before ranking, as in entry search (IP-021).
+        scope = request.GET.copy()
+        for name in PASSAGE_PARAMS:
+            scope.pop(name, None)
+        visible = EntryFilter(scope, queryset=Entry.objects.all(), request=request).qs.values("pk")
+
+        vector = embeddings.try_embed_query(text, "passages")
+        model = None
+        if vector is not None:
+            try:
+                model = embeddings.model_id()
+            except embeddings.EmbeddingError:
+                vector = None
+        if vector is None:
+            result = PassageSearchSerializer(query=text, degraded=True, indexed=0, items=[])
+            return SingleResponse(request, data=result.model_dump(mode="json"))
+
+        paragraphs = _embedded_paragraphs(model).filter(run__acquisition__entry__in=visible)
+        indexed = paragraphs.values("run__acquisition__entry_id").distinct().count()
+        ranked = (
+            paragraphs.annotate(distance=CosineDistance("embedding", vector))
+            .filter(distance__lte=1 - settings.EVILFLOWERS_SEARCH_PASSAGE_MIN_SCORE)
+            .order_by("distance")
+            .values("pk", "page", "section", "text", "distance", "run__acquisition__entry_id")[:PASSAGE_PARAGRAPHS]
+        )
+
+        hits: Dict = {}
+        for row in ranked:
+            passages = hits.setdefault(row["run__acquisition__entry_id"], [])
+            if len(passages) < per_entry:
+                passages.append(row)
+            if len(hits) >= limit and all(len(p) >= per_entry for p in hits.values()):
+                break
+        entry_ids = list(hits)[:limit]
+        readable = {entry.pk: _may_read_text(request, entry) for entry in Entry.objects.filter(pk__in=entry_ids)}
+
+        items = []
+        for entry_id in entry_ids:
+            passages = [
+                PassageSerializer(
+                    paragraph_id=row["pk"],
+                    page=row["page"],
+                    section=row["section"],
+                    score=round(1 - row["distance"], 4),
+                    text=row["text"][:PASSAGE_TEXT_CHARS] if readable.get(entry_id) else None,
+                    truncated=bool(readable.get(entry_id)) and len(row["text"]) > PASSAGE_TEXT_CHARS,
+                )
+                for row in hits[entry_id]
+            ]
+            items.append(PassageHitSerializer(entry_id=entry_id, score=passages[0].score, passages=passages))
+        result = PassageSearchSerializer(query=text, degraded=False, indexed=indexed, items=items)
+        return SingleResponse(request, data=result.model_dump(mode="json"))
 
 
 class EntryFigures(ReaderView):

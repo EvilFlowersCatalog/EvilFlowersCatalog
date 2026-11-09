@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 import uuid
 from io import StringIO
 
@@ -11,6 +12,7 @@ from django.core.management import call_command
 from django.test import TestCase, override_settings
 
 from apps.core.models import Acquisition, AuthSource, Catalog, Entry, User
+from apps.tasks.tasks import cleanup_orphans
 
 
 class StorageAuditTests(TestCase):
@@ -75,6 +77,33 @@ class StorageAuditTests(TestCase):
 
         self.assertFalse(os.path.exists(os.path.join(self.root, self.orphan_entry)))
         self.assertFalse(os.path.exists(os.path.join(self.root, self.orphan_catalog)))
+        self.assertTrue(os.path.exists(os.path.join(self.root, self.present_book)))
+
+    def test_min_age_keeps_recent_orphans(self):
+        old = time.time() - 30 * 24 * 3600
+        for root, _dirs, files in os.walk(os.path.join(self.root, self.orphan_catalog)):
+            for name in files:
+                os.utime(os.path.join(root, name), (old, old))
+
+        report = self.audit("--delete-orphans", "--min-age-hours", "168")
+
+        by_path = {item["path"]: item for item in report["orphans"]}
+        self.assertTrue(by_path[self.orphan_entry].get("recent"))
+        self.assertTrue(os.path.exists(os.path.join(self.root, self.orphan_entry)))
+        self.assertTrue(by_path[self.orphan_catalog].get("deleted"))
+        self.assertFalse(os.path.exists(os.path.join(self.root, self.orphan_catalog)))
+
+    def test_cleanup_task(self):
+        old = time.time() - 30 * 24 * 3600
+        os.utime(os.path.join(self.root, self.orphan_entry, "book.pdf"), (old, old))
+
+        with override_settings(EVILFLOWERS_ORPHAN_CLEANUP_MIN_AGE_HOURS=168):
+            result = cleanup_orphans()
+
+        # The entry orphan is old; the catalog orphan was written just now.
+        self.assertEqual(result, {"deleted": 1, "kept_recent": 1})
+        self.assertFalse(os.path.exists(os.path.join(self.root, self.orphan_entry)))
+        self.assertTrue(os.path.exists(os.path.join(self.root, self.orphan_catalog)))
         self.assertTrue(os.path.exists(os.path.join(self.root, self.present_book)))
 
     def test_catalog_filter(self):

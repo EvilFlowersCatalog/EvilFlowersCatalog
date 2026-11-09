@@ -34,6 +34,7 @@ from apps.api.serializers.entries import (
 from apps.api.services.entry import EntryService, attach_acquisition
 from apps.core.search.query import describe_hits
 from apps.core.models import Entry, Price, Catalog, ShelfRecord, User
+from apps.core.services.reviews import own_ratings, rating_score
 from apps.core.views import SecuredView
 from apps.extraction import admin_views as extraction_admin
 from apps.readium.models import License
@@ -110,6 +111,8 @@ class EntryListResponse(PaginationResponseModel):
 
 
 RELEVANCE_ORDERING = ["-relevance_score", "-popularity", "-pk"]
+#: IP-023 Q8: Bayesian average, then more ratings first, then id for stable pages.
+RATING_ORDERING = ["rating_score", "rating_count", "pk"]
 
 
 def entry_list_ordering(request, searching: bool) -> Ordering:
@@ -125,6 +128,10 @@ def entry_list_ordering(request, searching: bool) -> Ordering:
     for column in requested:
         if column.lstrip("-") == "relevance":
             columns.extend(RELEVANCE_ORDERING if searching else ["-created_at"])
+        elif column.lstrip("-") == "rating":
+            # Like every other column: `order_by=-rating` is best first, `order_by=rating` worst first.
+            prefix = "-" if column.startswith("-") else ""
+            columns.extend(f"{prefix}{name}" for name in RATING_ORDERING)
         else:
             columns.append(column)
     return Ordering(columns)
@@ -157,13 +164,17 @@ class EntryPaginator(SecuredView):
             .distinct()
         )
         search = entry_filter.search
+        entries = entries.annotate(rating_score=rating_score())
 
         # Extraction columns of the admin list (IP-018), only when asked for: they are subqueries.
         if extraction_admin.wants_entry_columns(request):
             entries = extraction_admin.annotate_entries(entries)
 
         def context(items):
-            result = {"lcp_states": lcp_state_mapping(request.user, items)}
+            result = {
+                "lcp_states": lcp_state_mapping(request.user, items),
+                "own_ratings": own_ratings(request.user, [item.pk for item in items]),
+            }
             if search is not None:
                 result["search_hits"] = describe_hits(search, items)
             return result
@@ -345,6 +356,7 @@ class EntryDetail(SecuredView):
                 entry,
                 context={
                     "shelf_entries": shelf_record_mapping(request.user),
+                    "own_ratings": own_ratings(request.user, [entry.pk]),
                     "request": request,
                     "lcp_states": lcp_state_mapping(request.user, [entry]),
                 },

@@ -71,6 +71,11 @@ ENTRY_SUMMARY_SCHEMA = {
         "summary_truncated": {"type": "boolean"},
         "page_count": {"type": "integer"},
         "popularity": {"type": "integer"},
+        "rating": {
+            "type": "object",
+            "description": "Average of the published reader ratings (1-5) and how many there are.",
+            "properties": {"average": {"type": "number"}, "count": {"type": "integer"}},
+        },
         "availability": AVAILABILITY_SCHEMA,
         "on_my_shelf": {"type": "boolean"},
         "resource_uri": {"type": "string"},

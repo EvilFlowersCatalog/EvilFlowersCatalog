@@ -21,6 +21,10 @@ class S3Storage(Storage):
     def _open(self, name, mode="rb"):
         return File(self._client.get_object(settings.EVILFLOWERS_STORAGE_S3_BUCKET, name))
 
+    def open_range(self, name, offset: int, length: int):
+        """A stream of `length` bytes from `offset` (HTTP Range, #70). minio's stream cannot seek."""
+        return self._client.get_object(settings.EVILFLOWERS_STORAGE_S3_BUCKET, name, offset=offset, length=length)
+
     def _save(self, name, content):
         content_type = getattr(content, "content_type", None)
 

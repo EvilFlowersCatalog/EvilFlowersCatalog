@@ -1,6 +1,8 @@
 import ast
 import logging
 
+from django import db
+from django.db import transaction
 from django.core.management.base import BaseCommand
 from celery.events import EventReceiver
 from kombu import Connection
@@ -26,8 +28,22 @@ class Command(BaseCommand):
 
         # One span per event (IP-019), so its queries form one trace instead of
         # each being a root span. The event type is a closed set (task-*).
-        with _tracer.start_as_current_span(f"celery.event {event['type']}"):
-            self._record(event)
+        # A bad event is logged and skipped (#108): an exception escaping here ends
+        # `recv.capture()`, and Celery does not queue events for an absent listener,
+        # so every event sent until supervisord restarts it would be lost too.
+        try:
+            with _tracer.start_as_current_span(f"celery.event {event['type']}"), transaction.atomic():
+                self._record(event)
+        except Exception as error:
+            logger.exception(
+                "Skipping Celery event: type=%s task_id=%s parent_id=%s",
+                event.get("type"),
+                event.get("uuid"),
+                event.get("parent_id"),
+            )
+            if isinstance(error, db.DatabaseError):
+                # A failed query may leave the connection unusable; the next event reconnects.
+                db.close_old_connections()
 
     def _record(self, event):
         try:

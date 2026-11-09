@@ -83,7 +83,7 @@ class AcquisitionDetail(SecuredView):
         )
 
     @openapi.metadata(
-        description="Remove an acquisition file from the catalog. This deletes the database record immediately, while the actual file removal occurs later during the orphaned files cleanup process. This action is irreversible.",
+        description="Remove an acquisition file from the catalog. This deletes the database record and, once the deletion commits, the stored file with it. This action is irreversible.",
         tags=["Acquisitions"],
         summary="Delete acquisition file",
     )

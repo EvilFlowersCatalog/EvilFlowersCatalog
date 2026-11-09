@@ -22,6 +22,7 @@ from apps.core.models import Acquisition, Entry, UserAcquisition, AnnotationItem
 from apps.core.modifiers import InvalidPage
 from apps.core.services.activity import ActivityService
 from apps.core.views import SecuredView
+from apps.files.ranges import is_continuation, ranged_file_response
 from apps.files.services import AcquisitionStorageError, AcquisitionStorageService
 from evil_flowers_catalog import domain_metrics
 
@@ -97,11 +98,24 @@ class AcquisitionDownload(SecuredView):
                         type=UserAcquisition.UserAcquisitionType.PERSONAL,
                     )
             else:
-                user_acquisition = UserAcquisition.objects.create(
-                    acquisition=acquisition,
-                    user=request.user,
-                    type=UserAcquisition.UserAcquisitionType.PERSONAL,
-                )
+                # A ranged reader re-requests the same download many times; only its first request opens a copy.
+                user_acquisition = None
+                if is_continuation(request):
+                    user_acquisition = (
+                        UserAcquisition.objects.filter(
+                            acquisition=acquisition,
+                            user=request.user,
+                            type=UserAcquisition.UserAcquisitionType.PERSONAL,
+                        )
+                        .order_by("-created_at")
+                        .first()
+                    )
+                if user_acquisition is None:
+                    user_acquisition = UserAcquisition.objects.create(
+                        acquisition=acquisition,
+                        user=request.user,
+                        type=UserAcquisition.UserAcquisitionType.PERSONAL,
+                    )
 
             params = request.GET.copy()
 
@@ -114,15 +128,16 @@ class AcquisitionDownload(SecuredView):
                 + params.urlencode()
             )
 
-        # Atomic popularity increment (IP-010 M8 pattern).
-        Entry.objects.filter(pk=acquisition.entry_id).update(popularity=F("popularity") + 1)
+        if not is_continuation(request):
+            # Atomic popularity increment (IP-010 M8 pattern).
+            Entry.objects.filter(pk=acquisition.entry_id).update(popularity=F("popularity") + 1)
 
-        ActivityService.record(
-            request.user,
-            acquisition.entry,
-            UserActivity.ActivityAction.ENTRY_DOWNLOADED,
-            {"acquisition_id": str(acquisition.pk), "mime": acquisition.mime, "via": "acquisition"},
-        )
+            ActivityService.record(
+                request.user,
+                acquisition.entry,
+                UserActivity.ActivityAction.ENTRY_DOWNLOADED,
+                {"acquisition_id": str(acquisition.pk), "mime": acquisition.mime, "via": "acquisition"},
+            )
 
         if request.GET.get("format", None) == "base64":
             if acquisition.storage_backend == Acquisition.StorageBackend.EXTERNAL_URL:
@@ -135,12 +150,13 @@ class AcquisitionDownload(SecuredView):
             return response
 
         try:
-            response = AcquisitionStorageService.download_response(acquisition)
+            response = AcquisitionStorageService.download_response(acquisition, request)
         except AcquisitionStorageError as exc:
             raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND) from exc
 
         response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE
-        domain_metrics.record_acquisition_served(acquisition.mime, "acquisition", "file")
+        if not is_continuation(request):
+            domain_metrics.record_acquisition_served(acquisition.mime, "acquisition", "file")
         return response
 
 
@@ -164,26 +180,31 @@ class UserAcquisitionDownload(SecuredView):
 
         _check_ip_block(request, user_acquisition.acquisition.entry)
 
-        user_acquisition.acquisition.entry.popularity = user_acquisition.acquisition.entry.popularity + 1
-        user_acquisition.acquisition.entry.save()
+        modified = user_acquisition.acquisition.mime in settings.EVILFLOWERS_MODIFIERS
+        # A personalised copy is rendered anew on every request and so is always served whole.
+        counted = modified or not is_continuation(request)
 
-        ActivityService.record(
-            request.user,
-            user_acquisition.acquisition.entry,
-            UserActivity.ActivityAction.ENTRY_DOWNLOADED,
-            {
-                "acquisition_id": str(user_acquisition.acquisition_id),
-                "mime": user_acquisition.acquisition.mime,
-                "via": "user_acquisition",
-            },
-        )
+        if counted:
+            user_acquisition.acquisition.entry.popularity = user_acquisition.acquisition.entry.popularity + 1
+            user_acquisition.acquisition.entry.save()
+
+            ActivityService.record(
+                request.user,
+                user_acquisition.acquisition.entry,
+                UserActivity.ActivityAction.ENTRY_DOWNLOADED,
+                {
+                    "acquisition_id": str(user_acquisition.acquisition_id),
+                    "mime": user_acquisition.acquisition.mime,
+                    "via": "user_acquisition",
+                },
+            )
 
         sanitized_filename = (
             f"{slugify(user_acquisition.acquisition.entry.title.lower())}"
             f"{guess_extension(user_acquisition.acquisition.mime)}"
         )
 
-        if user_acquisition.acquisition.mime in settings.EVILFLOWERS_MODIFIERS:
+        if modified:
             modifier = import_string(settings.EVILFLOWERS_MODIFIERS[user_acquisition.acquisition.mime])(
                 context={
                     "id": str(uuid.uuid4()) if request.user.is_anonymous else str(user_acquisition.id),
@@ -226,9 +247,21 @@ class UserAcquisitionDownload(SecuredView):
             domain_metrics.record_acquisition_served(mime, "user_acquisition", "base64")
             return response
 
-        response = FileResponse(content, as_attachment=True, filename=sanitized_filename)
+        if modified:
+            # No Accept-Ranges: `generated_at` differs per render, so two ranges would not fit together.
+            response = FileResponse(content, as_attachment=True, filename=sanitized_filename)
+        else:
+            response = ranged_file_response(
+                request,
+                content.storage,
+                content.name,
+                content_type=mime or None,
+                filename=sanitized_filename,
+                as_attachment=True,
+            )
         response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE
-        domain_metrics.record_acquisition_served(mime, "user_acquisition", "file")
+        if counted:
+            domain_metrics.record_acquisition_served(mime, "user_acquisition", "file")
         return response
 
 
@@ -245,7 +278,9 @@ class EntryImageDownload(SecuredView):
         if not entry.image.storage.exists(entry.image.name):
             raise ProblemDetailException(_("Entry image file not found"), status=HTTPStatus.NOT_FOUND)
 
-        response = FileResponse(entry.image, filename=sanitized_filename)
+        response = ranged_file_response(
+            request, entry.image.storage, entry.image.name, content_type=entry.image_mime, filename=sanitized_filename
+        )
         response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC
         return response
 
@@ -266,8 +301,12 @@ class EntryThumbnailDownload(SecuredView):
         if not entry.thumbnail.storage.exists(entry.thumbnail.name):
             raise ProblemDetailException(_("Entry thumbnail file not found"), status=HTTPStatus.NOT_FOUND)
 
-        response = FileResponse(
-            streaming_content=entry.thumbnail, filename=sanitized_filename, content_type=thumbnail_mime
+        response = ranged_file_response(
+            request,
+            entry.thumbnail.storage,
+            entry.thumbnail.name,
+            content_type=thumbnail_mime,
+            filename=sanitized_filename,
         )
         response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC
         return response

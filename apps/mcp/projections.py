@@ -214,6 +214,8 @@ def entry_summary(
             "summary_truncated": summary_truncated or None,
             "page_count": instance.page_count,
             "popularity": instance.popularity or None,
+            # IP-023: only rated entries carry it; `_compact` drops the None.
+            "rating": instance.rating if instance.rating_count and instance.rating else None,
             "availability": availability(lcp_states.get(instance.pk)),
             "on_my_shelf": True if instance.pk in shelf_records else None,
             "resource_uri": uris.entry_uri(instance.pk),

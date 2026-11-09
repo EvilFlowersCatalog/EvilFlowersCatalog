@@ -3,7 +3,7 @@ from typing import Optional
 
 import django_filters
 from django.core.exceptions import ValidationError
-from django.db.models import Q, Value, CharField, Exists, OuterRef
+from django.db.models import Q, Value, CharField, Exists, ExpressionWrapper, F, FloatField, OuterRef
 from django.db.models.functions import Concat
 from django.utils.translation import gettext as _
 from partial_date import PartialDate
@@ -177,6 +177,13 @@ class EntryFilter(BaseSecuredFilter):
         help_text=(
             "Filter entries by acquisition media type (e.g. `application/pdf`, `application/epub+zip`). "
             "Accepts a comma-separated list; values are OR-ed."
+        ),
+    )
+    rating_min = django_filters.NumberFilter(
+        method="filter_rating_min",
+        help_text=(
+            "Entries whose average rating (published reviews, IP-023) is at least this value, e.g. `?rating_min=4`. "
+            "Entries without a rating are left out."
         ),
     )
     fulltext = django_filters.BooleanFilter(
@@ -360,6 +367,14 @@ class EntryFilter(BaseSecuredFilter):
         if not mimes:
             return qs
         return qs.filter(Exists(Acquisition.objects.filter(entry_id=OuterRef("pk"), mime__in=mimes)))
+
+    @staticmethod
+    def filter_rating_min(qs, name, value):
+        if value is None:
+            return qs
+        # average >= value  <=>  rating_sum >= value * rating_count, with no division and no NULLs.
+        threshold = ExpressionWrapper(F("rating_count") * Value(float(value)), output_field=FloatField())
+        return qs.filter(rating_count__gt=0, rating_sum__gte=threshold)
 
     @staticmethod
     def filter_fulltext(qs, name, value):

@@ -11,18 +11,22 @@ Compare storage with the database, both ways.
 
 Dry run by default. `--delete-orphans` removes the orphan directories (never
 anything a row still references); missing files can only be reported — the
-fix is restoring them from a backup or re-uploading.
+fix is restoring them from a backup or re-uploading. `--min-age-hours` keeps an
+orphan whose newest file is younger than that; the periodic
+`apps.tasks.tasks.cleanup_orphans` (#30) always passes it.
 
     python manage.py storage_audit
     python manage.py storage_audit --catalog openresearchlibrary --format json
-    python manage.py storage_audit --delete-orphans
+    python manage.py storage_audit --delete-orphans --min-age-hours 168
 """
 
 import json
 import uuid
+from datetime import datetime, timedelta
 from typing import Iterator, Optional
 
 from django.core.management import BaseCommand, CommandError
+from django.utils import timezone
 
 from apps.core.models import Acquisition, Catalog, Entry
 from apps.files.signals import delete_folder
@@ -40,6 +44,18 @@ def _is_uuid(value: str) -> bool:
     return True
 
 
+def _newest_modification(storage, folder: str) -> Optional[datetime]:
+    """Latest modification time of any file under `folder`, or None when it holds no file."""
+    try:
+        directories, files = storage.listdir(folder)
+    except FileNotFoundError:
+        return None
+    times = [storage.get_modified_time(f"{folder}/{name}") for name in files]
+    times += [_newest_modification(storage, f"{folder}/{name}") for name in directories]
+    times = [moment for moment in times if moment is not None]
+    return max(times, default=None)
+
+
 class Command(BaseCommand):
     help = "Report orphan directories and missing files in storage; optionally delete the orphans"
 
@@ -52,6 +68,15 @@ class Command(BaseCommand):
             action="store_true",
             help="Only look for orphans (one storage call per file is slow on S3).",
         )
+        parser.add_argument(
+            "--min-age-hours",
+            type=float,
+            default=None,
+            help=(
+                "Keep an orphan directory holding a file modified within this many hours. Guards against "
+                "files of a publication whose row is not committed yet (#30)."
+            ),
+        )
 
     def handle(self, *args, **options):
         storage = get_storage()
@@ -62,8 +87,18 @@ class Command(BaseCommand):
         orphans = list(self._orphans(storage, catalog_filter))
         missing = [] if options["skip_missing"] else list(self._missing(storage, catalog_filter))
 
+        min_age_hours = options.get("min_age_hours")
+        if min_age_hours is not None:
+            cutoff = timezone.now() - timedelta(hours=min_age_hours)
+            for orphan in orphans:
+                newest = _newest_modification(storage, orphan["path"])
+                if newest is not None and newest > cutoff:
+                    orphan["recent"] = True
+
         if options["delete_orphans"]:
             for orphan in orphans:
+                if orphan.get("recent"):
+                    continue
                 delete_folder(orphan["path"])
                 orphan["deleted"] = True
 
@@ -73,7 +108,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.MIGRATE_HEADING(f"Orphan directories ({len(orphans)})"))
         for orphan in orphans:
-            mark = " [deleted]" if orphan.get("deleted") else ""
+            mark = " [deleted]" if orphan.get("deleted") else " [recent, kept]" if orphan.get("recent") else ""
             self.stdout.write(f"  {orphan['kind']:<8} {orphan['path']}{mark}")
 
         if not options["skip_missing"]:

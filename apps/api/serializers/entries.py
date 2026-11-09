@@ -8,6 +8,7 @@ from pydantic_core.core_schema import ValidationInfo
 
 from apps.api.serializers import Serializer
 from apps.api.serializers.feeds import FeedSerializer
+from apps.api.serializers.reviews import EntryRatingSerializer
 from apps.core.models import Acquisition
 
 
@@ -99,6 +100,8 @@ class EntrySerializer:
         # noinspection PyDataclass
         acquisitions: List[AcquisitionSerializer.Base] = Field(default_factory=list, validate_default=True)
         popularity: int
+        # IP-023: average and count of published reviews, `mine` from `serializer_context["own_ratings"]`.
+        rating: Optional[EntryRatingSerializer] = Field(default=None, validate_default=True)
         title: str
         summary: Optional[str]
         image_url: Optional[str] = Field(serialization_alias="image", default=None, validate_default=True)
@@ -159,6 +162,13 @@ class EntrySerializer:
             if row is None:
                 return v
             return row.get(info.field_name, v)
+
+        @field_validator("rating", mode="before")
+        def add_own_rating(cls, v, info: ValidationInfo):
+            if not isinstance(v, dict):
+                return v
+            mine = (info.context or {}).get("own_ratings", {}).get(info.data.get("id"))
+            return {**v, "mine": mine}
 
         @field_validator("shelf_record_id", mode="before")
         def generate_shelf_record_id(cls, v, info: ValidationInfo) -> Optional[UUID]:

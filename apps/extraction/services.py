@@ -7,6 +7,7 @@ service over Celery; the services post their results back through
 
 import logging
 import shutil
+import uuid
 from typing import Iterable, List, Optional
 
 from django.conf import settings
@@ -22,6 +23,8 @@ from evil_flowers_catalog.celery import app
 logger = logging.getLogger(__name__)
 
 _ANALYZER_TASK_NAME = "evilflowers_analyzer.extract"
+#: Namespace of the analyzer task ids. Fixed: changing it changes every task id.
+_TASK_ID_NAMESPACE = uuid.UUID("5b0e8a52-7c1d-4f3e-9a6b-2d8f4c1e7a90")
 
 
 class RunNotRunning(Exception):
@@ -70,19 +73,29 @@ def queue(acquisition: Acquisition, *, force: bool = False) -> Optional[Extracti
     return run
 
 
+def task_id(acquisition_id, pipeline_version: int) -> str:
+    """The Celery task id of the analyzer task for one acquisition and pipeline version.
+
+    Deterministic, so the admin can find the task in the broker, and a UUID, because
+    every consumer of Celery task ids assumes one: `JobProtocol.id`/`parent` are UUID
+    columns and a non-UUID id crashed the event listener (#108).
+    """
+    return str(uuid.uuid5(_TASK_ID_NAMESPACE, f"extract:{acquisition_id}:v{pipeline_version}"))
+
+
 def _send(kwargs: dict) -> None:
-    task_id = f"extract:{kwargs['acquisition_id']}:v{kwargs['pipeline_version']}"
+    task_id_ = task_id(kwargs["acquisition_id"], kwargs["pipeline_version"])
     try:
         app.send_task(
             _ANALYZER_TASK_NAME,
             kwargs=kwargs,
             queue=settings.EVILFLOWERS_EXTRACTION_QUEUE,
-            task_id=task_id,
+            task_id=task_id_,
         )
     except Exception:
-        logger.exception("Failed to queue extraction: task_id=%s", task_id)
+        logger.exception("Failed to queue extraction: task_id=%s run_id=%s", task_id_, kwargs["run_id"])
         return
-    logger.info("Queued extraction: task_id=%s run_id=%s", task_id, kwargs["run_id"])
+    logger.info("Queued extraction: task_id=%s run_id=%s", task_id_, kwargs["run_id"])
 
 
 def _reset(run: ExtractionRun) -> None:

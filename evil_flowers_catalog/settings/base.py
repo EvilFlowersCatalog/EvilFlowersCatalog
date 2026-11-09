@@ -89,7 +89,7 @@ MIDDLEWARE = [
     # GZip compresses the highly-repetitive OPDS Atom XML and entry JSON
     # payloads (which now carry ~15 LCP fields per entry). Placed high so it
     # wraps the response body produced by the middleware below it.
-    "django.middleware.gzip.GZipMiddleware",
+    "apps.api.middleware.gzip.GZipMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -122,8 +122,15 @@ TEMPLATES = [
 WSGI_APPLICATION = "evil_flowers_catalog.wsgi.application"
 
 
+def _bool_env(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 # Database
-# https://docs.djangoproject.com/en/3.1/ref/settings/#databases
+# https://docs.djangoproject.com/en/stable/ref/settings/#databases
 
 DATABASES = {
     "default": {
@@ -133,6 +140,10 @@ DATABASES = {
         "NAME": os.getenv("PGDATABASE"),
         "USER": os.getenv("PGUSER"),
         "PASSWORD": os.getenv("PGPASSWORD", None),
+        # Behind PgBouncer in transaction mode (#103) a named server-side cursor
+        # (`QuerySet.iterator()`) can land on another server connection on its next
+        # fetch. Session mode and direct connections keep streaming cursors.
+        "DISABLE_SERVER_SIDE_CURSORS": _bool_env("PGBOUNCER_TRANSACTION_POOLING", default=False),
     }
 }
 
@@ -513,13 +524,9 @@ EVILFLOWERS_SEARCH_VECTOR_CANDIDATES = int(os.getenv("EVILFLOWERS_SEARCH_VECTOR_
 EVILFLOWERS_SEARCH_RRF_K = int(os.getenv("EVILFLOWERS_SEARCH_RRF_K", 60))
 # Weight of the vector channel in the fusion (the words weigh 1.0).
 EVILFLOWERS_SEARCH_VECTOR_WEIGHT = float(os.getenv("EVILFLOWERS_SEARCH_VECTOR_WEIGHT", 0.5))
-
-
-def _bool_env(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+# Search inside publications (`GET /api/v1/entries/passages`, #60): paragraphs at least this similar
+# to the query. Uncalibrated, starts at the entry threshold; calibrate with VECTOR_MIN_SCORE on dev.
+EVILFLOWERS_SEARCH_PASSAGE_MIN_SCORE = float(os.getenv("EVILFLOWERS_SEARCH_PASSAGE_MIN_SCORE", 0.8))
 
 
 # Dataverse integration
@@ -591,6 +598,14 @@ EVILFLOWERS_BASE_URL = os.getenv("EVILFLOWERS_BASE_URL", EVILFLOWERS_READIUM_BAS
 # Elvíra / Digital Library Elvira" on STU deployments).
 EVILFLOWERS_NOTIFICATION_LIBRARY_NAME = os.getenv("EVILFLOWERS_NOTIFICATION_LIBRARY_NAME", "Evil Flowers Catalog")
 
+# Ratings and reviews (IP-023)
+EVILFLOWERS_REVIEWS_ENABLED = _bool_env("EVILFLOWERS_REVIEWS_ENABLED", default=True)
+EVILFLOWERS_REVIEWS_BODY_MAX_CHARS = int(os.getenv("EVILFLOWERS_REVIEWS_BODY_MAX_CHARS", 5000))
+# `order_by=rating` sorts by a Bayesian average: PRIOR_WEIGHT imaginary ratings of PRIOR_MEAN are added
+# to every entry, so one 5-star rating does not outrank forty 4.8 ratings.
+EVILFLOWERS_REVIEWS_PRIOR_MEAN = float(os.getenv("EVILFLOWERS_REVIEWS_PRIOR_MEAN", 3.0))
+EVILFLOWERS_REVIEWS_PRIOR_WEIGHT = float(os.getenv("EVILFLOWERS_REVIEWS_PRIOR_WEIGHT", 5))
+
 # personal activity history retention
 EVILFLOWERS_ACTIVITY_RETENTION_DAYS = int(os.getenv("EVILFLOWERS_ACTIVITY_RETENTION_DAYS", 365))
 
@@ -599,6 +614,13 @@ EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium", "assistant", "extraction"
 
 # Backups
 EVILFLOWERS_BACKUP_PGDUMP_BIN = os.getenv("EVILFLOWERS_BACKUP_PGDUMP_BIN", "pg_dump")
+# Orphan cleanup (#30): cron expression (`m h dom mon dow`) of the beat job; unset = off.
+EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE = os.getenv("EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE")
+# Orphan directories holding a file younger than this are kept.
+EVILFLOWERS_ORPHAN_CLEANUP_MIN_AGE_HOURS = float(os.getenv("EVILFLOWERS_ORPHAN_CLEANUP_MIN_AGE_HOURS", 7 * 24))
+# Direct PostgreSQL host/port for pg_dump, bypassing PgBouncer (#103). Unset = PGHOST/PGPORT.
+EVILFLOWERS_BACKUP_PGHOST = os.getenv("EVILFLOWERS_BACKUP_PGHOST") or None
+EVILFLOWERS_BACKUP_PGPORT = os.getenv("EVILFLOWERS_BACKUP_PGPORT") or None
 EVILFLOWERS_BACKUP_SCHEDULE = os.getenv("EVILFLOWERS_BACKUP_SCHEDULE")
 EVILFLOWERS_BACKUP_DESTINATION = os.getenv("EVILFLOWERS_BACKUP_DESTINATION")
 EVILFLOWERS_BACKUP_S3_HOST = os.environ.get("EVILFLOWERS_BACKUP_S3_HOST")

@@ -31,6 +31,7 @@ class UserActivity(BaseModel):
         LICENSE_DOWNLOADED = "license_downloaded", _("License downloaded")
         SHELF_ADDED = "shelf_added", _("Added to shelf")
         SHELF_REMOVED = "shelf_removed", _("Removed from shelf")
+        ENTRY_REVIEWED = "entry_reviewed", _("Entry reviewed")
         ACQUISITION_SHARED = "acquisition_shared", _("Acquisition shared")
         LOAN_CREATED = "loan_created", _("Loan created")
         LOAN_RENEWED = "loan_renewed", _("Loan renewed")

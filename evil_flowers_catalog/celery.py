@@ -87,13 +87,24 @@ def _setup_telemetry_in_beat(**kwargs):
     telemetry.setup("celery-beat")
 
 
+def _cron(expression: str) -> crontab:
+    minute, hour, day_of_month, month_of_year, day_of_week = expression.split()
+    return crontab(
+        minute=minute, hour=hour, day_of_month=day_of_month, month_of_year=month_of_year, day_of_week=day_of_week
+    )
+
+
 if settings.EVILFLOWERS_BACKUP_DESTINATION and settings.EVILFLOWERS_BACKUP_SCHEDULE:
-    minute, hour, day_of_month, month_of_year, day_of_week = settings.EVILFLOWERS_BACKUP_SCHEDULE.strip().split(" ")
     app.conf.beat_schedule["backup"] = {
         "task": "apps.tasks.tasks.backup",
-        "schedule": crontab(
-            minute=minute, hour=hour, day_of_month=day_of_month, month_of_year=month_of_year, day_of_week=day_of_week
-        ),
+        "schedule": _cron(settings.EVILFLOWERS_BACKUP_SCHEDULE),
+    }
+
+# #30: delete storage directories no row owns, older than EVILFLOWERS_ORPHAN_CLEANUP_MIN_AGE_HOURS.
+if settings.EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE:
+    app.conf.beat_schedule["files-cleanup-orphans"] = {
+        "task": "apps.tasks.tasks.cleanup_orphans",
+        "schedule": _cron(settings.EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE),
     }
 
 # IP-003: reservation queue + lifecycle notifications.

@@ -22,7 +22,19 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 
 from apps.core.auth import JWTFactory
-from apps.core.models import ApiKey, AuthSource, Catalog, Entry, Feed, ShelfRecord, User
+from apps.core.models import (
+    Acquisition,
+    ApiKey,
+    AuthSource,
+    Author,
+    Catalog,
+    Category,
+    Entry,
+    EntryAuthor,
+    Feed,
+    ShelfRecord,
+    User,
+)
 from apps.opds.schema import Link, LinkType
 from apps.readium.models import License
 
@@ -109,6 +121,55 @@ class NotModifiedTests(FeedConditionalGetTestCase):
         sk = self.client.get(COMPLETE, headers={"Accept-Language": "sk"}).headers["ETag"]
         en = self.client.get(COMPLETE, headers={"Accept-Language": "en"}).headers["ETag"]
         self.assertNotEqual(sk, en)
+
+
+class ChangesWithoutEntrySaveTests(FeedConditionalGetTestCase):
+    """#72 follow-up: edits that never call `Entry.save()` still change the feed's validator."""
+
+    def assertInvalidates(self, change):
+        etag = self.client.get(COMPLETE).headers["ETag"]
+        change()
+        self.assertEqual(self.revalidate(COMPLETE, etag).status_code, 200)
+
+    def test_adding_and_removing_a_category(self):
+        category = Category.objects.create(creator=self.owner, catalog=self.catalog, term="physics")
+        self.assertInvalidates(lambda: self.plain.categories.add(category))
+        self.assertInvalidates(lambda: self.plain.categories.remove(category))
+
+    def test_classifying_from_the_category_side(self):
+        category = Category.objects.create(creator=self.owner, catalog=self.catalog, term="physics")
+        self.assertInvalidates(lambda: category.entries.add(self.plain))
+        self.assertInvalidates(lambda: category.entries.clear())
+
+    def test_renaming_a_category(self):
+        category = Category.objects.create(creator=self.owner, catalog=self.catalog, term="physics")
+        self.plain.categories.add(category)
+
+        def rename():
+            category.term = "astrophysics"
+            category.save()
+
+        self.assertInvalidates(rename)
+
+    def test_adding_and_renaming_an_author(self):
+        author = Author.objects.create(catalog=self.catalog, name="Ada", surname="Lovelace")
+        self.assertInvalidates(lambda: EntryAuthor.objects.create(entry=self.plain, author=author, position=0))
+
+        def rename():
+            author.surname = "King"
+            author.save()
+
+        self.assertInvalidates(rename)
+
+    def test_deleting_an_acquisition(self):
+        with override_settings(EVILFLOWERS_EVENT_BROKER_EXECUTOR=None):
+            acquisition = Acquisition.objects.create(
+                entry=self.plain,
+                mime="application/pdf",
+                storage_backend=Acquisition.StorageBackend.EXTERNAL_URL,
+                file_url="https://example.org/book.pdf",
+            )
+        self.assertInvalidates(acquisition.delete)
 
 
 class PerUserValidatorTests(FeedConditionalGetTestCase):

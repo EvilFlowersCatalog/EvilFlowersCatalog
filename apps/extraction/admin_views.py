@@ -198,11 +198,6 @@ def not_extractable_reason(acquisition: Acquisition) -> Optional[str]:
     return None
 
 
-def task_id(acquisition_id, pipeline_version: int) -> str:
-    """The id `services.queue` sends the analyzer task under."""
-    return f"extract:{acquisition_id}:v{pipeline_version}"
-
-
 def run_stats(run: ExtractionRun) -> RunStatsSerializer:
     regions = run.regions.aggregate(
         figures=Count("id", filter=Q(kind=Region.Kind.FIGURE)),
@@ -261,7 +256,7 @@ def queue_depths(client) -> List[QueueDepthSerializer]:
 def queued_task(client, acquisition_id, pipeline_version: int) -> QueueTaskSerializer:
     """Where the acquisition's analyzer task waits in the broker, if it does."""
     name = settings.EVILFLOWERS_EXTRACTION_QUEUE
-    identifier = task_id(acquisition_id, pipeline_version)
+    identifier = services.task_id(acquisition_id, pipeline_version)
     task = QueueTaskSerializer(task_id=identifier, queue=name)
     if client is None:
         return task
