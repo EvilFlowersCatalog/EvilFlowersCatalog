@@ -51,9 +51,10 @@ logconfig_dict = {
 
 
 def worker_exit(server, worker):
-    """Flush telemetry in the worker process as it leaves (runs in the child)."""
+    """Flush telemetry and profiles in the worker process as it leaves (runs in the child)."""
     try:
-        from evil_flowers_catalog import telemetry
+        from evil_flowers_catalog import profiling, telemetry
     except Exception:  # the app may have failed to load
         return
     telemetry.shutdown()
+    profiling.shutdown()

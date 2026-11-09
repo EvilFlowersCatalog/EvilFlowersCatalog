@@ -46,6 +46,7 @@ in without a collector change because:
 | Service graph draws Postgres, Redis and external APIs from CLIENT spans with `db.system.name` / `server.address` | psycopg, redis, requests and the LLM client emit CLIENT spans. `OTEL_SEMCONV_STABILITY_OPT_IN=http,database` (the default) gives them the stable attribute names. |
 | Span metrics and exemplars | `http.server.request.duration` (seconds, with `http.route`). Histograms carry trace exemplars (SDK default `trace_based` filter). |
 | Beyla skips processes that already export OTel | The process exports OTLP, and the Compose file **must** set `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` (see below). The endpoint the app discovers is set in-process, so it never appears in `/proc/<pid>/environ`. |
+| Pyroscope eBPF profiles every container | Where it cannot unwind Python, the Pyroscope SDK takes over (see [Profiles](#profiles)). |
 | cAdvisor has container CPU and memory | Not duplicated. Only per-process metrics: `process.cpu.time`, `process.memory.usage`, `process.thread.count`, `process.open_file_descriptor.count`, `cpython.gc.collections`. |
 
 ### Resource attributes
@@ -121,6 +122,36 @@ Mimir stores dotted names with underscores and unit suffixes, for example
 JSON on stdout/stderr, as above. The gunicorn access log is off: the server span and
 `http.server.request.duration` replace it. Gunicorn's own error log, supervisord and Celery use
 the same JSON format. `EVILFLOWERS_LOG_FORMAT=text` gives readable lines for a terminal.
+
+### Profiles
+
+The node's eBPF profiler (`pyroscope.ebpf` in Alloy) cannot always unwind Python. On k8s node
+`control` the kernel verifier rejects its Python unwinder, and the profiles stop at
+`_PyEval_EvalFrameDefault`. The Pyroscope SDK (`pyroscope-io`, `evil_flowers_catalog/profiling.py`)
+samples the interpreter from inside the process, so its profiles name the views, ORM calls and
+Celery tasks ([#111](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/111)).
+
+| Variable | Meaning |
+|---|---|
+| `PYROSCOPE_SERVER_ADDRESS` | Pyroscope URL, for example `http://pyroscope.observability.svc.cluster.local:4040`. Unset or empty: off. |
+| `PYROSCOPE_APPLICATION_NAME` | Becomes `service_name`. Default: `OTEL_SERVICE_NAME`, then `evilflowers`. |
+| `PYROSCOPE_TAGS` | `key=value,key=value`, for example `namespace=evilflowers-dev,pod=<pod>,container=evilflowers,cluster=k8s-stu`. |
+
+- Every process adds a `role` tag (`gunicorn`, `celery-worker`, `celery-beat`, `event-handler`),
+  unless `PYROSCOPE_TAGS` sets one.
+- 100 Hz, on-CPU only, threads with and without the GIL (`gil_only=False`).
+- The sampler is a native thread, and threads do not survive `fork()`. It starts in the same
+  places as the OpenTelemetry SDK, after the fork: in `wsgi.py` for a gunicorn worker (not in
+  `post_fork`, which runs before gevent patches the worker), on `worker_process_init` for a Celery
+  child, on `beat_init` and in the event handler's `handle()`. It stops, uploading the last
+  samples, on `worker_exit`, `worker_process_shutdown` and at exit.
+- With tracing on, root spans carry `pyroscope.profile.id` (`pyroscope-otel`), which Grafana's
+  Tempo `tracesToProfiles` link follows. Not in the gunicorn workers: the profile is tagged per OS
+  thread, and a gevent worker runs many requests on one thread, so their tags would mix. Celery
+  tasks, beat and the event handler are linked.
+- When the SDK profiles a pod, the eBPF profiler should skip it, or each process is profiled
+  twice. On k8s the knowledge repository's `pyroscope_sdk` list sets the variables above and the
+  pod label `elvira.stuba.sk/profiling=pyroscope-sdk` that the eBPF profiler skips.
 
 ## Local
 

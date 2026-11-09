@@ -12,8 +12,12 @@ locks are therefore created green, in the process that uses them.
 
 Order inside the module matters too:
 1. `django.setup()` applies `LOGGING`, so the telemetry log lines are JSON.
-2. `telemetry.setup()` installs the providers and the client instrumentations.
-3. `instrument_django()` inserts the OpenTelemetry middleware into
+2. `profiling.setup()` starts the Pyroscope SDK (#111), when configured. It runs
+   here and not in gunicorn's `post_fork` hook because `post_fork` runs before
+   gevent patches the worker, and importing the project there would import
+   Celery and the settings unpatched.
+3. `telemetry.setup()` installs the providers and the client instrumentations.
+4. `instrument_django()` inserts the OpenTelemetry middleware into
    `settings.MIDDLEWARE`; the chain is built by `get_wsgi_application()`.
 """
 
@@ -25,8 +29,10 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "evil_flowers_catalog.settings.d
 
 django.setup(set_prefix=False)
 
-from evil_flowers_catalog import telemetry  # noqa: E402
+from evil_flowers_catalog import profiling, telemetry  # noqa: E402
 
+# Before telemetry: it links spans to profiles only when the profiler runs.
+profiling.setup("gunicorn")
 if telemetry.setup("gunicorn"):
     telemetry.instrument_django()
 

@@ -9,7 +9,7 @@ from kombu import Connection
 from django.utils import timezone
 
 from apps.tasks.models import JobProtocol
-from evil_flowers_catalog import telemetry
+from evil_flowers_catalog import profiling, telemetry
 from evil_flowers_catalog.celery import app
 
 logger = logging.getLogger(__name__)
@@ -101,6 +101,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         # IP-019: this process is started by supervisord and never forks.
         # SIGTERM becomes SystemExit so `atexit` flushes the exporters.
+        profiling.setup("event-handler")
         telemetry.setup("event-handler")
         telemetry.exit_on_sigterm()
 

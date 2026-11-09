@@ -57,33 +57,38 @@ def _discover_collector(sender=None, **kwargs):
     none) through the environment, so they neither probe nor log again. With a
     non-forking pool the tasks run here, so this process is the one to set up.
     """
-    from evil_flowers_catalog import telemetry
+    from evil_flowers_catalog import profiling, telemetry
 
     telemetry.discover_endpoint()
     if sender is not None and not _is_prefork(sender):
+        profiling.setup("celery-worker")
         telemetry.setup("celery-worker")
 
 
 @worker_process_init.connect
 def _setup_telemetry_in_child(**kwargs):
-    from evil_flowers_catalog import telemetry
+    # Profiling first: telemetry links spans to profiles only when it runs (#111).
+    from evil_flowers_catalog import profiling, telemetry
 
+    profiling.setup("celery-worker")
     telemetry.setup("celery-worker")
 
 
 @worker_process_shutdown.connect
 def _flush_telemetry_in_child(**kwargs):
     # Prefork children leave through `os._exit()`, which skips `atexit`.
-    from evil_flowers_catalog import telemetry
+    from evil_flowers_catalog import profiling, telemetry
 
     telemetry.shutdown()
+    profiling.shutdown()
 
 
 @beat_init.connect
 def _setup_telemetry_in_beat(**kwargs):
     # Beat turns SIGTERM into SystemExit itself, so `atexit` flushes on exit.
-    from evil_flowers_catalog import telemetry
+    from evil_flowers_catalog import profiling, telemetry
 
+    profiling.setup("celery-beat")
     telemetry.setup("celery-beat")
 
 

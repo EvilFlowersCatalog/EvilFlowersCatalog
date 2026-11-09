@@ -8,6 +8,9 @@ One entry point, `setup(role)`, called once per process *after* it has forked
 - Celery beat: the `beat_init` signal
 - `manage.py celery_event_handler`: at the start of `handle()`
 
+`profiling.setup(role)` (the Pyroscope SDK, #111) runs at each of these just
+before, so `_link_profiles` can add its span processor.
+
 Configuration is the standard `OTEL_*` environment and nothing else. The only
 thing this module adds is *where the collector is*: when no endpoint is
 configured it looks for the node's Grafana Alloy agent at the container's
@@ -272,6 +275,7 @@ def _configure(role: str, span_exporters: List[str], metric_exporters: List[str]
     tracer_provider = TracerProvider(resource=resource)
     for processor in _span_processors(span_exporters):
         tracer_provider.add_span_processor(processor)
+    _link_profiles(tracer_provider)
     trace.set_tracer_provider(tracer_provider)
 
     # The SDK's default exemplar filter is `trace_based`, so histogram points
@@ -334,6 +338,18 @@ def _span_processors(names: List[str]):
         else:
             logger.warning("OpenTelemetry: unsupported traces exporter %r ignored", name)
     return processors
+
+
+def _link_profiles(tracer_provider) -> None:
+    """Root spans carry `pyroscope.profile.id` when the Pyroscope SDK runs here (#111).
+
+    Needs `profiling.setup()` to have run first in this process.
+    """
+    from evil_flowers_catalog import profiling
+
+    processor = profiling.span_processor()
+    if processor is not None:
+        tracer_provider.add_span_processor(processor)
 
 
 def _metric_readers(names: List[str]):

@@ -57,6 +57,9 @@ opentelemetry-instrumentation-celery = "0.66b2"
 opentelemetry-instrumentation-requests = "0.66b2"
 opentelemetry-instrumentation-system-metrics = "0.66b2"
 opentelemetry-resource-detector-containerid = "0.66b2"
+# Continuous profiling with Python frames (#111); on only with PYROSCOPE_SERVER_ADDRESS.
+pyroscope-io = "1.4.0"
+pyroscope-otel = "1.1.0"
 
 [tool.poetry.group.docker.dependencies]
 gunicorn = "^25.0.0"
