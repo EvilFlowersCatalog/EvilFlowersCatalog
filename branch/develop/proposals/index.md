@@ -28,6 +28,7 @@ changes are documented before implementation.
 | IP-019 | [OpenTelemetry Observability for the Elvira LGTM Stack](posts/ip-019-opentelemetry-observability.md) | ✅ Implemented (verified locally; review questions answered; not yet deployed) | 2026-11-06 |
 | IP-020 | [Catalog Search Phase 1 — In-Database Full-Text Search, Relevance, Highlights and Facets](posts/ip-020-catalog-search-phase-1.md) | 📝 Draft (implemented and tested locally, awaiting review answers; dev timings and Thorium check open) | 2026-11-09 |
 | IP-021 | [Catalog Search Phase 2 — BM25, Semantic Hybrid Search and One Embedding Model](posts/ip-021-catalog-search-phase-2-hybrid.md) | 📝 Draft (catalog implemented and tested with pg_search + real TEI; text-service, cluster and dev measurements open; awaiting review answers) | 2026-11-09 |
+| IP-022 | [Assistant Intelligence on a Self-Hosted CPU Model](posts/ip-022-assistant-intelligence.md) | 📝 Draft (Phases 1–3 implemented with recommended answers and tested locally with a scripted model; deployment steps on knowledge#11; not yet run on `elvira-assistant`; awaiting review answers) | 2026-11-09 |
 | IP-023 | [Ratings and Reviews for Entries](posts/ip-023-entry-ratings-and-reviews.md) | 📝 Draft (implemented with recommended answers and tested locally; awaiting review answers, portal widgets open) | 2026-11-09 |
 
 **Note on the Readium cluster.** IP-001, IP-003 (feature scope), IP-004, IP-007, IP-008,

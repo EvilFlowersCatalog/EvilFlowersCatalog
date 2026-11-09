@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "55ad462a6156c22cc56188075f539827cabecfa1",
-    "short": "55ad462",
-    "message": "Profiling",
+    "sha": "5f6ddb55fa6cff47fecaf536822ab2db9c11c23d",
+    "short": "5f6ddb5",
+    "message": "Intranet ollama",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/55ad462a6156c22cc56188075f539827cabecfa1"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/5f6ddb55fa6cff47fecaf536822ab2db9c11c23d"
   },
-  "deployed_at": "2026-11-09T11:39:06Z",
+  "deployed_at": "2026-11-09T15:35:20Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
