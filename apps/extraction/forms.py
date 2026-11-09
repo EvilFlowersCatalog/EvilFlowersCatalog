@@ -1,3 +1,5 @@
+import math
+
 from django import forms
 from django_api_forms import FieldList, Form, FormFieldList
 
@@ -103,7 +105,10 @@ class ParagraphForm(Form):
     section = forms.CharField(required=False)
     bbox = forms.JSONField()
     text = forms.CharField(strip=False)
-    embedding = FieldList(forms.FloatField(), required=False)
+    # A list of numbers, checked in one pass in `clean_embedding`. `FieldList(FloatField())` ran a
+    # Django field clean (with a deepcopy) per dimension, 1024 per paragraph and up to 1000 paragraphs
+    # a request: form validation was ~5 % of the app's CPU on dev.
+    embedding = forms.JSONField(required=False)
     sentences = FormFieldList(SentenceForm, required=False)
 
     def clean_bbox(self):
@@ -111,9 +116,15 @@ class ParagraphForm(Form):
 
     def clean_embedding(self):
         embedding = self.cleaned_data.get("embedding") or None
-        if embedding is not None and len(embedding) != EMBEDDING_DIMENSIONS:
+        if embedding is None:
+            return None
+        if not isinstance(embedding, list) or not all(
+            type(value) in (int, float) and math.isfinite(value) for value in embedding
+        ):
+            raise forms.ValidationError("Expected a list of finite numbers.")
+        if len(embedding) != EMBEDDING_DIMENSIONS:
             raise forms.ValidationError(f"Expected {EMBEDDING_DIMENSIONS} dimensions, got {len(embedding)}.")
-        return embedding
+        return [float(value) for value in embedding]
 
     def clean(self):
         self.cleaned_data["section"] = self.cleaned_data.get("section") or None

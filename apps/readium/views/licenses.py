@@ -20,6 +20,7 @@ from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
 from apps.api.response import PaginationResponse, SingleResponse
+from apps.api.serializers.entries import with_entry_graph
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.core.views import SecuredView
 from apps.readium.enums import LicenseAction
@@ -53,7 +54,7 @@ class LicenseManagement(SecuredView):
     def get(self, request):
         licenses = LicenseFilter(
             request.GET,
-            queryset=License.objects.select_related("entry").prefetch_related("entry__authors"),
+            queryset=with_entry_graph(License.objects.all(), "entry"),
             request=request,
         ).qs
 

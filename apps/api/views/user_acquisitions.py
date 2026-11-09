@@ -10,6 +10,7 @@ from apps import openapi
 from apps.api.filters.user_acquisitions import UserAcquisitionFilter
 from apps.api.forms.user_acquisitions import UserAcquisitionForm
 from apps.api.response import PaginationResponse, SingleResponse, SeeOtherResponse
+from apps.api.serializers.entries import with_entry_graph
 from apps.api.serializers.user_acquisitions import UserAcquisitionSerializer
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.core.models import UserAcquisition, UserActivity
@@ -28,15 +29,11 @@ class UserAcquisitionManagement(SecuredView):
         # The Base serializer renders `user`, `acquisition` and a full `entry`
         # (via the `acquisition.entry` property) for every row, so eager-load
         # the whole chain to keep the list from fanning out into an N+1.
-        user_acquisitions = (
-            UserAcquisitionFilter(request.GET, queryset=UserAcquisition.objects.all(), request=request)
-            .qs.select_related("user", "acquisition", "acquisition__entry", "acquisition__entry__language")
-            .prefetch_related(
-                "acquisition__entry__entry_authors__author",
-                "acquisition__entry__categories",
-                "acquisition__entry__feeds",
-                "acquisition__entry__acquisitions",
-            )
+        user_acquisitions = with_entry_graph(
+            UserAcquisitionFilter(
+                request.GET, queryset=UserAcquisition.objects.all(), request=request
+            ).qs.select_related("user"),
+            "acquisition__entry",
         )
 
         return PaginationResponse(

@@ -12,6 +12,7 @@ from contextlib import nullcontext
 from unittest import mock
 
 import requests
+from django.core.cache import cache
 from django.db import connection
 from django.test import SimpleTestCase, TestCase, override_settings
 
@@ -87,8 +88,37 @@ class EmbeddingClientTests(SimpleTestCase):
     @mock.patch("apps.core.search.embeddings.requests.request", side_effect=requests.ConnectionError("down"))
     @mock.patch("apps.core.search.embeddings.time.sleep")
     def test_try_embed_query_degrades_to_none(self, sleep, request):
+        self.addCleanup(cache.delete, embeddings.UNAVAILABLE_KEY)
         with override_settings(EVILFLOWERS_EMBEDDING_MODEL=MODEL):
             self.assertIsNone(embeddings.try_embed_query("cokoľvek"))
+
+    @mock.patch("apps.core.search.embeddings.requests.request", side_effect=requests.ReadTimeout("slow"))
+    @mock.patch("apps.core.search.embeddings.time.sleep")
+    def test_a_query_timeout_is_not_retried_and_trips_the_breaker(self, sleep, request):
+        self.addCleanup(cache.delete, embeddings.UNAVAILABLE_KEY)
+        with override_settings(EVILFLOWERS_EMBEDDING_MODEL=MODEL):
+            self.assertIsNone(embeddings.try_embed_query("pomalý"))
+            self.assertEqual(request.call_count, 1)
+            sleep.assert_not_called()
+            # While the breaker is open the next search does not wait for TEI at all.
+            self.assertIsNone(embeddings.try_embed_query("ďalší"))
+            self.assertEqual(request.call_count, 1)
+
+    @mock.patch("apps.core.search.embeddings.requests.request")
+    def test_a_rejected_query_does_not_open_the_breaker(self, request):
+        self.addCleanup(cache.delete, embeddings.UNAVAILABLE_KEY)
+        request.return_value = self.response(status=413)
+        with override_settings(EVILFLOWERS_EMBEDDING_MODEL=MODEL):
+            self.assertIsNone(embeddings.try_embed_query("príliš dlhý"))
+            request.return_value = self.response(payload=[[0.5]])
+            self.assertEqual(embeddings.try_embed_query("iný dotaz"), [0.5])
+
+    @mock.patch("apps.core.search.embeddings.time.sleep")
+    @mock.patch("apps.core.search.embeddings.requests.request", side_effect=requests.ReadTimeout("slow"))
+    def test_a_batch_timeout_is_retried(self, request, sleep):
+        with self.assertRaises(embeddings.EmbeddingError):
+            embeddings.embed_documents(["x"])
+        self.assertEqual(request.call_count, embeddings.RETRIES + 1)
 
     @override_settings(EVILFLOWERS_EMBEDDING_HOST="embed.elvira.internal")
     @mock.patch("apps.core.search.embeddings.requests.request")

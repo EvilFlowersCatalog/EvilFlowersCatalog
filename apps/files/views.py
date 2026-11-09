@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import ipaddress
 import logging
 import uuid
@@ -10,6 +11,8 @@ from django.conf import settings
 from django.db.models import F
 from django.http import FileResponse
 from django.urls import reverse
+from django.utils.cache import get_conditional_response
+from django.utils.http import http_date, quote_etag
 from django.utils.module_loading import import_string
 from django.utils.text import slugify
 from django.utils.translation import gettext as _
@@ -286,48 +289,82 @@ class UserAcquisitionDownload(SecuredView):
         return response
 
 
+def _cover_etag(entry: Entry, file) -> str:
+    """Validator for a cover or thumbnail, computed without opening the file.
+
+    A new upload is a new file name, and saving the entry bumps `touched_at`, so
+    either change rolls the ETag. A file swapped in place under the same name by
+    a bulk `QuerySet.update()` would not; nothing in the catalog does that.
+    """
+    raw = f"{entry.pk}|{file.name}|{entry.touched_at.isoformat() if entry.touched_at else ''}"
+    return quote_etag(hashlib.sha256(raw.encode()).hexdigest()[:32])
+
+
+def _cover_entry(entry_id: uuid.UUID, field: str, missing: str) -> Entry:
+    """The entry behind a cover or thumbnail, with only the columns serving it reads (#126).
+
+    A home page asks for ~65 thumbnails at once; the full row carries `content`,
+    `table_of_contents` and the search columns.
+    """
+    try:
+        entry = Entry.objects.only("id", "title", "image_mime", "thumbnail_mime", "touched_at", field).get(
+            pk=entry_id, **{f"{field}__isnull": False}
+        )
+    except Entry.DoesNotExist:
+        raise ProblemDetailException(missing, status=HTTPStatus.NOT_FOUND)
+    # An entry without a cover stores "" rather than NULL; serving it opened the storage root (500).
+    if not getattr(entry, field):
+        raise ProblemDetailException(missing, status=HTTPStatus.NOT_FOUND)
+    return entry
+
+
+def _cover_response(request, entry: Entry, file, content_type, filename: str):
+    """Serve a cover or thumbnail behind its ETag (IP-027).
+
+    `public, no-cache` lets the browser and nginx keep a copy but makes them
+    revalidate it; a matching `If-None-Match` (or `If-Modified-Since`) is
+    answered here with a 304, before storage is touched — not even to check
+    that the file exists (#126).
+    """
+    etag = _cover_etag(entry, file)
+    last_modified = int(entry.touched_at.timestamp()) if entry.touched_at else None
+    response = get_conditional_response(request, etag=etag, last_modified=last_modified)
+    if response is None:
+        if not file.storage.exists(file.name):
+            raise ProblemDetailException(_("Entry image file not found"), status=HTTPStatus.NOT_FOUND)
+        response = ranged_file_response(request, file.storage, file.name, content_type=content_type, filename=filename)
+    response["ETag"] = etag
+    if last_modified is not None:
+        response["Last-Modified"] = http_date(last_modified)
+    response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC
+    return response
+
+
 class EntryImageDownload(SecuredView):
+    # Covers are not access-controlled (cover ACLs are IP-010), so the caller never changes the response:
+    # the `?access_token=` the portal appends is not verified (a JWT check and a user SELECT per image, #126),
+    # and a page of covers from one campus NAT address is not counted against its anonymous request budget.
+    authenticates = False
+    rate_limited = False
+
     @openapi.metadata(description="Download Entry cover image", tags=["Files"])
     def get(self, request, entry_id: uuid.UUID):
-        try:
-            entry = Entry.objects.get(pk=entry_id, image__isnull=False)
-        except Entry.DoesNotExist:
-            raise ProblemDetailException(_("Entry image not found"), status=HTTPStatus.NOT_FOUND)
-
-        sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime)}"
-
-        if not entry.image.storage.exists(entry.image.name):
-            raise ProblemDetailException(_("Entry image file not found"), status=HTTPStatus.NOT_FOUND)
-
-        response = ranged_file_response(
-            request, entry.image.storage, entry.image.name, content_type=entry.image_mime, filename=sanitized_filename
-        )
-        response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC
-        return response
+        entry = _cover_entry(entry_id, "image", _("Entry image not found"))
+        sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime or '') or ''}"
+        return _cover_response(request, entry, entry.image, entry.image_mime, sanitized_filename)
 
 
 class EntryThumbnailDownload(SecuredView):
+    # See `EntryImageDownload`.
+    authenticates = False
+    rate_limited = False
+
     @openapi.metadata(description="Download Entry thumbnail", tags=["Files"])
     def get(self, request, entry_id: uuid.UUID):
-        try:
-            entry = Entry.objects.get(pk=entry_id, thumbnail__isnull=False)
-        except Entry.DoesNotExist:
-            raise ProblemDetailException(_("Entry thumbnail not found"), status=HTTPStatus.NOT_FOUND)
+        entry = _cover_entry(entry_id, "thumbnail", _("Entry thumbnail not found"))
 
         # thumbnail_mime is set when the thumbnail is generated (JPEG for most
         # covers); legacy rows predate the field and fall back to image_mime.
         thumbnail_mime = entry.thumbnail_mime or entry.image_mime
-        sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(thumbnail_mime)}"
-
-        if not entry.thumbnail.storage.exists(entry.thumbnail.name):
-            raise ProblemDetailException(_("Entry thumbnail file not found"), status=HTTPStatus.NOT_FOUND)
-
-        response = ranged_file_response(
-            request,
-            entry.thumbnail.storage,
-            entry.thumbnail.name,
-            content_type=thumbnail_mime,
-            filename=sanitized_filename,
-        )
-        response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC
-        return response
+        sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(thumbnail_mime or '') or ''}"
+        return _cover_response(request, entry, entry.thumbnail, thumbnail_mime, sanitized_filename)

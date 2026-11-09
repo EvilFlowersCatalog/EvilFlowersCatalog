@@ -22,6 +22,10 @@ class SecuredView(View):
     #: the password. Everything else answers 403 with `/password-change-required` until they do.
     allowed_while_password_change_required = False
 
+    #: False on a view whose response does not depend on the caller (cover, thumbnail): any credential sent
+    #: along is ignored instead of costing a JWT verification and a user lookup per request (#126).
+    authenticates = True
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._backends: Dict[str, BaseBackend] = {}
@@ -29,6 +33,9 @@ class SecuredView(View):
             self._backends[schema.lower()] = load_backend(backend)
 
     def _authenticate(self, request) -> Union[AnonymousUser, AbstractBaseUser]:
+        if not self.authenticates:
+            return AnonymousUser()
+
         auth_header = request.headers.get("Authorization", "")
 
         if not auth_header:

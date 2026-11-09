@@ -52,6 +52,12 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Fixed**: `GET /api/v1/entries?query=` keeps the relevance ranking instead of falling back to `created_at`; an explicit `order_by` still wins ([#60](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/60))
 - **Fixed**: ISBN/DOI already stored as a URI (`urn:isbn:…`, `https://doi.org/…`) is no longer prefixed twice in OPDS identifiers and in the LCP package manifest; the manifest now uses the same identifier URI as the feeds
 - **Fixed**: CI Docker build fails at "Install poetry" on a stale apt index ([#97](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/97))
+- **Fixed**: N+1 queries in list endpoints ([#124](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/124)) — `GET /api/v1/entries`, `/api/v1/feeds`, `/api/v1/activity`, `/api/v1/shelf-records`, `/api/v1/user-acquisitions`, `/readium/v1/licenses` and `/readium/v1/reservations` now cost the same number of queries for any page size: the feed serializer reads prefetched `parents`/`children`, feeds come with their catalog, and every view nesting entries prefetches the same entry graph (`with_entry_graph`)
+- **Fixed**: Bearer authentication imports the RSA JWK once per process instead of on every request (a third of the app's CPU on dev) and verifies with its public half; an API key's `last_seen_at` is written at most once a minute instead of saving the whole row per request ([#125](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/125))
+- **Fixed**: Covers and thumbnails ([#126](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/126)) ignore any credential (they are not access-controlled; IP-010) and are not rate limited, load only the columns they serve, and answer `If-None-Match`/`If-Modified-Since` with a 304 before storage is touched; `Last-Modified` is sent. An entry without a cover answers 404 instead of 500
+- **Fixed**: A search no longer waits ~9 s while `tei-embed` is slow: a reader's query is not retried on timeouts or connection errors (429/503 still are), and for 30 s after a failure searches skip TEI and stay lexical
+- **Fixed**: The Celery event listener stores task arguments holding sets, tuples or bytes (`set is not JSON serializable` lost the job protocol)
+- **Changed**: Extraction ingest validates a paragraph `embedding` as one list of finite numbers instead of a form field per dimension (~5 % of the app's CPU on dev); a number sent as a string is now rejected
 
 ## 0.14.0 : 2026-09-10
 

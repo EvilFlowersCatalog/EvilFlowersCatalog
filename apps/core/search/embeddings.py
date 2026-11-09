@@ -8,7 +8,9 @@ The model is `intfloat/multilingual-e5-large-instruct` (1024 dimensions, 512 tok
 2. At most 32 inputs per request; longer texts are truncated by TEI (`truncate: true`).
 3. The model id and revision (`GET /info`) travel with every stored vector: vectors of two models are
    never compared.
-4. 2 s timeout for a query, 60 s for a batch, 3 retries with backoff on 429/503.
+4. 2 s timeout for a query, 60 s for a batch, 3 retries with backoff on 429/503. Batches also retry
+   timeouts and connection errors; a reader's query does not, and after a failure queries skip TEI
+   for `UNAVAILABLE_SECONDS`.
 
 Unconfigured (`EVILFLOWERS_EMBEDDING_URL` empty) the client is disabled and search stays lexical.
 """
@@ -29,6 +31,9 @@ QUERY_TIMEOUT = 2
 BATCH_TIMEOUT = 60
 RETRIES = 3
 RETRY_STATUSES = (429, 503)
+#: After a reader's query could not be embedded, skip TEI for this long (search degrades to lexical).
+UNAVAILABLE_KEY = "evilflowers:embedding:unavailable"
+UNAVAILABLE_SECONDS = 30
 
 #: Instructions for e5-instruct queries, per task.
 INSTRUCTIONS = {
@@ -40,6 +45,10 @@ INSTRUCTIONS = {
 
 class EmbeddingError(Exception):
     """TEI is unconfigured, unreachable or answered with an error."""
+
+
+class EmbeddingUnavailable(EmbeddingError):
+    """TEI did not answer (timeout, connection error) or stayed overloaded (429/503) after the retries."""
 
 
 def enabled() -> bool:
@@ -61,7 +70,12 @@ def _headers() -> dict:
     return headers
 
 
-def _request(method: str, path: str, *, timeout: float, json=None):
+def _request(method: str, path: str, *, timeout: float, json=None, retry_errors: bool = True):
+    """Call TEI, retrying 429/503 with backoff.
+
+    A timeout or connection error is retried only when `retry_errors` (batches). A reader's query
+    is not: four 2 s timeouts plus backoff held `GET /api/v1/entries?query=` for ~9 s while TEI was slow.
+    """
     if not enabled():
         raise EmbeddingError("EVILFLOWERS_EMBEDDING_URL is not set")
     last_error = None
@@ -69,6 +83,8 @@ def _request(method: str, path: str, *, timeout: float, json=None):
         try:
             response = requests.request(method, _url(path), headers=_headers(), json=json, timeout=timeout)
         except requests.RequestException as error:
+            if not retry_errors:
+                raise EmbeddingUnavailable(str(error)) from error
             last_error = error
         else:
             if response.status_code not in RETRY_STATUSES:
@@ -78,7 +94,7 @@ def _request(method: str, path: str, *, timeout: float, json=None):
             last_error = EmbeddingError(f"TEI {path} answered {response.status_code}")
         if attempt < RETRIES:
             time.sleep(0.2 * 2**attempt)
-    raise EmbeddingError(str(last_error))
+    raise EmbeddingUnavailable(str(last_error))
 
 
 def model_id() -> str:
@@ -89,7 +105,7 @@ def model_id() -> str:
     cached = cache.get("evilflowers:embedding:model")
     if cached:
         return cached
-    info = _request("GET", "/info", timeout=QUERY_TIMEOUT)
+    info = _request("GET", "/info", timeout=QUERY_TIMEOUT, retry_errors=False)
     value = f"{info.get('model_id')}@{info.get('model_sha') or 'unknown'}"
     cache.set("evilflowers:embedding:model", value, 3600)
     return value
@@ -123,7 +139,11 @@ def embed_query(text: str, task: str = "entries") -> List[float]:
     vector = cache.get(key)
     if vector is None:
         vector = _request(
-            "POST", "/embed", timeout=QUERY_TIMEOUT, json={"inputs": [prompt], "normalize": True, "truncate": True}
+            "POST",
+            "/embed",
+            timeout=QUERY_TIMEOUT,
+            json={"inputs": [prompt], "normalize": True, "truncate": True},
+            retry_errors=False,
         )[0]
         cache.set(key, vector, 600)
     return vector
@@ -131,17 +151,22 @@ def embed_query(text: str, task: str = "entries") -> List[float]:
 
 def try_embed_query(text: str, task: str = "entries") -> Optional[List[float]]:
     """`embed_query`, or None (logged) when TEI is unconfigured or down: callers degrade to lexical search."""
-    if not enabled():
+    if not enabled() or cache.get(UNAVAILABLE_KEY):
         return None
     try:
         return embed_query(text, task)
     except EmbeddingError as error:
+        if isinstance(error, EmbeddingUnavailable):
+            # Searches in the next UNAVAILABLE_SECONDS stay lexical instead of each waiting for the same
+            # timeout. A 4xx about this one query says nothing about TEI, so it does not open the breaker.
+            cache.set(UNAVAILABLE_KEY, True, UNAVAILABLE_SECONDS)
         logger.warning("Query not embedded, searching without vectors: %s", error)
         return None
 
 
 __all__ = [
     "EmbeddingError",
+    "EmbeddingUnavailable",
     "embed_documents",
     "embed_query",
     "enabled",

@@ -29,6 +29,7 @@ from apps.api.serializers.entries import (
     EntrySearchMetadata,
     EntrySerializer,
     EntrySuggestionSerializer,
+    with_entry_graph,
 )
 from apps.api.services.entry import EntryService
 from apps.core.search.query import describe_hits
@@ -152,16 +153,7 @@ class EntryPaginator(SecuredView):
     )
     def get(self, request):
         entry_filter = EntryFilter(request.GET, queryset=Entry.objects.all(), request=request)
-        entries = (
-            entry_filter.qs.select_related("language")
-            .prefetch_related(
-                "entry_authors__author",
-                "categories",
-                "feeds",
-                "acquisitions",
-            )
-            .distinct()
-        )
+        entries = with_entry_graph(entry_filter.qs).distinct()
         search = entry_filter.search
         entries = entries.annotate(rating_score=rating_score())
 
@@ -323,16 +315,7 @@ class EntryDetail(SecuredView):
         checker: str = "check_entry_manage",
     ) -> Entry:
         try:
-            entry = (
-                Entry.objects.select_related("language")
-                .prefetch_related(
-                    "entry_authors__author",
-                    "categories",
-                    "feeds",
-                    "acquisitions",
-                )
-                .get(pk=entry_id, catalog_id=catalog_id)
-            )
+            entry = with_entry_graph(Entry.objects.all()).get(pk=entry_id, catalog_id=catalog_id)
         except Entry.DoesNotExist:
             raise ProblemDetailException(_("Entry not found"), status=HTTPStatus.NOT_FOUND)
 

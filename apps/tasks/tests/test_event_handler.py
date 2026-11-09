@@ -39,6 +39,13 @@ class EventHandlerTests(TestCase):
         self.command.handle_event(event("task-started", uuid=task_id, hostname="worker@1"))
         self.assertEqual(JobProtocol.objects.get(pk=task_id).worker, "worker@1")
 
+    def test_args_holding_a_set_are_stored(self):
+        task_id = str(uuid.uuid4())
+        self.command.handle_event(event(uuid=task_id, args="({'b', 'a'}, b'x', (1, 2))", kwargs="{'ids': {3}, 1: ()}"))
+        protocol = JobProtocol.objects.get(pk=task_id)
+        self.assertEqual(protocol.job_args, [["a", "b"], "b'x'", [1, 2]])
+        self.assertEqual(protocol.job_kwargs, {"ids": [3], "1": []})
+
     def test_extraction_task_and_its_follow_up_are_recorded(self):
         parent = services.task_id(uuid.uuid4(), 2)
         child = str(uuid.uuid4())

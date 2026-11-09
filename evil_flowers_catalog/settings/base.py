@@ -96,6 +96,9 @@ MIDDLEWARE = [
     # Honours If-Modified-Since / If-None-Match against Last-Modified / ETag so
     # clients that re-poll feeds get a cheap 304 instead of a full re-render.
     "django.middleware.http.ConditionalGetMiddleware",
+    # Default Cache-Control / Vary for responses that set none (IP-027). Below
+    # ConditionalGet so a 304 carries the same headers as the 200 it replaces.
+    "apps.api.middleware.cache_control.CacheControlMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "apps.api.middleware.exceptions.ExceptionMiddleware",
@@ -313,12 +316,20 @@ EVILFLOWERS_STORAGE_S3_SECRET_KEY = os.getenv("EVILFLOWERS_STORAGE_S3_SECRET_KEY
 EVILFLOWERS_STORAGE_S3_SECURE = bool(int(os.getenv("EVILFLOWERS_STORAGE_S3_SECURE", 0)))
 EVILFLOWERS_STORAGE_S3_BUCKET = os.getenv("EVILFLOWERS_STORAGE_S3_BUCKET")
 
-# Cache-Control for file-serving endpoints (issue #29).
-# - PUBLIC: cover images / thumbnails. Safe to cache on shared caches and CDNs.
+# Default Cache-Control for responses whose view sets none (IP-027,
+# `apps.api.middleware.cache_control`). Unsafe methods and errors always get
+# `no-store`. `no-cache` keeps every reuse behind a revalidation; the ETag from
+# ConditionalGetMiddleware makes that a cheap 304.
+EVILFLOWERS_CACHE_CONTROL_DEFAULT = os.getenv("EVILFLOWERS_CACHE_CONTROL_DEFAULT", "private, no-cache")
+
+# Cache-Control for file-serving endpoints (issue #29, IP-027).
+# - PUBLIC: cover images / thumbnails. Shared caches may store them, but must
+#   revalidate: the ETag (entry id, file name, `touched_at`) answers a 304
+#   without touching storage, and a replaced cover shows up at once.
 # - PRIVATE: acquisition and user-acquisition downloads. Per-user, may carry
 #   watermarks or personalised modifications; never shared.
 # Override via env to integrate with nginx / CDN policy.
-EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC = os.getenv("EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC", "public, max-age=86400")
+EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC = os.getenv("EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC", "public, no-cache")
 EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE = os.getenv(
     "EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE", "private, max-age=0, must-revalidate"
 )

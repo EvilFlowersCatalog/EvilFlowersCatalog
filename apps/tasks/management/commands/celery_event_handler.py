@@ -16,6 +16,29 @@ logger = logging.getLogger(__name__)
 _tracer = telemetry.get_tracer("apps.tasks.event_handler")
 
 
+def _literal(raw: str, fallback):
+    """A task's repr'd args/kwargs/result as JSON-storable data.
+
+    `literal_eval` also yields sets, tuples and bytes, which a JSONField rejects: every such event
+    failed its insert and the protocol was lost (243 `set is not JSON serializable` a day on dev).
+    """
+    try:
+        return _json_safe(ast.literal_eval(raw))
+    except (ValueError, SyntaxError, MemoryError, RecursionError):
+        return fallback
+
+
+def _json_safe(value):
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        items = [_json_safe(item) for item in value]
+        return sorted(items, key=repr) if isinstance(value, (set, frozenset)) else items
+    if isinstance(value, (bytes, bytearray, complex)):
+        return repr(value)
+    return value
+
+
 class Command(BaseCommand):
     help = "Listen to Celery task events and store them in the database"
 
@@ -55,20 +78,11 @@ class Command(BaseCommand):
                 name=event.get("name", "unknown"),
             )
             if event.get("args"):
-                try:
-                    protocol.job_args = ast.literal_eval(event["args"])
-                except (ValueError, SyntaxError):
-                    protocol.job_args = [event["args"]]
+                protocol.job_args = _literal(event["args"], [event["args"]])
             if event.get("kwargs"):
-                try:
-                    protocol.job_kwargs = ast.literal_eval(event["kwargs"])
-                except (ValueError, SyntaxError):
-                    protocol.job_kwargs = {"raw": event["kwargs"]}
+                protocol.job_kwargs = _literal(event["kwargs"], {"raw": event["kwargs"]})
             if event.get("result"):
-                try:
-                    protocol.result = ast.literal_eval(event["result"])
-                except (ValueError, SyntaxError):
-                    protocol.result = {"raw": event["result"]}
+                protocol.result = _literal(event["result"], {"raw": event["result"]})
 
         match event["type"]:
             case "task-received":

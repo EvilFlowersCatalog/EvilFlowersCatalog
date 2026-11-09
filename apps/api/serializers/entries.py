@@ -3,13 +3,30 @@ from enum import Enum
 from typing import List, Optional, Dict
 from uuid import UUID
 
+from django.db.models import Prefetch, QuerySet
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_core.core_schema import ValidationInfo
 
 from apps.api.serializers import Serializer
-from apps.api.serializers.feeds import FeedSerializer
+from apps.api.serializers.feeds import FeedSerializer, feed_queryset
 from apps.api.serializers.reviews import EntryRatingSerializer
 from apps.core.models import Acquisition
+
+
+def with_entry_graph(qs: QuerySet, prefix: str = "") -> QuerySet:
+    """Eager-load everything `EntrySerializer.Base` reads, so a page costs the same queries for 10 or 50 rows (#124).
+
+    `prefix` is the path to the entry from the queryset's model, e.g. `"entry"` for licences
+    or `"acquisition__entry"` for user acquisitions; `select_related` of `<prefix>__language`
+    joins the entry itself as well.
+    """
+    p = f"{prefix}__" if prefix else ""
+    return qs.select_related(f"{p}language").prefetch_related(
+        f"{p}entry_authors__author",
+        f"{p}categories",
+        Prefetch(f"{p}feeds", queryset=feed_queryset()),
+        f"{p}acquisitions",
+    )
 
 
 class LcpState(str, Enum):

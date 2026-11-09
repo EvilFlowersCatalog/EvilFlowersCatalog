@@ -33,6 +33,7 @@ changes are documented before implementation.
 | IP-024 | [Grounded Assistant Answers — Evidence Labels, Citation Checks and Robust Structured Output](posts/ip-024-grounded-assistant-answers.md) | 📝 Draft (Phases 1–5 implemented with recommended answers and tested with a scripted model; gold set, support labels and a real-model run open; awaiting review answers) | 2026-11-09 |
 | IP-025 | [Notification Branding and LDAP E-mail Import](posts/ip-025-notification-branding-ldap-contacts.md) | 📝 Draft (Phases 1–2 implemented with recommended answers and tested locally; dev backfill and IaC volume open; awaiting review answers) | 2026-11-09 |
 | IP-026 | [Request Rate Limits](posts/ip-026-request-rate-limits.md) | 📝 Draft (implemented with recommended answers and tested locally; off by default, enabling is a deployment decision; awaiting review answers) | 2026-11-09 |
+| IP-027 | [One HTTP Cache Policy, From Django to the Edge nginx](posts/ip-027-http-cache-policy.md) | 📝 Draft (catalog part implemented and tested locally; nginx part is a knowledge deployment change; #123 itself needs a portal fix; awaiting review answers) | 2026-11-09 |
 
 **Note on the Readium cluster.** IP-001, IP-003 (feature scope), IP-004, IP-007, IP-008,
 IP-009, and IP-011 together constitute the completed Readium LCP delivery and are all

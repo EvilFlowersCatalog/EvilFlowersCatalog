@@ -3,6 +3,7 @@ import binascii
 import logging
 import uuid
 from datetime import timedelta
+from functools import cache
 from http import HTTPStatus
 from typing import Optional, TypedDict, Dict
 
@@ -15,6 +16,8 @@ from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
+from django.core.signals import setting_changed
+from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.text import slugify
 from django.utils.translation import gettext as _
@@ -24,9 +27,31 @@ from apps.core.models import ApiKey, User, AuthSource, UserCatalog
 from apps.core.services.ldap_directory import apply_profile, ldap_initialize, requested_attributes, search_profile
 
 
+@cache
 def _jwt_key() -> KeyFlexible:
-    """Build a joserfc-compatible key object from the configured JWK dict."""
+    """The signing key, imported once per process (#125).
+
+    `SECURED_VIEW_JWK` is the RSA private key; importing it was a third of the
+    sampled CPU when it ran on every bearer-authenticated request.
+    """
     return import_key(settings.SECURED_VIEW_JWK)
+
+
+@cache
+def _jwt_verify_key() -> KeyFlexible:
+    """The public half of `_jwt_key`, which is all that verification needs."""
+    return import_key(_jwt_key().as_dict(private=False))
+
+
+@receiver(setting_changed)
+def _clear_jwt_keys(setting, **kwargs):
+    if setting == "SECURED_VIEW_JWK":
+        _jwt_key.cache_clear()
+        _jwt_verify_key.cache_clear()
+
+
+#: `ApiKey.last_seen_at` is written at most this often per key (#125); it was a full-row UPDATE per request.
+API_KEY_LAST_SEEN_RESOLUTION = timedelta(minutes=1)
 
 
 class JWTFactory:
@@ -97,7 +122,7 @@ class JWTFactory:
     def decode(cls, token: str):
         decoded = jwt.decode(
             token,
-            _jwt_key(),
+            _jwt_verify_key(),
             algorithms=[settings.SECURED_VIEW_JWT_ALGORITHM],
         )
         JWTClaimsRegistry().validate(decoded.claims)
@@ -117,8 +142,10 @@ class BearerBackend(ModelBackend):
             except (ApiKey.DoesNotExist, ValidationError):
                 raise ProblemDetailException(_("Invalid api key."), status=HTTPStatus.UNAUTHORIZED)
 
-            api_key.last_seen_at = timezone.now()
-            api_key.save()
+            now = timezone.now()
+            if api_key.last_seen_at is None or now - api_key.last_seen_at >= API_KEY_LAST_SEEN_RESOLUTION:
+                ApiKey.objects.filter(pk=api_key.pk).update(last_seen_at=now)
+                api_key.last_seen_at = now
             setattr(request, "api_key", api_key)
             user = api_key.user
         elif claims["type"] == "access":

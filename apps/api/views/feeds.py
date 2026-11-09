@@ -10,7 +10,7 @@ from apps.api.filters.feeds import FeedFilter
 from apps.api.forms.feeds import FeedForm
 from apps.api.response import SingleResponse, PaginationResponse, Ordering
 from apps.core.fields.localized import localize, localized_sort_key, sort_language
-from apps.api.serializers.feeds import FeedSerializer
+from apps.api.serializers.feeds import FeedSerializer, feed_queryset
 from apps.core.models import Feed
 from apps.core.views import SecuredView
 
@@ -88,7 +88,7 @@ class FeedManagement(SecuredView):
         summary="List feeds with filtering",
     )
     def get(self, request):
-        feeds = FeedFilter(request.GET, queryset=Feed.objects.all(), request=request).qs
+        feeds = FeedFilter(request.GET, queryset=feed_queryset(), request=request).qs
         # `order_by=title` sorts by the translation in `?language=` (falling back like `localize`)
         feeds = feeds.annotate(title_sort=localized_sort_key("title", sort_language(request)))
 

@@ -78,6 +78,13 @@ class IngestionFormTests(SimpleTestCase):
     def test_paragraph_rejects_wrong_dimension_and_offsets_outside_text(self):
         base = {"page": 1, "seq": 0, "bbox": BOX, "text": "Short."}
         self.assertFalse(ParagraphsForm({"paragraphs": [{**base, "embedding": [0.0, 1.0]}]}).is_valid())
+        for bad in ("x", [0.0] * (EMBEDDING_DIMENSIONS - 1) + ["0.5"], [0.0] * (EMBEDDING_DIMENSIONS - 1) + [True]):
+            self.assertFalse(ParagraphsForm({"paragraphs": [{**base, "embedding": bad}]}).is_valid(), bad)
+        nan = [0.0] * (EMBEDDING_DIMENSIONS - 1) + [float("nan")]
+        self.assertFalse(ParagraphsForm({"paragraphs": [{**base, "embedding": nan}]}).is_valid())
+        ints = ParagraphsForm({"paragraphs": [{**base, "embedding": [0] * EMBEDDING_DIMENSIONS}]})
+        self.assertTrue(ints.is_valid(), ints.errors)
+        self.assertIsInstance(ints.cleaned_data["paragraphs"][0]["embedding"][0], float)
         self.assertFalse(
             ParagraphsForm(
                 {"paragraphs": [{**base, "sentences": [{"seq": 0, "start": 0, "end": 99, "page": 1}]}]}
