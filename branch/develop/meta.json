@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "7c55e3083d95ee5cdda9c72c5f8446eaa6b1d319",
-    "short": "7c55e30",
-    "message": "Search phase 2: BM25 (pg_search) + semantic hybrid with multilingual-e5-large-instruct; remove search-service",
+    "sha": "aecbc17de06ccde7167ec5f100a7e0c4784b390c",
+    "short": "aecbc17",
+    "message": "Implementing #106 and #107",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/7c55e3083d95ee5cdda9c72c5f8446eaa6b1d319"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/aecbc17de06ccde7167ec5f100a7e0c4784b390c"
   },
-  "deployed_at": "2026-11-08T23:33:55Z",
+  "deployed_at": "2026-11-09T00:45:37Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
