@@ -30,6 +30,9 @@ changes are documented before implementation.
 | IP-021 | [Catalog Search Phase 2 — BM25, Semantic Hybrid Search and One Embedding Model](posts/ip-021-catalog-search-phase-2-hybrid.md) | 📝 Draft (catalog implemented and tested with pg_search + real TEI; text-service, cluster and dev measurements open; awaiting review answers) | 2026-11-09 |
 | IP-022 | [Assistant Intelligence on a Self-Hosted CPU Model](posts/ip-022-assistant-intelligence.md) | 📝 Draft (Phases 1–3 implemented with recommended answers and tested locally with a scripted model; deployment steps on knowledge#11; not yet run on `elvira-assistant`; awaiting review answers) | 2026-11-09 |
 | IP-023 | [Ratings and Reviews for Entries](posts/ip-023-entry-ratings-and-reviews.md) | 📝 Draft (implemented with recommended answers and tested locally; awaiting review answers, portal widgets open) | 2026-11-09 |
+| IP-024 | [Grounded Assistant Answers — Evidence Labels, Citation Checks and Robust Structured Output](posts/ip-024-grounded-assistant-answers.md) | 📝 Draft (Phases 1–5 implemented with recommended answers and tested with a scripted model; gold set, support labels and a real-model run open; awaiting review answers) | 2026-11-09 |
+| IP-025 | [Notification Branding and LDAP E-mail Import](posts/ip-025-notification-branding-ldap-contacts.md) | 📝 Draft (Phases 1–2 implemented with recommended answers and tested locally; dev backfill and IaC volume open; awaiting review answers) | 2026-11-09 |
+| IP-026 | [Request Rate Limits](posts/ip-026-request-rate-limits.md) | 📝 Draft (implemented with recommended answers and tested locally; off by default, enabling is a deployment decision; awaiting review answers) | 2026-11-09 |
 
 **Note on the Readium cluster.** IP-001, IP-003 (feature scope), IP-004, IP-007, IP-008,
 IP-009, and IP-011 together constitute the completed Readium LCP delivery and are all

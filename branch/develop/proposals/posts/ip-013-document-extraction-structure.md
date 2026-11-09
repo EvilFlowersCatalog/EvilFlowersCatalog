@@ -383,10 +383,20 @@ a page number for deep-linking; no anchor/highlight machinery is built.
    Tracked in **#66**.
 2. Which slice of the existing `Category` taxonomy should subject classification target (whole tree
    vs a curated shortlist), and what confidence threshold auto-surfaces a suggestion to curators?
-   Tracked in **#67**.
+   Tracked in **#67**. **Decided 2026-11-09** (jdubec accepted the proposed defaults on #67):
+    - **Scope:** the catalog's own flat vocabulary. For STU that is the 59 MDT (UDC) terms of catalog
+      `stu`. No tree.
+    - **Multi-label:** one primary suggestion and at most two secondary ones per entry.
+    - **Threshold:** a suggestion is surfaced to curators at confidence ≥ 0.6. Nothing is approved
+      automatically.
+    - **Curator UX:** unapproved suggestions never affect browsing, facets or recommendations.
+      Approval happens in the admin first and in the portal later.
+    - **Language:** classify against the SK and EN category labels (IP-017), whatever the book's
+      language.
+    - **Model:** the self-hosted `elvira-assistant` (Qwen3.6-35B-A3B, IP-022), not Qwen2.5-7B.
 
 Shared infra prerequisites with IP-012 are tracked in **#64** (Postgres `vector`/`pg_search`) and
-**#65** (T4 worker placement).
+**#65** (closed 2026-11-09 as superseded: no T4; inference on CPU per IP-021/IP-022).
 
 ## Success Criteria
 
@@ -511,3 +521,4 @@ tuned Slovak OCR + geometry, skips a second OCR pass). Re-OCR via ocr-worker onl
 | 2026-07-18 | jdubec | Initial draft: unified document-extraction & structure pipeline consolidating the org's scanned (books-digitalizer/ocr-worker) and born-digital (text/image/equation/analyzer/importer) prototypes; foundation for IP-012; added Review Questions |
 | 2026-07-18 | jdubec | Resolved review questions interactively: Docling unified extractor; **dropped read-time highlighting/anchoring as a non-goal** and elevated classification; caption+classify figures now with local VLM (Qwen2-VL); math free from Docling; consume the digitalizer hOCR sidecar. Retitled to "Extraction, Classification & Feature Pipeline" |
 | 2026-07-18 | jdubec | Promoted **entry-level subject classification to first-class v1** (suggestions + curator approval, `extraction_subject_suggestion`); confirmed full Docling born-digital path now; made explicit that all indexing/extraction runs as **Celery async** tasks; added the IP-013→IP-012 build-order (foundation-first) note |
+| 2026-11-09 | jdubec | Open Question 2 decided (#67): flat catalog vocabulary, 1 primary + ≤ 2 secondary suggestions, surface at ≥ 0.6, no auto-approve, unapproved suggestions invisible to browse/recommendations, SK+EN labels, Qwen3.6 via IP-022; #65 closed as superseded |
