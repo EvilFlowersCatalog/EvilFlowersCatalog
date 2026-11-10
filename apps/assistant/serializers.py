@@ -25,6 +25,8 @@ class ChatMessageSerializer:
         annotations: Optional[List[str]] = None
         #: Evidence labels cited in `text` (`[E3]`), resolved to publication and page (IP-024).
         citations: Optional[List[dict]] = None
+        #: The tool calls of the turn this answer closes, as the live `activity` frames carried them.
+        activity: Optional[List[dict]] = None
         tokens_used: int
         created_at: datetime
 
@@ -78,8 +80,13 @@ class ChatSerializer:
         def _resolve_messages(cls, v):
             # `chat.messages` is a related manager, which pydantic cannot
             # iterate; the model's Meta orders these by `created_at`. Tool
-            # traffic is internal to the replayed conversation and not shown.
-            return v.visible() if hasattr(v, "visible") else v
+            # traffic is internal to the replayed conversation and not shown as
+            # messages; it comes back as each answer's readable `activity` log.
+            if hasattr(v, "visible"):
+                from apps.assistant.activity import from_history
+
+                return from_history(v.all())
+            return v
 
 
 class ExplanationExampleSerializer(Serializer):

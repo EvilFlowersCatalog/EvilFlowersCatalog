@@ -64,3 +64,52 @@ class SummarizeTests(SimpleTestCase):
         summary = activity.summarize("read_pdf_page", {"page": 999}, text=json.dumps({"error": "No such page."}))
         self.assertTrue(summary["error"])
         self.assertNotIn("count", summary)
+
+
+class FromHistoryTests(SimpleTestCase):
+    """The log rebuilt from stored rows when a chat is read back (it was lost on refresh)."""
+
+    @staticmethod
+    def _row(pk, role, text="", tool_calls=None, tool_result=None):
+        from types import SimpleNamespace
+
+        visible = role == "user" or (role == "assistant" and tool_calls is None and bool(text))
+        return SimpleNamespace(
+            pk=pk, role=role, text=text, tool_calls=tool_calls, tool_result=tool_result, is_visible=visible
+        )
+
+    def test_answer_carries_its_turns_calls(self):
+        from apps.assistant.turn import REPEATED_CALL
+
+        def call(name, **arguments):
+            return {"function": {"name": name, "arguments": arguments}}
+
+        rows = [
+            self._row(1, "user", "books on ml?"),
+            self._row(
+                2, "assistant", tool_calls=[call("search_entries", query="ml"), call("search_entries", query="ml")]
+            ),
+            self._row(3, "tool", "{}", tool_result={"items": [{"id": "a", "title": "Deep Learning"}]}),
+            self._row(4, "tool", REPEATED_CALL),
+            self._row(5, "assistant", tool_calls=[call("displayBooks", entry_ids=["a"])]),
+            self._row(6, "tool"),
+            self._row(7, "assistant", "Here is one."),
+            self._row(8, "user", "thanks"),
+            self._row(9, "assistant", "You're welcome."),
+        ]
+        visible = activity.from_history(rows)
+
+        self.assertEqual([row.pk for row in visible], [1, 7, 8, 9])
+        self.assertEqual(
+            visible[1].activity,
+            [
+                {
+                    "tool": "search_entries",
+                    "query": "ml",
+                    "count": 1,
+                    "entries": [{"id": "a", "title": "Deep Learning"}],
+                    "id": "3",
+                }
+            ],
+        )
+        self.assertIsNone(visible[3].activity)

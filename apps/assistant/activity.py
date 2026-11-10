@@ -95,6 +95,49 @@ def _catalog_entries(name: str, payload: dict) -> List[dict]:
     return _entries(_entry(item.get("id") or item.get("entry_id"), item.get("title")) for item in items)
 
 
+def from_history(messages) -> list:
+    """The visible messages of a chat, each answer carrying the `activity` log of its turn.
+
+    `messages` are all rows of a chat in order, tool traffic included. An assistant row with `tool_calls`
+    is followed by one tool row per call, in order (`turn._run_tool` writes them so); the log is rebuilt from
+    those pairs, the same way the live `activity` frames were built, and set on the answer closing the turn.
+    `displayBooks` and repeated calls are left out, as they were live.
+    """
+    from apps.assistant.tools import is_display_books
+    from apps.assistant.turn import REPEATED_CALL
+
+    visible, pending, calls = [], [], []
+    for message in messages:
+        if message.role == "user":
+            pending, calls = [], []
+        elif message.role == "assistant" and message.tool_calls:
+            calls.extend(message.tool_calls)
+        elif message.role == "tool":
+            call = calls.pop(0) if calls else None
+            if call is None:
+                continue
+            function = call.get("function") or {}
+            name = function.get("name") or ""
+            if not name or is_display_books(name) or message.text == REPEATED_CALL:
+                continue
+            arguments = function.get("arguments")
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except (TypeError, ValueError):
+                    arguments = {}
+            arguments = arguments if isinstance(arguments, dict) else {}
+            summary = summarize(name, arguments, message.tool_result, message.text or "")
+            pending.append({**summary, "id": f"{message.pk}"})
+
+        if message.is_visible:
+            if message.role == "assistant":
+                message.activity = pending or None
+                pending = []
+            visible.append(message)
+    return visible
+
+
 def summarize(
     name: str,
     arguments: dict,
