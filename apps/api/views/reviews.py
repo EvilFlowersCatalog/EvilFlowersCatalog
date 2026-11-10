@@ -102,9 +102,10 @@ class ReviewList(SecuredView):
         _require_enabled()
         if not request.user.is_authenticated:
             raise UnauthorizedException(detail=_("You need to be logged in"))
-        if not request.user.is_superuser and not UserCatalog.objects.filter(
-            user=request.user, mode=UserCatalog.Mode.MANAGE
-        ).exists():
+        if (
+            not request.user.is_superuser
+            and not UserCatalog.objects.filter(user=request.user, mode=UserCatalog.Mode.MANAGE).exists()
+        ):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         order_by = request.GET.get("order_by", "-created_at")
