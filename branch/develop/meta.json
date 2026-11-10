@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "b6fda20611802971c8f3c35ee887b8d6b352adcd",
-    "short": "b6fda20",
-    "message": "feat: GET /api/v1/reviews lists reviews for moderation (IP-023)",
+    "sha": "e763f13a03fd4355687172222e7c86e61811211d",
+    "short": "e763f13",
+    "message": "feat(assistant): readable tool activity in the chat stream",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/b6fda20611802971c8f3c35ee887b8d6b352adcd"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e763f13a03fd4355687172222e7c86e61811211d"
   },
-  "deployed_at": "2026-11-09T23:42:09Z",
+  "deployed_at": "2026-11-10T00:20:09Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
