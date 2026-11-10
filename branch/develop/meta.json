@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "2b600b3bc19d0534216a84016bc844fe3dacc773",
-    "short": "2b600b3",
-    "message": "style: black",
+    "sha": "6f4c19fcc14a4abbce6ed99df58da5078a5b03c1",
+    "short": "6f4c19f",
+    "message": "feat(assistant): chat history carries each answer's tool activity",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/2b600b3bc19d0534216a84016bc844fe3dacc773"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/6f4c19fcc14a4abbce6ed99df58da5078a5b03c1"
   },
-  "deployed_at": "2026-11-10T00:32:39Z",
+  "deployed_at": "2026-11-10T00:41:55Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
