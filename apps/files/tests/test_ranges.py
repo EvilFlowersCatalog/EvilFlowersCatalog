@@ -162,6 +162,14 @@ class GZipSkipsFilesTests(SimpleTestCase):
         self.assertFalse(response.has_header("Content-Encoding"))
         self.assertEqual(response["Content-Length"], "2048")
 
+    def test_event_stream_not_compressed(self):
+        # gzip would hold the assistant's small SSE frames until the turn ends (elvira-portal#36).
+        from django.http import StreamingHttpResponse
+
+        response = StreamingHttpResponse(iter([b"event: status\ndata: {}\n\n"]), content_type="text/event-stream")
+        response = self.middleware.process_response(self.request, response)
+        self.assertFalse(response.has_header("Content-Encoding"))
+
     def test_other_responses_still_compressed(self):
         response = self.middleware.process_response(self.request, HttpResponse(b"a" * 1000))
         self.assertEqual(response["Content-Encoding"], "gzip")

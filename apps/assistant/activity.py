@@ -133,11 +133,9 @@ def summarize(
         # The pages are the result; no count next to them.
         summary["pages"] = [page for page in read if page is not None] or (pages or [])
     elif "results" in result or "paragraphs" in result:
+        # A search reads as "patch · 12 results"; the pages it matched are noise in the log.
         hits = result.get("paragraphs") or result.get("results") or []
         summary["count"] = len(hits)
-        found = sorted({hit.get("page") for hit in hits if isinstance(hit, dict) and hit.get("page")})
-        if found:
-            summary["pages"] = found
     elif "regions" in result:
         summary["count"] = len(result.get("regions") or [])
     elif "region" in result:

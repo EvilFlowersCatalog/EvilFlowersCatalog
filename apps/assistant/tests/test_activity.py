@@ -55,10 +55,10 @@ class SummarizeTests(SimpleTestCase):
         self.assertEqual(summary["pages"], [4, 5])
         self.assertNotIn("count", summary)
 
-    def test_pdf_search_reports_hit_pages(self):
+    def test_pdf_search_reports_a_count(self):
         text = json.dumps({"results": [{"page": 9, "score": 2}, {"page": 2, "score": 1}]})
         summary = activity.summarize("search_pdf", {"query": "entropy"}, text=text)
-        self.assertEqual(summary, {"tool": "search_pdf", "query": "entropy", "count": 2, "pages": [2, 9]})
+        self.assertEqual(summary, {"tool": "search_pdf", "query": "entropy", "count": 2})
 
     def test_error_result_is_flagged(self):
         summary = activity.summarize("read_pdf_page", {"page": 999}, text=json.dumps({"error": "No such page."}))
