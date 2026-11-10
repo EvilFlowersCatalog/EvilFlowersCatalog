@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "e763f13a03fd4355687172222e7c86e61811211d",
-    "short": "e763f13",
-    "message": "feat(assistant): readable tool activity in the chat stream",
+    "sha": "eb1110812d41d9fae49170c02e3c9c6b1c7602cd",
+    "short": "eb11108",
+    "message": "fix(assistant): stream SSE frames live, not gzipped at the end",
     "author": "Tomáš Kordoš",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e763f13a03fd4355687172222e7c86e61811211d"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/eb1110812d41d9fae49170c02e3c9c6b1c7602cd"
   },
-  "deployed_at": "2026-11-10T00:20:09Z",
+  "deployed_at": "2026-11-10T00:30:23Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
