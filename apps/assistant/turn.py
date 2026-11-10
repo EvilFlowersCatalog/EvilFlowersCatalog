@@ -16,7 +16,7 @@ from typing import Generator, Iterator, List, Optional
 
 from django.utils.translation import gettext as _
 
-from apps.assistant import evidence, explain, prompts, services, tools
+from apps.assistant import activity, evidence, explain, prompts, services, tools
 from apps.assistant.llm import Delta, LLMUnavailable, OllamaClient
 from apps.assistant.models import Chat, ChatMessage
 
@@ -333,7 +333,7 @@ def _run_tool(
         if _repeated(seen_calls, name, arguments):
             ChatMessage.objects.create(chat=chat, user=chat.user, role=ChatMessage.Role.TOOL, text=REPEATED_CALL)
             return []
-        yield sse("status", {"state": "tool", "tool": name})
+        yield sse("status", {"state": "tool", "tool": name, **activity.describe(name, arguments)})
 
     if tools.is_display_books(name):
         entry_ids = [str(entry_id) for entry_id in (arguments.get("entry_ids") or [])]
@@ -354,12 +354,14 @@ def _run_tool(
     ):
         text = yield from _create_highlights(chat, arguments, annotations if annotations is not None else [], language)
         ChatMessage.objects.create(chat=chat, user=chat.user, role=ChatMessage.Role.TOOL, text=text)
+        yield sse("activity", activity.summarize(name, arguments, text=text))
         return []
 
     if document is not None and name in explain.DOCUMENT_TOOLS:
         # The reader's own copy, read in-process exactly as explain reads it.
         text = explain.run_document_tool(document, call, pages_read if pages_read is not None else [])
         ChatMessage.objects.create(chat=chat, user=chat.user, role=ChatMessage.Role.TOOL, text=text)
+        yield sse("activity", activity.summarize(name, arguments, text=text))
         return []
 
     try:
@@ -377,4 +379,5 @@ def _run_tool(
         text=text,
         tool_result=payload,
     )
+    yield sse("activity", activity.summarize(name, arguments, payload, text))
     return []
