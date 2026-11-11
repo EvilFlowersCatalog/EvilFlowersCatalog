@@ -15,9 +15,18 @@ A case is a question plus what a good turn looks like:
 - `cites`: the answer cites at least one evidence label that resolves (IP-024).
 - `cites_entries`: every one of these publication ids is cited.
 - `cites_any_entry`: at least one of these publication ids is cited (gold cases, #118).
+- `grounded`: a question about what publications *say*. A text tool (`search_library_text`, `read_pdf_page`
+  or a bound chat's document tools) must be called, so an answer from the model's own knowledge fails even
+  when it names a real publication (#130: `sk-passage` credited a chapter to a book that has none).
+- `reads_pages`: the answer drew on pages of the chat's publication (the `pages` frame of a bound chat).
+
+A case may bind its chat to a publication, as the portal's "ask about this book" does: `entry_title` is looked
+up among the publications the user can see (titles, unlike ids, are the same on every instance), and the turn
+gets that publication's open-access PDF, as `ChatMessages` would give it (#130 C).
 
 Whatever the case expects, an answer citing a label it was never given (`[E9]` when only E1-E3 were issued)
-fails: that label is an invention, and catching it needs no gold data.
+fails: that label is an invention, and catching it needs no gold data. So does a Slovak answer with a word
+only Czech has (`knihovna`): the majority vote of `answer_language` misses a single slip (#130 B).
 
 Each case runs as a real turn (`turn.run`) in a throw-away chat of the given
 user, against whatever model the settings point at, and is scored on what the
@@ -42,9 +51,24 @@ _CZECH = re.compile(r"[řůě]|\b(jsou|který|která|které|také|nebo|můžete|
 _SLOVAK = re.compile(r"[äľĺŕô]|\b(sú|ktorý|ktorá|ktoré|tiež|alebo|môžete|nie je|požičať)\b", re.IGNORECASE)
 _SLAVIC = re.compile(r"[áčďéíňóšťúýž]", re.IGNORECASE)
 
+#: Czech words with no Slovak homograph, as they slip into otherwise Slovak answers. Kept to words that are
+#: never Slovak, so a single one is a failure (`knihovna`: #130, `sk-author`).
+_CZECH_ONLY = re.compile(
+    r"\b(knihovn[aěuyo]\w*|jsou|který|která|které|můžete|půjč\w*|vypůjč\w*|děkuji|bohužel|ještě|již)\b",
+    re.IGNORECASE,
+)
+
+#: Tools that read the text of a publication; a `grounded` case must call one.
+TEXT_TOOLS = ("search_library_text", "read_pdf_page", "search_pdf", "search_paragraphs", "list_regions")
+
 #: Model rounds a library question should need (search, maybe refine, display, answer).
 #: More is scored as a loop; on CPU each round costs seconds of prompt evaluation.
 MAX_ROUNDS_OK = 5
+
+
+def czech_words(text: str) -> List[str]:
+    """Czech-only words in `text`, lowercased, each once."""
+    return list(dict.fromkeys(match.group(0).lower() for match in _CZECH_ONLY.finditer(text or "")))
 
 
 def answer_language(text: str) -> Optional[str]:
@@ -83,6 +107,10 @@ class Outcome:
     prompt_fingerprint: str = ""
     #: Support verdicts per citation, with `run --verify` (#117).
     support: List[dict] = field(default_factory=list)
+    #: Czech-only words in a Slovak answer (#130).
+    czech_words: List[str] = field(default_factory=list)
+    #: Pages of the chat's publication the answer drew on (bound cases).
+    pages_read: int = 0
 
 
 def parse_frames(frames: Iterable[str]) -> List[tuple]:
@@ -123,6 +151,12 @@ def score(case: dict, outcome: Outcome) -> Outcome:
     wanted = expect.get("answer_language") or case.get("language")
     if wanted and outcome.answer_language and outcome.answer_language != wanted:
         failures.append(f"answered in {outcome.answer_language}, wanted {wanted}")
+    elif wanted == "sk" and outcome.czech_words:
+        failures.append(f"Czech words: {', '.join(outcome.czech_words)}")
+    if expect.get("grounded") and not called & set(TEXT_TOOLS):
+        failures.append("content answered without reading any publication")
+    if expect.get("reads_pages") and not outcome.pages_read:
+        failures.append("no page of the publication read")
     if outcome.rounds > MAX_ROUNDS_OK:
         failures.append(f"{outcome.rounds} model rounds (loop?)")
     if outcome.unknown_labels:
@@ -165,10 +199,17 @@ def run_case(user, case: dict, verify: bool = False) -> Outcome:
     outcome = Outcome(id=str(case.get("id") or case["question"][:40]), question=case["question"])
     request = evaluation_request("post")
     request.user = user
-    chat = Chat.objects.create(user=user, title=f"[evaluation] {outcome.id}")
+    try:
+        entry = _case_entry(request, case)
+    except CaseError as error:
+        # Scored as an error rather than stopping the run: the other cases still say something.
+        outcome.error = str(error)
+        return score(case, outcome)
+    chat = Chat.objects.create(user=user, title=f"[evaluation] {outcome.id}", entry=entry)
+    document = _case_document(request, entry)
 
     started = time.monotonic()
-    frames = turn.run(request, chat, case["question"], language=case.get("language"))
+    frames = turn.run(request, chat, case["question"], document=document, language=case.get("language"))
     try:
         for event, data in parse_frames(_timed(frames, outcome, started)):
             if event == "status" and data.get("state") == "thinking":
@@ -185,6 +226,8 @@ def run_case(user, case: dict, verify: bool = False) -> Outcome:
                 outcome.citations = len(citations)
                 outcome.cited_entries = list(dict.fromkeys(str(c.get("entry_id")) for c in citations))
                 outcome.unknown_labels = list(data.get("unknown") or [])
+            elif event == "pages":
+                outcome.pages_read = len(data.get("pages") or [])
             elif event == "error":
                 outcome.error = data.get("error")
         outcome.total_s = round(time.monotonic() - started, 2)
@@ -202,7 +245,43 @@ def run_case(user, case: dict, verify: bool = False) -> Outcome:
         chat.delete()
 
     outcome.answer_language = answer_language(outcome.answer)
+    outcome.czech_words = czech_words(outcome.answer)
     return score(case, outcome)
+
+
+class CaseError(Exception):
+    """A case names a publication this instance does not hold."""
+
+
+def _case_entry(request, case: dict):
+    """The publication a bound case is about (`entry_title`), among those the user can see; None otherwise."""
+    title = case.get("entry_title")
+    if not title:
+        return None
+    from apps.api.filters.entries import EntryFilter
+    from apps.core.models import Entry
+
+    entry = (
+        EntryFilter({}, queryset=Entry.objects.all(), request=request)
+        .qs.filter(title__icontains=title)
+        .order_by("created_at")
+        .first()
+    )
+    if entry is None:
+        raise CaseError(f"No visible publication titled like {title!r}")
+    return entry
+
+
+def _case_document(request, entry):
+    """What `ChatMessages._chat_document` gives a chat about `entry` without a reader's copy."""
+    if entry is None:
+        return None
+    from apps.assistant.pdf import DocumentUnavailable, open_access_document
+
+    try:
+        return open_access_document(request, entry)
+    except DocumentUnavailable:
+        return None
 
 
 def _timed(frames, outcome: Outcome, started: float):
@@ -238,6 +317,7 @@ def summary(outcomes: List[Outcome]) -> dict:
         "cases": len(outcomes),
         "passed": len(passed),
         "czech_answers": sum(1 for outcome in outcomes if outcome.answer_language == "cs"),
+        "answers_with_czech_words": sum(1 for outcome in outcomes if outcome.czech_words),
         "errors": sum(1 for outcome in outcomes if outcome.error),
         "cases_with_citations": sum(1 for outcome in outcomes if outcome.citations),
         "unknown_labels": sum(len(outcome.unknown_labels) for outcome in outcomes),

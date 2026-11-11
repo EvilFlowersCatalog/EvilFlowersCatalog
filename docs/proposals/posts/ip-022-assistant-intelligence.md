@@ -19,12 +19,17 @@ tags:
 
 ## Status
 
-**Draft.** Phases 1–3 are implemented on the working tree together with the client half of #104, with the
-recommended answers to Q1–Q7 applied (pending confirmation), and tested locally (scripted model, no real LLM).
-Not yet run against `elvira-assistant` in the cluster. The deployment steps are posted on knowledge#11.
-Phases 4–5 need the cluster.
+**Draft.** Phases 1–3 shipped on `develop` (5f6ddb5, ec91538) with the recommended answers to Q1–Q7
+(pending confirmation). Dev has run on `elvira-assistant` since 2026-11-11 (knowledge#29). The first
+evaluation is in #104's closing comment, and its findings are #130.
+
+Phase 6 (2026-11-11) adds reading publications from a plain chat (#127) and the fixes from that first
+evaluation that code can make (#130). It is implemented and tested with a scripted model, with the
+recommended answers to Q8–Q11 applied, but **not yet re-run on `elvira-assistant`**. That run, and everything
+that needs people, moves to the follow-up issue of #130.
 
 Issues: EvilFlowersCatalog#104 (model switch, client), EvilFlowersCatalog#105 (tools and prompts),
+EvilFlowersCatalog#127 (reading mentioned publications), EvilFlowersCatalog#130 (first evaluation),
 EvilFlowersCatalog/knowledge#11 (deployment).
 
 ## Problem Statement
@@ -107,18 +112,20 @@ MCP argument set.
 `EntryFilter` access control. `find_similar` refuses an entry the reader cannot see. `search_library_text`
 inherits `_may_read_text`, so text from Readium LCP publications never reaches the model (IP-018 Q5).
 
-The tool list is fixed for a session: it depends only on whether the reader is authenticated. It is part of the
-cached prompt prefix and never changes inside a conversation.
+The tool list is fixed for a session. It depends only on whether the reader is authenticated and, since #127,
+on whether the chat is bound to a reader's copy. It is part of the prompt prefix and never changes inside a
+conversation.
 
 Measured first-round prefix (system prompt + tool JSON, ≈ characters ÷ 4; Qwen's chat template adds a few
-hundred tokens on top):
+hundred tokens on top; real tokens for a plain chat in §8):
 
-| | Before | After |
-|---|---|---|
-| Plain chat, signed in | 3 tools, ~1.45 K tokens | 8 tools, ~1.42 K tokens |
-| Chat bound to a reader's copy | 9 tools, ~2.2 K tokens | 14 tools, ~2.17 K tokens |
+| | Before | After (2026-11-09) | Phase 6 (2026-11-11) |
+|---|---|---|---|
+| Plain chat, signed in | 3 tools, ~1.45 K | 8 tools, ~1.42 K (1,678 real) | 9 tools, 5,897 characters (~1.7 K real) |
+| Chat bound to a reader's copy | 9 tools, ~2.2 K | 14 tools, ~2.17 K | 14 tools (no `read_pdf_page` by id) |
 
-A test keeps the plain-chat prefix under 2 K tokens (#104 target: ≤ 3 K).
+A test keeps the plain-chat prefix within budget. That was 1.5 K tokens by characters ÷ 4 (#114). Since #130
+it is 1,750 real tokens, calibrated against Ollama's count (§8). The #104 target is ≤ 3 K.
 
 ### 3. Slim tool results
 
@@ -172,9 +179,88 @@ cases cover topic search (SK/EN), availability, author, subjects, year, loans, s
 publications, empty results, off-topic questions, "borrow it for me", an English question in the Slovak UI and a
 Czech question in the Slovak UI.
 
+### 7. Reading any open publication from a plain chat (#127)
+
+Before this, a chat could read a publication's text only when bound to it: opened from the viewer, or started
+from the publication. A reader who asked "which of these talks about NoSQL?" got "I cannot read the contents
+of a book", even for open-access titles the portal shows to anyone.
+
+A plain chat now reads publications by id:
+
+| Tool | What it does |
+|---|---|
+| `search_library_text` + `entry_id` | Passages of that one publication, by meaning and words (what `search_paragraphs` and `search_pdf` do in a bound chat), 3 at most, labelled `[E#]`. A publication without a paragraph index falls back to word matches by page over its PDF |
+| `read_pdf_page` (`entry_id`, `page`, `count` ≤ 3) | The text of pages. Each page is labelled `[E#]` in the evidence ledger, so it is cited and resolved to publication and page like a passage. `[[page:N]]` would point at a viewer that is not open |
+
+Both go through one rule, `pdf.open_access_document`, which a bound chat without a reader's copy has also
+used since IP-018:
+
+- **Visible:** the catalog ACL, `EntryFilter`. Otherwise "No publication … is visible".
+- **Not Readium LCP:** otherwise the model is told to answer from the catalogue record and send the reader to
+  borrow the book, as `services.entry_note` does.
+- **Not IP-blocked.**
+- **A stored PDF:** not lent and not restricted.
+
+The page budget (`EVILFLOWERS_ASSISTANT_MAX_PAGES_READ`) is one per turn, shared by the bound copy and every
+publication read by id (`tools.Reading`).
+
+A bound chat keeps its own `read_pdf_page` over the reader's copy. Only one tool of that name is ever offered.
+A bound chat's `read_pdf_page` with another publication's `entry_id` goes to the plain-chat tool. Its other
+document tools point the model to `search_library_text` with `entry_id`.
+
+The prompt's Tools section says the assistant can read any publication by id except Readium ones, must never
+say it cannot read publications, and asks the reader when it is unclear which publication they mean.
+
+`search_pdf` and `list_regions` are not offered in plain chats. `search_library_text` with `entry_id`
+already does both word and meaning search, and every tool costs prefix tokens on every round (Q8).
+
+Tool descriptions were shortened at the same time, so the prefix stays flat. Signed in, it is 5,897
+characters with `read_pdf_page`, against 5,831 before.
+
+### 8. Fixes from the first evaluation (#130)
+
+- **Round cap for plain chats.** At most `MAX_CHAT_ROUNDS = 6` model rounds. The last round offers no tools
+  and ends with "answer now from the tool results above", so a looping model answers instead of spinning;
+  `en-passage` took 11 rounds and 696 s. An empty final answer becomes "could you rephrase it?". Bound chats
+  keep `MAX_TOOL_ROUNDS = 25`, because reading needs rounds (Q9).
+- **Prompt.**
+  - **Grounding:** never answer a question about content from the model's own knowledge.
+  - **Tools:** call `list_categories` for "which subjects"; stop after two searches that find nothing.
+  - **Citations:** a label goes on the sentence that states what the passage says, never on a "nothing
+    found" sentence.
+  - **Language:** "knižnica, not knihovna".
+- **Scorer.**
+  - `grounded` fails an answer about content when no text tool was called.
+  - A Slovak answer with a single Czech-only word fails (`czech_words`), separately from the majority vote.
+  - `reads_pages` checks a bound chat drew on its publication.
+  - A case can bind its chat to a publication by `entry_title`, which is portable across instances.
+  - The summary counts `answers_with_czech_words`.
+- **Cases.** These are rewritten against the dev collection: tuberculosis, the history of capital punishment
+  in England, and tobacco taxation and smoking rates (*Tobacco Control Policy in The Netherlands*).
+  - `sk-passage` and `en-passage` now expect `grounded`. Dev has nothing on normal forms or backpropagation,
+    so "nothing found" after a real text search passes.
+  - Added: `sk-read-named-book` and `en-read-after-search` (#127), and `sk-bound-chapter` (a bound chat).
+- **Prompt budget.** It is in real tokens, calibrated from Ollama's count: 5,831 characters were 1,678
+  tokens, about 3.47 characters per token with the chat template. The test uses 3.4 and holds the first round
+  at ≤ 1,750 tokens, which is the measured size (Q10).
+- **Latency, prompt cache (#130 A): open, not answered.** A web search (2026-11-11) found llama.cpp issues
+  that match the log line: #22384 and #23013, about Qwen3.5/3.6 hybrid models re-processing the whole
+  prompt every turn, and #22450, a hang on Qwen3.6-35B-A3B on that path in which `--swa-full` changed
+  nothing.
+  - **Explanation:** the Gated DeltaNet layers keep a recurrent state that cannot be rewound to a shared
+    prefix, so reuse depends on context checkpoints.
+  - **Not found:** an Ollama-specific report or fix, or whether the proposed llama.cpp fixes have merged.
+  - **Not checked:** which Ollama version runs on control, and whether it offers anything comparable.
+
+  The catalog's levers are fewer rounds (the cap above) and a flat prefix. The serving side is deployment
+  work for the knowledge repository (Q11).
+- **Page text is the larger cost.** One `read_pdf_page` with `count: 3` returns up to 18,000 characters,
+  about 5 K tokens. With no cache, they are evaluated again on every later round and turn: about 100 s
+  each on control. The prompt does not say to read one page at a time (Q8).
+
 ## Implementation Plan
 
-### Phase 1: Client (#104) ✅ on the working tree
+### Phase 1: Client (#104) ✅ on develop
 
 - [x] `think`, `options.num_ctx`, `keep_alive`, `temperature`, `Host`, `(connect, read)` timeout; settings in
   `settings/base.py` and `.env.example`
@@ -183,7 +269,7 @@ Czech question in the Slovak UI.
 - [x] Thinking chunks and Ollama durations on the `chat` span
 - [x] Payload, header and stream tests (`tests/test_ollama_payload.py`)
 
-### Phase 2: Tools, results, loop, prompt ✅ on the working tree
+### Phase 2: Tools, results, loop, prompt ✅ on develop
 
 - [x] Assistant-side descriptions and slim schemas; `list_categories`, `get_my_shelf`, `list_my_loans`
 - [x] `discovery.similar_entries` and `discovery.search_passages` extracted from the views; `find_similar`,
@@ -194,7 +280,7 @@ Czech question in the Slovak UI.
 - [x] Tests: `tests/test_tool_surface.py` (offered tools, read-only boundary, prefix budget, slim results,
   repeat guard) and `tests/test_turn_tools.py` (whole turn against the DB with a scripted model, access checks)
 
-### Phase 3: Evaluation harness ✅ on the working tree
+### Phase 3: Evaluation harness ✅ on develop
 
 - [x] `apps/assistant/evaluation.py`, `manage.py assistant_eval run|export`, 20 seed cases
 
@@ -229,6 +315,23 @@ Ansible steps are posted on knowledge#11 (comment of 2026-11-09, "Update after `
 - [ ] Prod (Compose): HTTPRoute `llm.elvira.internal` + `EVILFLOWERS_ASSISTANT_OLLAMA_HOST` once Known-Issues 7
   is proven; only after the evaluation passes
 
+### Phase 6: Reading publications, first-evaluation fixes (#127, #130) ✅ tested with a scripted model
+
+- [x] `pdf.open_access_document`, shared by bound chats without a copy and the plain-chat reading tools
+- [x] `read_pdf_page` (`entry_id`) and `search_library_text(entry_id)` with word-match fallback; pages
+  labelled in the evidence ledger; one page budget per turn (`tools.Reading`)
+- [x] Bound-chat routing for another publication's `entry_id`
+- [x] `MAX_CHAT_ROUNDS`, with a final round that offers no tools
+- [x] Prompt: reading, grounding, two-searches stop, `list_categories`, citation placement, "knihovna"
+- [x] Scorer: `grounded`, `czech_words`, `reads_pages`, bound cases by `entry_title`; cases rewritten against
+  dev
+- [x] Prefix budget in calibrated real tokens
+- [x] Tests: `tests/test_read_publications.py` (17), updated `test_tool_surface.py`, prompt hash
+- [ ] `assistant_eval run --verify` on `elvira-assistant` with the new cases; record the summary here (follow-up
+  of #130)
+- [ ] Portal: let the reader attach a publication to a plain chat by hand (#127 "frontend extra"; the catalog
+  side, `entry_id` on a message, already exists)
+
 ## Technical Details
 
 ### Files
@@ -246,11 +349,14 @@ Ansible steps are posted on knowledge#11 (comment of 2026-11-09, "Update after `
 
 ### Prompt cache
 
-Ollama reuses the KV cache for the longest common prefix of the rendered prompt in a slot. Everything before the
-history (system prompt, the opening note of a bound chat, tool list) must be byte-identical across rounds and
-turns. The guarantees:
+Ollama reuses the KV cache for the longest common prefix of the rendered prompt in a slot. **This does not
+happen with Qwen3.6-35B-A3B on control** (#130 A, §8): every round evaluates the whole prompt. The guarantees
+below still matter for any model that does cache, and for a serving change that restores reuse. Everything
+before the history (system prompt, the opening note of a bound chat, tool list) must be byte-identical across
+rounds and turns. The guarantees:
 
-- The tool list depends only on authentication.
+- The tool list depends only on authentication and on whether the chat is bound. A plain chat's final round
+  (`MAX_CHAT_ROUNDS`) sends no tools, so that one round cannot reuse a cache either.
 - `payload()` has nothing per request.
 - The language instruction is the last message.
 - Tool results are stored once, as `text`, and replayed verbatim.
@@ -526,6 +632,111 @@ A: the catalog emits `status` frames; the portal side is EvilFlowersCatalog/elvi
 
 ---
 
+### Q8: Which reading tools in a plain chat? ⚠️ Medium
+
+**Issue**: #127 names `read_pdf_page`, `search_pdf`, `search_paragraphs` and `list_regions`. Implemented:
+`read_pdf_page`, plus `entry_id` on `search_library_text`, which covers `search_paragraphs` (meaning) and
+`search_pdf` (words, also as the fallback for publications without a paragraph index). Not offered:
+`search_pdf` with regular expressions, and `list_regions`/`get_region`.
+
+**Context**: The prompt cache never hits on Qwen3.6 (§8), so every advertised token is re-evaluated on every
+round at ~50 tok/s. `list_regions` and `search_pdf` together would add ~250 tokens, about 5 s per round.
+What is read costs far more: one `read_pdf_page` with `count: 3` is up to ~5 K tokens, re-paid on every later
+round and turn, about 100 s each. Lowering `count` to 1 for plain chats, or clipping pages below 6,000
+characters there, is the bigger lever. It is not done yet, pending the follow-up run's numbers.
+
+**Question**: Is this set enough?
+
+**Options**:
+- [ ] **A**: Keep it; add `list_regions` only when an evaluation case about figures or tables fails for lack of
+  it (recommended)
+- [ ] **B**: Add `list_regions` + `get_region` with `entry_id` now
+- [ ] **C**: Offer all four as named in #127
+
+**Answer**:
+```
+```
+
+**Resolution**:
+```
+Implemented as A (pending confirmation).
+```
+
+---
+
+### Q9: Round cap for plain chats ⚠️ Medium
+
+**Issue**: `MAX_CHAT_ROUNDS = 6`: five rounds may call tools, and the sixth must answer. Reading a named
+publication takes search_entries → search_library_text(entry_id) → read_pdf_page → answer (4), plus
+displayBooks if cards are shown. Each extra round costs ~30 s on control.
+
+**Question**: Is 6 right?
+
+**Options**:
+- [ ] **A**: 6, and revisit after the follow-up run's round counts (recommended)
+- [ ] **B**: 5, the evaluation's loop threshold (`MAX_ROUNDS_OK`)
+- [ ] **C**: 8
+
+**Answer**:
+```
+```
+
+**Resolution**:
+```
+Implemented as A (pending confirmation): turn.MAX_CHAT_ROUNDS = 6; bound chats keep 25.
+```
+
+---
+
+### Q10: Prompt budget in real tokens ℹ️ Low
+
+**Issue**: #130 C: the #114 test allowed 1.5 K tokens by characters ÷ 4 while the real tokenizer counted
+1,678. Loading Qwen's tokenizer in the test suite would add `transformers` plus a model download to CI.
+
+**Question**: How should the budget be enforced?
+
+**Options**:
+- [ ] **A**: Characters ÷ 3.4, calibrated from Ollama's `prompt_eval_count`, at ≤ 1,750 real tokens (the
+  measured size; implemented, recommended). Re-calibrate from Tempo when the model changes
+- [ ] **B**: The real tokenizer in the test
+- [ ] **C**: Cut back to 1,500 real tokens, which means dropping a tool or prompt section
+
+**Answer**:
+```
+```
+
+**Resolution**:
+```
+Implemented as A (pending confirmation): test_tool_surface.CHARS_PER_TOKEN = 3.4, PREFIX_TOKEN_BUDGET = 1750.
+```
+
+---
+
+### Q11: Prompt cache on control 🔴 Critical (latency)
+
+**Issue**: §8. With no cache hits, the first token arrives at p50 28 s and p95 105 s. The catalog-side levers
+(round cap, flat prefix) only bound the cost. They don't remove it.
+
+**Question**: What should the serving side try?
+
+**Options**:
+- [ ] **A**: First read the Ollama version on control and its runner's options. Then measure a current
+  `llama-server` with context checkpoints next to Ollama, with the same model file (#22450 reports that
+  `--swa-full` does not help hybrid models). Switch if round 2's prompt evaluation drops (recommended)
+- [ ] **B**: Wait for an Ollama release that restores prefix reuse for hybrid models
+- [ ] **C**: A non-hybrid model of similar quality, which caches prefixes normally
+
+**Answer**:
+```
+```
+
+**Resolution**:
+```
+Not decidable from the catalog: a deployment experiment, tracked in the follow-up of #130 for knowledge.
+```
+
+---
+
 ## Changelog
 
 | Date | Author | Changes |
@@ -535,3 +746,6 @@ A: the catalog emits `status` frames; the portal side is EvilFlowersCatalog/elvi
 | 2026-11-09 | jdubec | Read-back fixes: `search_passages` tool renamed `search_library_text` (clash with `search_paragraphs`); `list_categories` pages through the whole vocabulary; `format` scope stated precisely (no-tools rounds only) |
 | 2026-11-09 | jdubec | Recommended answers to Q1–Q7 implemented (pending confirmation): daily token default 200 000 (Q1); Phase 4 steps posted on knowledge#11; Phase 4 checklist gains the Q1 cache check and the evaluation account's quota |
 | 2026-11-09 | jdubec | Q7: portal issue opened (EvilFlowersCatalog/elvira-portal#36) |
+| 2026-11-11 | jdubec | Phase 6 (#127, #130): §7 reading publications from a plain chat, §8 first-evaluation fixes (round cap, prompt, scorer, cases rewritten against dev, prefix budget in calibrated tokens, prompt-cache findings); status updated (Phases 1–3 on develop) |
+| 2026-11-11 | jdubec | Added Review Questions Q8–Q11 |
+| 2026-11-11 | jdubec | Read-back fixes: phases 1–3 marked on develop; tool list also depends on binding; prefix table extended; Prompt cache section notes no reuse on Qwen3.6; #130 A marked open (Ollama on control not checked); page-read cost added to §8 and Q8; Q11-A no longer relies on `--swa-full`; bound chats share the turn's page budget |

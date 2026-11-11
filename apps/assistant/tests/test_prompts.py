@@ -12,7 +12,9 @@ from apps.assistant import explain, highlight, prompts, semantic, services, tool
 #: files must not change one byte (the cached prompt prefix and every evaluation so far depend on it).
 #: When a prompt is changed on purpose, update its hash here and record the `assistant_eval` run that justified it.
 PROMPT_HASHES = {
-    "chat": "d0592cdffe35ae3670a356ed4d3088661d14dff8ed332e1d8c4893a2cf60fc04",
+    # 2026-11-11, #127/#130: reading publications by id, grounding, two-searches stop, citation placement.
+    # Written from the first dev run (#104), NOT yet re-run on elvira-assistant: that run is the follow-up of #130.
+    "chat": "38ec49e52affe2e434476ba421e6e0ec39b552c32a4531a000985ecf571f78ca",
     "explain": "78c31a0ef64cd0cd56c2d2b573c7967fe15bfa7632836fda6a0e741599542120",
     "highlight": "e18e507f1b61be651fabf82ea6bebe13a11f95de93c9183f63d8150127805369",
     "semantic": "58e58ff31be28adb45ea2c6890169af7c3e508461df8d1648b7265ae8355d153",

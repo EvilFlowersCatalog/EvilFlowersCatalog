@@ -13,7 +13,7 @@ from django.utils.html import strip_tags
 
 from apps.assistant import contexts, prompts
 from apps.assistant.models import Chat, ChatMessage
-from apps.assistant.tools import DISPLAY_BOOKS, FIND_SIMILAR, SEARCH_PASSAGES
+from apps.assistant.tools import DISPLAY_BOOKS, FIND_SIMILAR, READ_PAGE, SEARCH_PASSAGES
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,11 @@ logger = logging.getLogger(__name__)
 #: message of every request instead (`language_instruction`). The text is
 #: `prompts/chat.md` (#116).
 SYSTEM_PROMPT = prompts.render(
-    "chat", search_passages=SEARCH_PASSAGES, find_similar=FIND_SIMILAR, display_books=DISPLAY_BOOKS
+    "chat",
+    search_passages=SEARCH_PASSAGES,
+    find_similar=FIND_SIMILAR,
+    display_books=DISPLAY_BOOKS,
+    read_page=READ_PAGE,
 )
 
 

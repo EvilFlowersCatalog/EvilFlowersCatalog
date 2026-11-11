@@ -14,6 +14,7 @@ import json
 import logging
 from typing import Generator, Iterator, List, Optional
 
+from django.conf import settings
 from django.utils.translation import gettext as _
 
 from apps.assistant import activity, evidence, explain, prompts, services, tools
@@ -401,7 +402,12 @@ def _run_tool(
 
     if document is not None and name in explain.DOCUMENT_TOOLS and not _another_publication(document, arguments):
         # The reader's own copy, read in-process exactly as explain reads it.
-        text = explain.run_document_tool(document, call, pages_read if pages_read is not None else [])
+        pages = pages_read if pages_read is not None else []
+        # Pages read from other publications this turn count against the same budget (#127).
+        budget = None
+        if reading is not None:
+            budget = max(settings.EVILFLOWERS_ASSISTANT_MAX_PAGES_READ - sum(map(len, reading.books.values())), 0)
+        text = explain.run_document_tool(document, call, pages, budget)
         ChatMessage.objects.create(chat=chat, user=chat.user, role=ChatMessage.Role.TOOL, text=text)
         yield sse("activity", activity.summarize(name, arguments, text=text))
         return []

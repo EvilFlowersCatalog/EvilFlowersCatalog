@@ -42,13 +42,32 @@ class OfferedToolsTests(SimpleTestCase):
         first = json.dumps(tools.specifications(authenticated=True))
         self.assertEqual(first, json.dumps(tools.specifications(authenticated=True)))
 
+    #: Characters per real Qwen3.6 token of the first-round prefix, chat template included: Ollama counted
+    #: 1,678 prompt tokens for the 5,831 characters of system prompt + tool JSON on dev (2026-11-11, #130 C).
+    #: Characters ÷ 4 had estimated 1,457, under a budget the real tokenizer was over.
+    CHARS_PER_TOKEN = 3.4
+
+    #: #114/#130: the first round of a plain chat, in real tokens. On control prompt evaluation runs at
+    #: ~50 tok/s and the prompt cache never hits (#130 A), so every token here is paid on every round: ~1 s per
+    #: 50 tokens. Held at the measured size; a tool or prompt section that does not fit has to replace
+    #: something, or ride on an existing result (chapter summaries on `get_entry`, #119).
+    PREFIX_TOKEN_BUDGET = 1750
+
     def test_first_round_prefix_stays_within_the_cpu_budget(self):
-        # #114: ≤ 1.5K tokens for the first round of a plain chat (~4 characters a token). The app-01 benchmark
-        # measured ~25 s of cold prompt evaluation per 1K tokens. A tool or prompt section that does not fit has
-        # to replace something, or ride on an existing result (chapter summaries on `get_entry`, #119).
         for authenticated in (False, True):
             specs = json.dumps(tools.specifications(authenticated=authenticated), ensure_ascii=False)
-            self.assertLessEqual((len(specs) + len(services.SYSTEM_PROMPT)) // 4, 1500, authenticated)
+            estimate = (len(specs) + len(services.SYSTEM_PROMPT)) / self.CHARS_PER_TOKEN
+            self.assertLessEqual(estimate, self.PREFIX_TOKEN_BUDGET, authenticated)
+
+    def test_plain_chats_read_publications_bound_chats_their_copy(self):
+        # #127: a plain chat reads any open publication by id; a bound chat has its own `read_pdf_page`.
+        from apps.assistant import explain
+
+        self.assertIn(tools.READ_PAGE, _names(tools.specifications(authenticated=True)))
+        bound = _names(tools.specifications(authenticated=True, bound=True) + explain.TOOL_SPECIFICATIONS)
+        self.assertEqual(len(bound), len(set(bound)), "a bound chat must not offer a tool name twice")
+        self.assertIn(tools.SEARCH_PASSAGES, bound)
+        self.assertIn("entry_id", tools.SPECIFICATIONS[tools.SEARCH_PASSAGES][1]["properties"])
 
     def test_advertised_search_arguments_are_accepted_by_the_handler(self):
         from apps.mcp.tools.entries import SEARCH_ARGUMENTS
