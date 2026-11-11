@@ -78,6 +78,11 @@ class License(BaseModel):
                 name="unique_active_license_per_user_per_entry",
             ),
         ]
+        indexes = [
+            # GitHub #131: statistics read licenses by creation time, per entry and per catalog.
+            models.Index(fields=["entry", "created_at"]),
+            models.Index(fields=["created_at"]),
+        ]
 
     class LicenseState(models.TextChoices):
         READY = "ready", _("Ready")
@@ -172,6 +177,8 @@ class Reservation(BaseModel):
         indexes = [
             models.Index(fields=["entry", "status", "position"]),
             models.Index(fields=["status", "claim_deadline"]),
+            # GitHub #131: holds placed per period. (entry, status) is covered by the first index.
+            models.Index(fields=["requested_at"]),
         ]
 
     class Status(models.TextChoices):

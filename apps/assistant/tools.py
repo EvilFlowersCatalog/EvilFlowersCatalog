@@ -22,6 +22,12 @@ IP-022 changes what the model is *told*, not what the handlers do:
 - **Per-session list.** Tools about the reader (`get_my_shelf`, `list_my_loans`)
   are offered to authenticated sessions only. The list is fixed for a session,
   so it never changes inside a conversation's cached prefix.
+- **Reading any open publication (#127).** A plain chat reads publications by
+  id: `search_library_text` with an `entry_id` searches inside one publication
+  (by meaning and words, which is what `search_paragraphs` and `search_pdf` do
+  in a bound chat), and `read_pdf_page` reads its pages. Both follow
+  `pdf.open_access_document`: never Readium LCP, never outside the entry's IP
+  ranges. Pages read are cited like passages, through the evidence ledger.
 """
 
 import json
@@ -49,7 +55,22 @@ FIND_SIMILAR = "find_similar"
 # Not "search_passages": a bound chat also offers `search_paragraphs` (the reader's own copy),
 # and two near-identical names are a coin toss for a small model.
 SEARCH_PASSAGES = "search_library_text"
-LOCAL_TOOLS = (FIND_SIMILAR, SEARCH_PASSAGES)
+# Same name as the bound chat's tool over the reader's copy (`explain.READ_PDF_PAGE`): one verb, one name.
+# A bound chat offers that one instead (`specifications(bound=True)`), so the two never appear together.
+READ_PAGE = "read_pdf_page"
+LOCAL_TOOLS = (FIND_SIMILAR, SEARCH_PASSAGES, READ_PAGE)
+
+#: Local tools a chat bound to a reader's copy does not get: it has its own over that copy.
+UNBOUND_ONLY = (READ_PAGE,)
+
+#: The bound chat's other document tools (`explain.DOCUMENT_TOOLS`), which only read that chat's copy.
+_OTHER_DOCUMENT_TOOLS = ("search_pdf", "list_page_regions", "get_region", "list_regions", "search_paragraphs")
+
+#: Pages one `read_pdf_page` call returns (as in a bound chat).
+READ_PAGE_MAX_COUNT = 3
+
+#: Passages `search_library_text` returns from one publication (`entry_id`); the passage search caps it at 3.
+PASSAGES_PER_PUBLICATION = 3
 
 #: Name of the local tool that asks the UI to render publications.
 DISPLAY_BOOKS = "displayBooks"
@@ -68,52 +89,35 @@ _UUID_LIST = {"type": "array", "items": {"type": "string"}}
 DISPLAY_BOOKS_SCHEMA = {
     "type": "object",
     "properties": {
-        "entry_ids": {
-            "type": "array",
-            "items": {"type": "string", "format": "uuid"},
-            "description": "Publication ids from a tool result, in display order.",
-        }
+        "entry_ids": {"type": "array", "items": {"type": "string"}, "description": "Publication ids, in order."}
     },
     "required": ["entry_ids"],
 }
 
-DISPLAY_BOOKS_DESCRIPTION = (
-    "Show publications to the reader as cards. Call it with the ids of the publications you recommend; "
-    "the cards show title, author and availability, so do not repeat those in your reply."
-)
+DISPLAY_BOOKS_DESCRIPTION = "Show publications as cards (title, author, availability)."
 
 #: What the model is told about each tool: (description, parameters). Arguments
 #: left out here are still accepted by the handler; they are only not advertised.
 SPECIFICATIONS: Dict[str, tuple] = {
     "search_entries": (
-        "Search the library's publications by meaning and words. Returns compact records with id, title, "
-        "authors, year, language, subjects, a short summary and borrowing availability.",
+        "Search the library's publications by meaning and words: id, title, authors, year, subjects, "
+        "summary, availability.",
         {
             "type": "object",
             "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Topic, title or keywords. Matches by meaning too, in any language.",
-                },
+                "query": {"type": "string", "description": "Topic, title or keywords, any language."},
                 "author": {"type": "string", "description": "Part of an author's name."},
-                "category_term": {
-                    "type": "string",
-                    "description": "Exact subject term, as `list_categories` or a search result gives it.",
-                },
+                "category_term": {"type": "string", "description": "Exact term from `list_categories`."},
                 "language_codes": {"type": "array", "items": {"type": "string"}, "description": "e.g. ['sk']"},
-                "published_from": {"type": "string", "description": "YYYY, YYYY-MM or YYYY-MM-DD"},
-                "published_to": {"type": "string", "description": "YYYY, YYYY-MM or YYYY-MM-DD"},
-                "lcp_states": {
-                    "type": "array",
-                    "items": {"type": "string", "enum": _LCP_STATES},
-                    "description": "Borrowing availability; available_now = can be borrowed right now.",
-                },
+                "published_from": {"type": "string", "description": "YYYY or YYYY-MM-DD"},
+                "published_to": {"type": "string", "description": "YYYY or YYYY-MM-DD"},
+                "lcp_states": {"type": "array", "items": {"type": "string", "enum": _LCP_STATES}},
                 "order_by": {
                     "type": "string",
                     "enum": ["-published_at", "-created_at", "-popularity", "title"],
-                    "description": "Omit to rank by relevance.",
+                    "description": "Omit for relevance.",
                 },
-                "limit": {"type": "integer", "description": f"1-{MAX_SEARCH_LIMIT}, default {DEFAULT_SEARCH_LIMIT}"},
+                "limit": {"type": "integer", "description": f"1-{MAX_SEARCH_LIMIT}"},
             },
         },
     ),
@@ -126,8 +130,7 @@ SPECIFICATIONS: Dict[str, tuple] = {
         },
     ),
     "list_categories": (
-        "List the library's subject categories (term and label). Use it to find the exact `category_term` "
-        "for a subject, or to say which subjects the library covers.",
+        "The library's subjects (term, label): which subjects it covers, or a `category_term` to filter by.",
         {
             "type": "object",
             "properties": {"query": {"type": "string", "description": "Part of a term or label; omit for all."}},
@@ -142,8 +145,7 @@ SPECIFICATIONS: Dict[str, tuple] = {
         {"type": "object", "properties": {}},
     ),
     FIND_SIMILAR: (
-        "Publications similar in content to one publication. Use it for 'something like this' and for "
-        "alternatives when a publication is fully borrowed.",
+        "Publications similar in content to one publication.",
         {
             "type": "object",
             "properties": {"entry_id": {"type": "string", "description": "Publication id."}},
@@ -151,16 +153,28 @@ SPECIFICATIONS: Dict[str, tuple] = {
         },
     ),
     SEARCH_PASSAGES: (
-        "Search inside the text of every processed publication for passages about a question; returns the "
-        "publication, page and passage. Use it for detailed questions that titles and summaries do not "
-        "answer. Text of DRM-protected publications is withheld (only the page is given).",
+        "Search inside publications' text for passages about a question: publication, page, passage. "
+        "With `entry_id`, inside that one publication.",
         {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "The question or topic, in a sentence."},
-                "category_term": {"type": "string", "description": "Optional: only this subject."},
+                "entry_id": {"type": "string", "description": "Only this publication."},
+                "category_term": {"type": "string", "description": "Only this subject."},
             },
             "required": ["query"],
+        },
+    ),
+    READ_PAGE: (
+        f"Read pages of a publication (at most {READ_PAGE_MAX_COUNT}).",
+        {
+            "type": "object",
+            "properties": {
+                "entry_id": {"type": "string", "description": "Publication id."},
+                "page": {"type": "integer", "description": "First page, 1-based."},
+                "count": {"type": "integer", "description": f"1-{READ_PAGE_MAX_COUNT}"},
+            },
+            "required": ["entry_id", "page"],
         },
     ),
 }
@@ -192,21 +206,25 @@ def _catalog_tools() -> List[Tool]:
     return tools
 
 
-def _offered(authenticated: bool) -> List[str]:
-    """Tool names for a session, in a stable order (the order is part of the cached prompt)."""
+def _offered(authenticated: bool, bound: bool = False) -> List[str]:
+    """Tool names for a session, in a stable order (the order is part of the cached prompt).
+
+    `bound`: the chat reads a reader's copy with the document tools (`explain.TOOL_SPECIFICATIONS`), which
+    include their own `read_pdf_page`.
+    """
     names = []
     for tool in _catalog_tools():
         if tool.access is ToolAccess.USER and not authenticated:
             continue
         names.append(tool.name)
-    names.extend(LOCAL_TOOLS)
+    names.extend(name for name in LOCAL_TOOLS if not (bound and name in UNBOUND_ONLY))
     return names
 
 
-def specifications(authenticated: bool = True) -> List[dict]:
+def specifications(authenticated: bool = True, bound: bool = False) -> List[dict]:
     """Every tool the model is told about, in Ollama's `/api/chat` format."""
     specs = []
-    for name in _offered(authenticated):
+    for name in _offered(authenticated, bound):
         description, parameters = SPECIFICATIONS[name]
         specs.append(
             {"type": "function", "function": {"name": name, "description": description, "parameters": parameters}}
@@ -236,7 +254,27 @@ def clean_arguments(arguments) -> dict:
     return {key: value for key, value in arguments.items() if value not in (None, "", [], {})}
 
 
-def call(request, name: str, arguments: dict) -> dict:
+class Reading:
+    """Pages read during one turn, against one budget (`EVILFLOWERS_ASSISTANT_MAX_PAGES_READ`, IP-018 Q5).
+
+    `bound` is the turn's list of pages read from the chat's own copy (it feeds the `pages` frame); `books`
+    holds pages read from other publications by id (#127). A page already read is free to read again.
+    """
+
+    def __init__(self, bound: Optional[List[int]] = None):
+        self.bound: List[int] = bound if bound is not None else []
+        self.books: Dict[str, List[int]] = {}
+
+    def pages_for(self, entry_id: str) -> List[int]:
+        return self.books.setdefault(entry_id, [])
+
+    def budget_for(self, entry_id: str) -> int:
+        """The budget `run_document_tool` checks this publication's own list against."""
+        others = len(self.bound) + sum(len(pages) for key, pages in self.books.items() if key != entry_id)
+        return max(settings.EVILFLOWERS_ASSISTANT_MAX_PAGES_READ - others, 0)
+
+
+def call(request, name: str, arguments: dict, reading: Optional[Reading] = None) -> dict:
     """Run a tool and return its full JSON-serialisable payload.
 
     `displayBooks` never reaches here — it is a UI directive with no catalog
@@ -245,8 +283,17 @@ def call(request, name: str, arguments: dict) -> dict:
     """
     arguments = clean_arguments(arguments)
 
+    if name == READ_PAGE:
+        return _read_page(request, arguments, reading if reading is not None else Reading())
     if name in LOCAL_TOOLS:
         return _LOCAL[name](request, arguments)
+
+    if name in _OTHER_DOCUMENT_TOOLS:
+        # A bound chat's document tool aimed at another publication (`turn._another_publication`).
+        raise ToolError(
+            f"`{name}` reads the publication this chat is about. For another publication use "
+            f"`{SEARCH_PASSAGES}` with its `entry_id`, or `{READ_PAGE}`."
+        )
 
     if name not in ALLOWED_TOOLS:
         raise UnknownTool(name)
@@ -293,14 +340,15 @@ def _every_page(tool: Tool, request, arguments: dict) -> dict:
     return {"items": items, "metadata": {"total": total, "limit": len(items), "has_next_page": len(items) < total}}
 
 
-def run(request, name: str, arguments: dict, ledger=None) -> tuple:
+def run(request, name: str, arguments: dict, ledger=None, reading: Optional[Reading] = None) -> tuple:
     """Run a tool for the chat: `(payload or None, text the model sees)`.
 
-    `ledger` is the chat's evidence ledger (IP-024): passages of `search_library_text` get labels from it that
-    the model cites in its answer. Without one, passages are returned unlabelled.
+    `ledger` is the chat's evidence ledger (IP-024): passages of `search_library_text` and pages of
+    `read_pdf_page` get labels from it that the model cites in its answer. Without one, they are unlabelled.
+    `reading` is the turn's page budget (#127).
     """
     try:
-        payload = call(request, name, arguments)
+        payload = call(request, name, arguments, reading)
     except (UnknownTool, ToolNotPermitted) as error:
         # Hand the refusal to the model verbatim so it can correct itself
         # instead of failing the whole turn.
@@ -309,10 +357,13 @@ def run(request, name: str, arguments: dict, ledger=None) -> tuple:
         # Validation and not-found messages are written for a model ("Unknown
         # argument(s): …. Accepted arguments: …"), so they are the best hint it can get.
         return None, json.dumps({"error": str(error)})
-    if name == SEARCH_PASSAGES and ledger is not None and isinstance(payload, dict):
-        from apps.assistant.evidence import label_passages
+    if ledger is not None and isinstance(payload, dict):
+        from apps.assistant.evidence import label_pages, label_passages
 
-        label_passages(payload, ledger)
+        if name == SEARCH_PASSAGES:
+            label_passages(payload, ledger)
+        elif name == READ_PAGE:
+            label_pages(payload, ledger)
     return payload, json.dumps(slim(name, payload), ensure_ascii=False, default=str)
 
 
@@ -371,6 +422,64 @@ def _find_similar(request, arguments: dict) -> dict:
     return {"items": items, "metadata": {"total": len(items)}}
 
 
+#: What the model is told when it may not read a publication's text, by `pdf.DocumentUnavailable` reason.
+#: The Readium wording matches `services.entry_note`: the reader borrows the publication and reads it in Thorium.
+_UNREADABLE = {
+    "readium": "This publication is lent through Readium LCP, so its text cannot be read here. Answer from its "
+    "catalogue record, and tell the reader to borrow it to read it.",
+    "ip_blocked": "This publication may only be read from the library's network.",
+}
+_NOT_READABLE = "This publication has no text that can be read here (no open PDF). Answer from its catalogue record."
+
+
+def _publication(request, entry_id_argument):
+    """The entry the model named, if this reader may see it; `ToolError` otherwise."""
+    from apps.core.models import Entry
+    from apps.extraction.discovery import _visible
+
+    entry_id = _uuid(entry_id_argument)
+    if entry_id is None:
+        raise ToolError("`entry_id` must be a publication id from a tool result.")
+    if UUID(entry_id) not in _visible(request, [entry_id]):
+        raise ToolError(f"No publication {entry_id} is visible to this reader.")
+    return Entry.objects.get(pk=entry_id)
+
+
+def _document(request, entry):
+    """The publication's readable PDF (`pdf.open_access_document`), or a `ToolError` saying why not."""
+    from apps.assistant.pdf import DocumentUnavailable, open_access_document
+
+    try:
+        return open_access_document(request, entry)
+    except DocumentUnavailable as error:
+        reason = error.args[0] if error.args else ""
+        raise ToolError(_UNREADABLE.get(reason, _NOT_READABLE)) from error
+
+
+def _read_page(request, arguments: dict, reading: Reading) -> dict:
+    """Pages of any publication the reader may read (#127); the bound chat's own copy has its own tool."""
+    from apps.assistant.explain import READ_PDF_PAGE, run_document_tool
+
+    entry = _publication(request, arguments.get("entry_id"))
+    document = _document(request, entry)
+    entry_id = str(entry.pk)
+    call = {
+        "function": {
+            "name": READ_PDF_PAGE,
+            "arguments": {"page": arguments.get("page"), "count": arguments.get("count") or 1},
+        }
+    }
+    result = json.loads(run_document_tool(document, call, reading.pages_for(entry_id), reading.budget_for(entry_id)))
+    if "error" in result:
+        raise ToolError(result["error"])
+    return {
+        "entry_id": entry_id,
+        "title": entry.title,
+        "page_count": document.page_count,
+        "pages": result.get("pages") or [],
+    }
+
+
 def _search_passages(request, arguments: dict) -> dict:
     from apps.extraction.discovery import search_passages
 
@@ -380,12 +489,47 @@ def _search_passages(request, arguments: dict) -> dict:
     scope = {}
     if arguments.get("category_term"):
         scope["category_term"] = str(arguments["category_term"])
+    if arguments.get("entry_id"):
+        return _search_publication(request, query, _publication(request, arguments["entry_id"]))
 
     result = search_passages(request, query, limit=5, per_entry=2, scope=scope)
     if result.degraded and not result.items:
         # Search by meaning is down and no passage has the query's words (#113).
         return {"items": [], "note": "Passage search is unavailable right now; use search_entries."}
 
+    payload = {"items": _passage_items(request, result), "searched_publications": result.indexed}
+    if not payload["items"]:
+        payload["note"] = "No passage matched. Try search_entries, or other words."
+    return payload
+
+
+def _search_publication(request, query: str, entry) -> dict:
+    """Passages of one publication (#127); word matches by page where it has no passage index."""
+    from apps.extraction.discovery import search_passages
+
+    entry_id = str(entry.pk)
+    result = search_passages(request, query, limit=1, per_entry=PASSAGES_PER_PUBLICATION, scope={"id": entry_id})
+    items = _passage_items(request, result)
+    if items:
+        payload = {"items": items}
+        if entry.read_config("readium_enabled"):
+            payload["note"] = _UNREADABLE["readium"]
+        return payload
+
+    # Not processed into paragraphs (or nothing matched there): the page text itself, as `search_pdf` reads it.
+    document = _document(request, entry)
+    hits = document.search(query, limit=5)
+    payload = {"entry_id": entry_id, "title": entry.title, "items": []}
+    if hits:
+        payload["matches"] = hits
+        payload["note"] = "Word matches by page. Read the best pages with read_pdf_page before answering."
+    else:
+        payload["note"] = "Nothing in this publication matches. Try other words, or read its contents (get_entry)."
+    return payload
+
+
+def _passage_items(request, result) -> List[dict]:
+    """A passage search result as the tool's items: publication, title and passages."""
     titles = {
         entry_id: record.get("title")
         for entry_id, record in _resolve_entries(request, [item.entry_id for item in result.items]).items()
@@ -414,10 +558,7 @@ def _search_passages(request, arguments: dict) -> dict:
                 ],
             }
         )
-    payload = {"items": items, "searched_publications": result.indexed}
-    if not items:
-        payload["note"] = "No passage matched. Try search_entries, or other words."
-    return payload
+    return items
 
 
 _LOCAL: Dict[str, Callable] = {FIND_SIMILAR: _find_similar, SEARCH_PASSAGES: _search_passages}
@@ -523,10 +664,18 @@ def _slim_passages(payload: dict) -> dict:
     return slim_payload
 
 
+def _slim_pages(payload: dict) -> dict:
+    """Pages read, with their labels; the evidence map is for resolving citations."""
+    from apps.assistant.evidence import EVIDENCE_KEY
+
+    return {key: value for key, value in payload.items() if key != EVIDENCE_KEY}
+
+
 _SLIMMERS: Dict[str, Callable[[dict], dict]] = {
     "search_entries": _slim_entries,
     FIND_SIMILAR: _slim_entries,
     SEARCH_PASSAGES: _slim_passages,
+    READ_PAGE: _slim_pages,
     "get_entry": _slim_entry_detail,
     "get_my_shelf": _slim_shelf,
     "list_my_loans": _slim_loans,

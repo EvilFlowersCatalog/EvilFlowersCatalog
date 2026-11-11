@@ -113,11 +113,41 @@ def label_passages(payload: dict, ledger: Ledger) -> dict:
     return payload
 
 
+def label_pages(payload: dict, ledger: Ledger) -> dict:
+    """Label the pages of a plain chat's `read_pdf_page` payload, in place (#127).
+
+    A page read from a publication the chat is not bound to has no viewer to jump to, so `[[page:N]]` would
+    point nowhere; it is cited like a passage, as `[E#]` resolved to publication and page. A page read again
+    keeps its label: its key stands in for a paragraph id.
+    """
+    issued: Dict[str, dict] = {}
+    for page in payload.get("pages") or []:
+        if not page.get("text"):
+            continue
+        source = {
+            "entry_id": payload.get("entry_id"),
+            "title": payload.get("title"),
+            "page": page.get("page"),
+            "paragraph_id": f"page:{payload.get('entry_id')}:{page.get('page')}",
+        }
+        label, _new = ledger.issue({key: value for key, value in source.items() if value not in (None, "")})
+        page["label"] = label
+        ledger.texts[label] = page["text"]
+        issued[label] = ledger.sources[label]
+    if issued:
+        payload[EVIDENCE_KEY] = issued
+    return payload
+
+
 def _texts(payload: dict) -> Dict[str, str]:
-    """Label → passage text of a labelled payload."""
-    return {
+    """Label → passage (or page) text of a labelled payload."""
+    texts = {
         passage["label"]: passage["text"]
         for item in payload.get("items") or []
         for passage in item.get("passages") or []
         if passage.get("label") and passage.get("text")
     }
+    for page in payload.get("pages") or []:
+        if page.get("label") and page.get("text"):
+            texts[page["label"]] = page["text"]
+    return texts

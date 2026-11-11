@@ -308,15 +308,19 @@ def _complete(client: OllamaClient, messages: List[dict], specifications: Option
     return content, tool_calls, tokens
 
 
-def run_document_tool(document: ReaderDocument, call: dict, pages_read: List[int]) -> str:
+def run_document_tool(
+    document: ReaderDocument, call: dict, pages_read: List[int], budget: Optional[int] = None
+) -> str:
     """Run `read_pdf_page` or `search_pdf`; also used by chat turns bound to a reader's copy.
 
     `pages_read` is the request's reading so far. Distinct pages are capped by
     `EVILFLOWERS_ASSISTANT_MAX_PAGES_READ` (IP-018 Q5): a page already read is
     free to read again, a new one past the budget is refused so the model answers
-    from what it has. Searching does not count.
+    from what it has. Searching does not count. `budget` overrides the setting: a
+    plain chat reading several publications shares one budget across them (#127).
     """
-    budget = settings.EVILFLOWERS_ASSISTANT_MAX_PAGES_READ
+    if budget is None:
+        budget = settings.EVILFLOWERS_ASSISTANT_MAX_PAGES_READ
     function = call.get("function") or {}
     name = function.get("name") or ""
     arguments = function.get("arguments") or {}

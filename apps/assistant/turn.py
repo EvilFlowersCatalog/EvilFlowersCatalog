@@ -27,6 +27,18 @@ logger = logging.getLogger(__name__)
 #: well above what a turn needs so it only stops a model that loops.
 MAX_TOOL_ROUNDS = 25
 
+#: Model rounds of a chat not bound to a reader's copy (#130). The last one offers no tools, so the model has
+#: to answer from what it found. A library question needs search, maybe a refinement or a page read, cards and
+#: the answer; on CPU, where the prompt cache does not hit (#130 A), every round re-evaluates the whole
+#: conversation, and one turn looped for 11 rounds and 696 s before this cap.
+MAX_CHAT_ROUNDS = 6
+
+#: The last message of a chat's final round: no tools on offer, answer now.
+ANSWER_NOW = (
+    "Answer the reader now from the tool results above; no more tools. If they hold nothing that fits, say so "
+    "briefly and suggest other words."
+)
+
 
 def sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
@@ -72,7 +84,7 @@ def run(
 
 def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=None) -> Iterator[str]:
     # Fixed for the session (IP-022): the tool list is part of the cached prompt prefix.
-    specifications = tools.specifications(authenticated=request.user.is_authenticated)
+    specifications = tools.specifications(authenticated=request.user.is_authenticated, bound=document is not None)
     if document is not None:
         specifications = specifications + explain.TOOL_SPECIFICATIONS
         if chat.user_acquisition_id and chat.user_acquisition.user_id == chat.user_id:
@@ -87,6 +99,8 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
     annotations: List[str] = []
     # Tool calls made in this turn, by (name, arguments): a repeat is answered with a hint.
     seen_calls: set = set()
+    # One page budget for the turn, over the chat's own copy and any publication read by id (#127).
+    reading = tools.Reading(pages_read)
     # Evidence labels issued in this chat so far; this turn's passages continue the numbering (IP-024).
     ledger = evidence.Ledger.for_chat(chat)
     # What the model is told before the conversation, as a short hash on every assistant row (#116).
@@ -95,17 +109,28 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
     def close(text: str = "", tokens: int = 0, keep_empty: bool = False) -> Iterator[str]:
         yield from _close(chat, ledger, text, displayed, pages_read, annotations, tokens, keep_empty, fingerprint)
 
-    for _round in range(MAX_TOOL_ROUNDS):
+    rounds = MAX_TOOL_ROUNDS if document is not None else MAX_CHAT_ROUNDS
+    for _round in range(rounds):
+        # A plain chat's last round offers no tools: the model answers from what it has (#130).
+        final = document is None and _round == rounds - 1
         messages = services.conversation(chat, document)
         instruction = services.language_instruction(language)
         if instruction:
             # Last, after the history: the cached prefix stays the same.
             messages.append({"role": "system", "content": instruction})
+        if final:
+            messages.append({"role": "system", "content": ANSWER_NOW})
 
         # On CPU inference a round can spend tens of seconds evaluating the prompt
         # before its first token (#104): tell the client something is happening.
         yield sse("status", {"state": "thinking", "round": _round + 1})
-        content, tool_calls, tokens = yield from _stream(client, messages, specifications)
+        content, tool_calls, tokens = yield from _stream(client, messages, None if final else specifications)
+        if final:
+            # No tools were offered; whatever came back is the answer.
+            tool_calls = []
+            if not content.strip() and not displayed:
+                content = str(_("I could not complete that search. Could you rephrase it?"))
+                yield sse("message", {"text": content})
 
         if not tool_calls:
             yield from close(content, tokens)
@@ -133,7 +158,9 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
         )
 
         for call in tool_calls:
-            run = _run_tool(request, chat, call, document, pages_read, annotations, language, seen_calls, ledger)
+            run = _run_tool(
+                request, chat, call, document, pages_read, annotations, language, seen_calls, ledger, reading
+            )
             for entry_id in (yield from run):
                 if entry_id not in displayed:
                     displayed.append(entry_id)
@@ -313,6 +340,20 @@ def _repeated(seen_calls: Optional[set], name: str, arguments: dict) -> bool:
     return False
 
 
+def _another_publication(document, arguments: dict) -> bool:
+    """A bound chat's `read_pdf_page` naming a different publication by `entry_id` (#127).
+
+    The model learns ids from search results, and the tool has the same name in both kinds of chat. Such a call
+    goes to `tools.run`, which applies the open-access rules to that publication; the reader's copy is never
+    read for it.
+    """
+    entry_id = arguments.get("entry_id")
+    if not entry_id:
+        return False
+    bound = getattr(getattr(document, "acquisition", None), "entry_id", None)
+    return str(entry_id) != str(bound)
+
+
 def _run_tool(
     request,
     chat: Chat,
@@ -323,6 +364,7 @@ def _run_tool(
     language: Optional[str] = None,
     seen_calls: Optional[set] = None,
     ledger: Optional["evidence.Ledger"] = None,
+    reading: Optional["tools.Reading"] = None,
 ) -> Generator[str, None, List[str]]:
     """Run one tool call, yielding SSE frames; returns publication ids to display."""
     function = call.get("function") or {}
@@ -357,7 +399,7 @@ def _run_tool(
         yield sse("activity", activity.summarize(name, arguments, text=text))
         return []
 
-    if document is not None and name in explain.DOCUMENT_TOOLS:
+    if document is not None and name in explain.DOCUMENT_TOOLS and not _another_publication(document, arguments):
         # The reader's own copy, read in-process exactly as explain reads it.
         text = explain.run_document_tool(document, call, pages_read if pages_read is not None else [])
         ChatMessage.objects.create(chat=chat, user=chat.user, role=ChatMessage.Role.TOOL, text=text)
@@ -366,7 +408,7 @@ def _run_tool(
 
     try:
         # The model sees a slim result; the full payload is kept on the row (IP-022).
-        payload, text = tools.run(request, name, arguments, ledger=ledger)
+        payload, text = tools.run(request, name, arguments, ledger=ledger, reading=reading)
     except Exception:
         logger.exception("Assistant tool '%s' raised", name)
         text = json.dumps({"error": "The tool failed."})

@@ -258,3 +258,29 @@ class ReaderDocument:
 
         hits.sort(key=lambda hit: (-hit["score"], hit["page"]))
         return hits[:limit]
+
+
+#: Why a publication cannot be read, as `DocumentUnavailable.args[0]`.
+READIUM = "readium"
+IP_BLOCKED = "ip_blocked"
+NO_PDF = "no readable PDF"
+
+
+def open_access_document(request, entry) -> ReaderDocument:
+    """The entry's open-access PDF, if this reader may read it outside the viewer.
+
+    The rule a chat bound to a publication without a reader's copy has followed since IP-018, and the one the
+    plain chat's `read_pdf_page` and `search_library_text(entry_id)` follow (#127): never Readium LCP, never from
+    outside the entry's allowed IP ranges, only a stored PDF that is not lent or restricted. Visibility (the
+    catalog ACL) is the caller's check. Raises `DocumentUnavailable` with one of the reasons above.
+    """
+    from apps.core.errors import ProblemDetailException
+    from apps.files.views import _check_ip_block
+
+    if entry.read_config("readium_enabled"):
+        raise DocumentUnavailable(READIUM)
+    try:
+        _check_ip_block(request, entry)
+    except ProblemDetailException as error:
+        raise DocumentUnavailable(IP_BLOCKED) from error
+    return ReaderDocument.for_open_access(entry)

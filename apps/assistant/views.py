@@ -23,7 +23,7 @@ from apps.assistant import explain, services, turn
 from apps.assistant.forms import ChatForm, ExplainForm, HighlightForm, MessageForm
 from apps.assistant.llm import LLMUnavailable
 from apps.assistant.models import Chat
-from apps.assistant.pdf import DocumentUnavailable, ReaderDocument
+from apps.assistant.pdf import DocumentUnavailable, ReaderDocument, open_access_document
 from apps.assistant.serializers import AgentAnnotationSerializer, ChatSerializer, ExplanationSerializer
 from apps.core.errors import AuthorizationException, ProblemDetailException, UnauthorizedException, ValidationException
 from apps.core.models import Annotation, UserAcquisition
@@ -87,8 +87,7 @@ class AssistantView(SecuredView):
                 self._reader_copy(request, copy)
                 return ReaderDocument.for_user_acquisition(copy)
             if entry is not None:
-                _check_ip_block(request, entry)
-                return ReaderDocument.for_open_access(entry)
+                return open_access_document(request, entry)
         except (AuthorizationException, ProblemDetailException, DocumentUnavailable):
             pass
         return None

@@ -32,6 +32,7 @@ from apps.dataverse.views import PrepublishView as _DataversePrepublishView
 from apps.extraction import admin_views as extraction_admin
 from apps.extraction import discovery as extraction_discovery
 from apps.extraction import views as extraction_views
+from apps.readium.views.statistics import StatisticsView
 
 urlpatterns = [
     # API keys
@@ -192,6 +193,8 @@ urlpatterns = [
     ),
     # Status
     path("status", status.StatusManagement.as_view(), name="status"),
+    # GitHub #131: admin dashboard statistics
+    path("statistics", StatisticsView.as_view(), name="statistics"),
     # Tokens
     path("token/refresh", tokens.RefreshTokenManagement.as_view(), name="refresh"),
     path("token", tokens.AccessTokenManagement.as_view(), name="login"),
