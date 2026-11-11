@@ -112,6 +112,12 @@ if settings.EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE:
         "schedule": _cron(settings.EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE),
     }
 
+# #70: delete personalised copies no reader has used for EVILFLOWERS_PERSONALISED_COPY_IDLE_HOURS.
+app.conf.beat_schedule["files-cleanup-personalised-copies"] = {
+    "task": "apps.tasks.tasks.cleanup_personalised_copies",
+    "schedule": crontab(minute=17),
+}
+
 # IP-003: reservation queue + lifecycle notifications.
 app.conf.beat_schedule["readium-sweep-unclaimed-reservations"] = {
     "task": "apps.readium.tasks.sweep_unclaimed_reservations",

@@ -2,8 +2,12 @@
 
 import shutil
 import tempfile
+import uuid
 from io import BytesIO
+from unittest import mock
 
+import fitz
+from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
@@ -11,8 +15,11 @@ from django.urls import reverse
 
 from apps.api.services.entry import InvalidAcquisitionFile, check_acquisition_file
 from apps.core.auth import JWTFactory
-from apps.core.models import Acquisition, ApiKey, AuthSource, Catalog, Entry, User
+from apps.core.models import Acquisition, ApiKey, AuthSource, Catalog, Entry, User, UserAcquisition
+from apps.core.modifiers.pdf import PDFModifier
+from apps.files import personalised
 from apps.files.services import AcquisitionStorageError, AcquisitionStorageService
+from apps.files.storage import get_storage
 
 EPUB = b"PK\x03\x04" + bytes(range(256)) * 8
 
@@ -38,7 +45,10 @@ class CheckAcquisitionFileTests(SimpleTestCase):
         check_acquisition_file(BytesIO(b"anything"), "application/x-mobipocket-ebook")
 
 
-@override_settings(EVILFLOWERS_EVENT_BROKER_EXECUTOR=None)
+@override_settings(
+    EVILFLOWERS_EVENT_BROKER_EXECUTOR=None,
+    EVILFLOWERS_MODIFIERS={"application/pdf": "apps.core.modifiers.pdf.PDFModifier"},
+)
 class AcquisitionDownloadTests(TestCase):
     def setUp(self):
         root = tempfile.mkdtemp()
@@ -90,6 +100,72 @@ class AcquisitionDownloadTests(TestCase):
         self.assertEqual(part.status_code, 206)
         self.assertEqual(part["Content-Range"], f"bytes 0-1023/{len(EPUB)}")
         self.assertEqual(b"".join(part.streaming_content), EPUB[:1024])
+
+    def _pdf(self, pages=3) -> bytes:
+        document = fitz.open()
+        for number in range(pages):
+            document.new_page().insert_text((72, 72), f"Page {number + 1}")
+        return document.tobytes()
+
+    def _get(self, url, range_=None):
+        headers = self._headers()
+        if range_:
+            headers["Range"] = range_
+        return self.client.get(url, headers=headers, follow=True)
+
+    def _body(self, response) -> bytes:
+        return b"".join(response.streaming_content)
+
+    def test_personalised_pdf_ranges_come_from_one_stored_render(self):
+        acquisition = self._acquisition(self._pdf(), mime=Acquisition.AcquisitionMIME.PDF)
+        url = reverse("files:acquisition-download", kwargs={"acquisition_id": acquisition.pk})
+
+        with mock.patch.object(PDFModifier, "generate", autospec=True, side_effect=PDFModifier.generate) as generate:
+            whole = self._get(url)
+            self.assertEqual(whole.status_code, 200, whole.redirect_chain)
+            self.assertEqual(whole["Accept-Ranges"], "bytes")
+            body = self._body(whole)
+            self.assertEqual(whole["Content-Length"], str(len(body)))
+            self.assertTrue(body.startswith(b"%PDF-"))
+
+            head = self._get(url, "bytes=0-99")
+            tail = self._get(url, "bytes=100-")
+        self.assertEqual(generate.call_count, 1)
+
+        self.assertEqual(head.status_code, 206)
+        self.assertEqual(head["Content-Range"], f"bytes 0-99/{len(body)}")
+        self.assertEqual(tail.status_code, 206)
+        self.assertEqual(self._body(head) + self._body(tail), body)
+
+        self.entry.refresh_from_db()
+        # The 200 and the range from byte 0 are first requests; the continuation is not counted again.
+        self.assertEqual(self.entry.popularity, 2)
+
+    def test_annotations_name_a_new_copy(self):
+        acquisition = self._acquisition(self._pdf(), mime=Acquisition.AcquisitionMIME.PDF)
+        user_acquisition = UserAcquisition.objects.create(
+            acquisition=acquisition, user=self.user, type=UserAcquisition.UserAcquisitionType.PERSONAL
+        )
+        plain = personalised.copy_name(user_acquisition, {"id": "x"}, None, {})
+        self.assertEqual(plain, personalised.copy_name(user_acquisition, {"id": "x"}, None, {}))
+        self.assertNotEqual(plain, personalised.copy_name(user_acquisition, {"id": "x"}, None, {1: ["<svg/>"]}))
+        self.assertNotEqual(plain, personalised.copy_name(user_acquisition, {"id": "x"}, "2", {}))
+        self.assertTrue(plain.startswith(f"personalised/{user_acquisition.pk}/"))
+
+    def test_an_unmarked_copy_is_rendered_again_and_idle_copies_are_deleted(self):
+        storage = get_storage()
+        name = f"personalised/{uuid.uuid4()}/copy.pdf"
+        storage.save(name, ContentFile(b"half-written"))
+
+        self.assertTrue(personalised.ensure_copy(storage, name, lambda: ContentFile(b"%PDF-complete")))
+        with storage.open(name) as stored:
+            self.assertEqual(stored.read(), b"%PDF-complete")
+
+        with mock.patch.object(personalised, "LOCK_SECONDS", -60):
+            self.assertEqual(personalised.cleanup_idle(storage), 0)  # still marked as used
+            cache.delete(personalised._ready_key(name))
+            self.assertEqual(personalised.cleanup_idle(storage), 1)
+        self.assertFalse(storage.exists(name))
 
     def test_an_empty_file_downloads_as_not_found(self):
         acquisition = self._acquisition(b"")

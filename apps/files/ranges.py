@@ -14,8 +14,9 @@ them for a file that sits in the storage backend unchanged.
 - A range that starts past the end → `416` with `Content-Range: bytes */size`.
 
 Only for bytes that are the same on every request. A personalised PDF
-(`PDFModifier.generate`, new `generated_at` on each call) must be served whole:
-ranges stitched from two different renders would be a corrupt file.
+(`PDFModifier.generate`, new `generated_at` on each call) is rendered once and
+stored first (`apps.files.personalised`); ranges are cut from that copy, never
+from two different renders.
 """
 
 import mimetypes

@@ -682,6 +682,10 @@ EVILFLOWERS_BACKUP_PGDUMP_BIN = os.getenv("EVILFLOWERS_BACKUP_PGDUMP_BIN", "pg_d
 EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE = os.getenv("EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE")
 # Orphan directories holding a file younger than this are kept.
 EVILFLOWERS_ORPHAN_CLEANUP_MIN_AGE_HOURS = float(os.getenv("EVILFLOWERS_ORPHAN_CLEANUP_MIN_AGE_HOURS", 7 * 24))
+# Personalised copies (#70): a reader's watermarked PDF is rendered once, stored under `personalised/` and
+# served in byte ranges from there. A copy no request has used for this long is deleted by the hourly
+# beat job; a reader who comes back later gets a fresh render on their next first request.
+EVILFLOWERS_PERSONALISED_COPY_IDLE_HOURS = float(os.getenv("EVILFLOWERS_PERSONALISED_COPY_IDLE_HOURS", 24))
 # Direct PostgreSQL host/port for pg_dump, bypassing PgBouncer (#103). Unset = PGHOST/PGPORT.
 EVILFLOWERS_BACKUP_PGHOST = os.getenv("EVILFLOWERS_BACKUP_PGHOST") or None
 EVILFLOWERS_BACKUP_PGPORT = os.getenv("EVILFLOWERS_BACKUP_PGPORT") or None

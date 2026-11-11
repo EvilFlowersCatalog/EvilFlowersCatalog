@@ -46,6 +46,26 @@ class EventHandlerTests(TestCase):
         self.assertEqual(protocol.job_args, [["a", "b"], "b'x'", [1, 2]])
         self.assertEqual(protocol.job_kwargs, {"ids": [3], "1": []})
 
+    def test_elided_saferepr_kwargs_keep_the_sent_and_received_protocol(self):
+        # Celery truncates big kwargs to `{...}` / `...`; literal_eval turns those into Ellipsis (#122).
+        parent = str(uuid.uuid4())
+        task_id = str(uuid.uuid4())
+        self.command.handle_event(event(uuid=parent))
+        # 1e999 evaluates to inf, which jsonb rejects as well.
+        kwargs = "{'run_id': 'x', 'regions': [{'page': 1, 'bbox': {...}}, ...], 'ratio': 1e999}"
+        with self.assertNoLogs("apps.tasks.management.commands.celery_event_handler", "ERROR"):
+            self.command.handle_event(event("task-sent", uuid=task_id, parent_id=parent, args="(...,)", kwargs=kwargs))
+            self.command.handle_event(event(uuid=task_id))
+        protocol = JobProtocol.objects.get(pk=task_id)
+        self.assertEqual(protocol.name, "evilflowers_analyzer.extract")
+        self.assertEqual(protocol.parent_id, uuid.UUID(parent))
+        self.assertEqual(protocol.status, JobProtocol.JobStatus.RECEIVED)
+        self.assertEqual(protocol.job_args, ["..."])
+        self.assertEqual(
+            protocol.job_kwargs,
+            {"run_id": "x", "regions": [{"page": 1, "bbox": ["..."]}, "..."], "ratio": "inf"},
+        )
+
     def test_extraction_task_and_its_follow_up_are_recorded(self):
         parent = services.task_id(uuid.uuid4(), 2)
         child = str(uuid.uuid4())

@@ -1,5 +1,6 @@
 import ast
 import logging
+import math
 
 from django import db
 from django.db import transaction
@@ -21,6 +22,9 @@ def _literal(raw: str, fallback):
 
     `literal_eval` also yields sets, tuples and bytes, which a JSONField rejects: every such event
     failed its insert and the protocol was lost (243 `set is not JSON serializable` a day on dev).
+    The field is Celery's truncated `saferepr`, not the value itself: a container nested too deep or
+    too long is elided to `{...}` / `[...]` / `...`, which evaluates to `{Ellipsis}` and `Ellipsis`
+    (#122). Those become the string `"..."`.
     """
     try:
         return _json_safe(ast.literal_eval(raw))
@@ -34,9 +38,14 @@ def _json_safe(value):
     if isinstance(value, (list, tuple, set, frozenset)):
         items = [_json_safe(item) for item in value]
         return sorted(items, key=repr) if isinstance(value, (set, frozenset)) else items
-    if isinstance(value, (bytes, bytearray, complex)):
-        return repr(value)
-    return value
+    if value is Ellipsis:
+        return "..."
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return value
+    # bytes, complex, NaN/inf (jsonb rejects them) and anything else literal_eval may produce.
+    return repr(value)
 
 
 class Command(BaseCommand):

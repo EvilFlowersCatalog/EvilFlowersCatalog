@@ -44,6 +44,14 @@ def cleanup_orphans() -> dict:
 
 
 @shared_task
+def cleanup_personalised_copies() -> dict:
+    """Delete stored personalised copies no reader has used for a while (#70)."""
+    from apps.files.personalised import cleanup_idle
+
+    return {"deleted": cleanup_idle()}
+
+
+@shared_task
 def sync_ldap_profiles() -> dict:
     """IP-025: import e-mails (and names) of LDAP users who have not logged in since the mapping changed."""
     from apps.core.models import AuthSource

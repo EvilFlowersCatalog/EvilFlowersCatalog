@@ -27,6 +27,7 @@ from apps.core.models import Acquisition, Entry, UserAcquisition, AnnotationItem
 from apps.core.modifiers import InvalidPage
 from apps.core.services.activity import ActivityService
 from apps.core.views import SecuredView
+from apps.files import personalised
 from apps.files.ranges import is_continuation, ranged_file_response
 from apps.files.services import AcquisitionStorageError, AcquisitionStorageService
 from evil_flowers_catalog import domain_metrics
@@ -198,8 +199,8 @@ class UserAcquisitionDownload(SecuredView):
         _check_ip_block(request, user_acquisition.acquisition.entry)
 
         modified = user_acquisition.acquisition.mime in settings.EVILFLOWERS_MODIFIERS
-        # A personalised copy is rendered anew on every request and so is always served whole.
-        counted = modified or not is_continuation(request)
+        # A ranged reader re-requests the same download many times; only its first request counts.
+        counted = not is_continuation(request)
 
         if counted:
             user_acquisition.acquisition.entry.popularity = user_acquisition.acquisition.entry.popularity + 1
@@ -221,20 +222,22 @@ class UserAcquisitionDownload(SecuredView):
             f"{guess_extension(user_acquisition.acquisition.mime)}"
         )
 
+        stored_copy = None
         if modified:
+            context = {
+                "id": str(uuid.uuid4()) if request.user.is_anonymous else str(user_acquisition.id),
+                "user_id": str(user_acquisition.user_id),
+                "title": user_acquisition.acquisition.entry.title,
+                "username": user_acquisition.user.username,
+                "authors": ", ".join([a.full_name for a in user_acquisition.acquisition.entry.authors.all()]),
+                "language": (
+                    user_acquisition.acquisition.entry.language.alpha2
+                    if user_acquisition.acquisition.entry.language
+                    else None
+                ),
+            }
             modifier = import_string(settings.EVILFLOWERS_MODIFIERS[user_acquisition.acquisition.mime])(
-                context={
-                    "id": str(uuid.uuid4()) if request.user.is_anonymous else str(user_acquisition.id),
-                    "user_id": str(user_acquisition.user_id),
-                    "title": user_acquisition.acquisition.entry.title,
-                    "username": user_acquisition.user.username,
-                    "authors": ", ".join([a.full_name for a in user_acquisition.acquisition.entry.authors.all()]),
-                    "language": (
-                        user_acquisition.acquisition.entry.language.alpha2
-                        if user_acquisition.acquisition.entry.language
-                        else None
-                    ),
-                },
+                context=context,
                 pages=depack(user_acquisition.range) if user_acquisition.range else None,
             )
 
@@ -247,12 +250,22 @@ class UserAcquisitionDownload(SecuredView):
                     annotation_map[item["page"]].append(item["content"])
                 annotation_map = dict(annotation_map)
 
+            page = request.GET.get("page", None)
+            annotation_map = dict(annotation_map)
+
+            def render():
+                return modifier.generate(user_acquisition.acquisition.content, page, annotation_map=annotation_map)
+
+            source_storage = user_acquisition.acquisition.content.storage
             try:
-                content = modifier.generate(
-                    user_acquisition.acquisition.content,
-                    request.GET.get("page", None),
-                    annotation_map=dict(annotation_map),
-                )
+                # Rendered once and stored, so every byte range of this download is cut from the same copy (#70).
+                # An anonymous copy carries a random id and base64 is never ranged: those are rendered per request.
+                if not request.user.is_anonymous and request.GET.get("format", None) != "base64":
+                    if _stored_size(user_acquisition.acquisition.content):
+                        stored_copy = personalised.copy_name(user_acquisition, context, page, annotation_map)
+                        if not personalised.ensure_copy(source_storage, stored_copy, render):
+                            stored_copy = None
+                content = None if stored_copy else render()
             except InvalidPage:
                 raise ProblemDetailException(_("Page not found"), status=HTTPStatus.NOT_FOUND)
             except Exception as exc:
@@ -272,8 +285,17 @@ class UserAcquisitionDownload(SecuredView):
             domain_metrics.record_acquisition_served(mime, "user_acquisition", "base64")
             return response
 
-        if modified:
-            # No Accept-Ranges: `generated_at` differs per render, so two ranges would not fit together.
+        if stored_copy:
+            response = ranged_file_response(
+                request,
+                source_storage,
+                stored_copy,
+                content_type=mime or None,
+                filename=sanitized_filename,
+                as_attachment=True,
+            )
+        elif modified:
+            # A copy rendered for this request alone: no Accept-Ranges, the next render would differ.
             response = FileResponse(content, as_attachment=True, filename=sanitized_filename)
         else:
             response = ranged_file_response(
