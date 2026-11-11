@@ -62,7 +62,8 @@ class EntrySuggestService:
         return qs
 
     def _entries(self, readable) -> list[dict]:
-        search = SearchState(self.text, prefix_last=True)
+        # Type-ahead is a prefix task: it never waits for TEI (#134), a cached query vector still helps.
+        search = SearchState(self.text, prefix_last=True, cached_vector_only=True)
         entries = list(
             search.apply(readable)
             .order_by("-relevance_score", "-popularity", "-pk")

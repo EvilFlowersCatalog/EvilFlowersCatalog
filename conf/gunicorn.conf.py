@@ -3,6 +3,12 @@
 import importlib.util
 import os
 
+# Marks the web process: `EVILFLOWERS_DB_POOL=1` turns on the database connection pool here only (#133,
+# `DATABASES` in settings/base.py). Celery runs in the same container with the same environment and
+# keeps per-task connections. The master process never queries: each worker opens its own pool after
+# the fork.
+os.environ["EVILFLOWERS_WEB_PROCESS"] = "1"
+
 # Worker
 worker_class = "gevent"
 workers = 4

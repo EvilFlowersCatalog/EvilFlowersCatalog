@@ -10,7 +10,7 @@ from pydantic_core.core_schema import ValidationInfo
 from apps.api.serializers import Serializer
 from apps.api.serializers.feeds import FeedSerializer, feed_queryset
 from apps.api.serializers.reviews import EntryRatingSerializer
-from apps.core.models import Acquisition
+from apps.core.models import Acquisition, EntryAuthor
 
 
 def with_entry_graph(qs: QuerySet, prefix: str = "") -> QuerySet:
@@ -22,7 +22,8 @@ def with_entry_graph(qs: QuerySet, prefix: str = "") -> QuerySet:
     """
     p = f"{prefix}__" if prefix else ""
     return qs.select_related(f"{p}language").prefetch_related(
-        f"{p}entry_authors__author",
+        # The authors joined in, one query instead of two (#135).
+        Prefetch(f"{p}entry_authors", queryset=EntryAuthor.objects.select_related("author")),
         f"{p}categories",
         Prefetch(f"{p}feeds", queryset=feed_queryset()),
         f"{p}acquisitions",

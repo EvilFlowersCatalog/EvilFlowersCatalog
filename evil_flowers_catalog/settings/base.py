@@ -83,6 +83,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Outermost: sees the response last, after every middleware below is done with the database (#133).
+    "apps.api.middleware.db_release.ReleaseConnectionBeforeStreamingMiddleware",
     # Must run first: fixes the request scheme before anything builds URLs.
     "apps.api.middleware.public_scheme.PublicSchemeMiddleware",
     "django.middleware.security.SecurityMiddleware",
@@ -147,8 +149,35 @@ DATABASES = {
         # (`QuerySet.iterator()`) can land on another server connection on its next
         # fetch. Session mode and direct connections keep streaming cursors.
         "DISABLE_SERVER_SIDE_CURSORS": _bool_env("PGBOUNCER_TRANSACTION_POOLING", default=False),
+        # With the pool: test a pooled connection before handing it out (one extra round trip), so a
+        # PgBouncer restart costs no failed request.
+        "CONN_HEALTH_CHECKS": _bool_env("PGPOOL_HEALTH_CHECKS", default=False),
+        "OPTIONS": {},
     }
 }
+
+# #133: a connection pool per web worker process (psycopg_pool), shared by its greenlets. Without it
+# every request connected to PgBouncer and closed again, a quarter of gunicorn's CPU.
+# Opt-in (`EVILFLOWERS_DB_POOL=1`) and for gunicorn only (`conf/gunicorn.conf.py` sets
+# EVILFLOWERS_WEB_PROCESS): under Celery prefork the Django fixup closes the pool before and after every
+# task, so there it would only cost extra connections. Not `CONN_MAX_AGE`: under gevent Django keeps a
+# connection per greenlet, not per worker.
+# Prepared statements stay off (Django's default `prepare_threshold=None`), as PgBouncer's transaction
+# mode needs. Client connections to PgBouncer: gunicorn workers x PGPOOL_MAX per pod. In PgBouncer's
+# session mode each of them also pins a server connection: size PGPOOL_MAX under the database's
+# `max_db_connections`, or run the database in transaction mode.
+if (
+    _bool_env("EVILFLOWERS_DB_POOL", default=False)
+    and _bool_env("EVILFLOWERS_WEB_PROCESS", default=False)
+    and int(os.getenv("PGPOOL_MAX", 10)) > 0
+):
+    DATABASES["default"]["OPTIONS"]["pool"] = {
+        "min_size": int(os.getenv("PGPOOL_MIN", 2)),
+        "max_size": int(os.getenv("PGPOOL_MAX", 10)),
+        # Seconds a request waits for a free connection before failing (`PoolTimeout`).
+        "timeout": float(os.getenv("PGPOOL_TIMEOUT", 5)),
+        "max_idle": float(os.getenv("PGPOOL_MAX_IDLE", 300)),
+    }
 
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 
@@ -568,6 +597,10 @@ EVILFLOWERS_EMBEDDING_API_KEY = os.getenv("EVILFLOWERS_EMBEDDING_API_KEY", "")
 EVILFLOWERS_EMBEDDING_HOST = os.getenv("EVILFLOWERS_EMBEDDING_HOST", "")
 # `model@revision` stored with every vector; empty = read from TEI's /info.
 EVILFLOWERS_EMBEDDING_MODEL = os.getenv("EVILFLOWERS_EMBEDDING_MODEL", "")
+# Seconds a catalog search (`GET /api/v1/entries?query=`, OPDS search) waits for TEI to embed the query
+# (#134). Later the search runs on the words only (`metadata.search.degraded`). Type-ahead never waits:
+# it uses a query vector only when one is already cached.
+EVILFLOWERS_EMBEDDING_QUERY_TIMEOUT = float(os.getenv("EVILFLOWERS_EMBEDDING_QUERY_TIMEOUT", 0.3))
 # Hybrid search (IP-021): entries whose cosine similarity to the query is at least this, at most
 # this many, are fused with the lexical results by Reciprocal Rank Fusion (k).
 EVILFLOWERS_SEARCH_VECTOR_MIN_SCORE = float(os.getenv("EVILFLOWERS_SEARCH_VECTOR_MIN_SCORE", 0.8))

@@ -247,20 +247,27 @@ class EntryFilter(BaseSecuredFilter):
             qs = self.apply_catalog_access_control(super().qs)
             if self.search is not None and not self._search_resolved:
                 self._search_resolved = True
-                if self._needs_fallback(qs):
+                self._keep_result_hits(qs)
+                if self._needs_fallback():
                     qs = self._search_fallback(qs)
-                # Filters after `query` may have removed some hits: keep what the result holds.
-                search = self.search
-                search.lexical_ids = set(qs.filter(pk__in=list(search.lexical_ids)).values_list("pk", flat=True))
-                search.vector_ids = set(qs.filter(pk__in=list(search.vector_ids)).values_list("pk", flat=True))
             self._secured_qs = qs
         return self._secured_qs
 
-    def _needs_fallback(self, qs) -> bool:
-        """No entry has every word. Semantic neighbours alone do not stop the lexical fallback."""
+    def _keep_result_hits(self, qs) -> None:
+        """Filters after `query` may have removed some hits: keep what the result holds (one query)."""
+        search = self.search
+        found = set(qs.filter(pk__in=list(search.lexical_ids | search.vector_ids)).values_list("pk", flat=True))
+        search.lexical_ids &= found
+        search.vector_ids &= found
+
+    def _needs_fallback(self) -> bool:
+        """
+        No entry of the result has every word (after `_keep_result_hits`). Semantic neighbours alone do
+        not stop the lexical fallback.
+        """
         if Channel.LEXICAL not in self.search.channels:
             return False
-        return not qs.filter(pk__in=list(self.search.lexical_ids)).exists()
+        return not self.search.lexical_ids
 
     def _search_fallback(self, strict_qs):
         """Retry the words with any word, then with trigram similarity (typos); keep the first with hits."""
@@ -270,7 +277,8 @@ class EntryFilter(BaseSecuredFilter):
             self.search.level = level
             del self._qs  # django-filter's cache of the filtered queryset
             candidate = self.apply_catalog_access_control(super().qs)
-            if not self._needs_fallback(candidate):
+            self._keep_result_hits(candidate)
+            if not self._needs_fallback():
                 qs = candidate
                 break
         else:

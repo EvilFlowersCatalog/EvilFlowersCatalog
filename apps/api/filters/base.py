@@ -27,6 +27,20 @@ class CachedSecuredFilterMixin:
         if self._accessible_catalog_ids is not None:
             return self._accessible_catalog_ids
 
+        # One lookup per request: facets build a filter per dimension (#135).
+        memo = getattr(self.request, "_accessible_catalog_ids", None)
+        if memo is not None and memo[0] == self.request.user.pk:
+            self._accessible_catalog_ids = memo[1]
+            return self._accessible_catalog_ids
+
+        self._compute_accessible_catalog_ids()
+        try:
+            self.request._accessible_catalog_ids = (self.request.user.pk, self._accessible_catalog_ids)
+        except AttributeError:  # a request stand-in that takes no attributes
+            pass
+        return self._accessible_catalog_ids
+
+    def _compute_accessible_catalog_ids(self) -> None:
         if not self.request.user.is_authenticated:
             # Public catalogs only
             self._accessible_catalog_ids = list(Catalog.objects.filter(is_public=True).values_list("id", flat=True))
@@ -55,8 +69,6 @@ class CachedSecuredFilterMixin:
                 self._accessible_catalog_ids = all_accessible_ids
             else:
                 self._accessible_catalog_ids = cached_catalog_ids
-
-        return self._accessible_catalog_ids
 
     def apply_catalog_access_control(self, queryset):
         """

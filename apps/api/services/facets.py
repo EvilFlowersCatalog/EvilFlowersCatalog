@@ -6,13 +6,16 @@ Each dimension is counted with every active filter applied except its own (disju
 selecting a language still shows the other languages that could be OR-ed in.
 """
 
+import json
 from collections import Counter
 from dataclasses import dataclass
 from typing import Callable, Optional
+from uuid import UUID
 
-from django.db.models import Count, Exists, F, Max, Min, OuterRef, Q, QuerySet
+from django.core.exceptions import EmptyResultSet
+from django.db import connection
+from django.db.models import Count, Exists, F, Func, IntegerField, Max, Min, OuterRef, Q, QuerySet, Value
 from django.db.models.functions import Concat
-from django.db.models import Value
 from django.http import QueryDict
 from django.utils.translation import gettext_lazy as _
 
@@ -129,20 +132,41 @@ class EntryFacetService:
         )
         return Entry.objects.filter(pk__in=matching)
 
+    def _resolve_search(self) -> None:
+        """
+        Without the main result's search (`GET /entries/facets?query=`), resolve it once here: otherwise
+        every dimension would resolve the fallback levels and rank the query on its own (#135).
+        """
+        if self.search is None and (self.params.get("query") or "").strip():
+            main = EntryFilter(self.params, queryset=self.queryset, request=self.request)
+            main.qs  # noqa: B018 -- resolves the level and records what each channel found
+            self.search = main.search
+
+    def branches(self) -> dict[str, QuerySet]:
+        """The counting query of every requested dimension computed in SQL (all but availability)."""
+        branches = {name: self._grouped_rows(DIMENSIONS[name]) for name in self.dimensions if name in DIMENSIONS}
+        if "fulltext" in self.dimensions:
+            branches["fulltext"] = self._fulltext_rows()
+        if "years" in self.dimensions:
+            branches["years"] = self._years_rows()
+        return branches
+
     def compute(self) -> dict:
+        self._resolve_search()
+        rows = count_together(self.branches())
         result = {}
         for name in self.dimensions:
             if name in DIMENSIONS:
-                result[name] = self._grouped(DIMENSIONS[name])
+                result[name] = [self._grouped_item(DIMENSIONS[name], row) for row in rows[name]]
         if "availability" in self.dimensions:
             result["availability"] = self._availability()
         if "fulltext" in self.dimensions:
-            result["fulltext"] = self._fulltext()
+            result["fulltext"] = self._fulltext(rows["fulltext"])
         if "years" in self.dimensions:
-            result["years"] = self._years()
+            result["years"] = self._years(rows["years"])
         return result
 
-    def _grouped(self, dimension: Dimension) -> list[dict]:
+    def _grouped_rows(self, dimension: Dimension) -> QuerySet:
         qs = self.entries_without(dimension.param).filter(**{f"{dimension.field}__isnull": False})
         if dimension.field == "publisher":
             qs = qs.exclude(publisher="")
@@ -162,9 +186,13 @@ class EntryFacetService:
         limit = self._limit(dimension)
         if limit is not None:
             rows = rows[:limit]
-        return [
-            {"value": row[dimension.field], "count": row["count"], **self._details(dimension, row)} for row in rows
-        ]
+        return rows
+
+    def _grouped_item(self, dimension: Dimension, row: dict) -> dict:
+        value = row[dimension.field]
+        if dimension.field.endswith("__id") and value is not None:
+            value = UUID(str(value))  # JSON carries the UUID as a string
+        return {"value": value, "count": row["count"], **self._details(dimension, row)}
 
     @staticmethod
     def _details(dimension: Dimension, row: dict) -> dict:
@@ -192,24 +220,66 @@ class EntryFacetService:
         states.pop(LcpState.NOT_LCP.value, None)
         return [{"state": state, "count": count} for state, count in states.most_common() if count]
 
-    def _fulltext(self) -> list[dict]:
-        counts = self.entries_without("fulltext").aggregate(
-            total=Count("pk"),
-            extracted=Count("pk", filter=Q(Exists(fulltext_runs().filter(acquisition__entry_id=OuterRef("pk"))))),
+    def _fulltext_rows(self) -> QuerySet:
+        # A constant in `values()` and no grouped field: one aggregate row (Django leaves out GROUP BY).
+        return (
+            self.entries_without("fulltext")
+            .values(_all=Value(1, output_field=IntegerField()))
+            .annotate(
+                total=Count("pk"),
+                extracted=Count("pk", filter=Q(Exists(fulltext_runs().filter(acquisition__entry_id=OuterRef("pk"))))),
+            )
         )
-        rows = [
+
+    @staticmethod
+    def _fulltext(rows: list[dict]) -> list[dict]:
+        counts = rows[0] if rows else {"total": 0, "extracted": 0}
+        result = [
             {"value": True, "count": counts["extracted"]},
             {"value": False, "count": counts["total"] - counts["extracted"]},
         ]
-        return [row for row in rows if row["count"]]
+        return [row for row in result if row["count"]]
 
-    def _years(self) -> dict:
-        # `published_at` is a PartialDateField (a plain Field, so ExtractYear rejects it);
-        # Min/Max come back as PartialDate via the field's converter.
-        bounds = self.entries_without("published_at__gte", "published_at__lte").aggregate(
-            min=Min("published_at"), max=Max("published_at")
+    def _years_rows(self) -> QuerySet:
+        # `published_at` is a PartialDateField (a plain Field, so ExtractYear rejects it); the column is a
+        # timestamptz, read in the connection's time zone (UTC) as the field's converter does.
+        year = Func(F("published_at"), template="EXTRACT(YEAR FROM %(expressions)s)::int", output_field=IntegerField())
+        return (
+            self.entries_without("published_at__gte", "published_at__lte")
+            .values(_all=Value(1, output_field=IntegerField()))
+            .annotate(min=Min(year), max=Max(year))
         )
-        return {key: value.date.year if value else None for key, value in bounds.items()}
+
+    @staticmethod
+    def _years(rows: list[dict]) -> dict:
+        bounds = rows[0] if rows else {}
+        return {"min": bounds.get("min"), "max": bounds.get("max")}
+
+
+def count_together(branches: dict[str, QuerySet]) -> dict[str, list[dict]]:
+    """
+    Run the facet queries as one statement (`UNION ALL`, one row per facet value as JSON) instead of one
+    round trip per dimension (#135). Rows keep each branch's own order; keys are the `values()` names.
+    """
+    names = list(branches)
+    result: dict[str, list[dict]] = {name: [] for name in names}
+    parts, params = [], []
+    for index, qs in enumerate(branches.values()):
+        try:
+            sql, branch_params = qs.query.sql_with_params()
+        except EmptyResultSet:  # nothing to count (e.g. a search without hits)
+            continue
+        parts.append(
+            f"(SELECT {index} AS branch, row_number() OVER () AS position, to_jsonb(t) AS row FROM ({sql}) AS t)"
+        )
+        params.extend(branch_params)
+    if not parts:
+        return result
+    with connection.cursor() as cursor:
+        cursor.execute(f"{' UNION ALL '.join(parts)} ORDER BY branch, position", params)
+        for branch, _position, row in cursor.fetchall():
+            result[names[branch]].append(json.loads(row) if isinstance(row, str) else row)
+    return result
 
 
 @dataclass

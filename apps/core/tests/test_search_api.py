@@ -3,10 +3,19 @@ IP-020 / #101: the search surfaces — result highlights and metadata, fallbacks
 `include=facets`, the facet dimensions, `/entries/suggest`, index maintenance and OPDS facets.
 """
 
+import json
+
 from lxml import etree
 
-from django.test import TestCase
+from django.contrib.auth.models import AnonymousUser
+from django.core.exceptions import EmptyResultSet
+from django.core.serializers.json import DjangoJSONEncoder
+from django.db.models import Count, Exists, Max, Min, OuterRef, Q
+from django.test import RequestFactory, TestCase
+from partial_date import PartialDate
 
+from apps.api.filters.entries import fulltext_runs
+from apps.api.services.facets import EntryFacetService, count_together
 from apps.core.models import Author, Catalog, Category, Entry, EntryAuthor, Feed
 from apps.core.tests.test_search_golden import SearchFixtureMixin
 
@@ -159,6 +168,59 @@ class SearchApiTests(SearchFixtureMixin, TestCase):
         ).json()["response"]
         # `architecture` stems to the English title; the category label Architecture matches the Slovak one too
         self.assertEqual(sum(row["count"] for row in facets["languages"]), 2)
+
+    def test_facets_in_one_statement_match_each_query_alone(self):
+        """#135: the `UNION ALL` of the dimensions returns what each dimension's own query returns."""
+        Entry.objects.filter(pk=self.keys["clrs"]).update(published_at=PartialDate("1990"))
+        Entry.objects.filter(pk=self.keys["climate"]).update(published_at=PartialDate("2021-06"))
+        catalog = str(self.catalog.pk)
+        cases = (
+            {"catalog_id": catalog},
+            {"catalog_id": catalog, "query": "algorithms", "language_code": "en"},
+            {"catalog_id": catalog, "query": "informatika", "feed_id": str(self.feed.pk), "facet_limit": "2"},
+            {"catalog_id": catalog, "facet_query": "a", "facet_limit": "3"},
+            {"catalog_id": catalog, "query": "qqqxxxzzz"},
+        )
+        for params in cases:
+            with self.subTest(params=params):
+                request = RequestFactory().get("/api/v1/entries/facets", params)
+                request.user = AnonymousUser()
+                service = EntryFacetService(request)
+                service._resolve_search()
+                branches = service.branches()
+                together = count_together(branches)
+                normalise = lambda rows: json.loads(json.dumps(list(rows), cls=DjangoJSONEncoder))  # noqa: E731
+                for name, qs in branches.items():
+                    try:
+                        alone = normalise(qs)
+                    except EmptyResultSet:
+                        alone = []
+                    self.assertEqual(together[name], alone, name)
+
+                # `years` and `fulltext` against how they were computed before (aggregate, PartialDate years).
+                bounds = service.entries_without("published_at__gte", "published_at__lte").aggregate(
+                    min=Min("published_at"), max=Max("published_at")
+                )
+                counts = service.entries_without("fulltext").aggregate(
+                    total=Count("pk"),
+                    extracted=Count(
+                        "pk", filter=Q(Exists(fulltext_runs().filter(acquisition__entry_id=OuterRef("pk"))))
+                    ),
+                )
+                facets = service.compute()
+                self.assertEqual(
+                    facets["years"], {key: value.date.year if value else None for key, value in bounds.items()}
+                )
+                expected = [{"value": True, "count": counts["extracted"]}]
+                expected.append({"value": False, "count": counts["total"] - counts["extracted"]})
+                self.assertEqual(facets["fulltext"], [row for row in expected if row["count"]])
+
+    def test_years_facet_reads_partial_dates(self):
+        Entry.objects.filter(pk=self.keys["clrs"]).update(published_at=PartialDate("1990"))
+        Entry.objects.filter(pk=self.keys["ml"]).update(published_at=PartialDate("1997-03-01"))
+        facets = self.get("/api/v1/entries/facets", catalog_id=str(self.catalog.pk), facet="years").json()
+        self.assertEqual(facets["response"]["years"]["min"], 1990)
+        self.assertEqual(facets["response"]["years"]["max"], 1997)
 
     def test_publisher_and_author_filters(self):
         self.assertEqual(self.entries(publisher="mit press")["metadata"]["total"], 1)

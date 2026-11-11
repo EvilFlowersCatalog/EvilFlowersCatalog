@@ -26,6 +26,7 @@ from typing import Iterable, Optional
 
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
+from django.core.exceptions import EmptyResultSet
 from django.contrib.postgres.search import SearchQueryField, TrigramWordSimilarity
 from django.db import connection
 from django.db.models import (
@@ -289,6 +290,8 @@ class SearchState:
     prefix_last: bool = False
     #: `Channel.BOTH`, or one channel (OPDS `mode=keyword` / `mode=semantic`)
     channels: tuple = Channel.BOTH
+    #: type-ahead: use a query vector only when one is cached, never wait for TEI (#134)
+    cached_vector_only: bool = False
     #: what the last recorded `apply` found, per channel
     lexical_ids: set = field(default_factory=set)
     vector_ids: set = field(default_factory=set)
@@ -297,6 +300,8 @@ class SearchState:
     _tsqueries: dict = field(default_factory=dict, repr=False)
     _vector: Optional[list] = field(default=None, repr=False)
     _vector_resolved: bool = field(default=False, repr=False)
+    #: rankings already computed in this request, by input queryset (#135)
+    _rankings: dict = field(default_factory=dict, repr=False)
 
     @property
     def relaxed(self) -> bool:
@@ -339,8 +344,15 @@ class SearchState:
 
             self._vector_resolved = True
             if Channel.VECTOR in self.channels and embeddings.enabled():
-                self._vector = embeddings.try_embed_query(self.text, "entries")
-                self.degraded = self._vector is None
+                self._vector = embeddings.try_embed_query(
+                    self.text,
+                    "entries",
+                    timeout=embeddings.search_budget(),
+                    cached_only=self.cached_vector_only,
+                    stable=True,
+                )
+                # Type-ahead without a cached vector is lexical by design, not degraded.
+                self.degraded = self._vector is None and not self.cached_vector_only
         return self._vector
 
     def lexical_ranking(self, qs: QuerySet, ordered: bool = True) -> list:
@@ -394,6 +406,40 @@ class SearchState:
         )
         return list(rows)
 
+    @staticmethod
+    def _ranking_key(qs: QuerySet) -> Optional[tuple]:
+        """
+        The SQL of the ranked set. Facets apply the search to the result's filters minus their own; with
+        none of those active (a reader who only typed words) that is the main result's set, and the
+        rankings computed for it are reused instead of run again per dimension (#135).
+        """
+        try:
+            sql, params = qs.query.sql_with_params()
+        except EmptyResultSet:
+            return None
+        return sql, repr(params)
+
+    def _lexical(self, qs: QuerySet, key: Optional[tuple], ordered: bool) -> list:
+        memo_key = ("lexical", self.level, key)
+        if key is not None and memo_key in self._rankings:
+            rows, was_ordered = self._rankings[memo_key]
+            # An ordered ranking serves membership too, not the other way round.
+            if was_ordered or not ordered:
+                return rows
+        rows = self.lexical_ranking(qs, ordered=ordered)
+        if key is not None:
+            self._rankings[memo_key] = (rows, ordered)
+        return rows
+
+    def _semantic(self, qs: QuerySet, key: Optional[tuple]) -> list:
+        memo_key = ("vector", key)
+        if key is not None and memo_key in self._rankings:
+            return self._rankings[memo_key]
+        rows = self.vector_ranking(qs)
+        if key is not None:
+            self._rankings[memo_key] = rows
+        return rows
+
     def apply(self, qs: QuerySet, record: bool = True) -> QuerySet:
         """
         The entries of `qs` the search finds, annotated with `relevance_score`. `record` keeps what each
@@ -403,8 +449,9 @@ class SearchState:
         if not words(self.text):
             return nothing
 
-        lexical = self.lexical_ranking(qs, ordered=record) if Channel.LEXICAL in self.channels else []
-        semantic = self.vector_ranking(qs) if Channel.VECTOR in self.channels else []
+        key = self._ranking_key(qs)
+        lexical = self._lexical(qs, key, ordered=record) if Channel.LEXICAL in self.channels else []
+        semantic = self._semantic(qs, key) if Channel.VECTOR in self.channels else []
         if record:
             self.lexical_ids, self.vector_ids = set(lexical), set(semantic)
 
