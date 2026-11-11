@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "7bfb3ffdef225f8c644a8f6e33970ed5b2b329e7",
-    "short": "7bfb3ff",
-    "message": "IP-028 Admin Lending Statistics Endpoint",
+    "sha": "e41d20c92ea041dfb15c91d407d3963b1a09749b",
+    "short": "e41d20c",
+    "message": "#130 implementation",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/7bfb3ffdef225f8c644a8f6e33970ed5b2b329e7"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e41d20c92ea041dfb15c91d407d3963b1a09749b"
   },
-  "deployed_at": "2026-11-11T18:18:55Z",
+  "deployed_at": "2026-11-11T18:36:18Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
