@@ -330,6 +330,10 @@ EVILFLOWERS_CACHE_CONTROL_DEFAULT = os.getenv("EVILFLOWERS_CACHE_CONTROL_DEFAULT
 #   watermarks or personalised modifications; never shared.
 # Override via env to integrate with nginx / CDN policy.
 EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC = os.getenv("EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC", "public, no-cache")
+# A cover or thumbnail requested by its current content hash (`?v=`, #128) never changes under that URL.
+EVILFLOWERS_FILES_CACHE_CONTROL_IMMUTABLE = os.getenv(
+    "EVILFLOWERS_FILES_CACHE_CONTROL_IMMUTABLE", "public, max-age=31536000, immutable"
+)
 EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE = os.getenv(
     "EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE", "private, max-age=0, must-revalidate"
 )
@@ -794,6 +798,10 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
 CELERY_TIMEZONE = os.getenv("CELERY_TIMEZONE", TIME_ZONE)
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", 30 * 60))  # Default: 30min
+# Celery's default is os.cpu_count(), the *node's* core count, which ignores the
+# container's CPU limit (16 prefork children in a 4-CPU pod, #129). Unset or 0 keeps
+# that default; the deployment sets it to the pod's CPU limit.
+CELERY_WORKER_CONCURRENCY = int(os.getenv("CELERY_WORKER_CONCURRENCY") or 0) or None
 CELERY_TASK_ROUTES = {
     "evilflowers_ocr_worker.*": {"queue": "evilflowers_ocr_worker"},
     "evilflowers_lcpencrypt_worker.*": {"queue": "evilflowers_lcpencrypt_worker"},

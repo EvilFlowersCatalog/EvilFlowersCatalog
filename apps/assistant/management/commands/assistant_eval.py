@@ -35,7 +35,6 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
-from django.test import RequestFactory
 from django.test.utils import override_settings
 
 from apps.assistant import evaluation, retrieval_bench
@@ -128,7 +127,7 @@ class Command(BaseCommand):
             raise CommandError(
                 f"{options['gold']} holds no gold questions yet (format: apps/assistant/retrieval_bench.py)."
             )
-        request = RequestFactory().get("/assistant/v1/evaluation")
+        request = evaluation.evaluation_request("get")
         request.user = self._user(options["username"])
 
         results = []

@@ -193,8 +193,9 @@ class EntrySerializer:
                 return info.context["shelf_entries"].get(info.data.get("id"), None)
 
         @field_validator("image_url", "thumbnail_url", mode="before")
-        def generate_absolute_url(cls, v, info: ValidationInfo) -> Optional[UUID]:
-            return info.context["request"].build_absolute_uri(v)
+        def generate_absolute_url(cls, v, info: ValidationInfo) -> Optional[str]:
+            # `build_absolute_uri(None)` is the request's own URL; an entry without a cover has no link (#128).
+            return info.context["request"].build_absolute_uri(v) if v else None
 
         @field_validator("categories", mode="before")
         def generate_categories(cls, v, info: ValidationInfo):

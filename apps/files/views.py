@@ -3,6 +3,7 @@ import hashlib
 import ipaddress
 import logging
 import uuid
+from typing import Optional
 from collections import defaultdict
 from http import HTTPStatus
 from mimetypes import guess_extension
@@ -289,13 +290,15 @@ class UserAcquisitionDownload(SecuredView):
         return response
 
 
-def _cover_etag(entry: Entry, file) -> str:
+def _cover_etag(entry: Entry, file, content_hash: Optional[str]) -> str:
     """Validator for a cover or thumbnail, computed without opening the file.
 
-    A new upload is a new file name, and saving the entry bumps `touched_at`, so
-    either change rolls the ETag. A file swapped in place under the same name by
-    a bulk `QuerySet.update()` would not; nothing in the catalog does that.
+    The stored content hash (#128) is the strong ETag: only a new file changes it,
+    never a save that merely bumps `touched_at` (opening a book saves the entry).
+    Rows not yet backfilled fall back to the file name plus `touched_at`.
     """
+    if content_hash:
+        return quote_etag(content_hash)
     raw = f"{entry.pk}|{file.name}|{entry.touched_at.isoformat() if entry.touched_at else ''}"
     return quote_etag(hashlib.sha256(raw.encode()).hexdigest()[:32])
 
@@ -307,9 +310,9 @@ def _cover_entry(entry_id: uuid.UUID, field: str, missing: str) -> Entry:
     `table_of_contents` and the search columns.
     """
     try:
-        entry = Entry.objects.only("id", "title", "image_mime", "thumbnail_mime", "touched_at", field).get(
-            pk=entry_id, **{f"{field}__isnull": False}
-        )
+        entry = Entry.objects.only(
+            "id", "title", "image_mime", "thumbnail_mime", "touched_at", field, f"{field}_hash"
+        ).get(pk=entry_id, **{f"{field}__isnull": False})
     except Entry.DoesNotExist:
         raise ProblemDetailException(missing, status=HTTPStatus.NOT_FOUND)
     # An entry without a cover stores "" rather than NULL; serving it opened the storage root (500).
@@ -318,16 +321,26 @@ def _cover_entry(entry_id: uuid.UUID, field: str, missing: str) -> Entry:
     return entry
 
 
-def _cover_response(request, entry: Entry, file, content_type, filename: str):
-    """Serve a cover or thumbnail behind its ETag (IP-027).
+def _cover_response(request, entry: Entry, file, content_hash: Optional[str], content_type, filename: str):
+    """Serve a cover or thumbnail behind its ETag (IP-027, #128).
 
-    `public, no-cache` lets the browser and nginx keep a copy but makes them
-    revalidate it; a matching `If-None-Match` (or `If-Modified-Since`) is
-    answered here with a 304, before storage is touched — not even to check
+    - `?v=` equal to the stored content hash: the URL names this exact body, so
+      it is `immutable` for a year (browser and nginx never ask again).
+    - no `v` (OPDS clients keep stored URLs) or a stale `v` (the cover was
+      replaced): `public, no-cache`, so a cache keeps a copy but revalidates
+      it. A stale `v` is never pinned under the immutable policy.
+
+    A matching `If-None-Match` (or `If-Modified-Since` on rows without a hash)
+    is answered here with a 304, before storage is touched — not even to check
     that the file exists (#126).
     """
-    etag = _cover_etag(entry, file)
-    last_modified = int(entry.touched_at.timestamp()) if entry.touched_at else None
+    etag = _cover_etag(entry, file, content_hash)
+    # With a content hash the strong ETag is the validator; a `touched_at` date would roll on every save.
+    last_modified = None if content_hash or not entry.touched_at else int(entry.touched_at.timestamp())
+    if content_hash and request.GET.get("v") == content_hash:
+        cache_control = settings.EVILFLOWERS_FILES_CACHE_CONTROL_IMMUTABLE
+    else:
+        cache_control = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC
     response = get_conditional_response(request, etag=etag, last_modified=last_modified)
     if response is None:
         if not file.storage.exists(file.name):
@@ -336,7 +349,7 @@ def _cover_response(request, entry: Entry, file, content_type, filename: str):
     response["ETag"] = etag
     if last_modified is not None:
         response["Last-Modified"] = http_date(last_modified)
-    response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC
+    response["Cache-Control"] = cache_control
     return response
 
 
@@ -351,7 +364,7 @@ class EntryImageDownload(SecuredView):
     def get(self, request, entry_id: uuid.UUID):
         entry = _cover_entry(entry_id, "image", _("Entry image not found"))
         sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime or '') or ''}"
-        return _cover_response(request, entry, entry.image, entry.image_mime, sanitized_filename)
+        return _cover_response(request, entry, entry.image, entry.image_hash, entry.image_mime, sanitized_filename)
 
 
 class EntryThumbnailDownload(SecuredView):
@@ -367,4 +380,6 @@ class EntryThumbnailDownload(SecuredView):
         # covers); legacy rows predate the field and fall back to image_mime.
         thumbnail_mime = entry.thumbnail_mime or entry.image_mime
         sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(thumbnail_mime or '') or ''}"
-        return _cover_response(request, entry, entry.thumbnail, thumbnail_mime, sanitized_filename)
+        return _cover_response(
+            request, entry, entry.thumbnail, entry.thumbnail_hash, thumbnail_mime, sanitized_filename
+        )

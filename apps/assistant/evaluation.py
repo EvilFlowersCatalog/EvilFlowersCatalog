@@ -31,7 +31,9 @@ import re
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Iterable, List, Optional
+from urllib.parse import urlsplit
 
+from django.conf import settings
 from django.test import RequestFactory
 
 #: Letters and words that occur in Czech but not Slovak, and the reverse. Enough to
@@ -139,6 +141,18 @@ def score(case: dict, outcome: Outcome) -> Outcome:
     return outcome
 
 
+def evaluation_request(method: str, path: str = "/assistant/v1/evaluation"):
+    """A request on the instance's own host, so tools that build absolute URLs work.
+
+    RequestFactory's default host is `testserver`, which a deployment's ALLOWED_HOSTS
+    rejects: every `get_entry` in an evaluation run raised DisallowedHost (#121).
+    """
+    base = urlsplit(getattr(settings, "EVILFLOWERS_BASE_URL", "") or "")
+    host = base.netloc or "localhost"
+    factory = RequestFactory(HTTP_HOST=host)
+    return getattr(factory, method)(path, secure=base.scheme == "https")
+
+
 def run_case(user, case: dict, verify: bool = False) -> Outcome:
     """Run one case as a real turn in a throw-away chat, then delete the chat.
 
@@ -149,7 +163,7 @@ def run_case(user, case: dict, verify: bool = False) -> Outcome:
     from apps.assistant.models import Chat
 
     outcome = Outcome(id=str(case.get("id") or case["question"][:40]), question=case["question"])
-    request = RequestFactory().post("/assistant/v1/evaluation")
+    request = evaluation_request("post")
     request.user = user
     chat = Chat.objects.create(user=user, title=f"[evaluation] {outcome.id}")
 

@@ -31,6 +31,7 @@ from mimetypes import guess_extension
 
 from apps.api.services.entry import build_thumbnail, build_placeholder_thumbnail
 from apps.core.models import Entry
+from apps.core.models.entry import cover_bytes_hash
 
 logger = logging.getLogger(__name__)
 
@@ -112,12 +113,14 @@ class Command(BaseCommand):
             old_thumbnail_name = entry.thumbnail.name
 
             entry.thumbnail_mime = thumbnail_mime
+            # Hash the bytes in hand (#128): with the old file missing, the new one can reuse its name.
+            entry.thumbnail_hash = cover_bytes_hash(buffer.getvalue())
             entry.thumbnail.save(
                 f"thumbnail{guess_extension(thumbnail_mime)}",
                 File(buffer),
                 save=False,
             )
-            entry.save(update_fields=["thumbnail", "thumbnail_mime"])
+            entry.save(update_fields=["thumbnail", "thumbnail_mime", "thumbnail_hash"])
 
             # Remove the previous thumbnail if it landed on a different path
             # (e.g. the old PNG preview when switching a cover to JPEG).

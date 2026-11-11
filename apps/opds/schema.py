@@ -259,7 +259,7 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
             acquisition_entry.links.append(
                 Link(
                     rel=LinkType.IMAGE,
-                    href=reverse("files:cover-download", kwargs={"entry_id": entry.id}),
+                    href=entry.image_url,
                     type=entry.image_mime,
                 )
             )
@@ -267,7 +267,7 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
             acquisition_entry.links.append(
                 Link(
                     rel=LinkType.THUMBNAIL,
-                    href=reverse("files:thumbnail-download", kwargs={"entry_id": entry.id}),
+                    href=entry.thumbnail_url,
                     type=entry.thumbnail_mime or entry.image_mime or "image/jpeg",
                 )
             )

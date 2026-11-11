@@ -1,4 +1,6 @@
+import hashlib
 from typing import Optional, TypedDict, Literal
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.postgres.fields import HStoreField
@@ -69,6 +71,28 @@ SEARCH_COLUMNS = (
 #: IP-023: the rating aggregate, written by `apps.core.services.reviews` only.
 RATING_COLUMNS = ("rating_count", "rating_sum")
 
+# (file field, hash column) pairs versioning the cover URLs (#128).
+COVER_HASH_FIELDS = (("image", "image_hash"), ("thumbnail", "thumbnail_hash"))
+
+
+def cover_bytes_hash(data: bytes) -> str:
+    """The version of a cover whose bytes the writer holds (#128); same value as `cover_content_hash`."""
+    return hashlib.sha256(data).hexdigest()[:16]
+
+
+def cover_content_hash(file) -> Optional[str]:
+    """First 16 hex chars of the SHA-256 of a stored cover; None without a file or when storage lacks it."""
+    if not file or not file.name:
+        return None
+    digest = hashlib.sha256()
+    try:
+        with file.storage.open(file.name, "rb") as handle:
+            for chunk in iter(lambda: handle.read(64 * 1024), b""):
+                digest.update(chunk)
+    except Exception:  # noqa: BLE001 — minio raises its own S3Error; no hash just means an unversioned URL
+        return None
+    return digest.hexdigest()[:16]
+
 
 class EntryManager(models.Manager):
     def get_queryset(self):
@@ -137,6 +161,12 @@ class Entry(BaseModel):
     # Thumbnail MIME can differ from image_mime: covers are re-encoded to JPEG
     # for the preview grid. NULL on legacy rows — serving falls back to image_mime.
     thumbnail_mime = models.CharField(max_length=100, null=True)
+    # #128: content hashes (first 16 hex chars of SHA-256) of the stored cover and thumbnail.
+    # They version the URLs (`?v=`) and are the strong ETag. `save()` recomputes one whenever
+    # its file name changes, so reading a book or editing metadata never rolls them. NULL means
+    # not computed yet (`backfill_cover_hashes`): such a cover gets an unversioned URL.
+    image_hash = models.CharField(max_length=16, null=True, editable=False)
+    thumbnail_hash = models.CharField(max_length=16, null=True, editable=False)
     popularity = models.PositiveBigIntegerField(default=0, null=False)
     config = models.JSONField(null=False, default=default_entry_config)
     citation = models.TextField(null=True)
@@ -165,6 +195,35 @@ class Entry(BaseModel):
     embedding = HalfVectorField(dimensions=ENTRY_EMBEDDING_DIMENSIONS, null=True, editable=False)
     embedding_model = models.CharField(max_length=255, null=True, editable=False)
 
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        instance = super().from_db(db, field_names, values)
+        # The file names the hashes were computed for; `save()` rehashes a file whose name differs.
+        instance._stored_cover_names = {
+            field: instance.__dict__[field] for field, _hash in COVER_HASH_FIELDS if field in instance.__dict__
+        }
+        return instance
+
+    def _refresh_cover_hashes(self, update_fields: Optional[list[str]]) -> Optional[list[str]]:
+        """Recompute `image_hash` / `thumbnail_hash` for a file whose name changed since loading.
+
+        Storage never overwrites a name (a new upload gets a new one), so a new name is the only
+        way a cover's body changes. Returns `update_fields` with the rehashed columns added.
+        """
+        stored = getattr(self, "_stored_cover_names", {})
+        deferred = self.get_deferred_fields()
+        for field, hash_field in COVER_HASH_FIELDS:
+            if field in deferred or (update_fields is not None and field not in update_fields):
+                continue
+            file = getattr(self, field)
+            name = file.name if file else None
+            if not self._state.adding and field in stored and (stored[field] or None) == (name or None):
+                continue
+            setattr(self, hash_field, cover_content_hash(file))
+            if update_fields is not None and hash_field not in update_fields:
+                update_fields = [*update_fields, hash_field]
+        return update_fields
+
     def save(self, *args, **kwargs):
         # The rating aggregate is written only by `ReviewService` with a targeted UPDATE. A full save of an
         # instance loaded before a review changed would put the old numbers back, so it leaves them out.
@@ -175,7 +234,18 @@ class Entry(BaseModel):
                 for field in self._meta.concrete_fields
                 if not field.primary_key and field.name not in skipped and field.attname not in skipped
             ]
+        if kwargs.get("update_fields") is not None:
+            kwargs["update_fields"] = self._refresh_cover_hashes(list(kwargs["update_fields"]))
+        else:
+            self._refresh_cover_hashes(None)
         super().save(*args, **kwargs)
+        written = kwargs.get("update_fields")
+        deferred = self.get_deferred_fields()
+        stored = getattr(self, "_stored_cover_names", {})
+        for field, _hash in COVER_HASH_FIELDS:
+            if field not in deferred and (written is None or field in written):
+                stored[field] = getattr(self, field).name or None
+        self._stored_cover_names = stored
 
     @property
     def rating_average(self) -> Optional[float]:
@@ -200,17 +270,24 @@ class Entry(BaseModel):
             or f"{getattr(first, 'name', '')} {getattr(first, 'surname', '')}".strip()
         )
 
+    @staticmethod
+    def _versioned(path: str, version: Optional[str]) -> str:
+        # #128: `?v=<content hash>` is answered `immutable`; without a hash the URL stays unversioned.
+        return f"{path}?{urlencode({'v': version})}" if version else path
+
     @property
     def image_url(self) -> Optional[str]:
         if not self.image:
             return None
-        return reverse("files:cover-download", kwargs={"entry_id": self.pk})
+        return self._versioned(reverse("files:cover-download", kwargs={"entry_id": self.pk}), self.image_hash)
 
     @property
     def thumbnail_url(self) -> Optional[str]:
-        if not self.image:
+        # Checks the thumbnail itself: placeholders exist without a cover, and a cover without a
+        # generated thumbnail used to get a URL that 404s (#128).
+        if not self.thumbnail:
             return None
-        return reverse("files:thumbnail-download", kwargs={"entry_id": self.pk})
+        return self._versioned(reverse("files:thumbnail-download", kwargs={"entry_id": self.pk}), self.thumbnail_hash)
 
     def read_config(self, config_name: str):
         current = default_entry_config() | self.config

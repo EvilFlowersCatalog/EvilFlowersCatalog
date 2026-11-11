@@ -18,6 +18,7 @@ from isbnlib.registry import bibformatters
 
 from apps.api.forms.entries import EntryForm
 from apps.core.models import Catalog, User, Entry, Author, Category, Acquisition, Price, EntryAuthor
+from apps.core.models.entry import cover_bytes_hash
 from apps.core.tasks import store_table_of_contents
 
 
@@ -186,12 +187,18 @@ def set_cover(entry: Entry, uploaded_image, *, mime: str) -> Entry:
     Shared by `EntryService.populate` (REST `image`) and the MCP cover upload
     link, so both produce the same `cover.*` + `thumbnail.*` pair.
     """
+    # The hashes are set from the bytes in hand (#128): a write that reuses the stored name (the old
+    # file was already gone) would otherwise keep the previous version. `Entry.save()` is the net.
+    uploaded_image.seek(0)
     entry.image_mime = mime
+    entry.image_hash = cover_bytes_hash(uploaded_image.read())
+    uploaded_image.seek(0)
     entry.image.save(f"cover{mimetypes.guess_extension(mime)}", uploaded_image)
 
     uploaded_image.seek(0)
     buffer, thumbnail_mime = build_thumbnail(Image.open(uploaded_image), settings.EVILFLOWERS_IMAGE_THUMBNAIL)
     entry.thumbnail_mime = thumbnail_mime
+    entry.thumbnail_hash = cover_bytes_hash(buffer.getvalue())
     entry.thumbnail.save(f"thumbnail{mimetypes.guess_extension(thumbnail_mime)}", File(buffer))
     return entry
 

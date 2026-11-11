@@ -205,7 +205,7 @@ class ManifestBuilder:
         if entry.image:
             links.append(
                 Link(
-                    href=f"{base_url}{reverse('files:cover-download', kwargs={'entry_id': entry.pk})}",
+                    href=f"{base_url}{entry.image_url}",
                     type=entry.image_mime or "image/jpeg",
                     rel=cls.OPDS_REL_COVER,
                 )
@@ -213,7 +213,7 @@ class ManifestBuilder:
         if entry.thumbnail:
             links.append(
                 Link(
-                    href=f"{base_url}{reverse('files:thumbnail-download', kwargs={'entry_id': entry.pk})}",
+                    href=f"{base_url}{entry.thumbnail_url}",
                     type=entry.thumbnail_mime or entry.image_mime or "image/jpeg",
                     rel=cls.OPDS_REL_THUMBNAIL,
                 )
