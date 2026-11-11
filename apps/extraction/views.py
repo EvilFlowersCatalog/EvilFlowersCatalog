@@ -97,7 +97,7 @@ class RunStart(IngestionView):
             raise ValidationException(form)
 
         try:
-            services.start(run, **form.cleaned_data)
+            run = services.start(run, **form.cleaned_data)
         except services.RunNotRunning as error:
             raise self._conflict(error) from error
 
@@ -133,7 +133,7 @@ class RunParagraphs(IngestionView):
         description=(
             "Add a batch of paragraphs with their sentences and embeddings (IP-018 Phase 2b). Links refer to "
             "paragraphs by `seq` and may point back at earlier batches. Rejected with 409 unless the run is "
-            "`running`."
+            "`running`, or when the batch repeats a `seq` the run already holds."
         ),
         tags=["Extraction"],
         summary="Add paragraphs to an extraction run",
@@ -148,6 +148,12 @@ class RunParagraphs(IngestionView):
             count = services.add_paragraphs(run, form.cleaned_data["paragraphs"], form.cleaned_data.get("links") or [])
         except services.RunNotRunning as error:
             raise self._conflict(error) from error
+        except services.DuplicateParagraphs as error:
+            raise ProblemDetailException(
+                _("The extraction run already holds these paragraphs"),
+                status=HTTPStatus.CONFLICT,
+                detail=_("A paragraph with the same seq was stored before; retrying the batch will not help."),
+            ) from error
 
         return SingleResponse(request, data={"created": count}, status=HTTPStatus.CREATED)
 

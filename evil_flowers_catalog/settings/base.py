@@ -785,6 +785,12 @@ SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "0") == "1"
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATABASE}")
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+# Every consumer of a Redis db restores unacked tasks older than *its own* visibility
+# timeout, in any queue. The extraction services share this db and hold tasks for hours,
+# so the default 1 h made the catalog worker redeliver them mid-run (#120).
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "visibility_timeout": int(os.getenv("CELERY_BROKER_VISIBILITY_TIMEOUT", 12 * 60 * 60)),
+}
 CELERY_TIMEZONE = os.getenv("CELERY_TIMEZONE", TIME_ZONE)
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", 30 * 60))  # Default: 30min

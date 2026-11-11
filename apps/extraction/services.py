@@ -11,7 +11,7 @@ import uuid
 from typing import Iterable, List, Optional
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.core.models import Acquisition
@@ -29,6 +29,10 @@ _TASK_ID_NAMESPACE = uuid.UUID("5b0e8a52-7c1d-4f3e-9a6b-2d8f4c1e7a90")
 
 class RunNotRunning(Exception):
     """Results for a run that was not started, or has already finished."""
+
+
+class DuplicateParagraphs(Exception):
+    """A batch repeats a paragraph `seq` the run already holds."""
 
 
 def is_extractable(acquisition: Acquisition) -> bool:
@@ -101,8 +105,7 @@ def _send(kwargs: dict) -> None:
 def _reset(run: ExtractionRun) -> None:
     """Back to `queued`, dropping whatever a previous attempt of this version stored."""
     with transaction.atomic():
-        run.regions.all().delete()
-        run.paragraphs.all().delete()
+        _delete_results(run)
         run.status = ExtractionRun.Status.QUEUED
         run.is_active = False
         run.jobs = {}
@@ -113,18 +116,41 @@ def _reset(run: ExtractionRun) -> None:
     delete_files(run.storage_dir)
 
 
-def start(run: ExtractionRun, *, page_count: int, page_sizes: list, jobs: Iterable[str], provenance: dict) -> None:
-    """The analyzer opened the document and names the jobs it dispatched."""
-    if run.status not in (ExtractionRun.Status.QUEUED, ExtractionRun.Status.RUNNING):
-        raise RunNotRunning(run.status)
+def _delete_results(run: ExtractionRun) -> None:
+    run.regions.all().delete()
+    run.paragraphs.all().delete()
 
-    run.status = ExtractionRun.Status.RUNNING
-    run.page_count = page_count
-    run.page_sizes = page_sizes
-    run.jobs = {job: ExtractionRun.JobStatus.PENDING for job in jobs}
-    run.provenance = {**run.provenance, **(provenance or {})}
-    run.started_at = timezone.now()
-    run.save()
+
+def start(
+    run: ExtractionRun, *, page_count: int, page_sizes: list, jobs: Iterable[str], provenance: dict
+) -> ExtractionRun:
+    """The analyzer opened the document and names the jobs it dispatched.
+
+    A run that is already `running` is an analyzer pass done again (a redelivered
+    task, a restarted pod): what the earlier pass stored is dropped, or the new
+    pass collides with its paragraphs (#120). The crops are left in place; the
+    new pass writes the same names over them.
+
+    Known gap: a job of the earlier pass still in flight can post regions after
+    this reset. Closing that needs an attempt counter on the run.
+    """
+    with transaction.atomic():
+        # Two passes may post `/start` at once; the second waits and then sees the first one's state.
+        run.refresh_from_db(from_queryset=ExtractionRun.objects.select_for_update())
+        if run.status not in (ExtractionRun.Status.QUEUED, ExtractionRun.Status.RUNNING):
+            raise RunNotRunning(run.status)
+        if run.status == ExtractionRun.Status.RUNNING:
+            logger.warning("Extraction run restarted by the analyzer, dropping earlier results: run_id=%s", run.pk)
+            _delete_results(run)
+
+        run.status = ExtractionRun.Status.RUNNING
+        run.page_count = page_count
+        run.page_sizes = page_sizes
+        run.jobs = {job: ExtractionRun.JobStatus.PENDING for job in jobs}
+        run.provenance = {**run.provenance, **(provenance or {})}
+        run.started_at = timezone.now()
+        run.save()
+    return run
 
 
 def _require_running(run: ExtractionRun) -> None:
@@ -146,32 +172,36 @@ def add_paragraphs(run: ExtractionRun, paragraphs: List[dict], links: List[dict]
     last batch.
     """
     _require_running(run)
-    with transaction.atomic():
-        created = Paragraph.objects.bulk_create(
-            Paragraph(run=run, **{key: value for key, value in paragraph.items() if key != "sentences"})
-            for paragraph in paragraphs
-        )
-        Sentence.objects.bulk_create(
-            Sentence(paragraph=row, **sentence)
-            for row, paragraph in zip(created, paragraphs)
-            for sentence in paragraph.get("sentences") or []
-        )
-        if links:
-            seqs = {link["source"] for link in links} | {link["target"] for link in links}
-            by_seq = dict(run.paragraphs.filter(seq__in=seqs).values_list("seq", "id"))
-            ParagraphLink.objects.bulk_create(
-                (
-                    ParagraphLink(
-                        source_id=by_seq[link["source"]],
-                        target_id=by_seq[link["target"]],
-                        kind=link["kind"],
-                        score=link.get("score"),
-                    )
-                    for link in links
-                    if link["source"] in by_seq and link["target"] in by_seq
-                ),
-                ignore_conflicts=True,
+    try:
+        with transaction.atomic():
+            created = Paragraph.objects.bulk_create(
+                Paragraph(run=run, **{key: value for key, value in paragraph.items() if key != "sentences"})
+                for paragraph in paragraphs
             )
+            Sentence.objects.bulk_create(
+                Sentence(paragraph=row, **sentence)
+                for row, paragraph in zip(created, paragraphs)
+                for sentence in paragraph.get("sentences") or []
+            )
+            if links:
+                seqs = {link["source"] for link in links} | {link["target"] for link in links}
+                by_seq = dict(run.paragraphs.filter(seq__in=seqs).values_list("seq", "id"))
+                ParagraphLink.objects.bulk_create(
+                    (
+                        ParagraphLink(
+                            source_id=by_seq[link["source"]],
+                            target_id=by_seq[link["target"]],
+                            kind=link["kind"],
+                            score=link.get("score"),
+                        )
+                        for link in links
+                        if link["source"] in by_seq and link["target"] in by_seq
+                    ),
+                    ignore_conflicts=True,
+                )
+    except IntegrityError as error:
+        # Deterministic: a retry of the same batch fails the same way, so it is a 409, not a 500.
+        raise DuplicateParagraphs(str(error)) from error
     return len(created)
 
 
@@ -180,6 +210,10 @@ def report_job(run: ExtractionRun, job: str, *, failed: bool, error: Optional[st
     with transaction.atomic():
         run = ExtractionRun.objects.select_for_update().get(pk=run.pk)
         _require_running(run)
+        if failed and run.jobs.get(job) == ExtractionRun.JobStatus.DONE:
+            # A duplicate of a job that already succeeded (a redelivered task) must not fail the run.
+            logger.warning("Ignoring failure of job %s already done: run_id=%s error=%s", job, run.pk, error)
+            return
         run.jobs = {**run.jobs, job: ExtractionRun.JobStatus.FAILED if failed else ExtractionRun.JobStatus.DONE}
         if provenance:
             run.provenance = {**run.provenance, job: provenance}

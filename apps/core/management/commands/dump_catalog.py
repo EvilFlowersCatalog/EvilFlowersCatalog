@@ -137,10 +137,13 @@ class Command(BaseCommand):
             # Optionally add related static files.
             if not options["skip_files"]:
                 if settings.EVILFLOWERS_STORAGE_DRIVER == "apps.files.storage.filesystem.FileSystemStorage":
-                    tar.add(
-                        f"{settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR}/catalogs/{catalog.url_name}",
-                        f"storage/catalogs/{catalog.url_name}",
-                    )
+                    directory = f"{settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR}/catalogs/{catalog.url_name}"
+                    # A catalog with no stored file has no directory; its metadata is still backed up.
+                    # `tar.add` raised FileNotFoundError, and `backup` now fails the whole run on it.
+                    if os.path.isdir(directory):
+                        tar.add(directory, f"storage/catalogs/{catalog.url_name}")
+                    else:
+                        self.stdout.write(f"No stored files for catalog {catalog.url_name}")
 
         output = options.get("output") or (
             f"{catalog.url_name}.{compressor.suffix()}" if compressor.suffix() else catalog.url_name
