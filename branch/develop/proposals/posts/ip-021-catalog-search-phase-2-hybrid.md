@@ -64,7 +64,7 @@ cloud "k8s shared" {
 queue "Celery" as celery
 search --> tsv : match (strict / any word / similar)
 search --> bm25 : order the matches
-search --> tei : embed the query (2 s, cached 10 min)
+search --> tei : embed the query (0.3 s, cached 10 min)
 search --> vec : top-100 ≥ 0.8 cosine
 search ..> search : weighted RRF (words 1.0, meaning 0.5)
 celery --> tei : embed changed entries
@@ -93,6 +93,9 @@ celery --> vec
 - Queries carry the e5 instruction (`Instruct: Given a library search query, retrieve relevant books\nQuery: …`);
   paragraph search and "similar passage" use their own instructions. TEI client contract from
   evilflowers-knowledge `Search-Embeddings`: batches ≤ 32, 2 s query / 60 s batch timeout, 3 retries on 429/503.
+  Since #134 a catalog search waits only `EVILFLOWERS_EMBEDDING_QUERY_TIMEOUT` (0.3 s), and a search that ran
+  without vectors stays so for 10 minutes so its later pages match the first. Type-ahead never calls TEI and
+  uses a query vector only when a search cached one. A cached vector is used even while the breaker is open.
 - Changed entries are embedded by one Celery task per transaction after commit; `embed_entries --missing`
   backfills. Only vectors of the current model are compared.
 - TEI unconfigured or down: words only (`degraded: true` when it was asked for and failed).
@@ -388,3 +391,4 @@ embed in Tempo; together with BM25 and the vector scan the 150 ms p95 target is 
 | 2026-11-09 | jdubec | Added Review Questions section |
 | 2026-11-09 | jdubec | Phase 2: search inside publications, `GET /api/v1/entries/passages` (closes the last catalog part of #60) |
 | 2026-11-09 | jdubec | #113: `/entries/passages` adds a word channel (GIN index on paragraph text in `evilflowers_simple`, extraction `0005`) fused with the vector ranking by RRF; `snippet` with `<mark>`, `matched`, `catalog_id`, `searchable`; word matches still work when TEI is down. LCP rule unchanged: page and score, never text or snippet |
+| 2026-11-11 | jdubec | #134: 0.3 s query budget for catalog search, type-ahead without TEI, stable paging of degraded searches; #135: rankings computed once per request (facets reuse them), facet counts in one statement (Claude) |

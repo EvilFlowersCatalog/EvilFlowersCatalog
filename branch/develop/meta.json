@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "ce9d6fc83ca68be6fa3d755548f7862a35e0bb94",
-    "short": "ce9d6fc",
-    "message": "Closing #122, #123",
+    "sha": "42cad8b29a38e73173a097abfa8acde8f9967bdc",
+    "short": "42cad8b",
+    "message": "Proper database server pooling",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/ce9d6fc83ca68be6fa3d755548f7862a35e0bb94"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/42cad8b29a38e73173a097abfa8acde8f9967bdc"
   },
-  "deployed_at": "2026-11-11T18:50:19Z",
+  "deployed_at": "2026-11-11T19:59:07Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
