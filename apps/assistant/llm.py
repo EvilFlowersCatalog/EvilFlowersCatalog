@@ -182,7 +182,13 @@ class OllamaClient:
             payload["options"] = options
         return payload
 
-    def chat(self, messages: List[dict], tools: Optional[List[dict]] = None, response_format=None) -> Iterator[Delta]:
+    def chat(
+        self,
+        messages: List[dict],
+        tools: Optional[List[dict]] = None,
+        response_format=None,
+        span_attributes: Optional[dict] = None,
+    ) -> Iterator[Delta]:
         """Stream a completion, yielding a `Delta` per event.
 
         `messages` is sent verbatim and in full. Callers must not rewrite
@@ -199,7 +205,12 @@ class OllamaClient:
         # context — only around the HTTP request, whose own span is suppressed so
         # the call shows up once in Tempo's service graph.
         attributes = self._telemetry_attributes()
-        span = _tracer.start_span(f"{OPERATION_NAME} {self.model}", kind=SpanKind.CLIENT, attributes=attributes)
+        span = _tracer.start_span(
+            f"{OPERATION_NAME} {self.model}",
+            kind=SpanKind.CLIENT,
+            # Extra attributes go on the span only, not on the metrics `attributes` also labels.
+            attributes={**attributes, **(span_attributes or {})},
+        )
         stopwatch = telemetry.Stopwatch()
         error_type = None
         thinking_chunks = 0

@@ -53,6 +53,32 @@ class ApplicationNameTests(SimpleTestCase):
             self.assertEqual(profiling.application_name(), "evilflowers")
 
 
+class KnobTests(SimpleTestCase):
+    def test_sample_rate(self):
+        cases = {"": 20, "50": 50, "0": 1, "5000": 1000, "abc": 20}
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw), mock.patch.dict(os.environ, {"PYROSCOPE_SAMPLE_RATE": raw}):
+                self.assertEqual(profiling.sample_rate(), expected)
+
+    def test_gil_only(self):
+        with mock.patch.dict(os.environ, {"PYROSCOPE_GIL_ONLY": ""}):
+            self.assertFalse(profiling.gil_only("gunicorn"))
+            self.assertTrue(profiling.gil_only("celery-worker"))
+        with mock.patch.dict(os.environ, {"PYROSCOPE_GIL_ONLY": "off"}):
+            self.assertFalse(profiling.gil_only("celery-worker"))
+        with mock.patch.dict(os.environ, {"PYROSCOPE_GIL_ONLY": "maybe"}):
+            self.assertTrue(profiling.gil_only("celery-worker"))
+
+    def test_profiled_roles(self):
+        with mock.patch.dict(os.environ, {"PYROSCOPE_ROLES": ""}):
+            self.assertEqual(profiling.profiled_roles(), {"gunicorn", "celery-worker"})
+        with mock.patch.dict(os.environ, {"PYROSCOPE_ROLES": " gunicorn , celery-beat ,"}):
+            self.assertEqual(profiling.profiled_roles(), {"gunicorn", "celery-beat"})
+        with mock.patch.dict(os.environ, {"PYROSCOPE_ROLES": "gunicorn,*"}):
+            self.assertIsNone(profiling.profiled_roles())
+            self.assertTrue(profiling.role_is_profiled("event-handler"))
+
+
 class SetupTests(_ProfilingStateMixin, SimpleTestCase):
     def test_off_without_server_address(self):
         with (
@@ -75,12 +101,50 @@ class SetupTests(_ProfilingStateMixin, SimpleTestCase):
         kwargs = configure.call_args.kwargs
         self.assertEqual(kwargs["application_name"], "evilflowers")
         self.assertEqual(kwargs["server_address"], ENVIRONMENT["PYROSCOPE_SERVER_ADDRESS"])
-        self.assertEqual(kwargs["sample_rate"], 100)
+        self.assertEqual(kwargs["sample_rate"], 20)
         self.assertTrue(kwargs["oncpu"])
-        self.assertFalse(kwargs["gil_only"])
+        self.assertTrue(kwargs["gil_only"])
         self.assertEqual(kwargs["tags"]["namespace"], "evilflowers-dev")
         self.assertEqual(kwargs["tags"]["role"], "celery-worker")
         self.assertTrue(profiling.is_enabled())
+
+    def test_gunicorn_samples_threads_without_the_gil(self):
+        with (
+            mock.patch.dict(os.environ, ENVIRONMENT),
+            mock.patch("pyroscope.configure") as configure,
+            mock.patch("atexit.register"),
+        ):
+            self.assertTrue(profiling.setup("gunicorn"))
+        self.assertFalse(configure.call_args.kwargs["gil_only"])
+
+    def test_env_overrides_rate_and_gil_only(self):
+        environment = {**ENVIRONMENT, "PYROSCOPE_SAMPLE_RATE": "50", "PYROSCOPE_GIL_ONLY": "true"}
+        with (
+            mock.patch.dict(os.environ, environment),
+            mock.patch("pyroscope.configure") as configure,
+            mock.patch("atexit.register"),
+        ):
+            self.assertTrue(profiling.setup("gunicorn"))
+        self.assertEqual(configure.call_args.kwargs["sample_rate"], 50)
+        self.assertTrue(configure.call_args.kwargs["gil_only"])
+
+    def test_roles_outside_the_list_are_not_profiled(self):
+        with (
+            mock.patch.dict(os.environ, ENVIRONMENT),
+            mock.patch("pyroscope.configure") as configure,
+        ):
+            self.assertFalse(profiling.setup("celery-beat"))
+        configure.assert_not_called()
+        self.assertFalse(profiling.is_enabled())
+
+    def test_star_profiles_every_role(self):
+        with (
+            mock.patch.dict(os.environ, {**ENVIRONMENT, "PYROSCOPE_ROLES": "*"}),
+            mock.patch("pyroscope.configure") as configure,
+            mock.patch("atexit.register"),
+        ):
+            self.assertTrue(profiling.setup("event-handler"))
+        configure.assert_called_once()
 
     def test_first_call_decides(self):
         with (

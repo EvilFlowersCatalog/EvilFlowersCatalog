@@ -59,6 +59,8 @@ def run(
     """
     user = request.user
     client = OllamaClient()
+    # Read before this turn's own message touches `last_message_at`.
+    was_cold = services.is_cold(chat)
 
     ChatMessage.objects.create(
         chat=chat,
@@ -71,6 +73,7 @@ def run(
     )
 
     try:
+        services.start_turn(chat, was_cold)
         for frame in _rounds(request, chat, client, document, language):
             yield frame
     except LLMUnavailable as error:
@@ -111,21 +114,31 @@ def _rounds(request, chat: Chat, client: OllamaClient, document=None, language=N
         yield from _close(chat, ledger, text, displayed, pages_read, annotations, tokens, keep_empty, fingerprint)
 
     rounds = MAX_TOOL_ROUNDS if document is not None else MAX_CHAT_ROUNDS
+    previous: Optional[List[dict]] = None
     for _round in range(rounds):
-        # A plain chat's last round offers no tools: the model answers from what it has (#130).
+        # A plain chat's last round offers no tools: the model answers from what it has (#130). It is the one
+        # round that does not extend the previous request (no tools, a closing message), so it re-evaluates.
         final = document is None and _round == rounds - 1
-        messages = services.conversation(chat, document)
-        instruction = services.language_instruction(language)
-        if instruction:
-            # Last, after the history: the cached prefix stays the same.
-            messages.append({"role": "system", "content": instruction})
+        # The language pin is part of the history, after each user message: see `services.conversation`.
+        messages = services.conversation(chat, document, language)
+        # #138: how much of the previous round's request this one repeats; equal to `previous_messages` when it
+        # extends it, which is what the backend's prompt-cache checkpoint needs.
+        prefix = {
+            "evilflowers.assistant.round": _round + 1,
+            "evilflowers.assistant.prompt.messages": len(messages),
+            "evilflowers.assistant.prompt.previous_messages": len(previous or []),
+            "evilflowers.assistant.prompt.shared_messages": services.shared_prefix(previous, messages),
+        }
+        previous = list(messages)
         if final:
             messages.append({"role": "system", "content": ANSWER_NOW})
 
         # On CPU inference a round can spend tens of seconds evaluating the prompt
         # before its first token (#104): tell the client something is happening.
         yield sse("status", {"state": "thinking", "round": _round + 1})
-        content, tool_calls, tokens = yield from _stream(client, messages, None if final else specifications)
+        content, tool_calls, tokens = yield from _stream(
+            client, messages, None if final else specifications, span_attributes=prefix
+        )
         if final:
             # No tools were offered; whatever came back is the answer.
             tool_calls = []
@@ -286,13 +299,13 @@ def _pages_frame(pages_read: List[int]) -> Iterator[str]:
         yield sse("pages", {"pages": pages_read})
 
 
-def _stream(client: OllamaClient, messages: List[dict], specifications: List[dict]):
+def _stream(client: OllamaClient, messages: List[dict], specifications: List[dict], span_attributes=None):
     """Consume one completion, forwarding text chunks as they arrive."""
     content = ""
     tool_calls: List[dict] = []
     tokens = 0
 
-    for delta in client.chat(messages, tools=specifications):
+    for delta in client.chat(messages, tools=specifications, span_attributes=span_attributes):
         if delta.content:
             content += delta.content
             yield sse("chunk", {"text": delta.content})

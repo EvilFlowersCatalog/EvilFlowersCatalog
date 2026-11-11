@@ -60,7 +60,8 @@ class ReadPublicationTests(TestCase):
             chat, client, events = self._turn(
                 [[_call(tools.READ_PAGE, entry_id=str(self.entry.pk), page=2)], "Počíta Bernoulliho čísla [E1]."]
             )
-        seen = json.loads(client.requests[1]["messages"][-2]["content"])
+        # The tool result closes the request: the language pin follows the user message (#138).
+        seen = json.loads(client.requests[1]["messages"][-1]["content"])
         self.assertEqual(seen["pages"][0]["label"], "E1")
         self.assertNotIn("evidence", seen)
         citations = dict(events)["citations"]["citations"]

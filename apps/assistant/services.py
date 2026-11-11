@@ -124,14 +124,20 @@ def _history_queryset(chat: Chat):
     return chat.messages.select_related("entry").order_by("created_at")
 
 
-def conversation(chat: Chat, document=None) -> List[dict]:
+def conversation(chat: Chat, document=None, language: Optional[str] = None) -> List[dict]:
     """Rebuild the message array to send to the model.
 
-    IP-015 D3. While a conversation is warm the entire history is replayed
-    unchanged, so the prompt prefix is byte-identical to last turn's and the
-    backend can reuse its KV cache. Once the last message is older than the
-    configured TTL that cache is gone anyway, so the tail is replayed instead
-    and becomes the new stable prefix.
+    IP-015 D3. Every request of a conversation must extend the previous one:
+    the previous request's messages, unchanged and in order, then only new ones.
+    The model is hybrid (Gated DeltaNet), so the backend cannot cut its cache at
+    any token; it restores a checkpoint taken at the end of an earlier prompt,
+    and only when that whole prompt is a prefix of the new one (#138).
+
+    - History is replayed from `chat.history_start`, which `start_turn` moves
+      only at the start of a turn, so the cut never slides between rounds.
+    - The language pin follows every user message rather than closing the
+      request: a trailing message is displaced by the next round's assistant and
+      tool messages, and the prompt stops being a prefix of the next one.
 
     Nothing volatile — no timestamps, no counters — may be added to the prefix,
     or the cache is invalidated on every turn.
@@ -143,19 +149,68 @@ def conversation(chat: Chat, document=None) -> List[dict]:
         messages.append({"role": "system", "content": opening})
 
     rows = _history_queryset(chat)
+    if chat.history_start is not None:
+        rows = rows.filter(created_at__gte=chat.history_start)
 
-    if _is_cold(chat):
-        keep = settings.EVILFLOWERS_ASSISTANT_TRIM_MESSAGES
-        # Take the newest `keep` rows, then restore chronological order.
-        rows = list(reversed(list(rows.reverse()[:keep])))
-
+    instruction = language_instruction(language)
     for row in rows:
         messages.append(_as_message(row))
+        if instruction and row.role == ChatMessage.Role.USER:
+            messages.append({"role": "system", "content": instruction})
 
     return messages
 
 
-def _is_cold(chat: Chat) -> bool:
+def start_turn(chat: Chat, was_cold: bool) -> None:
+    """Fix where this turn's history starts, once, before its first round (#138).
+
+    A cold conversation's cache is gone anyway, so the history is cut to about
+    the newest `EVILFLOWERS_ASSISTANT_TRIM_MESSAGES` rows, at a user message so no
+    tool result is replayed without the call that asked for it. The cut is
+    stored and the following warm turns replay from it, so it becomes the new
+    stable prefix. `was_cold` is `is_cold(chat)` read before this turn's user
+    message was stored.
+    """
+    if not was_cold:
+        return
+    keep = settings.EVILFLOWERS_ASSISTANT_TRIM_MESSAGES
+    rows = _history_queryset(chat)
+    if chat.history_start is not None:
+        rows = rows.filter(created_at__gte=chat.history_start)
+    newest = list(rows.reverse().values_list("created_at", flat=True)[:keep])
+    if not newest:
+        return
+    oldest_kept = newest[-1]
+    start = (
+        rows.filter(role=ChatMessage.Role.USER, created_at__gte=oldest_kept)
+        .order_by("created_at")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    if start is None or start == chat.history_start:
+        return
+    chat.history_start = start
+    Chat.objects.filter(pk=chat.pk).update(history_start=start)
+
+
+def shared_prefix(previous: Optional[List[dict]], messages: List[dict]) -> int:
+    """How many leading messages `messages` shares with `previous` (#138 diagnostics).
+
+    Equal to `len(previous)` when the new request extends the previous one, which
+    is what lets the backend restore its prompt-cache checkpoint.
+    """
+    if not previous:
+        return 0
+    shared = 0
+    for before, now in zip(previous, messages):
+        if before != now:
+            break
+        shared += 1
+    return shared
+
+
+def is_cold(chat: Chat) -> bool:
+    """Whether the conversation's last message is older than the backend's cache TTL."""
     if chat.last_message_at is None:
         return False
     age = (timezone.now() - chat.last_message_at).total_seconds()

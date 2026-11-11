@@ -101,10 +101,14 @@ jobs:
   # evilflowers-dev.service is disabled). Infra: knowledge repo, roles/evilflowers_k8s and
   # vault Cookbooks/Move-Dev-To-K8s, Cookbooks/CI-Runner.
   #
-  # Deployment `evilflowers` pins :develop with imagePullPolicy Always, so a new image goes
-  # live with a rollout restart. This job runs on the self-hosted runner INSIDE k3s
-  # (runs-on: elvira-k3s); its ServiceAccount arc-deployer may only restart Deployments in the
-  # namespaces listed in github_runner_deploy_namespaces (must include evilflowers-dev).
+  # Every catalog Deployment pins :develop with imagePullPolicy Always, so a new image goes
+  # live with a rollout restart. With catalog_split (knowledge#37) there are three of them —
+  # evilflowers (gunicorn), evilflowers-worker, evilflowers-beat — all labelled
+  # elvira.stuba.sk/image=evilflowers-catalog; without it, only evilflowers. The job restarts
+  # and digest-checks them all by that label, so worker and beat never lag behind the web
+  # code (#137). This job runs on the self-hosted runner INSIDE k3s (runs-on: elvira-k3s);
+  # its ServiceAccount arc-deployer may only list/patch Deployments in the namespaces listed in
+  # github_runner_deploy_namespaces (must include evilflowers-dev).
   # A push never changes the pod's env; that needs playbooks/evilflowers-k8s.yml.
   deploy:
     needs: build
@@ -122,8 +126,8 @@ jobs:
     permissions: {}
     env:
       NAMESPACE: evilflowers-dev
-      DEPLOYMENT: evilflowers
-      SELECTOR: app.kubernetes.io/name=evilflowers,app.kubernetes.io/instance=dev
+      # Matches the Deployments and their pods alike.
+      SELECTOR: elvira.stuba.sk/image=evilflowers-catalog,app.kubernetes.io/instance=dev
       DIGEST: ${{ needs.build.outputs.digest }}
       KUBECTL_VERSION: v1.31.5     # = the cluster (k3s v1.31.5+k3s1)
       KUBECTL_SHA256: fbecbfd375b3686002c2e81d51c390172f5ffba3d6b47920d55342cb03f557af   # dl.k8s.io …/linux/amd64/kubectl.sha256
@@ -137,23 +141,38 @@ jobs:
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       # In-cluster credentials: the pod's ServiceAccount arc-deployer.
+      # A selector that matches nothing makes `rollout restart` a silent no-op: fail instead
+      # (e.g. the label not applied yet by knowledge).
       - name: Restart onto the new :develop
-        run: kubectl -n "$NAMESPACE" rollout restart "deployment/$DEPLOYMENT"
+        run: |
+          deployments=$(kubectl -n "$NAMESPACE" get deployment -l "$SELECTOR" -o name)
+          echo "$deployments"
+          if [ -z "$deployments" ]; then
+            echo "::error::no Deployment in $NAMESPACE matches $SELECTOR"
+            exit 1
+          fi
+          kubectl -n "$NAMESPACE" rollout restart deployment -l "$SELECTOR"
 
       # Strategy Recreate + startup probe of up to 300 s (migrations, Celery): same budget as
-      # the role's evilflowers_rollout_timeout.
+      # the role's evilflowers_rollout_timeout. Worker and beat wait for the migrations in an
+      # init container, so they can't finish before evilflowers; each gets the full budget.
       - name: Wait for the rollout
-        run: kubectl -n "$NAMESPACE" rollout status "deployment/$DEPLOYMENT" --timeout=900s
+        run: |
+          for d in $(kubectl -n "$NAMESPACE" get deployment -l "$SELECTOR" -o name); do
+            kubectl -n "$NAMESPACE" rollout status "$d" --timeout=900s
+          done
 
       # :develop could have moved, or the pull could have failed silently onto a cached image.
-      # Pods still terminating are skipped. A newer push cancels this run (workflow concurrency).
+      # Init containers (wait-for-migrations on worker/beat) run the same image and are checked
+      # too. Pods still terminating are skipped. A newer push cancels this run (workflow
+      # concurrency).
       - name: Running pods use ${{ env.DIGEST }}
         run: |
           ids=$(kubectl -n "$NAMESPACE" get pods -l "$SELECTOR" \
-            -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{range .status.containerStatuses}}{{.imageID}}{{"\n"}}{{end}}{{end}}{{end}}')
+            -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{$pod := .metadata.name}}{{range .status.initContainerStatuses}}{{$pod}} {{.name}} {{.imageID}}{{"\n"}}{{end}}{{range .status.containerStatuses}}{{$pod}} {{.name}} {{.imageID}}{{"\n"}}{{end}}{{end}}{{end}}')
           echo "$ids"
           test -n "$ids"
           if echo "$ids" | grep -v -- "@${DIGEST}\$"; then
-            echo "::error::a running pod does not use ${DIGEST}"
+            echo "::error::a running catalog pod does not use ${DIGEST}"
             exit 1
           fi

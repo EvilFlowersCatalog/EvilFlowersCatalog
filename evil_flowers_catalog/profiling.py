@@ -24,6 +24,16 @@ Configuration is the environment the k8s role sets, nothing else:
 - `PYROSCOPE_TAGS`: `key=value,key=value`. A `role` tag (`gunicorn`,
   `celery-worker`, ...) is added, so the processes of one container can be told
   apart, as `evilflowers.process.role` does for the OTel resource.
+- `PYROSCOPE_SAMPLE_RATE`: samples per second, default 20 (#136).
+- `PYROSCOPE_GIL_ONLY`: `true`/`false`. Default: `false` for gunicorn (its
+  psycopg/OpenSSL time without the GIL is worth seeing), `true` for every other
+  role (#136).
+- `PYROSCOPE_ROLES`: comma-separated roles that are profiled, default
+  `gunicorn,celery-worker`; `*` profiles every role. Beat and the event
+  handler are idle nearly always and don't pay for a sampler by default (#136).
+
+The cost is per process: at 100 Hz with `gil_only=False` the sampler thread
+kept ~0.1 core busy in every idle process, 18 of them in one pod (#136).
 
 `pyroscope` is imported lazily, so a deployment built without it runs unchanged.
 """
@@ -32,13 +42,20 @@ import atexit
 import logging
 import os
 import threading
-from typing import Dict, Optional
+from typing import Dict, FrozenSet, Optional
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_APPLICATION_NAME = "evilflowers"
 ROLE_TAG = "role"
-SAMPLE_RATE = 100
+DEFAULT_SAMPLE_RATE = 20
+MAX_SAMPLE_RATE = 1000
+DEFAULT_ROLES = frozenset({"gunicorn", "celery-worker"})
+ALL_ROLES = "*"
+# Roles that sample threads without the GIL too, unless PYROSCOPE_GIL_ONLY says otherwise.
+ALL_THREADS_ROLES = frozenset({"gunicorn"})
+_TRUE = {"1", "true", "yes", "on"}
+_FALSE = {"0", "false", "no", "off"}
 
 _lock = threading.Lock()
 _state = {"role": None, "enabled": False}
@@ -73,6 +90,47 @@ def build_tags(role: str) -> Dict[str, str]:
     return tags
 
 
+def sample_rate() -> int:
+    """`PYROSCOPE_SAMPLE_RATE` in Hz, within 1..MAX_SAMPLE_RATE; the default when unset or invalid."""
+    raw = os.environ.get("PYROSCOPE_SAMPLE_RATE", "").strip()
+    if not raw:
+        return DEFAULT_SAMPLE_RATE
+    try:
+        rate = int(raw)
+    except ValueError:
+        logger.warning("PYROSCOPE_SAMPLE_RATE=%r is not an integer; using %s Hz", raw, DEFAULT_SAMPLE_RATE)
+        return DEFAULT_SAMPLE_RATE
+    return min(max(rate, 1), MAX_SAMPLE_RATE)
+
+
+def gil_only(role: str) -> bool:
+    """`PYROSCOPE_GIL_ONLY` when set to a boolean; otherwise False for gunicorn, True elsewhere."""
+    raw = os.environ.get("PYROSCOPE_GIL_ONLY", "").strip().lower()
+    if raw in _TRUE:
+        return True
+    if raw in _FALSE:
+        return False
+    if raw:
+        logger.warning("PYROSCOPE_GIL_ONLY=%r is not a boolean; using the role default", raw)
+    return role not in ALL_THREADS_ROLES
+
+
+def profiled_roles() -> Optional[FrozenSet[str]]:
+    """Roles from `PYROSCOPE_ROLES`, or None for `*` (every role)."""
+    raw = os.environ.get("PYROSCOPE_ROLES", "").strip()
+    if not raw:
+        return DEFAULT_ROLES
+    roles = frozenset(item.strip() for item in raw.split(",") if item.strip())
+    if ALL_ROLES in roles:
+        return None
+    return roles
+
+
+def role_is_profiled(role: str) -> bool:
+    roles = profiled_roles()
+    return roles is None or role in roles
+
+
 def is_enabled() -> bool:
     return bool(_state["enabled"])
 
@@ -93,6 +151,10 @@ def setup(role: str) -> bool:
         if address is None:
             return False
 
+        if not role_is_profiled(role):
+            logger.info("Pyroscope off for role=%s (not in PYROSCOPE_ROLES)", role)
+            return False
+
         try:
             import pyroscope
         except ImportError as error:
@@ -100,14 +162,16 @@ def setup(role: str) -> bool:
             return False
 
         name = application_name()
+        rate = sample_rate()
+        only_gil = gil_only(role)
         try:
             pyroscope.configure(
                 application_name=name,
                 server_address=address,
-                sample_rate=SAMPLE_RATE,
+                sample_rate=rate,
                 oncpu=True,
-                # Also sample threads that run without the GIL (psycopg, OpenSSL).
-                gil_only=False,
+                # False also samples threads that run without the GIL (psycopg, OpenSSL).
+                gil_only=only_gil,
                 tags=build_tags(role),
             )
         except Exception:
@@ -116,7 +180,14 @@ def setup(role: str) -> bool:
 
         _state["enabled"] = True
         atexit.register(shutdown)
-        logger.info("Pyroscope on: role=%s application=%s server=%s", role, name, address)
+        logger.info(
+            "Pyroscope on: role=%s application=%s server=%s sample_rate=%s gil_only=%s",
+            role,
+            name,
+            address,
+            rate,
+            only_gil,
+        )
         return True
 
 
@@ -165,8 +236,12 @@ def shutdown() -> None:
 __all__ = [
     "application_name",
     "build_tags",
+    "gil_only",
     "is_enabled",
     "parse_tags",
+    "profiled_roles",
+    "role_is_profiled",
+    "sample_rate",
     "server_address",
     "setup",
     "shutdown",

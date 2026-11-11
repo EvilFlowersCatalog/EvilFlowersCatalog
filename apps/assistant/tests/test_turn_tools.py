@@ -19,8 +19,8 @@ class ScriptedClient:
         self.rounds = list(rounds)
         self.requests = []
 
-    def chat(self, messages, tools=None, response_format=None):
-        self.requests.append({"messages": messages, "tools": tools})
+    def chat(self, messages, tools=None, response_format=None, span_attributes=None):
+        self.requests.append({"messages": messages, "tools": tools, "span_attributes": span_attributes})
         step = self.rounds.pop(0)
         if isinstance(step, str):
             yield Delta(content=step)
