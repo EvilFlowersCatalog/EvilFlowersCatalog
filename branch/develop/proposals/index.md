@@ -35,6 +35,7 @@ changes are documented before implementation.
 | IP-026 | [Request Rate Limits](posts/ip-026-request-rate-limits.md) | 📝 Draft (implemented with recommended answers and tested locally; off by default, enabling is a deployment decision; awaiting review answers) | 2026-11-09 |
 | IP-027 | [One HTTP Cache Policy, From Django to the Edge nginx](posts/ip-027-http-cache-policy.md) | 📝 Draft (catalog part implemented and tested locally; nginx part is a knowledge deployment change; #123 itself needs a portal fix; awaiting review answers) | 2026-11-09 |
 | IP-028 | [Admin Lending Statistics Endpoint](posts/ip-028-admin-lending-statistics.md) | 📝 Draft (implemented with recommended answers and tested locally; dev check with the portal dashboard open; awaiting review answers) | 2026-11-11 |
+| IP-029 | [Semantic Distributed Tracing Across the Elvira Ecosystem](posts/ip-029-semantic-distributed-tracing.md) | 📝 Draft (catalog Phases 1–3 implemented with recommended answers and tested locally; dev verification and other repositories open; awaiting review answers) | 2026-11-11 |
 
 **Note on the Readium cluster.** IP-001, IP-003 (feature scope), IP-004, IP-007, IP-008,
 IP-009, and IP-011 together constitute the completed Readium LCP delivery and are all
