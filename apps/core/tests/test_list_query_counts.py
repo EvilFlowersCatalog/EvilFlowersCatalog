@@ -14,6 +14,7 @@ from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
+from apps.api.serializers.entries import ENTRY_LIST_DEFERRED
 from apps.core.auth import JWTFactory
 from apps.core.models import (
     Acquisition,
@@ -97,6 +98,9 @@ class ListQueryCountTests(TestCase):
             response = self.client.get(f"{url}{separator}limit={limit}", headers=self.headers)
         self.assertEqual(response.status_code, 200, response.content[:500])
         self.assertEqual(len(response.json()["items"]), limit, url)
+        # A deferred entry column read per row would show up as a SELECT of one entry by id.
+        reloads = [q["sql"] for q in queries if 'FROM "entries" WHERE "entries"."id" =' in q["sql"]]
+        self.assertEqual(reloads, [], url)
         return len(queries)
 
     measured = {}
@@ -126,6 +130,32 @@ class ListQueryCountTests(TestCase):
             self.assertEqual(len(feed["parents"]), 1)
             self.assertEqual(len(feed["children"]), 1)
             self.assertIn("/main/", feed["url"])
+
+    def test_entries_search_with_facets(self):
+        """The hot path of the k6 run: search hits, highlights and facets on entries with deferred columns."""
+        self.assertConstantQueries(f"/api/v1/entries?catalog_id={self.catalog.pk}&query=Book&include=facets")
+
+    def test_entries_with_extraction_columns(self):
+        self.assertConstantQueries(f"/api/v1/entries?catalog_id={self.catalog.pk}&extraction=1")
+
+    def test_entries_leave_out_unread_columns(self):
+        """The list loads neither the text, the table of contents nor the search columns of an entry."""
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(f"/api/v1/entries?catalog_id={self.catalog.pk}&limit=2", headers=self.headers)
+        self.assertEqual(response.status_code, 200, response.content[:500])
+        selects = [query["sql"] for query in queries if 'FROM "entries"' in query["sql"]]
+        self.assertTrue(selects)
+        for column in ENTRY_LIST_DEFERRED:
+            self.assertFalse(any(f'"entries"."{column}"' in sql for sql in selects), column)
+
+    def test_feed_relations_load_only_ids(self):
+        """Of a feed's parents and children the serializer reads only the id: no other column is loaded."""
+        with CaptureQueriesContext(connection) as queries:
+            self.client.get(f"/api/v1/entries?catalog_id={self.catalog.pk}&limit=2", headers=self.headers)
+        relations = [query["sql"] for query in queries if '"feed_parents"' in query["sql"]]
+        self.assertEqual(len(relations), 2)  # parents and children
+        for sql in relations:
+            self.assertNotIn('"feeds"."content"', sql)
 
     def test_feeds(self):
         self.assertConstantQueries("/api/v1/feeds")

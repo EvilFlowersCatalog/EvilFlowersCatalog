@@ -24,6 +24,7 @@ from apps.api.response import (
     SingleResponse,
 )
 from apps.api.serializers.entries import (
+    ENTRY_LIST_DEFERRED,
     AcquisitionSerializer,
     EntryFacetSerializer,
     EntrySearchMetadata,
@@ -153,7 +154,7 @@ class EntryPaginator(SecuredView):
     )
     def get(self, request):
         entry_filter = EntryFilter(request.GET, queryset=Entry.objects.all(), request=request)
-        entries = with_entry_graph(entry_filter.qs).distinct()
+        entries = with_entry_graph(entry_filter.qs).defer(*ENTRY_LIST_DEFERRED).distinct()
         search = entry_filter.search
         entries = entries.annotate(rating_score=rating_score())
 

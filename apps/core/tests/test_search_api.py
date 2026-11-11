@@ -4,6 +4,7 @@ IP-020 / #101: the search surfaces — result highlights and metadata, fallbacks
 """
 
 import json
+from unittest import mock
 
 from lxml import etree
 
@@ -11,10 +12,12 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import EmptyResultSet
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import Count, Exists, Max, Min, OuterRef, Q
+from django.http import QueryDict
 from django.test import RequestFactory, TestCase
 from partial_date import PartialDate
 
-from apps.api.filters.entries import fulltext_runs
+from apps.api.filters.entries import EntryFilter, fulltext_runs
+from apps.api.services import facets as facets_module
 from apps.api.services.facets import EntryFacetService, count_together
 from apps.core.models import Author, Catalog, Category, Entry, EntryAuthor, Feed
 from apps.core.tests.test_search_golden import SearchFixtureMixin
@@ -214,6 +217,39 @@ class SearchApiTests(SearchFixtureMixin, TestCase):
                 expected = [{"value": True, "count": counts["extracted"]}]
                 expected.append({"value": False, "count": counts["total"] - counts["extracted"]})
                 self.assertEqual(facets["fulltext"], [row for row in expected if row["count"]])
+
+    def test_facets_build_one_filter_per_parameter_set(self):
+        """
+        A dimension whose own filter is not in the request counts the entries of the whole request: those
+        dimensions share one EntryFilter, the others get one each (most of the facets' CPU, k6 Nov 2026).
+        """
+        catalog = str(self.catalog.pk)
+        cases = (
+            ({"catalog_id": catalog}, 1),
+            # the languages facet leaves out its own filter
+            ({"catalog_id": catalog, "language_code": "en"}, 2),
+            # and the years facet both of its own
+            ({"catalog_id": catalog, "language_code": "en", "published_at__gte": "1900"}, 3),
+        )
+        for params, expected in cases:
+            with self.subTest(params=params):
+                request = RequestFactory().get("/api/v1/entries/facets", params)
+                request.user = AnonymousUser()
+                with mock.patch.object(facets_module, "EntryFilter", wraps=facets_module.EntryFilter) as built:
+                    facets = EntryFacetService(request).compute()
+                self.assertEqual(built.call_count, expected)
+                if set(params) == {"catalog_id", "language_code"}:
+                    # Still disjunctive: the other languages stay countable while English is selected.
+                    self.assertGreater(len(facets["languages"]), 1)
+
+    def test_filter_form_class_is_built_once(self):
+        """The form class comes from the declared filters: one per filter set, each form validates alone."""
+        invalid = EntryFilter(QueryDict("catalog_id=not-a-uuid"), queryset=Entry.objects.all())
+        valid = EntryFilter(QueryDict(f"catalog_id={self.catalog.pk}"), queryset=Entry.objects.all())
+        self.assertIs(invalid.get_form_class(), valid.get_form_class())
+        self.assertFalse(invalid.is_valid())
+        self.assertIn("catalog_id", invalid.errors)
+        self.assertTrue(valid.is_valid(), valid.errors)
 
     def test_years_facet_reads_partial_dates(self):
         Entry.objects.filter(pk=self.keys["clrs"]).update(published_at=PartialDate("1990"))

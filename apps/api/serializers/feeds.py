@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
 
+from django.db.models import Prefetch
 from pydantic import field_validator, Field
 from pydantic_core.core_schema import ValidationInfo
 
@@ -45,5 +46,11 @@ class FeedSerializer:
 
 
 def feed_queryset():
-    """Feeds with what `FeedSerializer.Base` reads: `catalog` (for `url`), `parents` and `children`."""
-    return Feed.objects.select_related("catalog").prefetch_related("parents", "children")
+    """
+    Feeds with what `FeedSerializer.Base` reads: `catalog` (for `url`), `parents` and `children`.
+    Of a parent or child the serializer reads only the id: no other column is loaded for them.
+    """
+    return Feed.objects.select_related("catalog").prefetch_related(
+        Prefetch("parents", queryset=Feed.objects.only("id")),
+        Prefetch("children", queryset=Feed.objects.only("id")),
+    )

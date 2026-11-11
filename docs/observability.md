@@ -112,6 +112,9 @@ The image must be built with the `otel` dependency group (`.github/workflows/bui
   `EVILFLOWERS_TRACE_ENDUSER=true` (default off).
 - Sampling: `parentbased_always_on`. Propagation: `tracecontext,baggage`. Browsers may send
   `traceparent`/`tracestate` cross-origin (CORS allow-list).
+- Every response carries its trace: `Server-Timing: traceparent;desc="00-<trace id>-<span id>-01"`
+  (exposed to the portal through CORS, with `Timing-Allow-Origin` for admitted origins). Grafana
+  Faro links the browser span to it; a support report can quote the trace id from it.
 
 ### Metrics
 

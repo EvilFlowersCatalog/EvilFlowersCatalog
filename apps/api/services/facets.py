@@ -108,6 +108,10 @@ class EntryFacetService:
         for option in ("facet", "facet_limit", "facet_query", "include", "page", "limit", "order_by"):
             self.params.pop(option, None)
 
+        #: `entries_without` per effective filter parameters: a dimension whose own filter is not in the
+        #: request counts the same entries as every other such dimension, so they share one EntryFilter.
+        self._matching: dict[tuple, QuerySet] = {}
+
     @staticmethod
     def _parse_limit(raw) -> Optional[int]:
         try:
@@ -121,15 +125,25 @@ class EntryFacetService:
         return DEFAULT_FACET_LIMIT if dimension.limited else None
 
     def entries_without(self, *params) -> QuerySet:
-        """Entries matching every active filter except `params` (a facet ignores its own filter)."""
+        """
+        Entries matching every active filter except `params` (a facet ignores its own filter).
+
+        Building an EntryFilter (filter copies, form, validation, query) is most of the facets' CPU, and
+        without the dimension's own filter in the request the parameters are those of the whole request:
+        the filtered queryset is built once per distinct parameter set and reused as the subquery.
+        """
         query = self.params.copy()
         for param in params:
             query.pop(param, None)
-        matching = (
-            EntryFilter(query, queryset=self.queryset, request=self.request, search=self.search)
-            .qs.order_by()
-            .values("pk")
-        )
+        key = tuple(sorted((name, tuple(values)) for name, values in query.lists()))
+        matching = self._matching.get(key)
+        if matching is None:
+            matching = self._matching[key] = (
+                EntryFilter(query, queryset=self.queryset, request=self.request, search=self.search)
+                .qs.order_by()
+                .values("pk")
+            )
+        # `pk__in` clones the subquery into each outer query, so sharing `matching` is safe.
         return Entry.objects.filter(pk__in=matching)
 
     def _resolve_search(self) -> None:

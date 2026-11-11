@@ -410,7 +410,7 @@ def _instrument_kafka() -> None:
 
 
 SUPPRESS_MIDDLEWARE = "evil_flowers_catalog.telemetry.SuppressExcludedUrlsMiddleware"
-ROUTE_ATTRIBUTES_MIDDLEWARE = "evil_flowers_catalog.tracing.RouteAttributesMiddleware"
+TRACE_CONTEXT_MIDDLEWARE = "evil_flowers_catalog.tracing.TraceContextMiddleware"
 
 
 def instrument_django() -> None:
@@ -425,10 +425,11 @@ def instrument_django() -> None:
     # just put first.
     if SUPPRESS_MIDDLEWARE not in settings.MIDDLEWARE:
         settings.MIDDLEWARE = [SUPPRESS_MIDDLEWARE, *settings.MIDDLEWARE]
-    # Only `process_view` matters, which runs inside the server span whatever the
-    # position; appended so it never reorders the project's own middleware (IP-029).
-    if ROUTE_ATTRIBUTES_MIDDLEWARE not in settings.MIDDLEWARE:
-        settings.MIDDLEWARE = [*settings.MIDDLEWARE, ROUTE_ATTRIBUTES_MIDDLEWARE]
+    # Innermost (IP-029): inside the server span both on the way in (`process_view`) and
+    # on the way out (`Server-Timing`), and after `ExceptionMiddleware` has turned a
+    # handled exception into a response, so error answers carry the trace id too.
+    if TRACE_CONTEXT_MIDDLEWARE not in settings.MIDDLEWARE:
+        settings.MIDDLEWARE = [*settings.MIDDLEWARE, TRACE_CONTEXT_MIDDLEWARE]
 
 
 class SuppressExcludedUrlsMiddleware:

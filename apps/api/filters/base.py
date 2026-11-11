@@ -1,7 +1,8 @@
 import django_filters
 from django.core.cache import cache
 from django.db.models import Q
-from typing import Optional, List
+from django_filters.filters import QuerySetRequestMixin
+from typing import ClassVar, Optional, List
 
 from apps.core.models import Catalog, UserCatalog
 
@@ -113,4 +114,24 @@ class BaseSecuredFilter(CachedSecuredFilterMixin, django_filters.FilterSet):
     optimized permission checking and catalog access control.
     """
 
-    pass
+    #: Form classes by (filter set class, model), see `get_form_class`.
+    _form_classes: ClassVar[dict[tuple, type]] = {}
+
+    def get_form_class(self):
+        """
+        The form class, built once per filter set class and model instead of on every request.
+
+        django-filter builds a new form class for every filter set instance: a form field per filter
+        (with its label read from the model) and a new class through the form metaclass. That was about
+        two thirds of the cost of an EntryFilter, and facets build several per request. The class only
+        depends on the declared filters, unless a filter computes its field from the request
+        (`ModelChoiceFilter` with a callable queryset): those filter sets keep django-filter's behaviour.
+        Each form instance still deep-copies the class's fields, so instances share no state.
+        """
+        if any(isinstance(filter_, QuerySetRequestMixin) for filter_ in self.filters.values()):
+            return super().get_form_class()
+        key = (type(self), self.queryset.model)
+        form_class = BaseSecuredFilter._form_classes.get(key)
+        if form_class is None:
+            form_class = BaseSecuredFilter._form_classes[key] = super().get_form_class()
+        return form_class

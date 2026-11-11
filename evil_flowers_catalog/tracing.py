@@ -146,19 +146,53 @@ def set_route_attributes(view_kwargs: Mapping[str, object]) -> None:
     set_attributes({ROUTE_ATTRIBUTES[name]: value for name, value in view_kwargs.items() if name in ROUTE_ATTRIBUTES})
 
 
-class RouteAttributesMiddleware:
-    """Puts the ids in the resolved URL onto the request's server span.
+def server_timing(span_context) -> str:
+    """`Server-Timing` value carrying the W3C `traceparent` of a span (what Grafana Faro reads)."""
+    flags = format(int(span_context.trace_flags), "02x")
+    traceparent = f"00-{format(span_context.trace_id, '032x')}-{format(span_context.span_id, '016x')}-{flags}"
+    return f'traceparent;desc="{traceparent}"'
 
-    `process_view` runs after URL resolution and inside the OpenTelemetry
-    middleware's span, which is still the current span there. Inserted by
-    `telemetry.instrument_django()`, so it exists only when the process traces.
+
+def _timing_allow_origin(request) -> Optional[str]:
+    """The request's `Origin` when CORS admits it, so a browser may read `serverTiming` cross-origin."""
+    from django.conf import settings
+
+    origin = request.headers.get("Origin")
+    if not origin:
+        return None
+    if getattr(settings, "CORS_ALLOW_ALL_ORIGINS", False) or origin in getattr(settings, "CORS_ALLOWED_ORIGINS", ()):
+        return origin
+    return None
+
+
+class TraceContextMiddleware:
+    """Ties a request's trace to what the request is about, and hands its trace id back to the caller.
+
+    - `process_view` puts the ids in the resolved URL onto the server span; it
+      runs after URL resolution, inside the OpenTelemetry middleware's span.
+    - Every response carries `Server-Timing: traceparent;desc="00-…"`. The
+      portal's Faro SDK links its browser span to the server's trace from it,
+      and an error screen can show the trace id (IP-029 Q6, elvira-portal#39).
+      `Timing-Allow-Origin` (for CORS-admitted origins) lets the browser's
+      Resource Timing API read it; `CORS_EXPOSE_HEADERS` lets `fetch` read it.
+
+    Inserted last by `telemetry.instrument_django()`, so it exists only when the
+    process traces and runs inside the server span, which is still current
+    when the response comes back through it.
     """
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        return self.get_response(request)
+        response = self.get_response(request)
+        span = trace.get_current_span()
+        if span.is_recording():
+            response["Server-Timing"] = server_timing(span.get_span_context())
+            origin = _timing_allow_origin(request)
+            if origin:
+                response["Timing-Allow-Origin"] = origin
+        return response
 
     @staticmethod
     def process_view(request, view_func, view_args, view_kwargs):

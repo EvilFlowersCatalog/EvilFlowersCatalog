@@ -107,8 +107,9 @@ class Command(tracing.TracedCommandMixin, BaseCommand):
                 continue
 
             # One trace per entry, linked to the command (IP-029). The encryption task each acquisition
-            # queues carries this trace's context; how much of lcpencrypt-worker shows up under it depends
-            # on that worker's own instrumentation (Beyla only today, IP-029 Phase 5).
+            # queues carries this trace's context, so the worker's `lcpencrypt` span and its result hook
+            # land in it (on dev; production's worker image has no SDK yet). lcpencrypt's own `-notify`
+            # call stays a separate trace.
             with tracing.root_span(
                 "lcp.encrypt.backfill.item", {tracing.ENTRY_ID: entry.pk, tracing.CATALOG_ID: entry.catalog_id}
             ):

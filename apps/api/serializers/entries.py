@@ -10,7 +10,7 @@ from pydantic_core.core_schema import ValidationInfo
 from apps.api.serializers import Serializer
 from apps.api.serializers.feeds import FeedSerializer, feed_queryset
 from apps.api.serializers.reviews import EntryRatingSerializer
-from apps.core.models import Acquisition, EntryAuthor
+from apps.core.models import Acquisition, Category, EntryAuthor
 
 
 def with_entry_graph(qs: QuerySet, prefix: str = "") -> QuerySet:
@@ -21,13 +21,43 @@ def with_entry_graph(qs: QuerySet, prefix: str = "") -> QuerySet:
     joins the entry itself as well.
     """
     p = f"{prefix}__" if prefix else ""
+    # The related rows load only the columns the serializers read: every model built and every
+    # timestamp parsed for nothing was CPU of each list page (k6, Nov 2026).
     return qs.select_related(f"{p}language").prefetch_related(
         # The authors joined in, one query instead of two (#135).
-        Prefetch(f"{p}entry_authors", queryset=EntryAuthor.objects.select_related("author")),
-        f"{p}categories",
+        Prefetch(
+            f"{p}entry_authors",
+            queryset=EntryAuthor.objects.select_related("author").only(
+                "id", "entry_id", "author_id", "position", "author__id", "author__name", "author__surname"
+            ),
+        ),
+        # `CategorySerializer.Base`
+        Prefetch(f"{p}categories", queryset=Category.objects.only("id", "term", "label")),
         Prefetch(f"{p}feeds", queryset=feed_queryset()),
-        f"{p}acquisitions",
+        # `AcquisitionSerializer.Base` and `Acquisition.url`
+        Prefetch(
+            f"{p}acquisitions",
+            queryset=Acquisition.objects.only(
+                "id", "entry_id", "relation", "mime", "content", "file_url", "storage_backend"
+            ),
+        ),
     )
+
+
+#: Entry columns no list serializer reads (`EntrySerializer.Base` / `SearchResult`): the extracted text,
+#: the table of contents and the search columns are kilobytes per row to transfer, decode and, with the
+#: list's DISTINCT, compare. Only `EntrySerializer.Detailed` reads `content`, `identifiers` and
+#: `table_of_contents`, so a list must not serialize with it.
+ENTRY_LIST_DEFERRED = (
+    "content",
+    "identifiers",
+    "table_of_contents",
+    "search_vector",
+    "search_authors",
+    "search_subjects",
+    "search_summary",
+    "embedding",
+)
 
 
 class LcpState(str, Enum):

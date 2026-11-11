@@ -11,7 +11,11 @@ os.environ["EVILFLOWERS_WEB_PROCESS"] = "1"
 
 # Worker
 worker_class = "gevent"
-workers = 4
+# A gevent worker runs one request's Python at a time: a CPU-heavy request (an entry list with facets)
+# holds back every other request of its worker, even a 5 ms token refresh (k6, Nov 2026). More processes
+# may let the kernel interleave them, if the pod has CPU left under its limit; not measured yet. Each
+# worker opens its own database pool: PgBouncer sees workers x PGPOOL_MAX clients per pod.
+workers = int(os.getenv("GUNICORN_WORKERS", 4))
 timeout = 240
 
 # Bind

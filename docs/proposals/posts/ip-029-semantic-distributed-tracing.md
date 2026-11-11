@@ -26,9 +26,9 @@ that touched it, in a hierarchy that reads like the work that was done.
 
 ## Status
 
-**Status**: Draft
+**Status**: Accepted
 **Last Updated**: 2026-11-11
-**Implementation**: Phases 1–3 implemented on `develop`, not committed, tested locally (28 new tests in
+**Implementation**: Phases 1–3 implemented on `develop`, not committed, tested locally (32 new tests in
 `apps/core/tests/test_tracing.py`; the affected apps' suites green) and smoke-checked with the console exporter (see
 [Verification](#verification)). Not deployed; nothing has been verified on `evilflowers-dev`. Phase 5
 (other repositories) is a list of work, not started.
@@ -103,7 +103,7 @@ on purpose.
 
 ### Route ids
 
-`tracing.RouteAttributesMiddleware.process_view` copies the URL keywords above onto the server span.
+`tracing.TraceContextMiddleware.process_view` copies the URL keywords above onto the server span.
 `telemetry.instrument_django()` appends it to `MIDDLEWARE`, so it exists only when the process traces.
 `process_view` runs after URL resolution, inside the OpenTelemetry middleware's span.
 
@@ -159,8 +159,12 @@ Applied to the commands that do real work: `backfill_extraction`, `encrypt_readi
 
 ### Browser trace context
 
-`CORS_ALLOW_HEADERS` = the `django-cors-headers` defaults + `traceparent`, `tracestate`. That is the
-catalog's half of browser tracing; the portal's half is in Phase 5.
+`CORS_ALLOW_HEADERS` = the `django-cors-headers` defaults + `traceparent`, `tracestate`. In the other
+direction, every response carries `Server-Timing: traceparent;desc="00-<trace>-<span>-01"` of its
+server span (`TraceContextMiddleware`, innermost, so error answers carry it too), with
+`Server-Timing` in `CORS_EXPOSE_HEADERS` and `Timing-Allow-Origin` set for CORS-admitted origins.
+Faro links its browser span to the server's trace from it, and the portal's error screen can show
+the trace id. That is the catalog's half of browser tracing; the portal's half is in Phase 5.
 
 ### Privacy
 
@@ -173,7 +177,7 @@ a reading log ([Q1](#q1-the-readers-id-on-spans-medium)).
 ### Phase 1: Vocabulary and helpers
 
 - [x] `evil_flowers_catalog/tracing.py`: attribute keys, `span`, `traced`, `root_span`, `client_span`,
-      `set_attributes`, `set_route_attributes`, `set_caller`, `RouteAttributesMiddleware`,
+      `set_attributes`, `set_route_attributes`, `set_caller`, `TraceContextMiddleware`,
       `TracedCommandMixin`
 - [x] `telemetry.ROLES` gains `command`; `instrument_django()` appends the route middleware
 - [x] `EVILFLOWERS_TRACE_ENDUSER` setting (default off); `CORS_ALLOW_HEADERS` with trace context
@@ -209,22 +213,30 @@ a reading log ([Q1](#q1-the-readers-id-on-spans-medium)).
 
 ### Phase 5: The rest of the ecosystem (other repositories)
 
-Work in other repositories, not done here. Each is its own issue once this proposal is accepted.
+Work in other repositories, not done here. Tracked in EvilFlowersCatalog#139 with sub-issues:
+knowledge#40 (dev deployment and verification, Faro receiver), knowledge#41 (tracing-conventions
+note), elvira-portal#39 (browser tracing), evilflowers-lcpencrypt-worker#7 (release the SDK to
+production) and evilflowers-image-service#2 (attribute names). Analyzer, text and equation need
+nothing: they already set `evilflowers.extraction.run_id` on their CONSUMER spans. Ready-to-apply
+patches are posted on #2, #7 and #39; nothing is committed in those repositories.
 
 - [ ] **elvira-portal** (GitHub code search on 2026-11-11 finds no `opentelemetry`, `faro` or
       `traceparent` in the repository): browser tracing (Grafana Faro or OpenTelemetry JS `FetchInstrumentation` with
       `propagateTraceHeaderCorsUrls` for the API origin), so a reader's click is the root of the trace.
       Faro → Alloy's `faro.receiver`; needs a knowledge deployment change ([Q6](#q6-browser-tracing-in-the-portal-medium))
-- [ ] **evilflowers-lcpencrypt-worker**: in Tempo as `telemetry.sdk.name=beyla` only. Add the SDK
-      (`elvira.stuba.sk/instrumentation: otel-sdk` pod label, per Deploy-a-Service) with spans for
-      download → encrypt → upload → result hook, and `lcp.content_id` on each
-- [ ] **readium-lcp-server**: no service of that kind in Tempo's service list for the last 7 days
-      (read 2026-11-11; it may run under another name). Beyla on its pod at minimum, so the catalog's
-      `requests` CLIENT spans to LCP/LSD get a server side
+- [ ] **evilflowers-lcpencrypt-worker**: *corrected 2026-11-11.* On dev the `develop` image already has
+      the SDK (service `lcpencrypt`, `lcp.content_id`, the report hook carries `traceparent`; knowledge
+      note LCPEncrypt-Worker). Only **production** (Compose, `:master`, service
+      `evilflowers-lcpencrypt-worker`, Beyla only) lacks it. `master` still initialises Logfire on
+      `worker_init`, before the prefork fork. Remaining: release `develop` → `master` and give the prod
+      container the `OTEL_*` env. The `-notify` webhook comes from the Go `lcpencrypt` binary and stays
+      a separate trace (EvilFlowersCatalog#99)
+- [x] **readium-lcp-server**: *corrected 2026-11-11.* Beyla traces it as service `readium` (an earlier
+      7-day attribute listing missed it). Nothing to do in its repository
 - [ ] **evilflowers-image-service**: rename `figures.kept` / `figures.regions` to
       `evilflowers.figures.*`, matching analyzer and text ([Q4](#q4-one-attribute-namespace-across-services-low))
-- [ ] **evilflowers-analyzer/text/equation**: no change needed for linking; confirm they set
-      `evilflowers.extraction.run_id` on the CONSUMER span (analyzer and image do)
+- [x] **evilflowers-analyzer/text/equation**: no change needed; Tempo (2026-11-11) shows
+      `evilflowers.extraction.run_id` on the CONSUMER spans of all three
 - [ ] **knowledge**: a "Tracing conventions" note (this vocabulary, the hierarchy/link rule) linked from
       Deploy-a-Service, so new services adopt the same keys
 
@@ -245,7 +257,7 @@ Work in other repositories, not done here. Each is its own issue once this propo
 | `apps/notifications/services.py` | notification and SMTP spans |
 | `apps/api/services/entry_introspection_service.py` | `urllib` CLIENT spans |
 | 16 `management/commands/*.py` | `TracedCommandMixin`; `encrypt_readium_content` split into per-entry/per-acquisition methods |
-| `apps/core/tests/test_tracing.py` | new, 28 tests |
+| `apps/core/tests/test_tracing.py` | new, 32 tests |
 | `docs/observability.md`, `.env.example` | the span vocabulary, `EVILFLOWERS_TRACE_ENDUSER` |
 
 ### Queries this enables (TraceQL)
@@ -287,9 +299,10 @@ exporter (`OTEL_TRACES_EXPORTER=console`, autodiscovery off). Nothing here ran o
 |---|---|
 | `manage.py storage_audit --catalog stu` from the CLI | One trace: root `command storage_audit` (`parent_id` null), its 5 `SELECT`s as children, flushed on exit; `OpenTelemetry on: role=command traces=console metrics=none` |
 | Same command with a bad argument (argparse exit 2) | Root span status ERROR, `process.exit.code=2`, still flushed |
-| Bearer `GET api/v1/catalogs/<catalog_id>/entries/<entry_id>` through the real middleware chain (throwaway test database, search test corpus) | `RouteAttributesMiddleware` last in `MIDDLEWARE`; server span carries `evilflowers.catalog.id`, `evilflowers.entry.id`, `evilflowers.auth.method=bearer`, `token_type=access`, `superuser=true`; child `auth.authenticate` (`outcome=accepted`) → `SELECT users`; the response's 10 queries under the server span |
+| Bearer `GET api/v1/catalogs/<catalog_id>/entries/<entry_id>` through the real middleware chain (throwaway test database, search test corpus) | `TraceContextMiddleware` (then named `RouteAttributesMiddleware`) last in `MIDDLEWARE`; server span carries `evilflowers.catalog.id`, `evilflowers.entry.id`, `evilflowers.auth.method=bearer`, `token_type=access`, `superuser=true`; child `auth.authenticate` (`outcome=accepted`) → `SELECT users`; the response's 10 queries under the server span |
 | Bearer `GET api/v1/entries?query=learning` | `auth.authenticate`; `search` (`lexical_hits=2`, `results=2`, `words=1`, no text) → `search.lexical` → its 2 SQL statements, and `search.vector` (TEI not configured: 0 hits) |
 | `GET api/v1/entries` with an invalid bearer token | 401; `auth.authenticate` has `error.type=ProblemDetailException`, status UNSET |
+| `Server-Timing` on the three responses above (200, 200, 401) | Each `traceparent;desc="00-<trace>-<span>-01"` matches its server span's trace and span id exactly |
 
 Seen while doing it: a database connection opened *before* `telemetry.setup()` is never instrumented
 (the smoke script's test-database creation). gunicorn and Celery set up before their first query, so
@@ -334,8 +347,6 @@ production is not affected, but a future entry point must keep that order.
 
 - Store `traceparent` on `License`, `Reservation`, `ExtractionRun` and `EncryptedContent` at creation,
   and link sweep/reminder/promotion spans to it (Q3).
-- A `Server-Timing: traceparent;desc=…` response header, so the portal (Faro) and support can quote the
-  trace id of a failed request.
 - Storage spans (`storage.open`/`save`) once S3 is in use; on the local filesystem they would be noise.
 - Tail sampling in Alloy (keep errors and slow traces, sample the rest) once trace volume matters.
 
@@ -349,12 +360,12 @@ production is not affected, but a future entry point must keep that order.
 
 ## Review Questions
 
-**Status**: ⏳ Awaiting Answers
+**Status**: ✅ Answered (2026-11-11; all resolved with the recommended option)
 **Review Date**: 2026-11-11
 **Reviewer**: Claude AI
 
-The following questions must be answered before implementation is considered final. The code follows
-the recommended option of each.
+The following questions had to be answered before implementation was considered final. The code
+already followed the recommended option of each, so no question changed code.
 
 ---
 
@@ -377,17 +388,23 @@ on by default; option D removes them.
 **Question**: Should spans carry the reader's id by default?
 
 **Options**:
-- [ ] **A**: Off by default, opt-in per deployment (dev on, production off) (recommended)
+- [x] **A**: Off by default, opt-in per deployment (dev on, production off) (recommended)
 - [ ] **B**: On everywhere; Tempo retention and Grafana access are the control
 - [ ] **C**: A keyed hash of the user id (stable per deployment, not reversible without the key)
 - [ ] **D**: A, and also drop the per-reader record ids above from `ROUTE_ATTRIBUTES`
 
 **Answer**:
 ```
+A — resolved with the recommendation (jdubec, 2026-11-11).
 ```
 
 **Resolution**:
 ```
+No code change: `EVILFLOWERS_TRACE_ENDUSER` stays default false (settings, .env.example).
+Dev sets it to true, production leaves it unset; recorded as a deploy step in knowledge#40.
+The per-reader record ids (licence, reservation, user acquisition, annotation, chat) stay in
+ROUTE_ATTRIBUTES: they are what makes a loan's trace findable, and Tempo/Grafana access is
+VPN-only. Revisit with D if production retention or Grafana access widens.
 ```
 
 ---
@@ -403,16 +420,20 @@ only through links. Implemented as option A.
 **Question**: Should per-user traces split off only above a threshold, or only under the `command` role?
 
 **Options**:
-- [ ] **A**: Split only when `telemetry.current_role() == "command"`; child spans otherwise (recommended)
+- [x] **A**: Split only when `telemetry.current_role() == "command"`; child spans otherwise (recommended)
 - [ ] **B**: Split above N users (e.g. 20) regardless of process
 - [ ] **C**: Always split, whatever the process
 
 **Answer**:
 ```
+A — resolved with the recommendation (jdubec, 2026-11-11).
 ```
 
 **Resolution**:
 ```
+Already implemented: `sync_users` uses `tracing.root_span` under the `command` role and
+`tracing.span` otherwise; covered by the two `test_sync_*` tests. A Celery task syncing
+thousands of users would build one large trace; no such task exists today.
 ```
 
 ---
@@ -429,16 +450,20 @@ those needs the creating trace's context stored on the record. None of the model
 **Question**: Should IP-029 add stored trace context now?
 
 **Options**:
-- [ ] **A**: Not in IP-029; a follow-up proposal after Phase 4 shows the rest works (recommended)
+- [x] **A**: Not in IP-029; a follow-up proposal after Phase 4 shows the rest works (recommended)
 - [ ] **B**: Add a nullable `trace_context` column to the four models in IP-029
 - [ ] **C**: Store it inside existing JSON fields (`ExtractionRun.provenance`) where one exists, no migration
 
 **Answer**:
 ```
+A — resolved with the recommendation (jdubec, 2026-11-11).
 ```
 
 **Resolution**:
 ```
+No code change and no migration in IP-029. Kept under Future Considerations (stored
+`traceparent` on License, Reservation, ExtractionRun, EncryptedContent, linked from sweeps).
+A follow-up proposal is written once knowledge#40 (Phase 4) shows the current links work on dev.
 ```
 
 ---
@@ -455,16 +480,20 @@ keeping it leaves one inconsistent key forever.
 **Question**: Rename to `evilflowers.acquisition.id` everywhere?
 
 **Options**:
-- [ ] **A**: Keep `evilflowers.acquisition_id` as the one exception; fix only the unprefixed `figures.*` (recommended)
+- [x] **A**: Keep `evilflowers.acquisition_id` as the one exception; fix only the unprefixed `figures.*` (recommended)
 - [ ] **B**: Rename across all services in one coordinated change, emitting both keys for one release
 - [ ] **C**: Leave everything as is
 
 **Answer**:
 ```
+A — resolved with the recommendation (jdubec, 2026-11-11).
 ```
 
 **Resolution**:
 ```
+No catalog change: `tracing.ACQUISITION_ID` already uses `evilflowers.acquisition_id`.
+The image service rename is evilflowers-image-service#2; the exception is documented in the
+tracing-conventions note (knowledge#41).
 ```
 
 ---
@@ -482,16 +511,19 @@ trace per pod restart. `assistant_eval` and `backup` are long and do real I/O, w
 **Question**: Is the list right?
 
 **Options**:
-- [ ] **A**: The 16 above, including `assistant_eval` and `backup` (recommended, implemented)
+- [x] **A**: The 16 above, including `assistant_eval` and `backup` (recommended, implemented)
 - [ ] **B**: Without `assistant_eval` and `backup`
 - [ ] **C**: Every command except `celery_event_handler`, `setup`, `openapi`
 
 **Answer**:
 ```
+A — resolved with the recommendation (jdubec, 2026-11-11).
 ```
 
 **Resolution**:
 ```
+Already implemented: `TracedCommandMixin` on the 16 commands. Adding another later is one
+line (`class Command(TracedCommandMixin, BaseCommand)`).
 ```
 
 ---
@@ -509,16 +541,20 @@ Angular render) is invisible, and a support report cannot carry a trace id.
 **Question**: Which browser instrumentation, and through which endpoint?
 
 **Options**:
-- [ ] **A**: Faro Web SDK with tracing, `faro.receiver` behind the edge nginx with a rate limit and an app key (recommended)
+- [x] **A**: Faro Web SDK with tracing, `faro.receiver` behind the edge nginx with a rate limit and an app key (recommended)
 - [ ] **B**: OpenTelemetry JS (fetch/XHR instrumentation only) exporting OTLP/HTTP to the same public endpoint
 - [ ] **C**: No browser tracing; propagate only a request id from the portal for correlation
 
 **Answer**:
 ```
+A — resolved with the recommendation (jdubec, 2026-11-11).
 ```
 
 **Resolution**:
 ```
+Catalog side done (CORS allows traceparent/tracestate). The receiver is no longer conditional
+in knowledge#40 (Alloy `faro.receiver` behind the edge nginx, rate limit, app key); the portal
+work is elvira-portal#39 (Faro Web SDK + tracing), which starts once the receiver exists.
 ```
 
 ---
@@ -530,3 +566,7 @@ Angular render) is invisible, and a support report cannot carry a trace id.
 | 2026-11-11 | jdubec | Initial draft from Tempo findings on dev; Phases 1–3 implemented and tested locally |
 | 2026-11-11 | jdubec | Added Review Questions section |
 | 2026-11-11 | jdubec | Code follows Q2/Q5 recommendations; batch→item via `link:traceID` instead of events (128-event cap); command role traces-only; facet passes without spans; loan-state `ValueError`s expected; failed commands ERROR; OTel `redact_url` reused; Verification section (console smoke); corrected queue delay and orphan-cause wording, Q1 per-reader ids, Phase 5 evidence |
+| 2026-11-11 | jdubec | Review questions Q1–Q6 resolved with the recommended options (no code change); status Accepted |
+| 2026-11-11 | jdubec | `Server-Timing` traceparent on every response (Faro, error screens); route middleware renamed `TraceContextMiddleware`; Phase 5 patches posted on the issues |
+| 2026-11-11 | jdubec | Corrected Phase 5: lcpencrypt-worker already has the SDK on dev (prod `master` lacks it); readium is traced by Beyla as `readium` |
+| 2026-11-11 | jdubec | Phase 5 issues opened: #139 (tracking), knowledge#40, knowledge#41, elvira-portal#39, evilflowers-lcpencrypt-worker#7, evilflowers-image-service#2 |

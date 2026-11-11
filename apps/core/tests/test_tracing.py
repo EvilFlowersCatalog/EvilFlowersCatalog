@@ -163,7 +163,7 @@ class RouteAttributeTests(SimpleTestCase):
         run_id = uuid.uuid4()
         with recorded() as exporter:
             with request_span():
-                tracing.RouteAttributesMiddleware.process_view(
+                tracing.TraceContextMiddleware.process_view(
                     None,
                     None,
                     (),
@@ -336,6 +336,41 @@ class SearchSpanTests(SimpleTestCase):
         self.assertEqual(ranking.call_count, 1)
         names = [span.name for span in exporter.get_finished_spans()]
         self.assertEqual(sorted(names), ["GET api/v1/test", "search", "search.lexical"])
+
+
+class ServerTimingTests(SimpleTestCase):
+    @staticmethod
+    def _respond(**headers):
+        from django.http import HttpResponse
+
+        request = RequestFactory().get("/api/v1/entries", **headers)
+        return tracing.TraceContextMiddleware(lambda request: HttpResponse("ok"))(request)
+
+    @override_settings(CORS_ALLOWED_ORIGINS=["https://portal.example.org"], CORS_ALLOW_ALL_ORIGINS=False)
+    def test_response_carries_the_server_spans_traceparent(self):
+        with recorded() as exporter, request_span():
+            response = self._respond(HTTP_ORIGIN="https://portal.example.org")
+        server = _by_name(exporter)["GET api/v1/test"]
+        expected = f"00-{server.context.trace_id:032x}-{server.context.span_id:016x}-01"
+        self.assertEqual(response["Server-Timing"], f'traceparent;desc="{expected}"')
+        self.assertEqual(response["Timing-Allow-Origin"], "https://portal.example.org")
+
+    @override_settings(CORS_ALLOWED_ORIGINS=["https://portal.example.org"], CORS_ALLOW_ALL_ORIGINS=False)
+    def test_foreign_origin_gets_no_timing_allow_origin(self):
+        with recorded(), request_span():
+            response = self._respond(HTTP_ORIGIN="https://evil.example.org")
+        self.assertIn("Server-Timing", response)
+        self.assertNotIn("Timing-Allow-Origin", response)
+
+    def test_nothing_outside_a_trace(self):
+        with recorded():
+            response = self._respond()
+        self.assertNotIn("Server-Timing", response)
+
+    def test_fetch_may_read_it_cross_origin(self):
+        from django.conf import settings
+
+        self.assertIn("Server-Timing", settings.CORS_EXPOSE_HEADERS)
 
 
 class BrowserTraceContextTests(SimpleTestCase):

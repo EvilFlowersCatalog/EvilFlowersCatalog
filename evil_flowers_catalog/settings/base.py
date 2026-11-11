@@ -806,7 +806,14 @@ _instance_origin = _origin(EVILFLOWERS_BASE_URL)
 CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "0").lower() in ("1", "true")
 CORS_ALLOWED_ORIGINS = _origins_from_env("CORS_ALLOWED_ORIGINS", [_portal_origin] if _portal_origin else [])
 # A browser client can read only the response headers listed here: the portal needs the rate limit (#21).
-CORS_EXPOSE_HEADERS = ["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After"]
+CORS_EXPOSE_HEADERS = [
+    "X-RateLimit-Limit",
+    "X-RateLimit-Remaining",
+    "X-RateLimit-Reset",
+    "Retry-After",
+    # The request's trace id, for the portal's Faro SDK and its error screen (IP-029).
+    "Server-Timing",
+]
 # W3C trace context from a browser-instrumented portal (IP-029): without these in the preflight answer the
 # browser drops the request, so a reader's click could never be the root of the trace it causes.
 CORS_ALLOW_HEADERS = (*cors_default_headers, "traceparent", "tracestate")
