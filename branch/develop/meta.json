@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "f7b18ca8948f964e42d1cdaee693bf6bdb52b86e",
-    "short": "f7b18ca",
-    "message": "Resolving #120",
+    "sha": "5f5e49e17cb00d7e3b8e0d949cb0fb85bfe847ac",
+    "short": "5f5e49e",
+    "message": "Thumbnails optimizations 🫣",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/f7b18ca8948f964e42d1cdaee693bf6bdb52b86e"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/5f5e49e17cb00d7e3b8e0d949cb0fb85bfe847ac"
   },
-  "deployed_at": "2026-11-11T11:44:27Z",
+  "deployed_at": "2026-11-11T18:06:36Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

@@ -211,6 +211,9 @@ This gives the best caching, but changes every place that builds a cover URL (RE
 manifest) and the URL stored by OPDS clients. Revalidation gets the same freshness without that. It is worth
 revisiting if cover traffic becomes a load problem.
 
+**Update (#128):** it did, and versioned URLs are implemented, with a content hash instead of `touched_at` as
+the version. See the resolution of Q2.
+
 ### `no-store` everywhere
 
 This is the simplest option, but it throws away the cheap `304` path that the OPDS feeds (#72) and the ETags
@@ -236,7 +239,8 @@ already give, and readers re-download unchanged lists in full.
 
 ## Future Considerations
 
-- Versioned cover URLs plus `immutable`, if cover traffic ever becomes a load problem (see Alternatives).
+- ~~Versioned cover URLs plus `immutable`~~: implemented in #128 (Q2). HMAC-signed, expiring cover URLs only if
+  IP-010 M2 (cover ACL) is revived.
 - A dedicated Vite `assetsDir`, so the edge rule for hashed chunks can be a plain prefix (Q3).
 - Bump `touched_at` on author and category M2M edits. That would close the known gap the OPDS ETags (#72) and
   the cover ETags share.
@@ -295,16 +299,31 @@ caching covers at all. A short `max-age` (for example 300) would let browsers an
 but a replaced cover would then appear up to 5 minutes late.
 
 **Options**:
-- [ ] **A**: `public, no-cache` + `ETag`, no nginx cache (implemented, recommended: freshest; the `304` is cheap)
+- [x] **A**: `public, no-cache` + `ETag`, no nginx cache (implemented, recommended: freshest; the `304` is cheap)
 - [ ] **B**: `public, max-age=300` + `ETag`, keep the nginx cache on `/data/v1/` with `proxy_cache_revalidate`
-- [ ] **C**: Versioned cover URLs + `immutable` (see Alternatives)
+- [x] **C**: Versioned cover URLs + `immutable` (see Alternatives)
 
 **Answer**:
 ```
+C for versioned URLs, A for unversioned ones (#128). Thumbnails are 87 % of prod API requests and the
+portal home page fires 63 of them, so cover traffic is the load problem C was deferred for. The version
+must be a content hash, not touched_at: opening a book saves the entry. Signed, expiring URLs (option D
+in #128) only if IP-010 M2 (cover ACL) is ever revived.
 ```
 
 **Resolution**:
 ```
+Implemented (#128):
+- Entry.image_hash / Entry.thumbnail_hash: first 16 hex chars of the SHA-256 of the stored file.
+  Entry.save() recomputes one whenever its file name changes (storage never overwrites a name), so
+  metadata edits and reading sessions never roll it. `manage.py backfill_cover_hashes` fills old rows.
+- REST (`image`, `thumbnail`), OPDS 1.2 and OPDS 2 emit `…/covers|thumbnails/<id>?v=<hash>`.
+  `thumbnail` is null when the entry has no thumbnail (it checked `image` before).
+- `?v=` equal to the hash: `EVILFLOWERS_FILES_CACHE_CONTROL_IMMUTABLE`
+  (`public, max-age=31536000, immutable`); the hash is the strong ETag and no Last-Modified is sent.
+- No `v` (stored OPDS URLs) or a stale `v`: `public, no-cache` + the same ETag (A stays the contract).
+  A stale `v` is never answered `immutable`. Rows without a hash keep the old ETag + Last-Modified.
+- The edge cache on `^/data/v1/(thumbnails|covers)/` becomes safe again: a knowledge-repository change.
 ```
 
 ---
@@ -361,3 +380,4 @@ It is outside the catalog but on the same edge.
 | 2026-11-09 | jdubec | Phase 2 filed as knowledge#27 |
 | 2026-11-09 | jdubec | Review fixes: #123 timeline incl. the fresh read at 22:12:55; prod per-user `303` leak and deploy order (nginx first); SPA headers via a server-level `map` so `Alt-Svc` survives; Future Considerations |
 | 2026-11-09 | jdubec | Covers: `Last-Modified` and the `304` before `storage.exists()`, contributed by the #126 work in the same tree |
+| 2026-11-11 | jdubec | Q2 answered (#128): C for versioned URLs (content-hash `?v=`, `immutable`), A for unversioned; implemented and tested locally (Claude) |
