@@ -19,9 +19,10 @@ from django.db.models import Exists, OuterRef
 from apps.core.models import Acquisition
 from apps.extraction import services
 from apps.extraction.models import ExtractionRun
+from evil_flowers_catalog import tracing
 
 
-class Command(BaseCommand):
+class Command(tracing.TracedCommandMixin, BaseCommand):
     help = "Queue figure, table, equation and paragraph extraction for existing PDF acquisitions."
 
     def add_arguments(self, parser):
@@ -71,13 +72,20 @@ class Command(BaseCommand):
                 self.stdout.write(f"would queue {acquisition.pk} {acquisition.content.name}")
                 queued += 1
                 continue
-            # A run left `queued` or `running` by services that were down is sent again.
-            stuck = ExtractionRun.objects.filter(
-                acquisition=acquisition,
-                pipeline_version=version,
-                status__in=[ExtractionRun.Status.QUEUED, ExtractionRun.Status.RUNNING],
-            ).exists()
-            run = services.queue(acquisition, force=options["force"] or stuck)
+            # Each acquisition is a trace of its own, linked to the backfill: the analyzer, image, equation
+            # and text tasks it causes run for minutes each, and hundreds of them in one trace cannot be
+            # opened (IP-029).
+            with tracing.root_span(
+                "extraction.backfill.item",
+                {tracing.ACQUISITION_ID: acquisition.pk, tracing.ENTRY_ID: acquisition.entry_id},
+            ):
+                # A run left `queued` or `running` by services that were down is sent again.
+                stuck = ExtractionRun.objects.filter(
+                    acquisition=acquisition,
+                    pipeline_version=version,
+                    status__in=[ExtractionRun.Status.QUEUED, ExtractionRun.Status.RUNNING],
+                ).exists()
+                run = services.queue(acquisition, force=options["force"] or stuck)
             if run is None:
                 continue
             queued += 1

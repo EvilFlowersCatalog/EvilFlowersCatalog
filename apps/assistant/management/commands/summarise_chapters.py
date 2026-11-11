@@ -11,9 +11,10 @@ through Readium LCP are skipped (their text never reaches the model).
 from django.core.management.base import BaseCommand
 
 from apps.assistant.chapters import summarise_entry
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 
-class Command(BaseCommand):
+class Command(TracedCommandMixin, BaseCommand):
     help = "Summarise the chapters of publications for the assistant."
 
     def add_arguments(self, parser):

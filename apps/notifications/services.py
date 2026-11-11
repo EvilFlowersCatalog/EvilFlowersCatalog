@@ -14,8 +14,29 @@ from apps.notifications import branding
 from apps.notifications.attachments import EmailAttachment
 from apps.notifications.branding import Branding
 from apps.notifications.models import NotificationContact, NotificationLog
+from evil_flowers_catalog import tracing
 
 logger = logging.getLogger(__name__)
+
+
+def _deliver(email: EmailMultiAlternatives) -> None:
+    """`email.send()` as a CLIENT span: the SMTP relay is a node of its own in the service graph (IP-029).
+
+    Only the SMTP backend talks to a server; the console and locmem backends get the span without
+    `server.address`, so tests and local runs show the step but no phantom relay.
+    """
+    smtp = settings.EMAIL_BACKEND.endswith("smtp.EmailBackend")
+    with tracing.client_span(
+        "smtp send",
+        system="smtp",
+        server_address=settings.EMAIL_HOST if smtp else None,
+        server_port=settings.EMAIL_PORT if smtp else None,
+        attributes={
+            "evilflowers.email.backend": settings.EMAIL_BACKEND.rsplit(".", 2)[-2],
+            "evilflowers.email.attachments": len(email.attachments),
+        },
+    ):
+        email.send()
 
 
 @dataclass(frozen=True)
@@ -165,6 +186,10 @@ class NotificationService:
         return formataddr((brand.from_name, address)) if brand.from_name else address
 
     @staticmethod
+    @tracing.traced(
+        "notification.send",
+        lambda notification_type, *args, **kwargs: {"evilflowers.notification.type": notification_type},
+    )
     def send(
         notification_type: str,
         recipient_user,
@@ -179,6 +204,7 @@ class NotificationService:
         """
         recipient_email = NotificationService.resolve_recipient_email(recipient_user)
         if not recipient_email:
+            tracing.set_attributes({"evilflowers.notification.status": NotificationLog.Status.NO_CONTACT})
             return NotificationLog.objects.create(
                 recipient=recipient_user,
                 recipient_email="",
@@ -211,7 +237,7 @@ class NotificationService:
             for attachment in attachments or []:
                 email.attach(attachment.filename, attachment.content, attachment.mimetype)
 
-            email.send()
+            _deliver(email)
 
             log.status = NotificationLog.Status.SENT
             log.sent_at = timezone.now()
@@ -221,4 +247,7 @@ class NotificationService:
             log.error_message = str(e)
 
         log.save()
+        tracing.set_attributes(
+            {"evilflowers.notification.status": log.status, "evilflowers.notification.log_id": log.pk}
+        )
         return log

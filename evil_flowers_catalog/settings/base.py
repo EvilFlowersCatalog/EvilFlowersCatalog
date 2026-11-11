@@ -18,6 +18,7 @@ from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from corsheaders.defaults import default_headers as cors_default_headers
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
@@ -806,6 +807,9 @@ CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "0").lower() in ("1
 CORS_ALLOWED_ORIGINS = _origins_from_env("CORS_ALLOWED_ORIGINS", [_portal_origin] if _portal_origin else [])
 # A browser client can read only the response headers listed here: the portal needs the rate limit (#21).
 CORS_EXPOSE_HEADERS = ["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After"]
+# W3C trace context from a browser-instrumented portal (IP-029): without these in the preflight answer the
+# browser drops the request, so a reader's click could never be the root of the trace it causes.
+CORS_ALLOW_HEADERS = (*cors_default_headers, "traceparent", "tracestate")
 
 # Browser origins allowed to reach the MCP endpoint (DNS-rebinding guard,
 # issue #100). Comma-separated; defaults to the instance's own origin
@@ -823,6 +827,12 @@ SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "0") == "1"
 # OpenTelemetry is configured per process by `evil_flowers_catalog.telemetry.setup()`,
 # never here: settings are imported by the gunicorn master and the Celery main
 # process before they fork, and exporter threads do not survive a fork (IP-019).
+#
+# Who the caller is, on the request's server span (IP-029). Off: a span carries the
+# credential kind and, for an API key, the key's id (the services' identity), never
+# the reader. On: also `enduser.id`, the user's UUID, which together with the entry
+# ids on the same span is a reading log. Deciding that is IP-029 Q1.
+EVILFLOWERS_TRACE_ENDUSER = os.getenv("EVILFLOWERS_TRACE_ENDUSER", "false").strip().lower() == "true"
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATABASE}")
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True

@@ -17,7 +17,7 @@ from django.utils import timezone
 from apps.core.models import Acquisition
 from apps.extraction.models import ExtractionRun, Paragraph, ParagraphLink, Region, Sentence
 from apps.files.storage import get_storage
-from evil_flowers_catalog import domain_metrics
+from evil_flowers_catalog import domain_metrics, tracing
 from evil_flowers_catalog.celery import app
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,14 @@ def is_extractable(acquisition: Acquisition) -> bool:
     )
 
 
+@tracing.traced(
+    "extraction.queue",
+    lambda acquisition, **kwargs: {
+        tracing.ACQUISITION_ID: acquisition.pk,
+        tracing.ENTRY_ID: acquisition.entry_id,
+        "evilflowers.extraction.force": bool(kwargs.get("force")),
+    },
+)
 def queue(acquisition: Acquisition, *, force: bool = False) -> Optional[ExtractionRun]:
     """Queue extraction of `acquisition` by the current pipeline version.
 
@@ -58,13 +66,22 @@ def queue(acquisition: Acquisition, *, force: bool = False) -> Optional[Extracti
     version = settings.EVILFLOWERS_EXTRACTION_PIPELINE_VERSION
     try:
         run, created = ExtractionRun.objects.get_or_create(acquisition=acquisition, pipeline_version=version)
+        tracing.set_attributes(
+            {
+                tracing.EXTRACTION_RUN_ID: run.pk,
+                tracing.EXTRACTION_PIPELINE_VERSION: version,
+                "evilflowers.extraction.previous_status": None if created else run.status,
+            }
+        )
         if not created:
             if run.status != ExtractionRun.Status.FAILED and not force:
+                tracing.set_attributes({"evilflowers.extraction.decision": "kept"})
                 return run
             _reset(run)
     except Exception:
         logger.exception("Failed to create extraction run for acquisition_id=%s", acquisition.pk)
         return None
+    tracing.set_attributes({"evilflowers.extraction.decision": "queued" if created else "requeued"})
 
     kwargs = {
         "run_id": str(run.pk),
@@ -90,12 +107,23 @@ def task_id(acquisition_id, pipeline_version: int) -> str:
 def _send(kwargs: dict) -> None:
     task_id_ = task_id(kwargs["acquisition_id"], kwargs["pipeline_version"])
     try:
-        app.send_task(
-            _ANALYZER_TASK_NAME,
-            kwargs=kwargs,
-            queue=settings.EVILFLOWERS_EXTRACTION_QUEUE,
-            task_id=task_id_,
-        )
+        # Runs on commit, after `extraction.queue` ended: the PRODUCER span gets a parent that names the run,
+        # so the analyzer's CONSUMER span hangs under a step carrying the same `run_id` it reports (IP-029).
+        with tracing.span(
+            "extraction.dispatch",
+            {
+                tracing.EXTRACTION_RUN_ID: kwargs["run_id"],
+                tracing.ACQUISITION_ID: kwargs["acquisition_id"],
+                tracing.EXTRACTION_PIPELINE_VERSION: kwargs["pipeline_version"],
+                "messaging.message.id": task_id_,
+            },
+        ):
+            app.send_task(
+                _ANALYZER_TASK_NAME,
+                kwargs=kwargs,
+                queue=settings.EVILFLOWERS_EXTRACTION_QUEUE,
+                task_id=task_id_,
+            )
     except Exception:
         logger.exception("Failed to queue extraction: task_id=%s run_id=%s", task_id_, kwargs["run_id"])
         return
@@ -222,6 +250,14 @@ def report_job(run: ExtractionRun, job: str, *, failed: bool, error: Optional[st
         if ExtractionRun.JobStatus.PENDING not in run.jobs.values():
             _finish(run)
         run.save()
+    # On the callback's server span: which job reported, and whether that finished the run (IP-029).
+    tracing.set_attributes(
+        {
+            tracing.EXTRACTION_JOB: job,
+            "evilflowers.extraction.job.failed": failed,
+            "evilflowers.extraction.run.status": run.status,
+        }
+    )
 
 
 def fail(run: ExtractionRun, error: str) -> None:
@@ -231,6 +267,7 @@ def fail(run: ExtractionRun, error: str) -> None:
     run.finished_at = timezone.now()
     run.save()
     domain_metrics.record_extraction_run("failed", run.started_at, run.finished_at)
+    tracing.set_attributes({"evilflowers.extraction.run.status": run.status})
 
 
 def _finish(run: ExtractionRun) -> None:

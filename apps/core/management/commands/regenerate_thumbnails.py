@@ -32,11 +32,12 @@ from mimetypes import guess_extension
 from apps.api.services.entry import build_thumbnail, build_placeholder_thumbnail
 from apps.core.models import Entry
 from apps.core.models.entry import cover_bytes_hash
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(TracedCommandMixin, BaseCommand):
     help = "Rebuild entry thumbnails from stored covers, with generated placeholders as a fallback."
 
     def add_arguments(self, parser):

@@ -7,6 +7,8 @@ One entry point, `setup(role)`, called once per process *after* it has forked
 - Celery prefork child: the `worker_process_init` signal (`evil_flowers_catalog/celery.py`)
 - Celery beat: the `beat_init` signal
 - `manage.py celery_event_handler`: at the start of `handle()`
+- other `manage.py` commands run from the CLI: `tracing.TracedCommandMixin.run_from_argv`,
+  role `command`, traces only (IP-029)
 
 `profiling.setup(role)` (the Pyroscope SDK, #111) runs at each of these just
 before, so `_link_profiles` can add its span processor.
@@ -48,7 +50,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SERVICE_NAME = "evilflowers"
 ROLE_ATTRIBUTE = "evilflowers.process.role"
-ROLES = ("gunicorn", "celery-worker", "celery-beat", "event-handler")
+#: `command`: a `manage.py` command run from the CLI (`tracing.TracedCommandMixin`, IP-029).
+ROLES = ("gunicorn", "celery-worker", "celery-beat", "event-handler", "command")
 
 OTLP_HTTP_PORT = 4318
 PROBE_TIMEOUT_SECONDS = 0.3
@@ -244,7 +247,9 @@ def setup(role: str) -> bool:
 
         endpoint = discover_endpoint()
         span_exporters = _exporter_names("OTEL_TRACES_EXPORTER")
-        metric_exporters = _exporter_names("OTEL_METRICS_EXPORTER")
+        # A command is short-lived and gets a new `service.instance.id` per run: its process metrics
+        # would be a fresh set of Mimir series every time, and say nothing traces do not (IP-029).
+        metric_exporters = [] if role == "command" else _exporter_names("OTEL_METRICS_EXPORTER")
         if endpoint is None:
             # Without an endpoint an OTLP exporter would retry against
             # localhost:4318 forever. Only the console exporters remain.
@@ -405,6 +410,7 @@ def _instrument_kafka() -> None:
 
 
 SUPPRESS_MIDDLEWARE = "evil_flowers_catalog.telemetry.SuppressExcludedUrlsMiddleware"
+ROUTE_ATTRIBUTES_MIDDLEWARE = "evil_flowers_catalog.tracing.RouteAttributesMiddleware"
 
 
 def instrument_django() -> None:
@@ -419,6 +425,10 @@ def instrument_django() -> None:
     # just put first.
     if SUPPRESS_MIDDLEWARE not in settings.MIDDLEWARE:
         settings.MIDDLEWARE = [SUPPRESS_MIDDLEWARE, *settings.MIDDLEWARE]
+    # Only `process_view` matters, which runs inside the server span whatever the
+    # position; appended so it never reorders the project's own middleware (IP-029).
+    if ROUTE_ATTRIBUTES_MIDDLEWARE not in settings.MIDDLEWARE:
+        settings.MIDDLEWARE = [*settings.MIDDLEWARE, ROUTE_ATTRIBUTES_MIDDLEWARE]
 
 
 class SuppressExcludedUrlsMiddleware:

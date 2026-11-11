@@ -14,9 +14,10 @@ from django.db.models import Q
 
 from apps.core.models import AuthSource, User
 from apps.core.services.ldap_directory import DirectorySyncError, sync_users
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 
-class Command(BaseCommand):
+class Command(TracedCommandMixin, BaseCommand):
     help = "Import profile attributes and notification e-mails of LDAP users from the directory"
 
     def add_arguments(self, parser):

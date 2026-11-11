@@ -11,6 +11,7 @@ from django.views import View
 
 from apps.core import ratelimit
 from apps.core.errors import DetailType, ProblemDetailException, UnauthorizedException
+from evil_flowers_catalog import tracing
 
 
 class SecuredView(View):
@@ -54,13 +55,20 @@ class SecuredView(View):
         if not auth_header[0] in settings.SECURED_VIEW_AUTHENTICATION_SCHEMAS.keys():
             raise UnauthorizedException(detail=_("Unsupported authentication schema"))
 
-        auth_params = {auth_header[0].lower(): auth_header[1]}
+        scheme = auth_header[0].lower()
+        auth_params = {scheme: auth_header[1]}
 
-        return self._backends[auth_header[0].lower()].authenticate(request, **auth_params)
+        # The credential check and its lookups (API key, user, the LDAP round trip) as one step (IP-029).
+        with tracing.span("auth.authenticate", {tracing.AUTH_METHOD: scheme}) as span:
+            user = self._backends[scheme].authenticate(request, **auth_params)
+            span.set_attribute(tracing.AUTH_OUTCOME, "accepted" if user else "rejected")
+            request.auth_method = scheme
+            return user
 
     def dispatch(self, request, *args, **kwargs):
         try:
             request.user = self._authenticate(request)
+            tracing.set_caller(request, getattr(request, "auth_method", None))
         except ProblemDetailException as error:
             # Refused credentials count against the IP: passwords cannot be tried freely (#21).
             if error.status == HTTPStatus.UNAUTHORIZED:

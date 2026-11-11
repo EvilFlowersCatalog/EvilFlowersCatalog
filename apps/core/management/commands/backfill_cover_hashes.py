@@ -25,9 +25,10 @@ from django.db.models import Q
 from apps.core.models import Entry
 from apps.core.models.entry import COVER_HASH_FIELDS, cover_content_hash
 from apps.core.touch import touch_entries
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 
-class Command(BaseCommand):
+class Command(TracedCommandMixin, BaseCommand):
     help = "Store content hashes of entry covers and thumbnails (versioned cover URLs, #128)."
 
     def add_arguments(self, parser):

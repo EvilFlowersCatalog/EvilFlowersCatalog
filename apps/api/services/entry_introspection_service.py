@@ -4,8 +4,37 @@ import urllib.error
 from typing import Literal, Optional
 from urllib.request import Request, urlopen
 
+from urllib.parse import urlsplit
+
 from isbnlib import meta, canonical
 from isbnlib.registry import bibformatters
+
+from evil_flowers_catalog import tracing
+
+try:
+    from opentelemetry.util.http import redact_url
+except ImportError:  # pragma: no cover - built without the `otel` group: nothing records spans anyway
+    # The only URLs here are `https://doi.org/<doi>`, which carry no credentials.
+    def redact_url(url: str) -> str:
+        return url
+
+
+def _fetch(req: Request) -> bytes:
+    """`urlopen` as an HTTP CLIENT span; `requests` is instrumented, `urllib` is not (IP-029)."""
+    host = urlsplit(req.full_url).hostname
+    with tracing.client_span(
+        req.get_method(),
+        system="http",
+        server_address=host,
+        server_port=443,
+        # The same redaction the `requests` instrumentation applies to its `url.full`.
+        attributes={"http.request.method": req.get_method(), "url.full": redact_url(req.full_url)},
+        # A DOI the registry does not know is an answer, not a fault.
+        expected=(urllib.error.HTTPError,),
+    ) as span:
+        res = urlopen(req, timeout=5)
+        span.set_attribute("http.response.status_code", res.status)
+        return res.read()
 
 
 class IntrospectionDriver(abc.ABC):
@@ -16,7 +45,9 @@ class IntrospectionDriver(abc.ABC):
 
 class IsbnDriver(IntrospectionDriver):
     def resolve(self, identifier: str) -> Optional[dict]:
-        data = meta(canonical(identifier))
+        # isbnlib queries its metadata providers itself; the step at least shows how long they took.
+        with tracing.client_span("isbnlib meta", system="isbnlib", server_address=None):
+            data = meta(canonical(identifier))
 
         result = {
             "publisher": data.get("Publisher"),
@@ -42,8 +73,7 @@ class DoiDriver(IntrospectionDriver):
         )
 
         try:
-            res = urlopen(req, timeout=5)
-            data = json.loads(res.read().decode("utf-8"))
+            data = json.loads(_fetch(req).decode("utf-8"))
         except (urllib.error.HTTPError, json.JSONDecodeError):
             return None
 
@@ -60,11 +90,9 @@ class DoiDriver(IntrospectionDriver):
         )
 
         try:
-            res = urlopen(req, timeout=5)
+            result["bibtex"] = _fetch(req).decode("utf-8")
         except urllib.error.HTTPError:
             return None
-
-        result["bibtex"] = res.read().decode("utf-8")
 
         return result
 
@@ -79,4 +107,5 @@ class EntryIntrospectionService:
             raise Exception(f"Invalid IntospectionServiceDriver {driver}")
 
     def resolve(self, identifier: str) -> Optional[dict]:
-        return self._driver.resolve(identifier)
+        with tracing.span("introspection.resolve", {"evilflowers.introspection.driver": type(self._driver).__name__}):
+            return self._driver.resolve(identifier)

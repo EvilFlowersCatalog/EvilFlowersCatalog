@@ -13,9 +13,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.readium.models import License
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 
-class Command(BaseCommand):
+class Command(TracedCommandMixin, BaseCommand):
     help = "Transition naturally-expired licenses (ready/active with expires_at < now) to EXPIRED."
 
     def add_arguments(self, parser):

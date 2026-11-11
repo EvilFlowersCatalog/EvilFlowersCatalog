@@ -6,6 +6,7 @@ from datetime import timedelta
 from functools import cache
 from http import HTTPStatus
 from typing import Optional, TypedDict, Dict
+from urllib.parse import urlparse
 
 import ldap
 from joserfc import jwt
@@ -24,7 +25,14 @@ from django.utils.translation import gettext as _
 
 from apps.core.errors import ProblemDetailException
 from apps.core.models import ApiKey, User, AuthSource, UserCatalog
-from apps.core.services.ldap_directory import apply_profile, ldap_initialize, requested_attributes, search_profile
+from apps.core.services.ldap_directory import (
+    apply_profile,
+    ldap_bind,
+    ldap_initialize,
+    requested_attributes,
+    search_profile,
+)
+from evil_flowers_catalog import tracing
 
 
 @cache
@@ -136,6 +144,10 @@ class BearerBackend(ModelBackend):
         except JoseError as e:
             raise ProblemDetailException(_("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e)
 
+        # `access` | `api_key` | `scoped`: which kind of bearer token, for the server span (IP-029).
+        setattr(request, "auth_token_type", str(claims.get("type")))
+        tracing.set_attributes({tracing.AUTH_TOKEN_TYPE: claims.get("type")})
+
         if claims["type"] == "api_key":
             try:
                 api_key = ApiKey.objects.get(pk=claims["jti"], is_active=True)
@@ -195,17 +207,23 @@ class BasicBackend(ModelBackend):
         if config.get("PROXY_USER_DN", False):
             try:
                 # Bind with service account
-                connection.simple_bind_s(config["PROXY_USER_DN"], config["PROXY_USER_PASSWORD"])
+                ldap_bind(connection, config, config["PROXY_USER_DN"], config["PROXY_USER_PASSWORD"], mode="proxy")
 
                 # Search for user to verify existence and get DN
-                user_search = connection.search(
-                    f"{config['ROOT_DN']}",
-                    ldap.SCOPE_SUBTREE,
-                    config["FILTER"].format(username=username),
-                    ["dn"],
-                )
+                with tracing.client_span(
+                    "ldap search",
+                    system="ldap",
+                    server_address=urlparse(config["URI"]).hostname,
+                    attributes={"evilflowers.ldap.purpose": "resolve_dn"},
+                ):
+                    user_search = connection.search(
+                        f"{config['ROOT_DN']}",
+                        ldap.SCOPE_SUBTREE,
+                        config["FILTER"].format(username=username),
+                        ["dn"],
+                    )
 
-                user_type, user_results = connection.result(user_search, 60)
+                    user_type, user_results = connection.result(user_search, 60)
 
                 if not user_results:
                     logging.warning(f"User {username} not found in LDAP directory")
@@ -216,12 +234,12 @@ class BasicBackend(ModelBackend):
                 # Unbind proxy connection and test user credentials
                 connection.unbind()
                 connection = self._ldap_initialize(config)
-                connection.simple_bind_s(user_dn, password)
+                ldap_bind(connection, config, user_dn, password, mode="user")
 
                 # Rebind with service account for attribute retrieval
                 connection.unbind()
                 connection = self._ldap_initialize(config)
-                connection.simple_bind_s(config["PROXY_USER_DN"], config["PROXY_USER_PASSWORD"])
+                ldap_bind(connection, config, config["PROXY_USER_DN"], config["PROXY_USER_PASSWORD"], mode="proxy")
 
             except ldap.LDAPError as e:
                 logging.warning(
@@ -231,7 +249,7 @@ class BasicBackend(ModelBackend):
         else:
             # Direct authentication mode (existing behavior)
             try:
-                connection.simple_bind_s(config["BIND"].format(username=username), password)
+                ldap_bind(connection, config, config["BIND"].format(username=username), password, mode="user")
             except ldap.LDAPError as e:
                 logging.warning(
                     f"Unable to bind with external service (id={auth_source.pk}, name={auth_source.name}): {e}"
@@ -317,10 +335,16 @@ class BasicBackend(ModelBackend):
         user = None
 
         for auth_source in AuthSource.objects.filter(is_active=True):
-            if auth_source.driver == AuthSource.Driver.DATABASE:
-                user = self._database(request, username, password)
-            elif auth_source.driver == AuthSource.Driver.LDAP:
-                user = self._ldap(username, password, auth_source)
+            # One step per source tried, so a slow directory shows as its own bar (IP-029).
+            with tracing.span(
+                "auth.source",
+                {"evilflowers.auth_source.id": auth_source.pk, "evilflowers.auth_source.driver": auth_source.driver},
+            ) as span:
+                if auth_source.driver == AuthSource.Driver.DATABASE:
+                    user = self._database(request, username, password)
+                elif auth_source.driver == AuthSource.Driver.LDAP:
+                    user = self._ldap(username, password, auth_source)
+                span.set_attribute(tracing.AUTH_OUTCOME, "accepted" if user else "rejected")
 
             if user:
                 break

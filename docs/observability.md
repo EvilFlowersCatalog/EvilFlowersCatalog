@@ -98,7 +98,20 @@ The image must be built with the `otel` dependency group (`.github/workflows/bui
 - `apps/mcp`: one INTERNAL span per JSON-RPC message, `"{mcp.method.name} {gen_ai.tool.name}"`.
 - `apps/assistant`: one CLIENT span per model call, `chat {model}`, with `gen_ai.*` attributes
   and token usage. No prompt or document text ever goes into attributes.
-- Sampling: `parentbased_always_on`. Propagation: `tracecontext,baggage`.
+- Domain steps and ids (IP-029, `evil_flowers_catalog/tracing.py`): the ids in the URL go onto the
+  server span (`evilflowers.entry.id`, `evilflowers.extraction.run_id`, … — the extraction
+  services use the same keys), and INTERNAL spans name the steps: `auth.authenticate`, `search`
+  with `search.lexical`/`search.vector`, `extraction.queue`/`extraction.dispatch`,
+  `lcp.license.*`, `notification.send`. CLIENT spans for LDAP (`ldap bind`, `ldap search`), SMTP
+  (`smtp send`) and DOI lookups. A 4xx or an expected refusal is noted (`error.type`), not an error.
+- Commands: `manage.py` commands that do real work trace under the role `command` (traces only, no
+  metrics), one root span `command <name>`. Batch commands give each item its own trace with a link
+  back; find them with `{ link:traceID = "<command trace id>" }`.
+- Who is calling: `evilflowers.auth.method`, `evilflowers.auth.token_type` and, for service
+  callbacks, `evilflowers.api_key.id`. The reader's own id (`enduser.id`) only with
+  `EVILFLOWERS_TRACE_ENDUSER=true` (default off).
+- Sampling: `parentbased_always_on`. Propagation: `tracecontext,baggage`. Browsers may send
+  `traceparent`/`tracestate` cross-origin (CORS allow-list).
 
 ### Metrics
 

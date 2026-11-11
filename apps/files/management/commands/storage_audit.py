@@ -32,6 +32,7 @@ from apps.core.models import Acquisition, Catalog, Entry
 from apps.files.signals import delete_folder
 from apps.files.storage import get_storage
 from apps.readium.models import EncryptedContent
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 ROOT = "catalogs"
 
@@ -56,7 +57,7 @@ def _newest_modification(storage, folder: str) -> Optional[datetime]:
     return max(times, default=None)
 
 
-class Command(BaseCommand):
+class Command(TracedCommandMixin, BaseCommand):
     help = "Report orphan directories and missing files in storage; optionally delete the orphans"
 
     def add_arguments(self, parser):

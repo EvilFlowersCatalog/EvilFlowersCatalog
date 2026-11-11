@@ -3,9 +3,10 @@ from django.db import transaction
 
 from apps.core.search.ddl import ensure_bm25, ensure_search_objects
 from apps.core.search.index import language_configs, refresh_search_vectors
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 
-class Command(BaseCommand):
+class Command(TracedCommandMixin, BaseCommand):
     help = (
         "Create missing text search configurations (e.g. Slovak/Czech once the hunspell dictionaries are "
         "installed in the PostgreSQL image), rebuild the full-text index and the denormalised search text of "

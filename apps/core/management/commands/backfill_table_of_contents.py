@@ -12,9 +12,10 @@ from django.db.models import Exists, OuterRef
 
 from apps.core.models import Acquisition, Entry
 from apps.core.services.table_of_contents import store_table_of_contents
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 
-class Command(BaseCommand):
+class Command(TracedCommandMixin, BaseCommand):
     help = "Read the outline and page count of every entry's PDF into the entry."
 
     def add_arguments(self, parser):

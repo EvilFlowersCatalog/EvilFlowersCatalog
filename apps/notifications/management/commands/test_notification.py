@@ -3,9 +3,10 @@ from django.core.management.base import BaseCommand, CommandError
 from apps.core.models import User
 from apps.notifications.models import NotificationContact
 from apps.notifications.services import NotificationService
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 
-class Command(BaseCommand):
+class Command(TracedCommandMixin, BaseCommand):
     help = "Send a test notification to a user"
 
     def add_arguments(self, parser):

@@ -5,9 +5,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.models import Catalog
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 
-class Command(BaseCommand):
+class Command(TracedCommandMixin, BaseCommand):
     help = "Remove catalog from database and storage"
 
     def add_arguments(self, parser):

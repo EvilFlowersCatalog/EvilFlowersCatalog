@@ -10,9 +10,10 @@ from django.utils import timezone
 
 from apps.core.models import User, Catalog
 from apps.files.storage import get_storage
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 
-class Command(BaseCommand):
+class Command(TracedCommandMixin, BaseCommand):
     help = "Import catalog from TAR with related metadata"
 
     def add_arguments(self, parser):

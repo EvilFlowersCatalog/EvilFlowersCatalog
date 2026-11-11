@@ -38,6 +38,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.test.utils import override_settings
 
 from apps.assistant import evaluation, retrieval_bench
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 DEFAULT_CASES = Path(__file__).resolve().parents[2] / "evaluation_cases.json"
 DEFAULT_GOLD = Path(__file__).resolve().parents[2] / "retrieval_gold.json"
@@ -50,7 +51,7 @@ def _read_json(path: str, what: str):
         raise CommandError(f"Cannot read {what}: {error}")
 
 
-class Command(BaseCommand):
+class Command(TracedCommandMixin, BaseCommand):
     help = "Evaluate the assistant against a model: tools chosen, cards, language, loops and latency."
 
     def add_arguments(self, parser):

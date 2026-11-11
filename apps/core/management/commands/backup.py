@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from apps.core.management.storage import BackupDestination
 from apps.core.models import Catalog
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 
 def pg_dump_env() -> dict:
@@ -26,7 +27,7 @@ def pg_dump_env() -> dict:
     return env
 
 
-class Command(BaseCommand):
+class Command(TracedCommandMixin, BaseCommand):
     help = "Primitive EvilFlowers backup mechanism which will backup all catalogs, storage and PostgreSQL database"
 
     def add_arguments(self, parser):

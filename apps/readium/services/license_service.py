@@ -22,13 +22,29 @@ from django.conf import settings
 from apps.core.models import Entry, User, Acquisition, UserActivity
 from apps.core.services.activity import ActivityService
 from apps.readium.models import License, EncryptedContent
-from evil_flowers_catalog import domain_metrics
+from evil_flowers_catalog import domain_metrics, tracing
 from .content_encryption_service import ContentEncryptionService
-from .exceptions import NotLendableError, borrow_error_from_availability
+from .exceptions import (
+    AlreadyBorrowedError,
+    NoAvailableSlotsError,
+    NotLendableError,
+    NotReadiumEnabledError,
+    borrow_error_from_availability,
+)
 from .lcp_server_client import LCPServerClient
 from .status_server_client import StatusServerClient
 
 logger = logging.getLogger(__name__)
+
+
+def _license_attributes(license: License, *args, **kwargs) -> dict:
+    """The ids of one loan for its `lcp.license.*` span (IP-029). Never the passphrase or its hint."""
+    return {
+        tracing.LICENSE_ID: license.pk,
+        tracing.ENTRY_ID: license.entry_id,
+        "lcp.license.id": license.lcp_license_id,
+        "evilflowers.readium.license.state": license.state,
+    }
 
 
 class PassphraseRequiredError(ValueError):
@@ -235,6 +251,16 @@ class LicenseService:
         }
 
     @staticmethod
+    @tracing.traced(
+        "lcp.license.issue",
+        lambda entry, user, *args, **kwargs: {
+            tracing.ENTRY_ID: entry.pk,
+            tracing.CATALOG_ID: entry.catalog_id,
+            "evilflowers.readium.preferred_format": kwargs.get("preferred_format"),
+        },
+        # The reader's situation, not a fault: no passphrase yet, already borrowed, no free copy.
+        expected=(PassphraseRequiredError, AlreadyBorrowedError, NoAvailableSlotsError, NotReadiumEnabledError),
+    )
     def create_license(
         entry: Entry,
         user: User,
@@ -355,6 +381,13 @@ class LicenseService:
                 passphrase_hint=passphrase_hint,
                 state=License.LicenseState.READY,
             )
+            tracing.set_attributes(
+                {
+                    tracing.LICENSE_ID: license.pk,
+                    tracing.ACQUISITION_ID: acquisition.pk,
+                    tracing.LCP_CONTENT_ID: encrypted_content.lcp_content_id,
+                }
+            )
 
             try:
                 # Generate LCP license via License Server
@@ -383,6 +416,8 @@ class LicenseService:
         return license
 
     @staticmethod
+    # `ValueError` here is the loan's state (expired, revoked, returned): the reader's answer, not a fault.
+    @tracing.traced("lcp.license.fetch", _license_attributes, expected=(ValueError,))
     def fetch_fresh_license(license: License) -> Dict:
         """
         Fetch a fresh license from LCP Server.
@@ -414,6 +449,7 @@ class LicenseService:
         return lcp_client.fetch_fresh_license(license)
 
     @staticmethod
+    @tracing.traced("lcp.license.renew", _license_attributes, expected=(ValueError,))
     def renew_license(
         license: License,
         new_duration_days: int = 14,
@@ -494,6 +530,7 @@ class LicenseService:
         return license
 
     @staticmethod
+    @tracing.traced("lcp.license.return", _license_attributes, expected=(ValueError,))
     def return_license(license: License) -> License:
         """
         Return a license (end it immediately).
@@ -524,6 +561,7 @@ class LicenseService:
         return license
 
     @staticmethod
+    @tracing.traced("lcp.license.revoke", _license_attributes)
     def revoke_license(license: License, reason: str = "Revoked by administrator") -> License:
         """
         Revoke a license (permanent).
@@ -544,6 +582,7 @@ class LicenseService:
         return license
 
     @staticmethod
+    @tracing.traced("lcp.license.cancel", _license_attributes)
     def cancel_license(license: License, reason: str = "Cancelled by user") -> License:
         """
         Cancel a license.

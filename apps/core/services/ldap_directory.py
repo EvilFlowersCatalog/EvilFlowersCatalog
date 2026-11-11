@@ -31,10 +31,35 @@ import ldap.filter
 from django.db import transaction
 
 from apps.core.models import AuthSource, User
+from evil_flowers_catalog import telemetry, tracing
 
 logger = logging.getLogger(__name__)
 
 SEARCH_TIMEOUT = 60
+
+
+def _server(config: dict) -> tuple:
+    """(`server.address`, `server.port`) of the directory, for its CLIENT spans (IP-029)."""
+    parsed = urlparse(config.get("URI", ""))
+    port = parsed.port or (636 if parsed.scheme == "ldaps" else 389)
+    return parsed.hostname, port
+
+
+def ldap_bind(connection, config: dict, dn: Optional[str], password: Optional[str], *, mode: str) -> None:
+    """`simple_bind_s` as a CLIENT span. `mode`: `user`, `proxy` or `anonymous`; the DN is never recorded.
+
+    A refused password (`INVALID_CREDENTIALS`) is the reader's mistake, not a directory fault.
+    """
+    address, port = _server(config)
+    with tracing.client_span(
+        "ldap bind",
+        system="ldap",
+        server_address=address,
+        server_port=port,
+        attributes={"evilflowers.ldap.bind_mode": mode},
+        expected=(ldap.INVALID_CREDENTIALS,),
+    ):
+        connection.simple_bind_s(dn or "", password or "")
 
 
 def ldap_initialize(config: dict) -> "ldap.ldapobject.LDAPObject":
@@ -79,19 +104,23 @@ def first_value(attrs: dict, name: str) -> Optional[str]:
 
 def search_profile(connection, config: dict, username: str, attributes: List[str]) -> Optional[dict]:
     """The directory entry for `username`, or None when the directory has none."""
-    message_id = connection.search(
-        config["ROOT_DN"],
-        ldap.SCOPE_SUBTREE,
-        config["FILTER"].format(username=ldap.filter.escape_filter_chars(username)),
-        attributes,
-    )
-    # `result(msgid, all, timeout)` — the old login code passed 60 positionally as `all`, so it never timed out.
-    _type, results = connection.result(message_id, timeout=SEARCH_TIMEOUT)
-    # Referrals come back as (None, [urls]) — skip them.
-    for dn, attrs in results or []:
-        if dn:
-            return attrs
-    return None
+    address, port = _server(config)
+    with tracing.client_span("ldap search", system="ldap", server_address=address, server_port=port) as span:
+        message_id = connection.search(
+            config["ROOT_DN"],
+            ldap.SCOPE_SUBTREE,
+            config["FILTER"].format(username=ldap.filter.escape_filter_chars(username)),
+            attributes,
+        )
+        # `result(msgid, all, timeout)` — the old login code passed 60 positionally as `all`, so it never timed out.
+        _type, results = connection.result(message_id, timeout=SEARCH_TIMEOUT)
+        # Referrals come back as (None, [urls]) — skip them.
+        for dn, attrs in results or []:
+            if dn:
+                span.set_attribute("evilflowers.ldap.found", True)
+                return attrs
+        span.set_attribute("evilflowers.ldap.found", False)
+        return None
 
 
 @dataclass
@@ -167,10 +196,27 @@ class DirectorySyncError(Exception):
 def _bind_for_sync(config: dict):
     connection = ldap_initialize(config)
     if config.get("PROXY_USER_DN"):
-        connection.simple_bind_s(config["PROXY_USER_DN"], config.get("PROXY_USER_PASSWORD") or "")
+        ldap_bind(connection, config, config["PROXY_USER_DN"], config.get("PROXY_USER_PASSWORD"), mode="proxy")
         return connection, "proxy"
-    connection.simple_bind_s("", "")
+    ldap_bind(connection, config, "", "", mode="anonymous")
     return connection, "anonymous"
+
+
+def _sync_user(connection, config: dict, user: User, attributes: List[str], *, dry_run: bool) -> ProfileChange:
+    try:
+        attrs = search_profile(connection, config, user.username, attributes)
+    except ldap.LDAPError as error:
+        logger.warning("LDAP sync: search for %s failed: %s", user.username, error)
+        return ProfileChange(username=user.username, error=str(error))
+
+    if attrs is None:
+        return ProfileChange(username=user.username, found=False)
+
+    with transaction.atomic():
+        change = apply_profile(user, attrs, config, dry_run=dry_run)
+        if change.profile and not dry_run:
+            user.save(update_fields=[*change.profile.keys(), "updated_at"])
+    return change
 
 
 def sync_users(
@@ -207,23 +253,13 @@ def sync_users(
     attributes = requested_attributes(config, include_groups=False)
 
     try:
+        # From `manage.py sync_ldap_profiles` one trace per user, linked to the command: a run over
+        # thousands of users would be one trace too large to open. Inside a request (the MCP tool, a
+        # handful of users) a child span per user keeps the work in the request's trace (IP-029 Q2).
+        per_user = tracing.root_span if telemetry.current_role() == "command" else tracing.span
         for user in users:
-            try:
-                attrs = search_profile(connection, config, user.username, attributes)
-            except ldap.LDAPError as error:
-                logger.warning("LDAP sync: search for %s failed: %s", user.username, error)
-                report.results.append(ProfileChange(username=user.username, error=str(error)))
-                continue
-
-            if attrs is None:
-                report.results.append(ProfileChange(username=user.username, found=False))
-                continue
-
-            with transaction.atomic():
-                change = apply_profile(user, attrs, config, dry_run=dry_run)
-                if change.profile and not dry_run:
-                    user.save(update_fields=[*change.profile.keys(), "updated_at"])
-            report.results.append(change)
+            with per_user("ldap.sync.user", {"evilflowers.auth_source.id": auth_source.pk}):
+                report.results.append(_sync_user(connection, config, user, attributes, dry_run=dry_run))
     finally:
         try:
             connection.unbind_s()

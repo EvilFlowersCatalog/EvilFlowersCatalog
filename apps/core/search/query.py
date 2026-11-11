@@ -20,6 +20,7 @@ IP-021 adds two things on top of the matched set:
 """
 
 import re
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Iterable, Optional
@@ -50,6 +51,7 @@ from django.db.models.functions import Cast, Coalesce, Concat, Greatest
 
 from apps.core.search.ddl import SIMPLE_CONFIG
 from apps.core.search.index import available_configs
+from evil_flowers_catalog import tracing
 
 WORD = re.compile(r"[^\W_]+")
 # websearch syntax: a quoted phrase, a negated word or `or`
@@ -344,15 +346,20 @@ class SearchState:
 
             self._vector_resolved = True
             if Channel.VECTOR in self.channels and embeddings.enabled():
-                self._vector = embeddings.try_embed_query(
-                    self.text,
-                    "entries",
-                    timeout=embeddings.search_budget(),
-                    cached_only=self.cached_vector_only,
-                    stable=True,
-                )
-                # Type-ahead without a cached vector is lexical by design, not degraded.
-                self.degraded = self._vector is None and not self.cached_vector_only
+                # The TEI call (or the cache hit) under its own step; the request to tei-embed is its child.
+                with tracing.span(
+                    "search.embed_query", {"evilflowers.search.cached_only": self.cached_vector_only}
+                ) as span:
+                    self._vector = embeddings.try_embed_query(
+                        self.text,
+                        "entries",
+                        timeout=embeddings.search_budget(),
+                        cached_only=self.cached_vector_only,
+                        stable=True,
+                    )
+                    # Type-ahead without a cached vector is lexical by design, not degraded.
+                    self.degraded = self._vector is None and not self.cached_vector_only
+                    span.set_attribute("evilflowers.search.degraded", self.degraded)
         return self._vector
 
     def lexical_ranking(self, qs: QuerySet, ordered: bool = True) -> list:
@@ -426,7 +433,12 @@ class SearchState:
             # An ordered ranking serves membership too, not the other way round.
             if was_ordered or not ordered:
                 return rows
-        rows = self.lexical_ranking(qs, ordered=ordered)
+        with tracing.span(
+            "search.lexical",
+            {"evilflowers.search.level": self.level.name.lower(), "evilflowers.search.ordered": ordered},
+        ) as span:
+            rows = self.lexical_ranking(qs, ordered=ordered)
+            span.set_attribute("evilflowers.search.hits", len(rows))
         if key is not None:
             self._rankings[memo_key] = (rows, ordered)
         return rows
@@ -435,7 +447,10 @@ class SearchState:
         memo_key = ("vector", key)
         if key is not None and memo_key in self._rankings:
             return self._rankings[memo_key]
-        rows = self.vector_ranking(qs)
+        with tracing.span("search.vector") as span:
+            rows = self.vector_ranking(qs)
+            span.set_attribute("evilflowers.search.hits", len(rows))
+            span.set_attribute("evilflowers.search.degraded", self.degraded)
         if key is not None:
             self._rankings[memo_key] = rows
         return rows
@@ -449,17 +464,42 @@ class SearchState:
         if not words(self.text):
             return nothing
 
-        key = self._ranking_key(qs)
-        lexical = self._lexical(qs, key, ordered=record) if Channel.LEXICAL in self.channels else []
-        semantic = self._semantic(qs, key) if Channel.VECTOR in self.channels else []
-        if record:
-            self.lexical_ids, self.vector_ids = set(lexical), set(semantic)
+        # The main search is one step with a child per channel (IP-029). Facet passes (`record=False`) get
+        # no step of their own: most are memo hits, and a ranking they do compute still shows as its
+        # `search.lexical`/`search.vector` span. Never the text: counts and modes only.
+        step = tracing.span if record else (lambda *args, **kwargs: nullcontext(tracing.INVALID_SPAN))
+        with step(
+            "search",
+            {
+                "evilflowers.search.channels": ",".join(self.channels),
+                "evilflowers.search.words": len(words(self.text)),
+                "evilflowers.search.prefix": self.prefix_last,
+            },
+        ) as span:
+            key = self._ranking_key(qs)
+            lexical = self._lexical(qs, key, ordered=record) if Channel.LEXICAL in self.channels else []
+            semantic = self._semantic(qs, key) if Channel.VECTOR in self.channels else []
+            if record:
+                self.lexical_ids, self.vector_ids = set(lexical), set(semantic)
 
-        # The words count more than the meaning: an exact match in the reader's language stays ahead of a
-        # translation that is merely close (measured on the golden set, IP-021).
-        vector_weight = getattr(settings, "EVILFLOWERS_SEARCH_VECTOR_WEIGHT", 0.5)
-        channels = [(ranking, weight) for ranking, weight in ((lexical, 1.0), (semantic, vector_weight)) if ranking]
-        fused = rrf([ranking for ranking, _ in channels], settings.EVILFLOWERS_SEARCH_RRF_K, [w for _, w in channels])
+            # The words count more than the meaning: an exact match in the reader's language stays ahead of a
+            # translation that is merely close (measured on the golden set, IP-021).
+            vector_weight = getattr(settings, "EVILFLOWERS_SEARCH_VECTOR_WEIGHT", 0.5)
+            channels = [
+                (ranking, weight) for ranking, weight in ((lexical, 1.0), (semantic, vector_weight)) if ranking
+            ]
+            fused = rrf(
+                [ranking for ranking, _ in channels], settings.EVILFLOWERS_SEARCH_RRF_K, [w for _, w in channels]
+            )
+            span.set_attributes(
+                {
+                    "evilflowers.search.level": self.level.name.lower(),
+                    "evilflowers.search.lexical_hits": len(lexical),
+                    "evilflowers.search.vector_hits": len(semantic),
+                    "evilflowers.search.results": len(fused),
+                    "evilflowers.search.degraded": self.degraded,
+                }
+            )
         if not fused:
             return nothing
         ids = [str(entry_id) for entry_id, _score in fused]
