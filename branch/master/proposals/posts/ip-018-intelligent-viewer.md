@@ -31,10 +31,14 @@ their text, position and order, so they can be searched and stepped through.
 ## Status
 
 **Status**: Draft
-**Last Updated**: 2026-10-29
+**Last Updated**: 2026-11-04
 **Implementation**: In progress. Phase 6 (agent annotations, and the reader's own text highlights)
 is built and running on dev; chats bound to a user acquisition (Phase 5) shipped with IP-015.
-Phases 1–4 and 7 (extraction services, regions) are not started.
+Phases 1–6b are built (2026-11-03) and run end to end on dev since 2026-11-04: the catalog on
+`develop`, each service on its `main` with a published `:main` image, the services started on the
+server with the `extraction` profile, and the portal showing regions in the viewer. Dev stays on
+trial for a few days; then the dev backfill, then Phase 7. Phase 8 collects what the first days on
+dev asked for: tables, contents tabs, captions, chat tools, recommendations.
 
 This is a **parallel proposal**. It overlaps with [IP-012](ip-012-ai-powered-discovery.md),
 [IP-013](ip-013-document-extraction-structure.md) and [IP-015](ip-015-assistant-fold-in.md), but it
@@ -63,6 +67,7 @@ statements this proposal directly contradicts.
 | IP-013 [Scope & non-goals](ip-013-document-extraction-structure.md#scope-non-goals) | "Feature bounding boxes are kept only for cropping/display of figures/tables." | Feature positions are a first-class output: the viewer uses them to locate each figure, table and equation on the reader's page. | **Contradiction** (narrow) |
 | IP-013 [Proposed Solution](ip-013-document-extraction-structure.md#proposed-solution) | `apps/extraction` runs on the IP-012 `discovery` worker image, folded into the catalog. | No extraction code is folded into the catalog. Extraction runs in the `evilflowers-*-service` repositories, each building its own image; the catalog compose only pulls pinned builds. | **Contradiction** (where the code lives) |
 | IP-012 [Phase 1](ip-012-ai-powered-discovery.md#phase-1-event-driven-indexing-pipeline-replaces-61) | Retire `text-service` and `search-service`. | Both are **updated**, not retired: they stay in compose, are refactored in their own repositories and brought back to a running state. | **Contradiction** |
+| IP-012 (chunk index) | Chunking and embeddings belong to IP-012's catalog-wide index (BGE-M3, pgvector, RRF). | Every paragraph of a PDF is embedded **during extraction** (Snowflake Arctic Embed by default, in pgvector), as one job running in parallel with figures, tables and equations, so the highlight agent can rank paragraphs by meaning. Catalog-wide search, recommendations and the fusion stay with IP-012, which may reuse these vectors. | **Contradiction** (narrow) |
 | IP-013 [Data Model Changes](ip-013-document-extraction-structure.md#data-model-changes) | Separate `extraction_figure`, `extraction_table`, `extraction_equation` tables. | One `extraction_region` table with a `kind`. Whichever lands first decides. | Overlap (schema) |
 | IP-013 [Phase 2](ip-013-document-extraction-structure.md#phase-2-feature-extraction-docling-figures-tables-math-images) and [Phase 3](ip-013-document-extraction-structure.md#phase-3-classification-captioning) | Docling feature extraction, then VLM captions and classification. | Same tools and steps, but triggered on upload for the viewer. Sections, passages and subject classification stay with IP-013. | Overlap (shared work) |
 | IP-015 [D1](ip-015-assistant-fold-in.md#d1-tool-set-exactly-three-read-only) | The chat assistant has exactly three read-only tools. | No tool-count limit (Q5); reading is bounded by a page budget instead. Region tools for the viewer context, and an agent that **writes** an annotation through its own endpoint. | **Contradiction** (tool set) |
@@ -162,6 +167,9 @@ Production storage is confirmed as `FileSystemStorage`, mounted from
    position, crop it to an image, and describe it: a caption and category for figures, markdown for
    tables, LaTeX for equations. Results are written back to the catalog, which owns the schema.
    The extraction code lives in the `evilflowers-*-service` repositories, not in the catalog.
+   In the same run, and in parallel with those jobs, every paragraph is stored with its sentences
+   and positions and embedded, so passages can be found by meaning (see
+   [Paragraph index](#paragraph-index)).
 2. **Expose it per reader.** An API returns the regions on a given page **in the reader's own page
    numbering**, only for pages the reader may see, with an authorized route for each crop.
 3. **Give the assistant the same view.** The explain agent and the chat assistant, when opened for
@@ -179,6 +187,9 @@ Production storage is confirmed as `FileSystemStorage`, mounted from
 
 - Figure, table and equation extraction with positions, on upload and as a backfill.
 - Captions and categories for figures; markdown for tables; LaTeX for equations.
+- A paragraph index per acquisition, built during extraction: paragraph text, sentence offsets,
+  positions, one embedding per paragraph, and the links between paragraphs (Phase 2b).
+- Highlight finding by meaning over that index, at sentence level (Phase 6b).
 - Region and crop APIs scoped to a user's acquisition.
 - Assistant tools for regions; explain accepts a region.
 - Agent annotations: new fields on `Annotation` and `AnnotationItem`, generation, API.
@@ -196,10 +207,13 @@ Production storage is confirmed as `FileSystemStorage`, mounted from
 - Any user interface. Viewer behaviour is prototyped separately and not specified here.
 - Sections, passages, page labels and subject classification
   ([IP-013](ip-013-document-extraction-structure.md) Phases 1 and 3).
-- Chunking, embeddings, search, recommendations ([IP-012](ip-012-ai-powered-discovery.md)).
+- Catalog-wide search, recommendations and ranking fusion ([IP-012](ip-012-ai-powered-discovery.md)).
+  Paragraph embeddings of one publication are in scope; searching across publications is not.
 - EPUB and other formats. PDF only.
 - Folding any extraction code into the catalog repository or the catalog image.
-- `evilflowers-video-service` and `evilflowers-text-service-tp2025`.
+- `evilflowers-video-service`. `evilflowers-text-service-tp2025` is not deployed, but its
+  paragraph indexer (`src/semantic/`) is the starting point for Phase 2b and is ported into
+  `evilflowers-text-service`.
 - Adding text and positions to existing reader annotations. They keep only their SVG.
 
 ### How it runs
@@ -211,10 +225,40 @@ changes only its compose files, which pull the correct, pinned build of each ser
 
 | Repository | Role after the refactor |
 |---|---|
-| `evilflowers-analyzer-service` | Entry point for a document: opens the PDF, records page count and sizes, runs layout detection once and hands regions to the other services by kind (see [Q11](#q11-where-does-layout-detection-run)) |
+| `evilflowers-analyzer-service` | Entry point for a document: opens the PDF, records page count and sizes, starts the paragraph job at once, runs layout detection once and hands regions to the other services by kind (see [Q11](#q11-where-does-layout-detection-run)) |
 | `evilflowers-image-service` | Figures: crop, size/aspect/coverage gates, caption and category. Keeps the bounding box |
 | `evilflowers-equation-service` | Equations: LaTeX for each detected region, sympy normalization, crop |
-| `evilflowers-text-service` | Text as today, plus tables: markdown, caption, crop and position instead of dropping them |
+| `evilflowers-text-service` | Text as today, plus tables: markdown, caption, crop and position instead of dropping them. Plus the paragraph index: paragraphs, sentences, positions, embeddings and links (Phase 2b) |
+
+**All extraction jobs of a run go in parallel.** The paragraph job needs only the PDF's text layer
+(PyMuPDF blocks), not Docling's layout, so the analyzer dispatches it as soon as it opens the
+document, next to the layout pass. Figures, tables and equations follow as layout finds them. Each
+job reports to the catalog on its own; the run becomes active when all of them have reported. A
+slow caption model does not hold back the paragraph index, and the reverse.
+
+```plantuml
+@startuml
+participant Catalog
+participant "analyzer" as A
+participant "text (paragraphs)" as P
+participant "image" as I
+participant "equation" as E
+participant "text (tables)" as T
+Catalog -> A : extract(acquisition, run)
+A -> P : paragraphs(run)
+A -> A : Docling layout
+par
+  A -> I : figures
+  A -> E : equations
+  A -> T : tables
+end
+P --> Catalog : paragraphs, sentences, embeddings, links
+I --> Catalog : figure regions
+E --> Catalog : equation regions
+T --> Catalog : table regions
+Catalog -> Catalog : all reported -> run active
+@enduml
+```
 | `evilflowers-search-service` | Updated dependencies and image; stays the OPDS 2.0 search backend behind `SEARCH_SERVICE_URL` |
 
 What the catalog keeps:
@@ -262,82 +306,161 @@ catalog only through a compose image reference.
 
 ### Phase 1: Catalog schema, dispatch and ingestion (catalog repository)
 
-- [ ] Create `apps/extraction` with `ExtractionRun` and `Region` models and migrations
-      (see [Data Model Changes](#data-model-changes)). No pipeline code, no new dependencies.
-- [ ] Storage layout `catalogs/<catalog>/<entry>/extraction/<acquisition_id>/v<N>/`, documented as
-      the contract the services write to.
-- [ ] Remove the acquisition's `extraction/` folder in `AcquisitionStorageService.delete`.
-- [ ] Dispatch client next to `text_publish.py`: `send_task` to the entry service's queue with task
-      id `extract:<acquisition_id>:v<pipeline_version>`, so duplicate sends are dropped. Creates the
-      `ExtractionRun` with `status = queued`.
-- [ ] Internal ingestion endpoint for runs and regions, authenticated with a service credential
-      (mechanism per Q12). Rejects regions for runs that are not `running`.
-- [ ] When every service has reported, make the run active in one transaction and delete the
-      previous run's files.
+- [x] Create `apps/extraction` with `ExtractionRun` and `Region` models and migrations
+      (see [Data Model Changes](#data-model-changes)). No pipeline code. *Changed:* one migration
+      (`extraction/0001_initial`) holds all extraction tables including the paragraph index, so it
+      adds the `pgvector` dependency and enables the `vector` extension.
+- [x] Storage layout `catalogs/<catalog>/<entry>/extraction/<acquisition_id>/v<N>/`, documented as
+      the contract the services write to (`ExtractionRun.storage_dir`, sent to every task as
+      `output_dir`).
+- [x] Remove the acquisition's `extraction/` folder in `AcquisitionStorageService.delete`.
+- [x] Dispatch in `apps/extraction/services.py`: `send_task("evilflowers_analyzer.extract")` to
+      `EVILFLOWERS_EXTRACTION_QUEUE` with task id `uuid5(namespace, "extract:<acquisition_id>:v<pipeline_version>")`
+      (`services.task_id`; a UUID because `JobProtocol` and the event listener require one, #108),
+      sent once the transaction commits. Creates the `ExtractionRun` with `status = queued`; a failed
+      run of the same version is reset and sent again. Off unless `EVILFLOWERS_EXTRACTION_ENABLED`.
+- [x] Ingestion endpoints under `/extraction/v1/runs/{id}` (`start`, `regions`, `paragraphs`,
+      `jobs/{job}`, and `GET` of the run), part of the OpenAPI spec, authenticated with a bearer API
+      key of a user holding `extraction.ingest_extraction` (Q12). Results for a run that is not
+      `running` answer 409.
+- [x] The analyzer declares the run's jobs when it starts it (`ExtractionRun.jobs`); when the last
+      job reports, the run becomes active in one transaction and the previous run is deleted with
+      its files. A failed job fails the run and the previous active run stays.
 
 ### Phase 2: Service refactor (service repositories)
 
 Common to every service:
 
-- [ ] Replace Kafka consumers and producers with Celery workers on named queues over Redis.
-- [ ] Read the original PDF and write crops through the shared storage mount, using the catalog's
+- [x] Replace Kafka consumers and producers with Celery workers on named queues over Redis
+      (`evilflowers_analyzer`, `evilflowers_image`, `evilflowers_equation`, `evilflowers_text_worker`,
+      `evilflowers_text_embed`).
+- [x] Read the original PDF and write crops through the shared storage mount, using the catalog's
       storage layout.
-- [ ] Report results to the catalog ingestion endpoint; never write to the catalog database.
-- [ ] Load models once per worker process, not per item.
-- [ ] Failures on one page or one region are logged and skipped. A document never fails as a whole
+- [x] Report results to the catalog ingestion endpoint; never write to the catalog database.
+      *Changed:* a small `src/catalog.py` HTTP client in each service (retries, batches of 100,
+      409 stops the job) instead of `evilflowers-protocol-python`, whose generated client lacks the
+      ingestion endpoints until the spec is synced; the endpoints are in the OpenAPI spec.
+- [x] Load models once per worker process, not per item.
+- [x] Failures on one page or one region are logged and skipped. A document never fails as a whole
       because of one bad region.
-- [ ] CI builds and publishes a tagged image to `ghcr.io/evilflowerscatalog/<repo>`.
+- [x] CI runs the unit tests and builds and publishes `:main`, `:sha-…` and semver-tagged images to
+      `ghcr.io/evilflowerscatalog/<repo>`, recording `IMAGE_TAG` in the run's provenance.
 
 Per service:
 
-- [ ] `evilflowers-analyzer-service`: open the PDF with PyMuPDF, record page count and page sizes,
-      run the Docling layout pass (`do_ocr` only when a page has no text layer), and fan regions
-      out by kind (subject to Q11).
-- [ ] `evilflowers-image-service`: keep the bounding box it already computes instead of discarding
-      it; convert to page fractions with a top-left origin; crop to WebP; apply gates (reject under
-      80 px, extreme aspect ratios, anything covering over 90% of the page); captions and categories
-      behind a setting so they can be switched off without a GPU (model per Q8).
-- [ ] `evilflowers-equation-service`: implement region detection (currently a `TODO`), remove the
-      `pages[1:2]` test limit, LaTeX per region, sympy normalization where it parses, crop.
-- [ ] `evilflowers-text-service`: keep the tables it extracts (markdown, caption, crop, position)
-      and report them as regions; keep text processing working against `search-service`.
+- [x] `evilflowers-analyzer-service`: open the PDF with PyMuPDF, record page count and page sizes,
+      run the Docling layout pass in page batches, and fan regions out by kind (Q11). Captions
+      printed next to figures and tables are passed along. *Changed:* no OCR: layout runs on page
+      images and finds regions on scanned pages without it, and no extraction step uses OCR text.
+- [x] `evilflowers-image-service`: keep the bounding box as page fractions with a top-left origin;
+      crop to WebP; gates (under 80 px on a side, aspect ratio over 8, over 90% of the page);
+      captions and categories by a multimodal model behind an Ollama endpoint, off by default
+      (`CAPTIONS_ENABLED`, `CAPTION_MODEL`; the model is still open, Q8). PaliGemma and the ViT/ResNet
+      labellers are removed.
+- [x] `evilflowers-equation-service`: region detection comes from the analyzer (Q11) for every page
+      (the `pages[1:2]` limit is gone with the Nougat code); LaTeX per region with LaTeX-OCR on ONNX
+      Runtime (`LATEX_BACKEND=onnx`, or `ollama`), sympy normalization where it parses (kept in the
+      region's `provenance.sympy`; `latex` holds the model's LaTeX), crop.
+- [x] `evilflowers-text-service`: tables found by the analyzer are read with pdfplumber into markdown,
+      cropped and reported with caption and position (`evilflowers_text_worker.tables`); text
+      processing against `search-service` is unchanged and no longer extracts tables it drops.
+
+### Phase 2b: Paragraph index (text-service and catalog)
+
+Runs as its own job of the extraction run, in parallel with figures, tables and equations (see
+[How it runs](#how-it-runs)).
+
+- [x] Analyzer dispatches the paragraph job when it opens the document, before the layout pass.
+- [x] `evilflowers-text-service`: split each page into paragraphs from PyMuPDF text blocks, keeping
+      each paragraph's page and bounding box. Port the filters from
+      `evilflowers-text-service-tp2025` `src/semantic/indexer.py` (`_is_valid_paragraph`: minimum
+      length, table-of-contents boilerplate). Running heads and footers repeated across pages are
+      dropped.
+- [x] Split each paragraph into sentences and store character offsets into the paragraph text,
+      plus each sentence's quads on the page, so a sentence can be highlighted without resolving a
+      quote. *Changed:* quads come from the words the paragraph is built from (one box per line the
+      sentence covers), not from `search_for`, so a repeated sentence is never placed on the wrong
+      line.
+- [x] Embed every paragraph with `EMBEDDING_MODEL` (default Snowflake Arctic Embed v2.0; BGE-M3,
+      `stsb-xlm-r-multilingual` or another sentence-transformers model selectable, Q16), loaded
+      once per worker, batched. The paragraph is embedded with its section title prefixed, as
+      monad-knowledge's chunker does. The model name goes into the run's `provenance`.
+- [ ] Confirm the Arctic Embed v2.0 size (`-m` or `-l`) and its dimension on a sample of Slovak
+      and English requests; the pgvector column takes that dimension. *For now:* `-m` (768
+      dimensions, the same as stsb-xlm-r-multilingual), `EMBEDDING_DIMENSIONS` in
+      `apps/extraction/models.py`.
+- [x] Build the paragraph links (see [Paragraph index](#paragraph-index)): `next` within the reading
+      order, `section` from the PDF outline, and `similar` to the k nearest paragraphs of the same
+      publication (`SIMILAR_LINKS_K`, above `SIMILAR_MIN_SCORE`).
+- [x] Report paragraphs, sentences, embeddings and links to the catalog ingestion endpoint (Q12),
+      in batches with the links in the last one. text-service keeps no vector store of its own;
+      tp2025's Milvus writer is not ported (Q15).
+- [x] Catalog: enable the pgvector `vector` extension; `extraction_paragraph` (with the
+      `embedding` column and an HNSW cosine index), `extraction_sentence` and
+      `extraction_paragraph_link` tables in the IP-018 migration; paragraphs of the inactive run are
+      deleted with it.
 
 ### Phase 3: Text and search services back up
 
-- [ ] `evilflowers-text-service`: update dependencies and base image, fix whatever keeps the
-      container down, publish a new build.
-- [ ] `evilflowers-search-service`: update dependencies and base image, fix whatever keeps the
-      container down, publish a new build; `apps/api/services/search_service_client.py` keeps
-      working against it.
-- [ ] Catalog `compose.yml` (development): keep `:main` for every service (Q13) and add the
-      analyzer, image and equation services.
+- [x] `evilflowers-text-service`: update dependencies and base image, fix whatever keeps the
+      container down, publish a new build. The ToC layout model (`*.pt`, never in the image) is
+      fetched on demand instead of crashing; models live in `/models`.
+- [x] `evilflowers-search-service`: update dependencies and base image, fix whatever keeps the
+      container down, publish a new build. The image started `src.api:app`, which does not exist,
+      and `Config` crashed without Milvus variables; it now runs `main:app` on Milvus Lite and
+      starts without Elasticsearch. `search_service_client.py` is unchanged.
+- [x] Catalog `compose.yml` (development): keep `:main` for every service (Q13) and add the
+      analyzer, image, equation and text-embed services; PostgreSQL is `pgvector/pgvector:pg16`.
+      The server's development and production composes (`elvira-devops`) carry the same services
+      under the `extraction` profile, `:main` in development and `EXTRACTION_RELEASE` in production.
 - [ ] Run the full development compose end to end: upload a PDF, see the text task consumed, the
       extraction run reach `done`, regions and crops present, and OPDS 2.0 search answering.
+      *2026-11-04, dev:* everything but search. Runs reach `done` with every job reported, e.g. a
+      385-page book (Docling about 1 minute per 16 pages on 4 CPU threads, so about 25 minutes):
+      42 regions, 2411 paragraphs, crops served to the viewer. pgvector 0.8.7 was already on the
+      shared PostgreSQL 18, so no image change was needed. search-service runs, but dev has no
+      Elasticsearch, so keyword search fails; the semantic path does not use it. Fixed on the way:
+      equation-service CI (sympy 1.14 leaves `parse_latex` unevaluated), text-service on PDFs
+      without a text layer (an empty paragraph batch was rejected and the job never reported),
+      Arctic Embed under transformers 5 (non-persistent buffers left uninitialized: pinned
+      `transformers<5`), garbled markdown for rotated tables (dropped, the crop is kept), and
+      text-embed's IP clashing with dataverse on dev (now `172.28.20.12`). Still open: Docling
+      counts tables of contents and indexes as tables, and on a landscape page it boxed only part
+      of the table.
 
 ### Phase 3b: Triggers and backfill (catalog repository)
 
-- [ ] Queue extraction wherever a PDF acquisition file is stored: `apps/api/services/entry.py`
-      next to the existing text-service publish, and `apps/dataverse/services/sync.py`.
-- [ ] Re-queue when an acquisition's file is replaced.
-- [ ] `manage.py backfill_extraction` with `--missing` (no active run), `--outdated` (older pipeline
-      version), `--acquisition <id>` and a rate limit.
+- [x] Queue extraction wherever a PDF acquisition file is stored: `attach_acquisition` (API upload
+      and MCP upload links) and `EntryService.populate`. *Changed:* Dataverse sync stores external
+      URLs, not files the services can read, so it queues nothing.
+- [x] Re-queue when an acquisition's file is replaced. *Changed:* an acquisition's file cannot be
+      replaced (`PUT /acquisitions/{id}` changes metadata only); `queue(force=True)` and
+      `backfill_extraction --force` re-extract when that changes.
+- [x] `manage.py backfill_extraction` with `--missing` (no active run), `--outdated` (older pipeline
+      version), `--acquisition <id>`, `--force`, `--limit`, `--dry-run` and a rate limit (`--rate`
+      per minute). Runs left `queued` or `running` are sent again.
 
 ### Phase 4: Reader API
 
-- [ ] Page mapping between original pages and reader pages, shared with
-      `apps/assistant/pdf.py` instead of duplicated.
-- [ ] `GET /api/v1/user-acquisitions/<id>/regions?page=N` and `GET .../regions/<region_id>`.
-- [ ] `GET /data/v1/user-acquisitions/<id>/regions/<region_id>.webp` for the crop.
-- [ ] Access checks identical to `UserAcquisitionDownload`: `check_user_acquisition_read` and the
+- [x] Page mapping between original pages and reader pages, shared with
+      `apps/assistant/pdf.py` instead of duplicated (`reader_source_pages`).
+- [x] `GET /api/v1/user-acquisitions/<id>/regions?page=N` and `GET .../regions/<region_id>`.
+- [x] `GET /data/v1/user-acquisitions/<id>/regions/<region_id>.webp` for the crop.
+- [x] Access checks identical to `UserAcquisitionDownload`: `check_user_acquisition_read` and the
       IP block. Regions on pages outside the acquisition's range are never returned.
-- [ ] Extraction status per acquisition, so a client can tell "nothing found" from "not processed
-      yet".
+- [x] Extraction status per acquisition (`GET /api/v1/user-acquisitions/<id>/extraction`), so a
+      client can tell "nothing found" from "not processed yet".
+- [x] Portal: the viewer's `regionPackage` loads a page's regions from the API, with the crop URL
+      carrying the access token for the `<img>` (`elvira-portal` `dev`, 2026-11-04). The viewer's
+      region card shows a table as its crop, without scrolling, and the markdown only without one
+      (EvilFlowersViewer `develop`, unreleased with the full-text search fix as 0.7.4).
 
 ### Phase 5: Assistant access
 
-- [ ] Tools `list_page_regions(page)` and `get_region(region_id)` for the explain agent and for
-      chats opened on a user acquisition.
-- [ ] `POST /api/v1/assistant/explain` accepts `region_id` as an alternative to selected text.
+- [x] Tools `list_page_regions(page)` and `get_region(region_id)` for the explain agent, the
+      highlight agent and chats opened on a user acquisition; reading regions costs no page budget.
+      *Changed:* the crop is not sent to the model; `get_region` returns caption, markdown or LaTeX.
+- [x] `POST /assistant/v1/explain` accepts `region_id` as an alternative to selected text.
 - [x] Chats can be bound to a user acquisition, giving them `read_pdf_page`, `search_pdf` and the
       region tools for that publication only.
 
@@ -396,11 +519,131 @@ Per service:
 - [x] Portal: the viewer's `agentAnnotationPackage` is wired to these endpoints, polling while
       `pending`; agent annotations are kept out of the drawing layer's groups.
 
+### Phase 6b: Semantic highlight finding
+
+- [x] Tool `search_paragraphs(query)` for the highlight agent, explain and bound chats: embeds the
+      query with the model recorded on the active run, ranks this acquisition's paragraphs by
+      cosine similarity in pgvector, and returns every paragraph
+      above `EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE`, capped at
+      `EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES`, with reader page and sentence ids. Pages outside
+      the acquisition's range are never returned.
+- [x] Highlight requests rank the paragraphs directly (`apps/assistant/semantic.py`,
+      `apps/extraction/reader.py`), without a tool call: the request is embedded by text-service on
+      `EVILFLOWERS_EXTRACTION_EMBED_QUEUE` with the model recorded on the run, and every paragraph
+      above `EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE` (0.3), capped at
+      `EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES` (40), on pages of the acquisition's range is a
+      candidate. The `search_paragraphs` tool above, for explain and chats, is not built yet.
+- [x] Expansion over the links: each candidate brings its `next` neighbour and its `similar`
+      paragraphs above the same threshold, one hop, so a passage that continues on the next
+      paragraph or repeats the point elsewhere is not missed.
+- [x] Sentence selection (Q17): all candidates go to the model at once, as numbered sentences with
+      their paragraph's score. It keeps the sentences that answer the request, with a note each,
+      and discards the rest, possibly all of them. The score only orders and filters candidates;
+      it never makes a highlight by itself. Candidates beyond the model's context are sent in
+      batches in score order and the kept sentences merged. No quote is copied, so nothing can be
+      paraphrased: each highlight is a stored sentence with stored quads, `match = exact`.
+- [x] `MAX_QUOTES` becomes a cap on sentences per annotation (the best-scored are kept), not the
+      agent's stopping point; the number of highlights follows from the threshold.
+- [x] Fallback: a publication without a paragraph index, or a request text-service cannot embed in
+      `EVILFLOWERS_EXTRACTION_EMBED_TIMEOUT`, uses the agentic search of Phase 6 unchanged.
+- [x] Report per annotation: candidate paragraphs, sentences shown and sentences kept, in the task's
+      log line.
+
+### Phase 8: Reader round on dev (2026-11-04)
+
+What the first days on dev asked for. Each item lands as its own commit in the repository named.
+
+**Tables** (EvilFlowersViewer)
+
+- [x] The region card shows a table as a **grid of cells** (rows and columns from the extracted
+      markdown), not as its crop. The crop is the fallback: a table without markdown, or markdown
+      that does not parse into rows. A toggle switches between grid and crop.
+- [x] **Copy as CSV** (and copy as Markdown) on every table card; the CSV is built from the same
+      parsed rows, quoted per RFC 4180.
+- [x] Table cards are large: up to 640px wide and 70% of the viewer's height, scrolling inside
+      the grid only. Figure and equation cards keep the small size.
+
+**Rendering** (EvilFlowersViewer)
+
+- [x] Text drawn twice over tables on some PDFs (cell text shifted over the paragraph above),
+      while the analyzer's crop of the same page is correct. Reproduce on the reported book, compare
+      the canvas against pdf.js's reference rendering, and fix the viewer's render path.
+      *Closed without a change (2026-11-05):* a freshly downloaded copy of the same PDF renders
+      correctly, so the reported file was most likely corrupted. Reopen if it shows up again.
+
+**Contents** (EvilFlowersViewer)
+
+- [x] The "Obsah" sidebar gets two tabs: **Chapters** (the outline, as today) and **Figures**
+      (every figure, table and equation of the copy, from `GET .../regions` without `page`, with
+      kind, caption and reader page). A click jumps to the page and opens the region's card. The
+      tab says when nothing was found or the copy is not processed yet.
+
+**Captions** (services and catalog)
+
+- [x] Answer to "is the image matched with its printed caption": *partly*. The analyzer takes
+      Docling's `caption_text` for a figure or table (the "Figure 2.1: ..." under or above it) and
+      stores it as `caption`, but when image-service captions are on, the model's description
+      **replaces** it and the printed text survives only in `provenance.printed_caption`.
+- [x] Store both: new `Region.printed_caption` (the document's own caption, verbatim) and
+      `Region.description` (the model's). `caption` stays as the field clients read and becomes
+      `printed_caption or description`. Ingestion takes `printed_caption` from the analyzer's
+      caption; image-service sends its description separately. A migration copies
+      `provenance.printed_caption` into the new column for existing runs.
+- [x] Viewer and portal always show the printed caption when there is one, the description
+      under it, smaller.
+
+**Highlights** (catalog)
+
+- [x] Semantic first, then the model (Phase 6b): cosine over the paragraph index picks the
+      candidates, the model keeps the sentences that answer the request, agentic search over
+      `read_pdf_page` is the fallback without an index or embeddings.
+- [ ] Verify on dev that highlight requests on an extracted book take the semantic path (the
+      task's log line reports candidates, shown, kept); a run without paragraphs falls back.
+
+**Chat** (catalog, EvilFlowersViewer, elvira-portal)
+
+- [x] `search_paragraphs(query)` for chats bound to a copy and for explain (the open item of
+      Phase 6b), falling back to `search_pdf` when the copy has no index.
+- [x] `search_pdf` takes `regex: true`: the query is a regular expression (case-insensitive),
+      every page with a match is returned in reading order with its match count and a snippet.
+      Patterns over 200 characters and nested quantifiers such as `(a+)+` are refused, so a
+      model-written pattern cannot hold a worker. Explain, the highlight agent and bound chats are
+      all told about both searches: `search_paragraphs` by meaning, `search_pdf` by words or pattern.
+- [x] `list_regions(kind?)`: every figure, table and equation of the copy with id, kind, reader
+      page and caption, so the chat sees all figures and can cite them by id
+      (`[[region:<id>]]`, which the viewer already resolves to a card).
+- [x] `create_highlights(prompt)`: a chat bound to a copy can ask for an agent annotation. The
+      tool queues the same Celery task as `POST /assistant/v1/highlights` and returns the
+      annotation id at once; the turn yields an `annotation` SSE frame with it.
+- [x] Viewer chat: on an `annotation` frame the AI highlights layer reloads and the new annotation
+      shows as a card in the chat (title, status, count) that opens it in the AI highlights
+      sidebar, like one made there.
+- [x] Portal chat (`AiAssistant`): the same frame renders the card with "open in viewer", which
+      opens the copy on the annotation's first page.
+
+**Recommendations** (catalog, elvira-portal, EvilFlowersViewer)
+
+- [x] A publication vector per active run: the normalised mean of its paragraph embeddings,
+      stored on `ExtractionRun.embedding` (pgvector, HNSW), computed when the run becomes active.
+- [x] `GET /api/v1/entries/<id>/similar`: the nearest publications by that vector among entries
+      the user may see, one per entry, never the entry itself, with their score.
+- [x] `POST /assistant/v1/similar` with `{user_acquisition_id, text}`: the selection embedded and
+      ranked against every publication's paragraphs, grouped per entry, the copy itself excluded.
+      This backs the viewer's "Podobné" (`suggestionsFunction`, kind `similar`).
+- [x] Portal entry detail: the "Súvisiace" tab lists `similar` (today it shows the entry itself
+      four times, a placeholder).
+- [x] Portal entry detail: a **Figures** tab next to it, every figure of the entry's processed
+      PDF with its crop, printed caption and description (Q18 for access).
+
 ### Phase 7: Production
 
-- [ ] Add the analyzer, image, equation, text and search services to the production compose
+- [x] Add the analyzer, image, equation, text and search services to the production compose
       (`elvira-devops`), each pulling its pinned build and mounting production storage.
-- [ ] Run the backfill, watching the queues in Flower.
+- [ ] Run the backfill, watching the queues in Flower. First on dev (357 local PDFs), after a few
+      days of trial there. At about 4 seconds a page on CPU, raising the analyzer's
+      `LAYOUT_THREADS` is worth checking first.
+      *On hold (2026-11-05):* not before extraction and embeddings are checked further on dev for
+      mistakes, so weeks of processing are not spent on a pipeline that has to run again.
 
 ### Prerequisites
 
@@ -414,7 +657,9 @@ Per service:
 
 - **Docling** for layout, figures, tables and formulas in one pass (as chosen in
   [IP-013 Q1](ip-013-document-extraction-structure.md#q1-born-digital-feature-extractor-docling-unified-or-a-la-carte)).
-- **PyMuPDF** for page geometry, cropping and quote resolution.
+- **PyMuPDF** for page geometry, cropping, quote resolution and paragraph blocks.
+- **Snowflake Arctic Embed v2.0** (default, configurable) for paragraph and request embeddings,
+  stored in **pgvector** in the catalog's PostgreSQL.
 - **sympy** for LaTeX normalization.
 - A local **vision-language model** for figure captions and categories. The same choice as
   IP-013 Phase 3 if that lands first.
@@ -488,6 +733,36 @@ CREATE TABLE extraction_region (
     provenance  jsonb                          -- model names, versions, generated_at
 );
 
+CREATE TABLE extraction_paragraph (
+    id          uuid PRIMARY KEY,
+    run_id      uuid REFERENCES extraction_run(id) ON DELETE CASCADE,
+    page        int  NOT NULL,                 -- original file, 1-based
+    seq         int  NOT NULL,                 -- reading order in the document
+    section     text,                          -- outline heading the paragraph falls under
+    bbox        jsonb NOT NULL,                -- page fractions, top-left origin
+    text        text NOT NULL,
+    embedding   vector(<dim>)                  -- pgvector (Q15); dimension of the Arctic Embed size chosen in Phase 2b (Q16)
+);
+CREATE INDEX ON extraction_paragraph USING hnsw (embedding vector_cosine_ops);
+
+CREATE TABLE extraction_sentence (
+    id            uuid PRIMARY KEY,
+    paragraph_id  uuid REFERENCES extraction_paragraph(id) ON DELETE CASCADE,
+    seq           int  NOT NULL,               -- order in the paragraph
+    start         int  NOT NULL,               -- character offsets into paragraph.text
+    "end"         int  NOT NULL,
+    page          int  NOT NULL,               -- a sentence may continue on the next page
+    quads         jsonb NOT NULL               -- [{x0, y0, x1, y1}, ...] page fractions
+);
+
+CREATE TABLE extraction_paragraph_link (
+    source_id   uuid REFERENCES extraction_paragraph(id) ON DELETE CASCADE,
+    target_id   uuid REFERENCES extraction_paragraph(id) ON DELETE CASCADE,
+    kind        text NOT NULL,                 -- next | similar
+    score       real,                          -- cosine similarity for similar
+    PRIMARY KEY (source_id, target_id, kind)
+);
+
   -- Agent annotations reuse the existing tables (apps/core/models/annotation.py, annotation_item.py)
   ALTER TABLE annotations
       ADD COLUMN kind             text NOT NULL DEFAULT 'drawing', -- drawing | highlight | agent | bookmarks
@@ -517,14 +792,41 @@ Nothing has to be indexed first, so it works on every readable PDF today. The mo
 meaning; `search_pdf` itself is term overlap, so a passage that shares no word with any query the
 model thinks of is not found, and a long book is read only as far as the page budget allows.
 
-**Later: embeddings.** Once IP-012's chunk index exists (BGE-M3 vectors in pgvector, BM25 in
-`pg_search`, fused by RRF), the agent gets one more read tool, `search_semantic(query)`, returning
-chunks of this publication with their reader pages. Search by meaning finds passages that use other
-words than the request, and it is what makes a request over many publications possible ("where do
-these 40 books support my thesis"), which a page budget cannot cover. Only the finding changes: the
-quote gate, quote resolution and storage stay as they are, so the switch needs no schema change.
-Embedding the catalog takes a long time, so agentic search stays the fallback for publications not
-yet indexed.
+In practice this yields a handful of highlights. `MAX_QUOTES` is 20, but `search_pdf` returns the
+8 best pages by word overlap, `read_pdf_page` returns at most 3 pages of 6,000 characters per call,
+and the model stops when it judges it has enough, so a request ends with the few sentences on the
+few pages it read. Nothing ranks the rest of the book. Phase 6b replaces this for every publication
+whose paragraph index exists; agentic search stays the fallback for the others.
+
+### Paragraph index
+
+Built during extraction (Phase 2b), once per acquisition and shared by every reader.
+
+- **Paragraph** is the unit that is embedded: one vector per paragraph, with its section title
+  prefixed. A sentence alone carries too little context to embed well; a page mixes topics.
+- **Sentence** is the unit that is highlighted: stored as offsets into its paragraph, with its
+  quads on the page computed once at extraction. Highlighting a sentence needs no quote resolution.
+- **Links** make the index a graph over the publication: `next` (reading order, across page
+  breaks), `section` (the outline heading, a column on the paragraph) and `similar` (the k nearest
+  paragraphs by cosine, above a floor). Finding uses them to step from a hit to the paragraph that
+  continues it and to other places that make the same point.
+
+### Semantic finding
+
+1. Embed the request with the run's model and score this acquisition's paragraphs by cosine
+   similarity in pgvector. Keep **every** paragraph above the score threshold, up to a candidate
+   cap, instead of a fixed top 5.
+2. Expand one hop over `next` and `similar` links, with the same threshold.
+3. Give the model all candidates at once as numbered sentences with their scores, grouped by
+   section and in reading order. It keeps the sentences that answer the request, with a note
+   each, and discards the rest. The score decides what the model sees, the model decides what is
+   highlighted.
+4. Each selected sentence becomes an agent item with its stored text and quads. The quote gate and
+   resolution of Phase 6 are not needed on this path, because the model never copies text.
+
+The number of highlights follows from how much of the book matches, not from how far the agent
+read. Search over many publications ("where do these 40 books support my thesis") becomes the same
+ranking over more paragraphs; that remains IP-012's.
 
 ### Quote resolution
 
@@ -603,6 +905,7 @@ GET    /api/v1/annotation-items?annotation_id=...           -> + seq, quads, tex
 | `search_pdf` | read (exists) | Pages and snippets for a term |
 | `list_page_regions(page)` | read | Regions on a reader page: id, kind, caption or first line |
 | `get_region(region_id)` | read | Caption and category, markdown, or LaTeX. The crop for a model that accepts images |
+| `search_paragraphs(query)` | read | Paragraphs above the score threshold, expanded over links, as numbered sentences with reader pages |
 
 All tools are bound to one user acquisition and inherit its access check and page range.
 
@@ -610,19 +913,27 @@ All tools are bound to one user acquisition and inherit its access check and pag
 
 ```
 # catalog
-EVILFLOWERS_EXTRACTION_ENABLED=1
+EVILFLOWERS_EXTRACTION_ENABLED=0                   # off until the services run next to the catalog
 EVILFLOWERS_EXTRACTION_PIPELINE_VERSION=1          # bumped when pinned service tags change output
 EVILFLOWERS_EXTRACTION_QUEUE=evilflowers_analyzer  # entry service queue
-EVILFLOWERS_EXTRACTION_SERVICE_TOKEN=...           # credential the services present on ingestion
+EVILFLOWERS_EXTRACTION_EMBED_QUEUE=evilflowers_text_embed  # request embeddings (Phase 6b)
+EVILFLOWERS_EXTRACTION_EMBED_TIMEOUT=30
+EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE=0.3      # cosine threshold: what the model sees, not what is highlighted (Q17)
+EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES=40      # cap on candidate paragraphs per request
 
 # services (set in compose)
 REDIS_URL=redis://redis:6379/7
 STORAGE_PATH=/mnt/data
 CATALOG_API_URL=http://django:8000
-CATALOG_SERVICE_TOKEN=...
-CAPTIONS_ENABLED=1                                 # image-service; off on CPU-only hosts
-CAPTION_MODEL=...
+CATALOG_API_KEY=...                                # API key of a user holding extraction.ingest_extraction (Q12)
+CAPTIONS_ENABLED=0                                 # image-service; off on CPU-only hosts
+OLLAMA_ENDPOINT=...                                # image-service captions; equation-service with LATEX_BACKEND=ollama
+CAPTION_MODEL=qwen2.5vl:7b
+LATEX_BACKEND=onnx                                 # equation-service: onnx | ollama | none
 HF_HOME=/models
+EMBEDDING_MODEL=Snowflake/snowflake-arctic-embed-m-v2.0  # 768 dimensions; size to be confirmed (Q16)
+SIMILAR_LINKS_K=5                                  # similar links per paragraph
+SIMILAR_MIN_SCORE=0.6
 ```
 
 ## Alternatives Considered
@@ -710,6 +1021,10 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
       reference, not a bar.
 - [ ] Agent annotations appear through the existing annotation endpoints and in PDF downloads with
       `?annotations=true`, with no change to how reader annotations behave.
+- [ ] Every extraction run carries a paragraph index, built in parallel with the region jobs.
+- [ ] A highlight request on an indexed publication returns every sentence above the threshold,
+      not a fixed handful, all `exact`. Measured against the agentic path on a sample of requests:
+      sentences found, pages covered, time and tokens.
 - [ ] Deleting an acquisition removes its extraction files.
 - [ ] The catalog image has no extraction dependencies; the catalog repository only changed its
       compose files to run the services.
@@ -718,8 +1033,8 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 
 ## Future Considerations
 
-- Embedding search for the highlight agent, and requests over many publications at once (see
-  [Finding passages](#finding-passages)).
+- Requests over many publications at once, on IP-012's index (see
+  [Semantic finding](#semantic-finding)).
 - **Optional: tagging every sentence.** Extract the claims of a publication paragraph by paragraph
   once, as monad-knowledge does (`extraction/claims.py`: a selection pass, then atomic claims, each
   with its evidence sentence copied exactly and kept only if it is literally in its paragraph), and
@@ -757,7 +1072,10 @@ drift between server and viewer. **Not chosen.** Page positions are what the vie
 
 ## Review Questions
 
-**Status**: ✅ Answered 2026-10-28, except the caption model inside Q8 (decided in Phase 2).
+**Status**: ✅ Q1–Q14 answered 2026-10-28, except the caption model inside Q8 (decided in Phase 2).
+✅ Q15–Q17 (paragraph index) answered 2026-11-03; the exact Arctic Embed size inside Q16 is
+confirmed in Phase 2b.
+✅ Q18 and Q19 (licensed titles: figures and AI) answered 2026-11-05.
 Q2, Q4, Q7 and Q9 are the schema questions, so IP-018 needs one migration.
 **Review Date**: 2026-10-27
 **Reviewer**: Claude AI
@@ -1191,6 +1509,175 @@ new features, Milvus Lite stays.
 
 ---
 
+### Q15: 🔴 Where do the paragraph vectors live?
+
+**Issue**: [Data Model Changes](#data-model-changes) puts `embedding` on `extraction_paragraph`.
+`evilflowers-text-service-tp2025` writes paragraph vectors to Milvus, search-service runs Milvus
+Lite (Q14 keeps it as-is), and IP-012 plans pgvector.
+
+**Context**: The highlight agent ranks paragraphs of one acquisition at a time, a few thousand rows
+at most, filtered by run. The catalog already owns the paragraph rows and their access checks.
+
+**Question**: Which store holds the paragraph embeddings?
+
+**Options**:
+- [x] **A**: pgvector in the catalog's PostgreSQL, a column on `extraction_paragraph`; ingested over the catalog API like regions (recommended)
+- [ ] **B**: Milvus in search-service; the catalog keeps paragraph rows without vectors and asks search-service for the ranking
+- [ ] **C**: A new store chosen together with IP-012
+
+**Answer**:
+```
+pgvector (option A).
+```
+
+**Resolution**:
+```
+Paragraph embeddings are a pgvector column on `extraction_paragraph` in the catalog's PostgreSQL.
+text-service posts them with the paragraphs over the catalog API (Q12); it writes no vector store
+of its own, and tp2025's Milvus writer is not ported. The catalog ranks with a cosine query filtered
+by run, with an HNSW index on the column. The IP-018 migration enables the `vector` extension.
+search-service and its Milvus Lite are untouched (Q14).
+```
+
+---
+
+### Q16: ⚠️ Which embedding model?
+
+**Issue**: `evilflowers-text-service-tp2025` uses `sentence-transformers/stsb-xlm-r-multilingual`
+(768 dimensions). IP-012 names BGE-M3. Production runs on CPU (Q1).
+
+**Context**: The catalog holds Slovak and English publications, and requests come in both
+languages. The model fixes the vector dimension in the schema, and changing it means re-embedding
+every publication (a `pipeline_version` bump).
+
+**Question**: Which model embeds paragraphs and requests?
+
+**Options**:
+- [ ] **A**: BGE-M3, matching IP-012, so its index can reuse these vectors
+- [ ] **B**: `stsb-xlm-r-multilingual`, as already wired in text-service-tp2025
+- [ ] **C**: Decide in Phase 2b by a retrieval test on a sample of Slovak and English requests
+- [x] **D**: Snowflake Arctic Embed (multilingual v2.0)
+
+**Answer**:
+```
+Snowflake (Arctic Embed) for now, but keep all four as options.
+```
+
+**Resolution**:
+```
+The model is a setting (`EMBEDDING_MODEL` in text-service, the same name in the catalog for
+embedding requests), default Snowflake Arctic Embed v2.0. BGE-M3, stsb-xlm-r-multilingual and
+any other sentence-transformers model stay selectable, and a retrieval test (option C) can switch
+the default later. Which v2.0 size (`-m` or `-l`) and its vector dimension are confirmed in
+Phase 2b; the pgvector column takes that dimension. Paragraphs and requests must use the same
+model: the model name is recorded in the run's `provenance`, a request is embedded with the model
+of the run it searches, and changing the default bumps `EVILFLOWERS_EXTRACTION_PIPELINE_VERSION`
+so `backfill_extraction --outdated` re-embeds.
+```
+
+---
+
+### Q17: ⚠️ How are sentences selected?
+
+**Issue**: [Semantic finding](#semantic-finding) ranks paragraphs by cosine and then asks the model
+to pick sentences. Cosine alone could pick sentences without any model call.
+
+**Context**: Paragraph similarity says a paragraph is about the topic, not that a given sentence
+answers the request. A model call over the candidates costs tokens but runs once, not in a loop.
+
+**Question**: What decides which sentences are highlighted?
+
+**Options**:
+- [x] **A**: Cosine selects candidate paragraphs above the threshold, the model selects sentences in one call (recommended)
+- [ ] **B**: Cosine at sentence level against the request, no model call; every sentence above a second threshold is highlighted
+- [ ] **C**: Cosine only, highlighting whole paragraphs
+
+**Answer**:
+```
+Score them first, then give all of them to the LLM to choose or discard.
+```
+
+**Resolution**:
+```
+Cosine scores every paragraph; all candidates (above the threshold, after link expansion) go to the
+model at once, as numbered sentences with their paragraph's score. The model keeps the sentences
+that answer the request and discards the rest; it may discard every candidate. The score orders
+and filters candidates only, it never makes a sentence a highlight by itself. When the candidates
+exceed the model's context, they are sent in batches in score order and the kept sentences merged.
+```
+
+---
+
+### Q18: ⚠️ Who may see figures in the entry detail?
+
+**Issue**: Region crops are served per user acquisition today (Phase 4): only a reader with a copy
+sees them. The Figures tab of Phase 8 lists them in the entry detail, before anyone borrows.
+
+**Context**: A crop is a piece of the publication. For open-access entries showing it is harmless;
+for a licensed (Readium LCP) title a gallery of every figure leaks content without a loan.
+
+**Question**: Who sees the Figures tab?
+
+**Options**:
+- [ ] **A**: Everyone who can see the entry, for open-access acquisitions; for licensed ones only
+      readers holding a user acquisition (recommended)
+- [ ] **B**: Everyone who can see the entry
+- [ ] **C**: Only readers holding a user acquisition
+
+**Answer**:
+```
+Licensed titles never show figures (see Q19).
+```
+
+**Resolution**:
+```
+A, as implemented: open-access entries show the Figures tab to everyone who can see the entry;
+licensed (Readium LCP) entries show none. Licensed copies are read in an LCP reader, never in the
+viewer, so no one sees their regions anywhere.
+```
+
+---
+
+### Q19: 🔴 May licensed (Readium LCP) titles be processed and summarised by AI?
+
+**Issue**: Extraction runs for every stored PDF (`is_extractable` ignores `readium_enabled`), so a
+licensed title gets its figures, tables and equations cropped and every paragraph embedded and
+stored. Its publication vector takes part in recommendations for everyone, and a borrower's chat,
+explain and highlight requests read the copy and summarise it.
+
+**Context**: What reaches readers today: the entry detail hides figures of licensed titles (Q18),
+"ask about this book" without a loan refuses them (`ReaderDocument.for_open_access`), and
+recommendations return entry ids and scores only, never text. So no content leaks without a loan.
+But the licensed text is still processed and stored, and summarised by the model for borrowers,
+which a publisher's licence may not allow.
+
+**Question**: What may the pipeline and the assistant do with a licensed title?
+
+**Options**:
+- [ ] **A**: Everything, as today: extract and embed; borrowers get figures, chat, explain and
+      highlights; the title takes part in recommendations
+- [ ] **B**: Extract for borrowers (figures and highlights in the viewer), but no AI summarisation
+      (chat, explain, entry summary) and no recommendations
+- [ ] **C**: Nothing: skip licensed titles in extraction and in every assistant tool; a title that
+      becomes licensed loses its run
+- [ ] **D**: Decided per catalog or per licence, with one of A–C as the default
+
+**Answer**:
+```
+Embedding and recommendations: yes. Showing figures and letting AI read it: no.
+```
+
+**Resolution**:
+```
+Licensed titles are extracted and embedded and take part in recommendations (ids and scores
+only). Their figures are never shown (the entry detail returns none, Q18) and no AI reads them:
+"ask about this book" refuses them (`ReaderDocument.for_open_access`), and licensed copies are
+opened in an LCP reader, never in the viewer, so there is no reader copy for chat, explain or
+highlights. Already the behaviour; no code change.
+```
+
+---
+
 ## Changelog
 
 | Date | Author | Changes |
@@ -1205,3 +1692,12 @@ new features, Milvus Lite stays.
 | 2026-10-28 | kordostomas | Answered the rest: Q1 production host on CPU, move when a GPU host exists; Q5 no tool-count limit, a page budget per request instead (implemented for chat and explain); Q8 captions by a multimodal LLM in image-service, model open; Q10 rename and delete only; Q11 analyzer runs Docling; Q12 write-back over the catalog API via evilflowers-protocol's generated Python client with an API key; Q13 `:main` in development, release tags in production; Q14 search-service run as-is. Updated the IP-015 row, Phase 3, 6 and 7 accordingly |
 | 2026-10-29 | kordostomas | Implemented Phase 6 (agent annotations) ahead of extraction: annotation layer columns in their own migration, hidden highlight agent with agentic search, quote gate and resolution, Celery task, `/assistant/v1/highlights` endpoints, item edit guard, portal wiring. Added Finding passages (agentic search now, IP-012 embeddings later as an extra tool, no schema change) and, under Future Considerations, optional per-sentence claim tagging |
 | 2026-10-29 | kordostomas | Status: Phase 6 built and on dev, Phase 5 chat binding done. Added reader text highlights (`highlight` items with `text`/`quads`, viewer `readerHighlightPackage`, "My highlights") and the viewer text-layer and theme fixes to Phase 6 |
+| 2026-11-03 | kordostomas | Paragraph index as part of extraction: every paragraph stored with sentences, positions, one embedding and `next`/`similar` links, built by text-service as its own job in parallel with figures, tables and equations (How it runs, sequence diagram). Added Phase 2b (paragraph index), Phase 6b (semantic highlight finding: cosine over paragraphs above a threshold, link expansion, sentence selection, agentic search as fallback), the three paragraph tables, `search_paragraphs` tool, configuration, success criteria, and the narrow IP-012 contradiction. Explained why the agentic path yields only a handful of highlights. Added Review Questions Q15 (vector store), Q16 (embedding model), Q17 (sentence selection) |
+| 2026-11-03 | kordostomas | Answered and applied Q15–Q17: pgvector column with HNSW index in the catalog, no vector store in text-service; Snowflake Arctic Embed v2.0 as the configurable default (BGE-M3, stsb-xlm-r and a retrieval test kept as options; size and dimension confirmed in Phase 2b; model in provenance, change bumps pipeline version); cosine scores pick candidates, the model keeps or discards every candidate sentence in one call (batched past context). Updated Phase 2b, 6b, Data Model, Semantic finding, Technology Stack, Configuration and the IP-012 row |
+| 2026-11-03 | kordostomas | Implemented Phases 1–6b: `apps/extraction` (schema with pgvector, dispatch on upload, `/extraction/v1` ingestion, reader region, crop and status APIs, `backfill_extraction`); analyzer (Docling layout, no OCR), image (crops, gates, Ollama captions), equation (LaTeX-OCR on ONNX, sympy), text (tables, paragraph index, request embeddings) and search (runs again) services over Celery with CI images; region tools and explain by region; semantic highlight finding with agentic fallback; services in the dev and production composes under the `extraction` profile. Recorded the changes against the plan in each phase |
+| 2026-11-04 | kordostomas | Ran it end to end on dev: catalog merged to `develop`, services started with the `extraction` profile, service user and API key, regions wired into the portal's viewer. Recorded the results and the fixes made on the way in Phase 3 and 4 (equation CI, text-service on PDFs without text, transformers pinned below 5 for Arctic Embed, rotated tables, a dev IP clash). Backfill after a few days of trial on dev |
+| 2026-11-04 | kordostomas | Phase 8 from the first days on dev: tables as a grid with CSV copy and a larger card, text drawn twice over tables, Chapters/Figures tabs in Obsah, printed caption stored beside the model description (answers whether a figure is matched with its printed caption: only while captions are off), chat tools `search_paragraphs`, `list_regions` and `create_highlights` with the annotation shown in both chats, publication vectors for recommendations in the entry detail and the viewer, a Figures tab in the entry detail. Added Q18 (who sees figures in the entry detail) |
+| 2026-11-05 | kordostomas | Added Q19 (may licensed Readium LCP titles be extracted, embedded and summarised by AI); recorded that today all are processed and Q18 hides their figures in the entry detail |
+| 2026-11-05 | kordostomas | Answered Q18 and Q19: licensed titles are embedded and recommended, but never show figures and are never read by AI (already the behaviour) |
+| 2026-11-05 | kordostomas | Phase 8 ticked as shipped (except verifying the semantic highlight path on dev); text drawn twice over tables closed as a corrupted file; `search_pdf` gained a regex mode and every agent is told about semantic and word/regex search; Phase 6b `search_paragraphs` ticked; backfill on hold until extraction and embeddings are checked further |
+| 2026-11-09 | jdubec | Phase 1 dispatch: the analyzer task id is now a deterministic UUID (`uuid5` of `extract:<acquisition_id>:v<N>`), because the `extract:…` string crashed `celery_event_handler` on dev (#108) |
