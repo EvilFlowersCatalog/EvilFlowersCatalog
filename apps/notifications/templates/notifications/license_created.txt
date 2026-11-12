@@ -20,5 +20,4 @@ This download link expires in {{ download_expires_hours }} hours.
 {% if passphrase_hint %}
 Passphrase hint: {{ passphrase_hint }}
 {% endif %}
---
-This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.
+{% include "notifications/_footer.txt" %}

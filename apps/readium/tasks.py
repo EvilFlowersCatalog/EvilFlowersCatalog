@@ -26,6 +26,8 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from evil_flowers_catalog import domain_metrics
+
 logger = logging.getLogger(__name__)
 
 
@@ -138,6 +140,7 @@ def expire_lapsed_licenses() -> int:
                     continue
                 license_obj.state = License.LicenseState.EXPIRED
                 license_obj.save(update_fields=["state", "updated_at"])
+                domain_metrics.record_license_transition("expired", expiry_path="sweep")
                 transitioned += 1
             # Best-effort queue promotion outside the transaction.
             LicenseService._maybe_promote_next(license_obj)

@@ -12,7 +12,7 @@ import uuid
 from django.contrib.auth.models import AnonymousUser
 from django.test import override_settings
 
-from apps.core.models import Catalog, Category, Entry, Feed, UserCatalog
+from apps.core.models import ApiKey, Catalog, Category, Entry, Feed, UserCatalog
 from apps.mcp.registry import ToolAccess
 from apps.mcp.tests.test_management import ManagementTestCase
 from apps.mcp.tools import registry
@@ -76,9 +76,22 @@ class WriteSurfaceSweepTests(ManagementTestCase):
             "classify_entries": {"entry_ids": entry_ids, "category_ids": [str(category.pk)]},
             "create_entry": {"catalog_id": catalog_id, "title": "Sweep book", "language_code": "sk"},
             "update_entry": {"entry_id": entry_ids[0], "title": "Sweep book"},
+            "delete_entry": {"entry_id": entry_ids[0]},
             "create_upload_link": {"entry_id": entry_ids[0]},
             # The administrator check runs before any lookup, so no job need exist.
             "requeue_encryption": {"content_ids": [str(uuid.uuid4())]},
+            "reencrypt_publication": {"content_ids": [str(uuid.uuid4())]},
+            # Account tools: each case is something a reader may *not* do. Minting
+            # or revoking their own key is allowed, so these aim at someone else.
+            "create_user": {"username": "sweep", "name": "Sweep", "surname": "User"},
+            "update_user": {"user_id": str(self.reader.pk), "is_superuser": True},
+            "delete_user": {"user_id": str(self.manager.pk), "confirm_username": self.manager.username},
+            "create_api_key": {"name": "sweep", "user_id": str(self.manager.pk)},
+            "revoke_api_key": {"api_key_id": str(ApiKey.objects.create(user=self.manager, name="sweep").pk)},
+            # IP-025: deployment-wide notification settings are superuser-only.
+            "update_notification_branding": {"library_name": "Sweep"},
+            "send_test_notification": {"notification_type": "license_created"},
+            "sync_ldap_profiles": {"dry_run": True},
         }
 
     def test_every_write_tool_refuses_a_reader_of_the_catalog(self):
@@ -92,7 +105,11 @@ class WriteSurfaceSweepTests(ManagementTestCase):
         for name in sorted(writes):
             with self.subTest(tool=name):
                 message = self.refused(name, arguments[name], self.reader)
-                self.assertRegex(message, "Insufficient permissions|restricted to administrators", name)
+                # "not readable" is the refusal for a record outside the caller's
+                # boundary (another user's API key) — reported as absent, never 403.
+                self.assertRegex(
+                    message, "Insufficient permissions|restricted to administrators|is not readable", name
+                )
 
 
 class CatalogManagementTests(ManagementTestCase):

@@ -1,6 +1,7 @@
 import mimetypes
 import uuid
 from functools import reduce
+from http import HTTPStatus
 from io import BytesIO
 from operator import or_
 
@@ -10,11 +11,15 @@ import isbnlib
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from django.conf import settings
 from django.core.files import File
+from django.db import transaction
 from django.db.models import Q
+from django.utils.translation import gettext as _
 from isbnlib.registry import bibformatters
 
 from apps.api.forms.entries import EntryForm
 from apps.core.models import Catalog, User, Entry, Author, Category, Acquisition, Price, EntryAuthor
+from apps.core.models.entry import cover_bytes_hash
+from apps.core.tasks import store_table_of_contents
 
 
 def build_thumbnail(source_image: Image.Image, size: tuple[int, int]) -> tuple[BytesIO, str]:
@@ -182,14 +187,54 @@ def set_cover(entry: Entry, uploaded_image, *, mime: str) -> Entry:
     Shared by `EntryService.populate` (REST `image`) and the MCP cover upload
     link, so both produce the same `cover.*` + `thumbnail.*` pair.
     """
+    # The hashes are set from the bytes in hand (#128): a write that reuses the stored name (the old
+    # file was already gone) would otherwise keep the previous version. `Entry.save()` is the net.
+    uploaded_image.seek(0)
     entry.image_mime = mime
+    entry.image_hash = cover_bytes_hash(uploaded_image.read())
+    uploaded_image.seek(0)
     entry.image.save(f"cover{mimetypes.guess_extension(mime)}", uploaded_image)
 
     uploaded_image.seek(0)
     buffer, thumbnail_mime = build_thumbnail(Image.open(uploaded_image), settings.EVILFLOWERS_IMAGE_THUMBNAIL)
     entry.thumbnail_mime = thumbnail_mime
+    entry.thumbnail_hash = cover_bytes_hash(buffer.getvalue())
     entry.thumbnail.save(f"thumbnail{mimetypes.guess_extension(thumbnail_mime)}", File(buffer))
     return entry
+
+
+class InvalidAcquisitionFile(Exception):
+    """An uploaded acquisition file that cannot be a publication (#112). `status` is the HTTP answer."""
+
+    def __init__(self, message: str, status: HTTPStatus):
+        self.status = status
+        super().__init__(message)
+
+
+#: The first bytes every file of a type starts with. A type not listed here is only checked for being non-empty.
+ACQUISITION_MAGIC = {
+    Acquisition.AcquisitionMIME.PDF: b"%PDF-",
+    Acquisition.AcquisitionMIME.EPUB: b"PK\x03\x04",
+    Acquisition.AcquisitionMIME.READIUM_PACKAGE: b"PK\x03\x04",
+}
+
+
+def check_acquisition_file(uploaded_file, mime: str) -> None:
+    """Refuse an empty file, and one whose first bytes contradict its declared type.
+
+    Either would be stored, then fail extraction and LCP encryption and break every download (#112): an aborted
+    upload or a proxy that drops the body arrives as a 0-byte file with a perfectly good content type.
+    """
+    size = getattr(uploaded_file, "size", None)
+    head = uploaded_file.read(8)
+    uploaded_file.seek(0)
+    if size == 0 or not head:
+        raise InvalidAcquisitionFile(_("The file is empty."), HTTPStatus.BAD_REQUEST)
+    magic = ACQUISITION_MAGIC.get(mime)
+    if magic and not head.startswith(magic):
+        raise InvalidAcquisitionFile(
+            _("The file does not look like %(type)s.") % {"type": mime}, HTTPStatus.UNSUPPORTED_MEDIA_TYPE
+        )
 
 
 def attach_acquisition(entry: Entry, uploaded_file, *, mime: str, relation: str = None) -> Acquisition:
@@ -198,11 +243,14 @@ def attach_acquisition(entry: Entry, uploaded_file, *, mime: str, relation: str 
     Shared by `POST /api/v1/catalogs/{c}/entries/{e}` and the MCP upload link so
     both paths trigger the same side effects: saving the content fires
     `touch_entry` → `Entry.post_save`, which queues Readium LCP encryption when
-    the entry has `readium_enabled`, and a PDF is handed to the text service.
-    """
-    import logging
+    the entry has `readium_enabled`, and a PDF is queued for extraction (IP-018).
+    The search-service indexing (`process_pdf`) is gone (IP-021): search runs in PostgreSQL.
 
-    from apps.dataverse.services.text_publish import TextServiceClient
+    Raises `InvalidAcquisitionFile` before anything is stored when the file is empty or not of its type.
+    """
+    from apps.extraction import services as extraction
+
+    check_acquisition_file(uploaded_file, mime)
 
     acquisition = Acquisition(
         entry=entry,
@@ -214,13 +262,10 @@ def attach_acquisition(entry: Entry, uploaded_file, *, mime: str, relation: str 
     acquisition.content.save(f"{uuid.uuid4()}{mimetypes.guess_extension(mime)}", uploaded_file)
 
     if acquisition.mime == Acquisition.AcquisitionMIME.PDF:
-        try:
-            TextServiceClient().process_acquisition(acquisition.content.name, str(entry.pk))
-        except Exception:
-            # Text extraction is best-effort; it must never fail the upload.
-            logging.getLogger("apps.api.services.entry").exception(
-                "Failed to enqueue text processing task for acquisition_id=%s", acquisition.pk
-            )
+        # IP-018: figures, tables, equations and the paragraph index.
+        extraction.queue(acquisition)
+        # The outline (chapters) and page count shown in the entry detail.
+        transaction.on_commit(lambda: store_table_of_contents.delay(str(entry.pk)))
 
     return acquisition
 
@@ -292,6 +337,11 @@ class EntryService:
                     f"{uuid.uuid4()}{mimetypes.guess_extension(acquisition.mime)}",
                     record["content"],
                 )
+                from apps.extraction import services as extraction
+
+                extraction.queue(acquisition)
+                if acquisition.mime == Acquisition.AcquisitionMIME.PDF:
+                    transaction.on_commit(lambda entry_id=str(entry.pk): store_table_of_contents.delay(entry_id))
 
             for price in record.get("prices", []):
                 Price.objects.create(

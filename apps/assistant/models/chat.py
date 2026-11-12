@@ -60,6 +60,11 @@ class Chat(BaseModel):
     message_count = models.IntegerField(default=0)
     last_message_at = models.DateTimeField(null=True, blank=True)
 
+    #: Where the history replayed to the model starts (IP-015 D3, #138). Null: from the first message. Moved
+    #: forward, to a user message, only when a turn starts on a cold conversation, and kept for the warm turns
+    #: after it, so every request of a warm conversation extends the previous one instead of re-cutting it.
+    history_start = models.DateTimeField(null=True, blank=True)
+
     @property
     def acquisition_id(self):
         """The acquisition (file) the chat is about, so clients can reopen it in the viewer."""

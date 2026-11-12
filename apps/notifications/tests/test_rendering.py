@@ -6,7 +6,7 @@ instead of raw ISO-8601 strings, and a "do not reply" footer.
 """
 
 from django.template import Context, Template
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from apps.notifications.services import NotificationService
 from apps.notifications.templatetags.notification_extras import isodate, isodatetime
@@ -18,6 +18,12 @@ class IsoDateFilterTests(SimpleTestCase):
         self.assertNotIn("T06:49", rendered)
         self.assertNotIn(".487565", rendered)
         self.assertIn("2026", rendered)
+
+    @override_settings(TIME_ZONE="UTC", EVILFLOWERS_DISPLAY_TIME_ZONE="Europe/Bratislava")
+    def test_rendered_in_display_time_zone_not_process_zone(self):
+        # #107: processes run in UTC; readers still get Bratislava time (CEST in September, CET in November).
+        self.assertEqual(isodatetime("2026-09-10T06:49:49+00:00"), "10.09.2026 08:49")
+        self.assertEqual(isodatetime("2026-11-09T06:49:49+00:00"), "09.11.2026 07:49")
 
     def test_date_variant(self):
         self.assertNotIn(":", isodate("2026-09-10T06:49:49+00:00"))
@@ -39,7 +45,8 @@ class IsoDateFilterTests(SimpleTestCase):
     EVILFLOWERS_CONTACT_EMAIL="elvira@stuba.sk",
     EVILFLOWERS_PORTAL_URL="https://elvira.stuba.sk/",
 )
-class RenderContextTests(SimpleTestCase):
+class RenderContextTests(TestCase):
+    # IP-025: rendering reads the NotificationBranding row, hence TestCase.
     def test_deployment_values_are_injected_and_event_context_wins(self):
         ctx = NotificationService.render_context({"user_name": "Alena", "portal_url": "override"})
         self.assertEqual(ctx["library_name"], "Digitálna knižnica Elvíra / Digital Library Elvira")

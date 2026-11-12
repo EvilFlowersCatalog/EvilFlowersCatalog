@@ -1,7 +1,15 @@
+import logging.config
 import os
 
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import (
+    beat_init,
+    setup_logging,
+    worker_init,
+    worker_process_init,
+    worker_process_shutdown,
+)
 from django.conf import settings
 
 # Set the default Django settings module for the 'celery' program.
@@ -20,14 +28,95 @@ app.autodiscover_tasks()
 
 app.conf.beat_schedule = {}
 
+
+# -- logging and telemetry (IP-019) ------------------------------------------
+
+
+@setup_logging.connect
+def _use_django_logging(**kwargs):
+    """Keep Celery from replacing the root handlers with its plain-text format.
+
+    With a receiver on this signal Celery configures no logging of its own; the
+    worker and beat log through `settings.LOGGING` (JSON lines) like gunicorn.
+    `warnings` go through logging too, as Django's own logging setup does.
+    """
+    logging.config.dictConfig(settings.LOGGING)
+    logging.captureWarnings(True)
+
+
+def _is_prefork(worker) -> bool:
+    pool = getattr(worker, "pool_cls", None)
+    return "prefork" in f"{getattr(pool, '__module__', '')}.{getattr(pool, '__name__', pool)}"
+
+
+@worker_init.connect
+def _discover_collector(sender=None, **kwargs):
+    """Main worker process: look for the collector once, before the pool forks.
+
+    The children inherit the discovered endpoint (or the verdict that there is
+    none) through the environment, so they neither probe nor log again. With a
+    non-forking pool the tasks run here, so this process is the one to set up.
+    """
+    from evil_flowers_catalog import profiling, telemetry
+
+    telemetry.discover_endpoint()
+    if sender is not None and not _is_prefork(sender):
+        profiling.setup("celery-worker")
+        telemetry.setup("celery-worker")
+
+
+@worker_process_init.connect
+def _setup_telemetry_in_child(**kwargs):
+    # Profiling first: telemetry links spans to profiles only when it runs (#111).
+    from evil_flowers_catalog import profiling, telemetry
+
+    profiling.setup("celery-worker")
+    telemetry.setup("celery-worker")
+
+
+@worker_process_shutdown.connect
+def _flush_telemetry_in_child(**kwargs):
+    # Prefork children leave through `os._exit()`, which skips `atexit`.
+    from evil_flowers_catalog import profiling, telemetry
+
+    telemetry.shutdown()
+    profiling.shutdown()
+
+
+@beat_init.connect
+def _setup_telemetry_in_beat(**kwargs):
+    # Beat turns SIGTERM into SystemExit itself, so `atexit` flushes on exit.
+    from evil_flowers_catalog import profiling, telemetry
+
+    profiling.setup("celery-beat")
+    telemetry.setup("celery-beat")
+
+
+def _cron(expression: str) -> crontab:
+    minute, hour, day_of_month, month_of_year, day_of_week = expression.split()
+    return crontab(
+        minute=minute, hour=hour, day_of_month=day_of_month, month_of_year=month_of_year, day_of_week=day_of_week
+    )
+
+
 if settings.EVILFLOWERS_BACKUP_DESTINATION and settings.EVILFLOWERS_BACKUP_SCHEDULE:
-    minute, hour, day_of_month, month_of_year, day_of_week = settings.EVILFLOWERS_BACKUP_SCHEDULE.strip().split(" ")
     app.conf.beat_schedule["backup"] = {
         "task": "apps.tasks.tasks.backup",
-        "schedule": crontab(
-            minute=minute, hour=hour, day_of_month=day_of_month, month_of_year=month_of_year, day_of_week=day_of_week
-        ),
+        "schedule": _cron(settings.EVILFLOWERS_BACKUP_SCHEDULE),
     }
+
+# #30: delete storage directories no row owns, older than EVILFLOWERS_ORPHAN_CLEANUP_MIN_AGE_HOURS.
+if settings.EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE:
+    app.conf.beat_schedule["files-cleanup-orphans"] = {
+        "task": "apps.tasks.tasks.cleanup_orphans",
+        "schedule": _cron(settings.EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE),
+    }
+
+# #70: delete personalised copies no reader has used for EVILFLOWERS_PERSONALISED_COPY_IDLE_HOURS.
+app.conf.beat_schedule["files-cleanup-personalised-copies"] = {
+    "task": "apps.tasks.tasks.cleanup_personalised_copies",
+    "schedule": crontab(minute=17),
+}
 
 # IP-003: reservation queue + lifecycle notifications.
 app.conf.beat_schedule["readium-sweep-unclaimed-reservations"] = {
@@ -50,6 +139,18 @@ app.conf.beat_schedule["readium-reservation-claim-reminder"] = {
     "task": "apps.readium.tasks.reservation_claim_reminder_sweep",
     "schedule": crontab(minute="*/15"),
 }
+# IP-025: import LDAP e-mails of users who have not logged in since the mapping changed.
+if settings.EVILFLOWERS_LDAP_SYNC_SCHEDULE:
+    app.conf.beat_schedule["core-sync-ldap-profiles"] = {
+        "task": "apps.tasks.tasks.sync_ldap_profiles",
+        "schedule": _cron(settings.EVILFLOWERS_LDAP_SYNC_SCHEDULE),
+    }
+# IP-018: fail extraction runs no service has reported to for EVILFLOWERS_EXTRACTION_STALE_HOURS.
+if settings.EVILFLOWERS_EXTRACTION_ENABLED and settings.EVILFLOWERS_EXTRACTION_STALE_HOURS:
+    app.conf.beat_schedule["extraction-fail-stale-runs"] = {
+        "task": "apps.tasks.tasks.fail_stale_extraction_runs",
+        "schedule": crontab(minute=41),
+    }
 # IP-016: drop personal activity history older than the retention window.
 app.conf.beat_schedule["core-prune-user-activity"] = {
     "task": "apps.tasks.tasks.prune_user_activity",

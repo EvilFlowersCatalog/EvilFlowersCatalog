@@ -14,10 +14,11 @@ import datetime
 import json
 import os
 import tomllib
-import warnings
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
+from corsheaders.defaults import default_headers as cors_default_headers
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
@@ -79,20 +80,28 @@ INSTALLED_APPS = [
     "apps.dataverse",
     "apps.mcp",
     "apps.assistant",
+    "apps.extraction",
 ]
 
 MIDDLEWARE = [
+    # Outermost: sees the response last, after every middleware below is done with the database (#133).
+    "apps.api.middleware.db_release.ReleaseConnectionBeforeStreamingMiddleware",
+    # Must run first: fixes the request scheme before anything builds URLs.
+    "apps.api.middleware.public_scheme.PublicSchemeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # GZip compresses the highly-repetitive OPDS Atom XML and entry JSON
     # payloads (which now carry ~15 LCP fields per entry). Placed high so it
     # wraps the response body produced by the middleware below it.
-    "django.middleware.gzip.GZipMiddleware",
+    "apps.api.middleware.gzip.GZipMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     # Honours If-Modified-Since / If-None-Match against Last-Modified / ETag so
     # clients that re-poll feeds get a cheap 304 instead of a full re-render.
     "django.middleware.http.ConditionalGetMiddleware",
+    # Default Cache-Control / Vary for responses that set none (IP-027). Below
+    # ConditionalGet so a 304 carries the same headers as the 200 it replaces.
+    "apps.api.middleware.cache_control.CacheControlMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "apps.api.middleware.exceptions.ExceptionMiddleware",
@@ -119,8 +128,15 @@ TEMPLATES = [
 WSGI_APPLICATION = "evil_flowers_catalog.wsgi.application"
 
 
+def _bool_env(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 # Database
-# https://docs.djangoproject.com/en/3.1/ref/settings/#databases
+# https://docs.djangoproject.com/en/stable/ref/settings/#databases
 
 DATABASES = {
     "default": {
@@ -130,8 +146,39 @@ DATABASES = {
         "NAME": os.getenv("PGDATABASE"),
         "USER": os.getenv("PGUSER"),
         "PASSWORD": os.getenv("PGPASSWORD", None),
+        # Behind PgBouncer in transaction mode (#103) a named server-side cursor
+        # (`QuerySet.iterator()`) can land on another server connection on its next
+        # fetch. Session mode and direct connections keep streaming cursors.
+        "DISABLE_SERVER_SIDE_CURSORS": _bool_env("PGBOUNCER_TRANSACTION_POOLING", default=False),
+        # With the pool: test a pooled connection before handing it out (one extra round trip), so a
+        # PgBouncer restart costs no failed request.
+        "CONN_HEALTH_CHECKS": _bool_env("PGPOOL_HEALTH_CHECKS", default=False),
+        "OPTIONS": {},
     }
 }
+
+# #133: a connection pool per web worker process (psycopg_pool), shared by its greenlets. Without it
+# every request connected to PgBouncer and closed again, a quarter of gunicorn's CPU.
+# Opt-in (`EVILFLOWERS_DB_POOL=1`) and for gunicorn only (`conf/gunicorn.conf.py` sets
+# EVILFLOWERS_WEB_PROCESS): under Celery prefork the Django fixup closes the pool before and after every
+# task, so there it would only cost extra connections. Not `CONN_MAX_AGE`: under gevent Django keeps a
+# connection per greenlet, not per worker.
+# Prepared statements stay off (Django's default `prepare_threshold=None`), as PgBouncer's transaction
+# mode needs. Client connections to PgBouncer: gunicorn workers x PGPOOL_MAX per pod. In PgBouncer's
+# session mode each of them also pins a server connection: size PGPOOL_MAX under the database's
+# `max_db_connections`, or run the database in transaction mode.
+if (
+    _bool_env("EVILFLOWERS_DB_POOL", default=False)
+    and _bool_env("EVILFLOWERS_WEB_PROCESS", default=False)
+    and int(os.getenv("PGPOOL_MAX", 10)) > 0
+):
+    DATABASES["default"]["OPTIONS"]["pool"] = {
+        "min_size": int(os.getenv("PGPOOL_MIN", 2)),
+        "max_size": int(os.getenv("PGPOOL_MAX", 10)),
+        # Seconds a request waits for a free connection before failing (`PoolTimeout`).
+        "timeout": float(os.getenv("PGPOOL_TIMEOUT", 5)),
+        "max_idle": float(os.getenv("PGPOOL_MAX_IDLE", 300)),
+    }
 
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 
@@ -187,7 +234,17 @@ SECURED_VIEW_JWT_REFRESH_TOKEN_EXPIRATION = timedelta(
 
 LANGUAGE_CODE = "en"
 
+# Every process runs in UTC (#107). Django exports TIME_ZONE to the process
+# (os.environ["TZ"] + time.tzset()), and Celery stamps each worker event with
+# that process's utcoffset. A catalog worker in Europe/Bratislava sent
+# utcoffset=-1, Flower (UTC) shifted every heartbeat an hour into the future
+# and kept dead workers "Online". Do not override TIME_ZONE per environment;
+# convert to EVILFLOWERS_DISPLAY_TIME_ZONE where a person reads a local time.
 TIME_ZONE = "UTC"
+
+# Time zone in which readers see dates and times (notification e-mails) and
+# in which the assistant's quota day starts.
+EVILFLOWERS_DISPLAY_TIME_ZONE = os.getenv("EVILFLOWERS_DISPLAY_TIME_ZONE", "Europe/Bratislava")
 
 DATETIME_INPUT_FORMATS = ("%Y-%m-%dT%H:%M:%S%z",)
 
@@ -209,33 +266,6 @@ MEDIA_ROOT = os.getenv("MEDIA_ROOT", os.path.join(BASE_DIR, "media"))
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 100  # 100MB
 
-# Sentry
-if os.getenv("SENTRY_DSN", False):
-
-    def before_send(event, hint):
-        if "exc_info" in hint:
-            exc_type, exc_value, tb = hint["exc_info"]
-            if exc_type.__name__ in ["ValidationException", "DisallowedHost"]:
-                return None
-        if "extra" in event and not event["extra"].get("to_sentry", True):
-            return None
-
-        return event
-
-    try:
-        import sentry_sdk
-        from sentry_sdk.integrations.django import DjangoIntegration
-
-        sentry_sdk.init(
-            integrations=[DjangoIntegration()],
-            attach_stacktrace=True,
-            send_default_pii=True,
-            before_send=before_send,
-            release=VERSION,
-        )
-    except ImportError:
-        warnings.warn("sentry_sdk module is not installed")
-
 # Redis
 REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
@@ -249,6 +279,21 @@ CACHES = {
     }
 }
 
+# Rate limits (#21, IP-026): requests per client per window, counted in the cache above. Off by default: an
+# anonymous budget is per IP, and a campus NAT puts many readers behind one address, so set it per deployment.
+EVILFLOWERS_RATE_LIMIT_ENABLED = os.getenv("EVILFLOWERS_RATE_LIMIT_ENABLED", "0").lower() in ("1", "true")
+EVILFLOWERS_RATE_LIMIT_WINDOW = int(os.getenv("EVILFLOWERS_RATE_LIMIT_WINDOW", 3600))
+EVILFLOWERS_RATE_LIMIT_ANONYMOUS = int(os.getenv("EVILFLOWERS_RATE_LIMIT_ANONYMOUS", 3000))
+EVILFLOWERS_RATE_LIMIT_AUTHENTICATED = int(os.getenv("EVILFLOWERS_RATE_LIMIT_AUTHENTICATED", 5000))
+# `user`: one budget per account; `api_key`: one per API key (an account's web session shares the `user` budget).
+EVILFLOWERS_RATE_LIMIT_KEY = os.getenv("EVILFLOWERS_RATE_LIMIT_KEY", "user")
+EVILFLOWERS_RATE_LIMIT_EXEMPT_SUPERUSERS = os.getenv("EVILFLOWERS_RATE_LIMIT_EXEMPT_SUPERUSERS", "1").lower() in (
+    "1",
+    "true",
+)
+# Proxies in front of the catalog that append to X-Forwarded-For (k8s: the ingress, 1). 0 = the socket address.
+EVILFLOWERS_RATE_LIMIT_PROXY_COUNT = int(os.getenv("EVILFLOWERS_RATE_LIMIT_PROXY_COUNT", 1))
+
 # Pagination
 EVILFLOWERS_PAGINATION_DEFAULT_LIMIT = int(os.getenv("EVILFLOWERS_PAGINATION_DEFAULT_LIMIT", 10))
 
@@ -261,11 +306,24 @@ EVILFLOWERS_IMAGE_MIME = (
 )
 EVILFLOWERS_IMAGE_THUMBNAIL = (768, 480)
 
-EVILFLOWERS_FEEDS_NEW_LIMIT = os.getenv("EVILFLOWERS_FEEDS_NEW_LIMIT", 20)
+EVILFLOWERS_FEEDS_NEW_LIMIT = int(os.getenv("EVILFLOWERS_FEEDS_NEW_LIMIT", 20))
+
+# OPDS 1.2 acquisition feeds (feeds, shelf) are paged with RFC 5005 next/previous links.
+# A feed's own `Feed.per_page` overrides the default.
+EVILFLOWERS_OPDS_PAGE_SIZE = int(os.getenv("EVILFLOWERS_OPDS_PAGE_SIZE", 50))
+# OPDS 1.2 §2.5: the Complete Acquisition Feed "should not be paginated unless extremely large".
+# Below this many entries it is served whole with `fh:complete`; above it, it is paged at this size.
+EVILFLOWERS_OPDS_COMPLETE_FEED_MAX_ENTRIES = int(os.getenv("EVILFLOWERS_OPDS_COMPLETE_FEED_MAX_ENTRIES", 2000))
 
 # Language of localized texts (feed titles, category labels) used when a client sends a plain string
 # and as the fallback when a requested translation is missing
 EVILFLOWERS_DEFAULT_LANGUAGE = os.getenv("EVILFLOWERS_DEFAULT_LANGUAGE", "sk")
+
+# Full-text search (IP-020). When no entry contains every word of a query, entries whose title or
+# author name has at least this trigram word similarity to the query are returned (typos).
+EVILFLOWERS_SEARCH_TRIGRAM_THRESHOLD = float(os.getenv("EVILFLOWERS_SEARCH_TRIGRAM_THRESHOLD", 0.45))
+# Minimum trigram similarity of a title word / author name offered as `did_you_mean`.
+EVILFLOWERS_SEARCH_SUGGEST_THRESHOLD = float(os.getenv("EVILFLOWERS_SEARCH_SUGGEST_THRESHOLD", 0.3))
 
 EVILFLOWERS_IDENTIFIERS = ["isbn", "google", "doi", "dataverse_pid", "dataverse_dataset_id"]
 
@@ -288,12 +346,24 @@ EVILFLOWERS_STORAGE_S3_SECRET_KEY = os.getenv("EVILFLOWERS_STORAGE_S3_SECRET_KEY
 EVILFLOWERS_STORAGE_S3_SECURE = bool(int(os.getenv("EVILFLOWERS_STORAGE_S3_SECURE", 0)))
 EVILFLOWERS_STORAGE_S3_BUCKET = os.getenv("EVILFLOWERS_STORAGE_S3_BUCKET")
 
-# Cache-Control for file-serving endpoints (issue #29).
-# - PUBLIC: cover images / thumbnails. Safe to cache on shared caches and CDNs.
+# Default Cache-Control for responses whose view sets none (IP-027,
+# `apps.api.middleware.cache_control`). Unsafe methods and errors always get
+# `no-store`. `no-cache` keeps every reuse behind a revalidation; the ETag from
+# ConditionalGetMiddleware makes that a cheap 304.
+EVILFLOWERS_CACHE_CONTROL_DEFAULT = os.getenv("EVILFLOWERS_CACHE_CONTROL_DEFAULT", "private, no-cache")
+
+# Cache-Control for file-serving endpoints (issue #29, IP-027).
+# - PUBLIC: cover images / thumbnails. Shared caches may store them, but must
+#   revalidate: the ETag (entry id, file name, `touched_at`) answers a 304
+#   without touching storage, and a replaced cover shows up at once.
 # - PRIVATE: acquisition and user-acquisition downloads. Per-user, may carry
 #   watermarks or personalised modifications; never shared.
 # Override via env to integrate with nginx / CDN policy.
-EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC = os.getenv("EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC", "public, max-age=86400")
+EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC = os.getenv("EVILFLOWERS_FILES_CACHE_CONTROL_PUBLIC", "public, no-cache")
+# A cover or thumbnail requested by its current content hash (`?v=`, #128) never changes under that URL.
+EVILFLOWERS_FILES_CACHE_CONTROL_IMMUTABLE = os.getenv(
+    "EVILFLOWERS_FILES_CACHE_CONTROL_IMMUTABLE", "public, max-age=31536000, immutable"
+)
 EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE = os.getenv(
     "EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE", "private, max-age=0, must-revalidate"
 )
@@ -323,17 +393,15 @@ EVILFLOWERS_MCP_REQUIRE_AUTHENTICATION = bool(int(os.getenv("EVILFLOWERS_MCP_REQ
 # Authentication schemes this endpoint accepts, narrowed from
 # SECURED_VIEW_AUTHENTICATION_SCHEMAS.
 #
-# Both are on by default. Bearer (an API key JWT) is the scheme to prefer: it is
-# revocable on its own and carries no password. Basic is offered because many
-# MCP clients only know how to attach a username and a password, and because a
-# librarian curating the catalog through an agent should not have to mint an API
-# key first. It costs something real, though — with an LDAP-backed user, Basic
-# puts the directory password in an agent's config file, and it cannot be
-# revoked without changing that password. Deployments that care should set
-# `EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=Bearer`.
+# Bearer only by default (issue #100). Bearer (an API key JWT) is revocable on
+# its own and carries no password. Basic puts the user's password in an agent's
+# config file; with an LDAP-backed user that is the directory password, which
+# cannot be revoked without changing it. Deployments whose agents can only
+# attach a username and a password opt in with
+# `EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=Bearer,Basic`.
 EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS = [
     scheme.strip()
-    for scheme in os.getenv("EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS", "Bearer,Basic").split(",")
+    for scheme in os.getenv("EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS", "Bearer").split(",")
     if scheme.strip()
 ]
 # Ceiling on a single JSON-RPC request body.
@@ -343,10 +411,8 @@ EVILFLOWERS_MCP_MAX_REQUEST_BYTES = int(os.getenv("EVILFLOWERS_MCP_MAX_REQUEST_B
 # this large or big PDFs fail there with a 413 before Django sees them.
 EVILFLOWERS_MCP_UPLOAD_TTL = int(os.getenv("EVILFLOWERS_MCP_UPLOAD_TTL", 15 * 60))
 EVILFLOWERS_MCP_UPLOAD_MAX_BYTES = int(os.getenv("EVILFLOWERS_MCP_UPLOAD_MAX_BYTES", 200 * 1024 * 1024))
-# Comma-separated browser origins allowed to reach the MCP endpoint (DNS-rebinding
-# guard). Unset disables the check — non-browser MCP clients send no `Origin`.
-_mcp_origins = os.getenv("EVILFLOWERS_MCP_ALLOWED_ORIGINS")
-EVILFLOWERS_MCP_ALLOWED_ORIGINS = [o.strip() for o in _mcp_origins.split(",") if o.strip()] if _mcp_origins else None
+# EVILFLOWERS_MCP_ALLOWED_ORIGINS is set near the end of this file: its default
+# is derived from EVILFLOWERS_BASE_URL.
 
 # Assistant (IP-015)
 # Opt-out like the MCP server: disabled means the route is never mounted.
@@ -359,14 +425,40 @@ EVILFLOWERS_ASSISTANT_OLLAMA_ENDPOINT = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_
 EVILFLOWERS_ASSISTANT_OLLAMA_MODEL = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_MODEL")
 EVILFLOWERS_ASSISTANT_OLLAMA_API_KEY = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_API_KEY")
 EVILFLOWERS_ASSISTANT_OLLAMA_TIMEOUT = int(os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_TIMEOUT", 300))
+# Seconds to open the connection; the timeout above is per socket read, so on CPU inference
+# it must cover the prompt evaluation before the first token (#104).
+EVILFLOWERS_ASSISTANT_OLLAMA_CONNECT_TIMEOUT = float(os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_CONNECT_TIMEOUT", 10))
+# Host header for reaching the k8s Ollama through the internal Gateway from Compose
+# (http://192.168.122.227:8081 + Host: llm.elvira.internal), like EVILFLOWERS_EMBEDDING_HOST.
+EVILFLOWERS_ASSISTANT_OLLAMA_HOST = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_HOST", "")
+# Reasoning models (Qwen3.x) think before answering unless told not to; on CPU that is minutes
+# of hidden tokens per round. 0 sends `"think": false`, 1 `"think": true`, empty sends nothing.
+EVILFLOWERS_ASSISTANT_OLLAMA_THINK = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_THINK", "0")
+# options.num_ctx per request. Equal to the server's OLLAMA_CONTEXT_LENGTH (and the
+# elvira-assistant Modelfile), so Ollama never reloads the model for another size. 0 = not sent.
+EVILFLOWERS_ASSISTANT_OLLAMA_NUM_CTX = int(os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_NUM_CTX", 32768))
+# keep_alive per request: -1 keeps the model loaded. Empty = not sent (server default).
+EVILFLOWERS_ASSISTANT_OLLAMA_KEEP_ALIVE = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_KEEP_ALIVE", "-1")
+# Sampling temperature for chat and the JSON-only callers. Empty = the model's default.
+EVILFLOWERS_ASSISTANT_OLLAMA_TEMPERATURE = os.getenv("EVILFLOWERS_ASSISTANT_OLLAMA_TEMPERATURE", "")
 
 # Distinct pages of the reader's copy one request (chat turn, explanation) may
 # read (IP-018 Q5). Tool calls are not limited; reading is.
 EVILFLOWERS_ASSISTANT_MAX_PAGES_READ = int(os.getenv("EVILFLOWERS_ASSISTANT_MAX_PAGES_READ", 20))
 
+# Semantic highlight finding (IP-018 Phase 6b): paragraphs whose cosine
+# similarity to the request is at least this are shown to the model, at most
+# this many (before expansion over links). The score decides what the model
+# sees, never what is highlighted.
+EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE = float(os.getenv("EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE", 0.3))
+EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES = int(os.getenv("EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES", 40))
+
 # Daily per-user quota. Overridable per user via `AssistantUserPolicy`.
+# Tokens are booked per model round (prompt + output), and a turn takes 2-4 rounds of a
+# ~1.5-2.5K-token prompt, so 50K ran out after ~8 questions (IP-022 Q1). Self-hosted, the
+# scarce resource is CPU time; the message limit is the real brake.
 EVILFLOWERS_ASSISTANT_DAILY_LIMIT_MESSAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_DAILY_LIMIT_MESSAGES", 100))
-EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS = int(os.getenv("EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS", 50000))
+EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS = int(os.getenv("EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS", 200000))
 
 # Context policy (IP-015 D3). While a conversation is warm the full history is
 # replayed unchanged so the prompt prefix stays byte-identical and Ollama can
@@ -375,6 +467,27 @@ EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS = int(os.getenv("EVILFLOWERS_ASSISTANT_
 # stable prefix.
 EVILFLOWERS_ASSISTANT_CACHE_TTL = int(os.getenv("EVILFLOWERS_ASSISTANT_CACHE_TTL", 3600))
 EVILFLOWERS_ASSISTANT_TRIM_MESSAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_TRIM_MESSAGES", 20))
+# Directory of prompt templates that replace the bundled ones in apps/assistant/prompts (#116), file by file.
+# Read at startup; every change alters the cached prompt prefix, so run `assistant_eval` before and after.
+EVILFLOWERS_ASSISTANT_PROMPTS_DIR = os.getenv("EVILFLOWERS_ASSISTANT_PROMPTS_DIR", "")
+
+# Extraction (IP-018). The catalog only queues PDFs for the `evilflowers-*-service`
+# containers and stores what they report; off until those services run next to it.
+EVILFLOWERS_EXTRACTION_ENABLED = bool(int(os.getenv("EVILFLOWERS_EXTRACTION_ENABLED", "0")))
+# Bumped whenever the pinned service images change their output, so
+# `backfill_extraction --outdated` re-extracts. 2: paragraphs embedded with
+# multilingual-e5-large-instruct through tei-embed (IP-021).
+EVILFLOWERS_EXTRACTION_PIPELINE_VERSION = int(os.getenv("EVILFLOWERS_EXTRACTION_PIPELINE_VERSION", 2))
+# Queue of the entry service (analyzer).
+EVILFLOWERS_EXTRACTION_QUEUE = os.getenv("EVILFLOWERS_EXTRACTION_QUEUE", "evilflowers_analyzer")
+# text-service embeds highlight requests on this queue with the model of the
+# run being searched (Phase 6b). A separate worker, so a request never waits
+# behind a book being extracted.
+EVILFLOWERS_EXTRACTION_EMBED_QUEUE = os.getenv("EVILFLOWERS_EXTRACTION_EMBED_QUEUE", "evilflowers_text_embed")
+EVILFLOWERS_EXTRACTION_EMBED_TIMEOUT = int(os.getenv("EVILFLOWERS_EXTRACTION_EMBED_TIMEOUT", 30))
+# A `running` run no service has reported to for this many hours is failed, so a backfill retries it
+# (a lost task never reports). Counted from the last report, not the start; 0 turns the sweep off.
+EVILFLOWERS_EXTRACTION_STALE_HOURS = float(os.getenv("EVILFLOWERS_EXTRACTION_STALE_HOURS", 24))
 
 # Events
 EVILFLOWERS_EVENT_BROKER_EXECUTOR = os.getenv("EVILFLOWERS_EVENT_BROKER_EXECUTOR")
@@ -390,6 +503,16 @@ EVILFLOWERS_READIUM_LSDSV_URL = os.getenv("EVILFLOWERS_READIUM_LSDSV_URL", "http
 # encryption stays PENDING. Credentials in the URL are sent as Basic auth and
 # the webhook requires them when present.
 EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL = os.getenv("EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL")
+# Where the lcpencrypt worker reports the outcome of every task, success or
+# failure (`report` kwarg), i.e.
+# `http://user:pass@<catalog-host>/readium/v1/hooks/encryption/result`. Without
+# it a job that fails in the worker stays PENDING forever. The worker sends
+# nothing when unset; lcpencrypt itself never sees this URL. Credentials work as
+# for the notify URL (issue #99).
+EVILFLOWERS_READIUM_LCPENCRYPT_REPORT_URL = os.getenv("EVILFLOWERS_READIUM_LCPENCRYPT_REPORT_URL")
+# A PENDING job dispatched longer ago than this, without a result report, is
+# flagged `stale` by `list_encryption_jobs`: almost certainly lost.
+EVILFLOWERS_READIUM_ENCRYPTION_STALE_MINUTES = int(os.getenv("EVILFLOWERS_READIUM_ENCRYPTION_STALE_MINUTES", 15))
 EVILFLOWERS_READIUM_BASE_URL = os.getenv(
     "EVILFLOWERS_READIUM_BASE_URL",
     f"http://{os.getenv('DJANGO_RUNSERVER_IP', '127.0.0.1')}:{os.getenv('DJANGO_RUNSERVER_PORT', '8000')}",
@@ -405,12 +528,11 @@ EVILFLOWERS_READIUM_COPY_LIMIT_CHARS = int(os.getenv("EVILFLOWERS_READIUM_COPY_L
 
 # IP-003: renewal policy
 EVILFLOWERS_READIUM_MAX_RENEW_DAYS = int(os.getenv("EVILFLOWERS_READIUM_MAX_RENEW_DAYS", 14))
-# Freshly-acquired titles cannot be renewed immediately. This MUST stay below
-# EVILFLOWERS_READIUM_DEFAULT_BORROW_DURATION_DAYS: an embargo that outlives the
-# loan makes renewal unreachable, because the loan hits the terminal `expired`
-# state (which `evaluate_renew` refuses) before the embargo ever lifts. The old
-# default of 30 against a 14-day loan did exactly that. `readium.E001` enforces
-# the invariant at startup.
+# Freshly-acquired titles cannot be renewed immediately. Upper bound: the
+# embargo is capped at half of each loan and counted from `starts_at`
+# (`renew_policy.renewable_from`), so a 1-week loan is renewable after 3.5 days
+# (#110). It only guards the first renewal. Keep it below
+# EVILFLOWERS_READIUM_DEFAULT_BORROW_DURATION_DAYS — `readium.E001` enforces that.
 EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS = int(os.getenv("EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS", 7))
 
 # IP-003: oversharing detection
@@ -469,18 +591,30 @@ EVILFLOWERS_CAPABILITY_TOKEN_LCPL_FEED_TTL_SECONDS = int(
 EVILFLOWERS_OPDS2_PAGE_SIZE = int(os.getenv("EVILFLOWERS_OPDS2_PAGE_SIZE", 50))
 EVILFLOWERS_OPDS2_MAX_PAGE_SIZE = int(os.getenv("EVILFLOWERS_OPDS2_MAX_PAGE_SIZE", 100))
 
-# Search service (IP-008 Phase 6 F1). Consumed by
-# `apps/api/services/search_service_client.py::SearchServiceClient`
-# and the OPDS 2.0 search view when `?mode=keyword|semantic` is set.
-SEARCH_SERVICE_URL = os.getenv("SEARCH_SERVICE_URL", "")
-SEARCH_SERVICE_TIMEOUT_SECONDS = int(os.getenv("SEARCH_SERVICE_TIMEOUT_SECONDS", 10))
-
-
-def _bool_env(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+# Embeddings (IP-021): the shared Text Embeddings Inference server (`tei-embed`,
+# intfloat/multilingual-e5-large-instruct, 1024 dims). Empty URL: no vectors, search stays lexical.
+# k8s: http://tei-embed.shared.svc.cluster.local; VPN: http://tei-embed.shared.stu.k8s.internal.
+# Key: 1Password ELVIRA/stu.inference.tei/api_key.
+EVILFLOWERS_EMBEDDING_URL = os.getenv("EVILFLOWERS_EMBEDDING_URL", "")
+EVILFLOWERS_EMBEDDING_API_KEY = os.getenv("EVILFLOWERS_EMBEDDING_API_KEY", "")
+# Host header for the Compose path through the internal gateway (`embed.elvira.internal`); empty in k8s.
+EVILFLOWERS_EMBEDDING_HOST = os.getenv("EVILFLOWERS_EMBEDDING_HOST", "")
+# `model@revision` stored with every vector; empty = read from TEI's /info.
+EVILFLOWERS_EMBEDDING_MODEL = os.getenv("EVILFLOWERS_EMBEDDING_MODEL", "")
+# Seconds a catalog search (`GET /api/v1/entries?query=`, OPDS search) waits for TEI to embed the query
+# (#134). Later the search runs on the words only (`metadata.search.degraded`). Type-ahead never waits:
+# it uses a query vector only when one is already cached.
+EVILFLOWERS_EMBEDDING_QUERY_TIMEOUT = float(os.getenv("EVILFLOWERS_EMBEDDING_QUERY_TIMEOUT", 0.3))
+# Hybrid search (IP-021): entries whose cosine similarity to the query is at least this, at most
+# this many, are fused with the lexical results by Reciprocal Rank Fusion (k).
+EVILFLOWERS_SEARCH_VECTOR_MIN_SCORE = float(os.getenv("EVILFLOWERS_SEARCH_VECTOR_MIN_SCORE", 0.8))
+EVILFLOWERS_SEARCH_VECTOR_CANDIDATES = int(os.getenv("EVILFLOWERS_SEARCH_VECTOR_CANDIDATES", 100))
+EVILFLOWERS_SEARCH_RRF_K = int(os.getenv("EVILFLOWERS_SEARCH_RRF_K", 60))
+# Weight of the vector channel in the fusion (the words weigh 1.0).
+EVILFLOWERS_SEARCH_VECTOR_WEIGHT = float(os.getenv("EVILFLOWERS_SEARCH_VECTOR_WEIGHT", 0.5))
+# Search inside publications (`GET /api/v1/entries/passages`, #60): paragraphs at least this similar
+# to the query. Uncalibrated, starts at the entry threshold; calibrate with VECTOR_MIN_SCORE on dev.
+EVILFLOWERS_SEARCH_PASSAGE_MIN_SCORE = float(os.getenv("EVILFLOWERS_SEARCH_PASSAGE_MIN_SCORE", 0.8))
 
 
 # Dataverse integration
@@ -551,15 +685,52 @@ EVILFLOWERS_BASE_URL = os.getenv("EVILFLOWERS_BASE_URL", EVILFLOWERS_READIUM_BAS
 # Library name shown in the notification header / footer ("Digitálna knižnica
 # Elvíra / Digital Library Elvira" on STU deployments).
 EVILFLOWERS_NOTIFICATION_LIBRARY_NAME = os.getenv("EVILFLOWERS_NOTIFICATION_LIBRARY_NAME", "Evil Flowers Catalog")
+# IP-025: deployment-owned notification overrides, mounted as a volume by IaC
+# (knowledge repository, Ansible). Layout:
+#   <dir>/templates/notifications/<type>.mjml|.txt, subjects/<type>.txt, base.mjml
+#       — found before the built-in templates (prepended to TEMPLATES DIRS);
+#   <dir>/assets/<name>.png|.jpg|.gif
+#       — served publicly at /notifications/v1/assets/<name>, so mail clients
+#         can load a logo without credentials; branding refers to them by name.
+EVILFLOWERS_NOTIFICATION_OVERRIDES_DIR = os.getenv("EVILFLOWERS_NOTIFICATION_OVERRIDES_DIR", "")
+if EVILFLOWERS_NOTIFICATION_OVERRIDES_DIR:
+    TEMPLATES[0]["DIRS"].insert(0, Path(EVILFLOWERS_NOTIFICATION_OVERRIDES_DIR) / "templates")
+# IP-025: refresh LDAP profiles / notification e-mails of users who have not
+# logged in recently (cron syntax; empty disables).
+EVILFLOWERS_LDAP_SYNC_SCHEDULE = os.getenv("EVILFLOWERS_LDAP_SYNC_SCHEDULE", "15 4 * * *")
+
+# Ratings and reviews (IP-023)
+EVILFLOWERS_REVIEWS_ENABLED = _bool_env("EVILFLOWERS_REVIEWS_ENABLED", default=True)
+EVILFLOWERS_REVIEWS_BODY_MAX_CHARS = int(os.getenv("EVILFLOWERS_REVIEWS_BODY_MAX_CHARS", 5000))
+# `order_by=rating` sorts by a Bayesian average: PRIOR_WEIGHT imaginary ratings of PRIOR_MEAN are added
+# to every entry, so one 5-star rating does not outrank forty 4.8 ratings.
+EVILFLOWERS_REVIEWS_PRIOR_MEAN = float(os.getenv("EVILFLOWERS_REVIEWS_PRIOR_MEAN", 3.0))
+EVILFLOWERS_REVIEWS_PRIOR_WEIGHT = float(os.getenv("EVILFLOWERS_REVIEWS_PRIOR_WEIGHT", 5))
 
 # personal activity history retention
 EVILFLOWERS_ACTIVITY_RETENTION_DAYS = int(os.getenv("EVILFLOWERS_ACTIVITY_RETENTION_DAYS", 365))
 
 # OpenAPI
-EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium", "assistant"]
+EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium", "assistant", "extraction"]
 
 # Backups
 EVILFLOWERS_BACKUP_PGDUMP_BIN = os.getenv("EVILFLOWERS_BACKUP_PGDUMP_BIN", "pg_dump")
+# Orphan cleanup (#30): cron expression (`m h dom mon dow`) of the beat job; unset = off.
+EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE = os.getenv("EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE")
+# Orphan directories holding a file younger than this are kept.
+EVILFLOWERS_ORPHAN_CLEANUP_MIN_AGE_HOURS = float(os.getenv("EVILFLOWERS_ORPHAN_CLEANUP_MIN_AGE_HOURS", 7 * 24))
+# Personalised copies (#70): a reader's watermarked PDF is rendered once, stored under `personalised/` and
+# served in byte ranges from there. A copy no request has used for this long is deleted by the hourly
+# beat job; a reader who comes back later gets a fresh render on their next first request.
+EVILFLOWERS_PERSONALISED_COPY_IDLE_HOURS = float(os.getenv("EVILFLOWERS_PERSONALISED_COPY_IDLE_HOURS", 24))
+# Direct PostgreSQL host/port for pg_dump, bypassing PgBouncer (#103). Unset = PGHOST/PGPORT.
+EVILFLOWERS_BACKUP_PGHOST = os.getenv("EVILFLOWERS_BACKUP_PGHOST") or None
+EVILFLOWERS_BACKUP_PGPORT = os.getenv("EVILFLOWERS_BACKUP_PGPORT") or None
+# Comma-separated table patterns whose rows pg_dump leaves out (`--exclude-table-data`); their schema is
+# kept. E.g. `extraction_*` on dev: re-derivable by re-extraction, and 490 s of an 8-minute dump.
+EVILFLOWERS_BACKUP_EXCLUDE_TABLE_DATA = [
+    pattern.strip() for pattern in os.getenv("EVILFLOWERS_BACKUP_EXCLUDE_TABLE_DATA", "").split(",") if pattern.strip()
+]
 EVILFLOWERS_BACKUP_SCHEDULE = os.getenv("EVILFLOWERS_BACKUP_SCHEDULE")
 EVILFLOWERS_BACKUP_DESTINATION = os.getenv("EVILFLOWERS_BACKUP_DESTINATION")
 EVILFLOWERS_BACKUP_S3_HOST = os.environ.get("EVILFLOWERS_BACKUP_S3_HOST")
@@ -568,21 +739,21 @@ EVILFLOWERS_BACKUP_S3_SECRET_KEY = os.environ.get("EVILFLOWERS_BACKUP_S3_SECRET_
 EVILFLOWERS_BACKUP_S3_SECURE = os.environ.get("EVILFLOWERS_BACKUP_S3_SECURE", "1").lower() == "1"
 
 DJANGO_LOG_LEVEL = os.getenv("DJANGO_LOG_LEVEL", "INFO").upper()
+# `json` (default): one object per line with `level` and `trace_id`, the shape
+# Grafana Alloy parses from container output (IP-019). `text` for a terminal.
+EVILFLOWERS_LOG_FORMAT = os.getenv("EVILFLOWERS_LOG_FORMAT", "json").strip().lower()
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "default": {
-            "format": "%(asctime)s %(levelname)-5s [%(name)s] %(message)s",
-            "datefmt": "%Y-%m-%d %H:%M:%S",
-        }
+        "json": {"()": "evil_flowers_catalog.log_format.JsonFormatter"},
+        "text": {"()": "evil_flowers_catalog.log_format.TextFormatter"},
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "formatter": "default",
+            "formatter": "text" if EVILFLOWERS_LOG_FORMAT == "text" else "json",
         },
-        "syslog": {"class": "logging.handlers.SysLogHandler"},
     },
     "loggers": {
         "django": {
@@ -617,45 +788,91 @@ LOGGING = {
     },
 }
 
-CORS_ALLOW_ALL_ORIGINS = True
+
+def _origin(url: str) -> str | None:
+    """`scheme://host[:port]` of a URL, or None when it has no scheme or host."""
+    parts = urlsplit(url.strip())
+    if not parts.scheme or not parts.netloc:
+        return None
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def _origins_from_env(name: str, default: list[str]) -> list[str]:
+    """A comma-separated origin list from the environment, or `default` when unset or blank."""
+    value = os.getenv(name, "").strip()
+    if not value:
+        return default
+    return [origin.strip().rstrip("/") for origin in value.split(",") if origin.strip()]
+
+
+_portal_origin = _origin(EVILFLOWERS_PORTAL_URL)
+_instance_origin = _origin(EVILFLOWERS_BASE_URL)
+
+# CORS (issue #100). Browsers may call the API only from the listed origins,
+# by default the portal's (EVILFLOWERS_PORTAL_URL). Same-origin requests need no
+# entry. Allowing every origin is an explicit opt-in.
+CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "0").lower() in ("1", "true")
+CORS_ALLOWED_ORIGINS = _origins_from_env("CORS_ALLOWED_ORIGINS", [_portal_origin] if _portal_origin else [])
+# A browser client can read only the response headers listed here: the portal needs the rate limit (#21).
+CORS_EXPOSE_HEADERS = [
+    "X-RateLimit-Limit",
+    "X-RateLimit-Remaining",
+    "X-RateLimit-Reset",
+    "Retry-After",
+    # The request's trace id, for the portal's Faro SDK and its error screen (IP-029).
+    "Server-Timing",
+]
+# W3C trace context from a browser-instrumented portal (IP-029): without these in the preflight answer the
+# browser drops the request, so a reader's click could never be the root of the trace it causes.
+CORS_ALLOW_HEADERS = (*cors_default_headers, "traceparent", "tracestate")
+
+# Browser origins allowed to reach the MCP endpoint (DNS-rebinding guard,
+# issue #100). Comma-separated; defaults to the instance's own origin
+# (EVILFLOWERS_BASE_URL). Requests without an `Origin` header (non-browser MCP
+# clients, the common case) always pass. `*` turns the check off.
+if os.getenv("EVILFLOWERS_MCP_ALLOWED_ORIGINS", "").strip() == "*":
+    EVILFLOWERS_MCP_ALLOWED_ORIGINS = None
+else:
+    EVILFLOWERS_MCP_ALLOWED_ORIGINS = _origins_from_env(
+        "EVILFLOWERS_MCP_ALLOWED_ORIGINS", [_instance_origin] if _instance_origin else []
+    )
+
 SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "0") == "1"
 
-if os.getenv("ELASTIC_APM_SERVICE_NAME"):
-    INSTALLED_APPS.append("elasticapm.contrib.django")
-    LOGGING["handlers"]["elasticapm"] = {
-        "level": "INFO",
-        "class": "elasticapm.contrib.django.handlers.LoggingHandler",
-    }
-    LOGGING["root"]["handlers"].append("elasticapm")
-    MIDDLEWARE.append("elasticapm.contrib.django.middleware.TracingMiddleware")
-    ELASTIC_APM = {
-        "DEBUG": True,
-    }
-
-# Logfire
-# NOTE: instrument_django() is called in apps.core.apps.CoreConfig.ready() because
-# calling it here causes a circular import — django.conf.settings is not yet available
-# during settings module load, so the OTEL middleware never gets inserted.
-if os.getenv("LOGFIRE_TOKEN"):
-    try:
-        import logfire
-
-        logfire.configure(
-            service_name=os.getenv("LOGFIRE_SERVICE_NAME", "evilflowers-catalog"),
-            service_version=VERSION,
-            environment=os.getenv("LOGFIRE_ENVIRONMENT", "development"),
-        )
-        logfire.instrument_celery()
-        logfire.instrument_requests()
-        logfire.instrument_system_metrics()
-    except ImportError:
-        pass
+# OpenTelemetry is configured per process by `evil_flowers_catalog.telemetry.setup()`,
+# never here: settings are imported by the gunicorn master and the Celery main
+# process before they fork, and exporter threads do not survive a fork (IP-019).
+#
+# Who the caller is, on the request's server span (IP-029). Off: a span carries the
+# credential kind and, for an API key, the key's id (the services' identity), never
+# the reader. On: also `enduser.id`, the user's UUID, which together with the entry
+# ids on the same span is a reading log. Deciding that is IP-029 Q1.
+EVILFLOWERS_TRACE_ENDUSER = os.getenv("EVILFLOWERS_TRACE_ENDUSER", "false").strip().lower() == "true"
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATABASE}")
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+# Every consumer of a Redis db restores unacked tasks older than *its own* visibility
+# timeout, in any queue. The extraction services share this db and hold tasks for hours,
+# so the default 1 h made the catalog worker redeliver them mid-run (#120).
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "visibility_timeout": int(os.getenv("CELERY_BROKER_VISIBILITY_TIMEOUT", 12 * 60 * 60)),
+}
 CELERY_TIMEZONE = os.getenv("CELERY_TIMEZONE", TIME_ZONE)
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", 30 * 60))  # Default: 30min
+# Celery's default is os.cpu_count(), the *node's* core count, which ignores the
+# container's CPU limit (16 prefork children in a 4-CPU pod, #129). Unset or 0 keeps
+# that default; the deployment sets it to the pod's CPU limit.
+CELERY_WORKER_CONCURRENCY = int(os.getenv("CELERY_WORKER_CONCURRENCY") or 0) or None
+# Messages a worker reserves per process beyond the one it runs. Reserved messages leave
+# the Redis list, so the queue length an autoscaler reads under-counts the backlog and a
+# new pod finds nothing to take (#142). 1 = a worker holds only what it runs. Default 4.
+CELERY_WORKER_PREFETCH_MULTIPLIER = int(os.getenv("CELERY_WORKER_PREFETCH_MULTIPLIER") or 4)
+# Opt-in at-least-once delivery (#142): ack a task when it finishes, and requeue it when
+# its child process dies (OOM, kill -9). A pod killed outright gets its tasks back only
+# after the visibility timeout above. Tasks that must not run twice set acks_late=False.
+CELERY_TASK_ACKS_LATE = _bool_env("CELERY_TASK_ACKS_LATE", default=False)
+CELERY_TASK_REJECT_ON_WORKER_LOST = _bool_env("CELERY_TASK_REJECT_ON_WORKER_LOST", default=False)
 CELERY_TASK_ROUTES = {
     "evilflowers_ocr_worker.*": {"queue": "evilflowers_ocr_worker"},
     "evilflowers_lcpencrypt_worker.*": {"queue": "evilflowers_lcpencrypt_worker"},

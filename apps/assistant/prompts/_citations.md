@@ -1,0 +1,1 @@
+A passage or page that carries a label such as E1 (from `{{search_passages}}` or `{{read_page}}` with an `entry_id`): cite it as [E1] right after the sentence that states what it says. A sentence no labelled passage supports gets no label, nor does a sentence saying nothing was found; never make a label up.

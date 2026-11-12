@@ -1,16 +1,15 @@
-import shutil
-from pathlib import Path
 from uuid import UUID
 
-from django.conf import settings
 from django.core.management import BaseCommand
+from django.db import transaction
 from django.utils import timezone
 
 from apps.core.models import Catalog
+from evil_flowers_catalog.tracing import TracedCommandMixin
 
 
-class Command(BaseCommand):
-    help = "Remove catalog from database and filesystem"
+class Command(TracedCommandMixin, BaseCommand):
+    help = "Remove catalog from database and storage"
 
     def add_arguments(self, parser):
         parser.add_argument("--id", type=UUID, default=None, help="Catalog UUID")
@@ -40,20 +39,11 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR(f"Catalog {identifier} does not exists!"))
             return
 
-        # Related files
-        if settings.EVILFLOWERS_STORAGE_DRIVER == "apps.files.storage.filesystem.FileSystemStorage":
-            catalog_path = Path(f"{settings.EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR}/catalogs/{catalog.url_name}")
-            if catalog_path.exists():
-                shutil.rmtree(catalog_path)
-        else:
-            self.stderr.write(
-                self.style.WARNING(
-                    "Automatic file removal is currently supported only for FileSystemStorage. "
-                    "If you are using different storage, you have to remove orphans manually."
-                )
-            )
-
-        catalog.delete()
+        # Stored files (books, covers, extraction crops, LCP packages) are removed by
+        # the post_delete receivers in `apps.files.signals` once this commits — on
+        # every storage backend, and only if the rows are really gone.
+        with transaction.atomic():
+            catalog.delete()
 
         self.stdout.write(f"Finished: {timezone.now().isoformat()}")
         self.stdout.write(f"Duration: {timezone.now() - started_at}")

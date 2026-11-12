@@ -8,6 +8,7 @@ from pydantic_xml import BaseXmlModel, attr, element
 
 from apps.core.fields.localized import localize
 from apps.core.models import Entry, Acquisition
+from apps.opds.services.identifiers import entry_identifier_uris
 
 NSMAP = {
     "": "http://www.w3.org/2005/Atom",
@@ -15,7 +16,22 @@ NSMAP = {
     "opds": "http://opds-spec.org/2010/catalog",
     "opensearch": "http://a9.com/-/spec/opensearch/1.1/",
     "ef": "http://elvira.dital/schema/evilflowers-opds.xsd",
+    # RFC 5005 (Feed Paging and Archiving) — `fh:complete` marks an unpaged
+    # Complete Acquisition Feed (OPDS 1.2 §2.5).
+    "fh": "http://purl.org/syndication/history/1.0",
+    # RFC 4685 (Atom Threading) — `thr:count` on OPDS 1.2 facet links (§4.3).
+    "thr": "http://purl.org/syndication/thread/1.0",
 }
+
+
+NAVIGATION_FEED_TYPE = "application/atom+xml;profile=opds-catalog;kind=navigation"
+ACQUISITION_FEED_TYPE = "application/atom+xml;profile=opds-catalog;kind=acquisition"
+AUTHENTICATION_DOCUMENT_TYPE = "application/opds-authentication+json"
+
+
+def feed_type(kind: str) -> str:
+    """Media type of an OPDS 1.2 catalog feed of `kind` (navigation/acquisition)."""
+    return f"application/atom+xml;profile=opds-catalog;kind={kind}"
 
 
 class Author(BaseXmlModel, tag="author", nsmap=NSMAP):
@@ -35,9 +51,11 @@ class Summary(BaseXmlModel, tag="summary", nsmap=NSMAP):
 
 
 class Category(BaseXmlModel, tag="category", nsmap=NSMAP):
-    term: str
-    scheme: Optional[str] = element(default=None)
-    label: Optional[str] = element(default=None)
+    # RFC 4287 §4.2.2: `term` (required), `scheme` and `label` are attributes
+    # of an empty `atom:category` element.
+    term: str = attr()
+    scheme: Optional[str] = attr(default=None)
+    label: Optional[str] = attr(default=None)
 
 
 class LinkType(str, Enum):
@@ -52,6 +70,11 @@ class LinkType(str, Enum):
     SHELF = "http://opds-spec.org/shelf"
     NEW = "http://opds-spec.org/sort/new"
     IMAGE = "http://opds-spec.org/image"
+    THUMBNAIL = "http://opds-spec.org/image/thumbnail"
+    # OPDS 1.2 §2.5: a catalog links its Complete Acquisition Feed with this rel.
+    CRAWLABLE = "http://opds-spec.org/crawlable"
+    # Authentication for OPDS 1.0 §2.2: where to find the Authentication Document.
+    AUTH_DOCUMENT = "http://opds-spec.org/auth/document"
     OPEN_ACCESS = "http://opds-spec.org/acquisition/open-access"
     ACQUISITION = "http://opds-spec.org/acquisition"
     # LCP borrow (IP-008): a readium-enabled entry advertises this rel so
@@ -60,6 +83,51 @@ class LinkType(str, Enum):
     # pydantic ValidationError and 500s every 1.2 feed that contains an
     # LCP title.
     BORROW = "http://opds-spec.org/acquisition/borrow"
+    # RFC 5005 §3 paged-feed relations (OPDS 1.2 §2.4). Same closed-enum
+    # trap as BORROW: a missing member 500s every paged feed.
+    FIRST = "first"
+    PREVIOUS = "previous"
+    NEXT = "next"
+    LAST = "last"
+    # OPDS 1.2 §4.3 facets (IP-020).
+    FACET = "http://opds-spec.org/facet"
+
+
+class IndirectAcquisition(BaseXmlModel, tag="indirectAcquisition", ns="opds", nsmap=NSMAP):
+    """OPDS 1.2 §5.2.1 `opds:indirectAcquisition`: what an acquisition link
+    leads to, nested outermost first (LCP license → protected publication)."""
+
+    type: str = attr()
+    children: List["IndirectAcquisition"] = element(tag="indirectAcquisition", ns="opds", default=list())
+
+    @classmethod
+    def chain(cls, types) -> Optional["IndirectAcquisition"]:
+        node = None
+        for media_type in reversed(list(types)):
+            node = cls(type=media_type, children=[node] if node is not None else [])
+        return node
+
+
+IndirectAcquisition.model_rebuild()
+
+
+class Availability(BaseXmlModel, tag="availability", ns="opds", nsmap=NSMAP):
+    """Lending extension of OPDS 1.x (Library Simplified / Palace), the Atom
+    counterpart of OPDS 2.0 `properties.availability`."""
+
+    status: str = attr()
+    since: Optional[datetime.datetime] = attr(default=None)
+    until: Optional[datetime.datetime] = attr(default=None)
+
+
+class Copies(BaseXmlModel, tag="copies", ns="opds", nsmap=NSMAP):
+    total: Optional[int] = attr(default=None)
+    available: Optional[int] = attr(default=None)
+
+
+class Holds(BaseXmlModel, tag="holds", ns="opds", nsmap=NSMAP):
+    total: Optional[int] = attr(default=None)
+    position: Optional[int] = attr(default=None)
 
 
 class Link(BaseXmlModel, tag="link", nsmap=NSMAP):
@@ -68,6 +136,42 @@ class Link(BaseXmlModel, tag="link", nsmap=NSMAP):
     type: str = attr()
     title: Optional[str] = attr(default=None)
     checksum: Optional[str] = attr(ns="ef", default=None)
+    # OPDS 1.2 §4.3 facet links: group, the active value of the group, number of entries.
+    facet_group: Optional[str] = attr(name="facetGroup", ns="opds", default=None)
+    active_facet: Optional[str] = attr(name="activeFacet", ns="opds", default=None)
+    count: Optional[int] = attr(name="count", ns="thr", default=None)
+    indirect_acquisition: Optional[IndirectAcquisition] = element(default=None)
+    availability: Optional[Availability] = element(default=None)
+    holds: Optional[Holds] = element(default=None)
+    copies: Optional[Copies] = element(default=None)
+
+    @classmethod
+    def from_borrow_link(cls, link) -> "Link":
+        """Atom form of a `BorrowLink` (apps/opds/services/borrow_link.py)."""
+        return cls(
+            rel=link.rel,
+            href=link.href,
+            type=link.type,
+            title=link.title,
+            indirect_acquisition=IndirectAcquisition.chain(link.indirect),
+            availability=(
+                Availability(
+                    status=link.availability_state,
+                    since=link.availability_since,
+                    until=link.availability_until,
+                )
+                if link.availability_state
+                else None
+            ),
+            holds=(
+                Holds(total=link.holds_total, position=link.holds_position) if link.holds_total is not None else None
+            ),
+            copies=(
+                Copies(total=link.copies_total, available=link.copies_available)
+                if link.copies_total is not None
+                else None
+            ),
+        )
 
 
 class OpdsEntry(BaseXmlModel, nsmap=NSMAP):
@@ -84,6 +188,11 @@ class NavigationEntry(OpdsEntry, tag="entry"):
 
 class AcquisitionEntry(OpdsEntry, tag="entry"):
     authors: List[Author] = element(tag="author", default=list())
+    # OPDS 1.2 §5.1: Dublin Core terms carry the bibliographic metadata.
+    identifiers: List[str] = element(tag="identifier", ns="dc", default=list())
+    language: Optional[str] = element(tag="language", ns="dc", default=None)
+    publisher: Optional[str] = element(tag="publisher", ns="dc", default=None)
+    issued: Optional[str] = element(tag="issued", ns="dc", default=None)
     summary: Summary = element()
     categories: Optional[List[Category]] = element(tag="category", default=list())
     content: Optional[Content] = element(default=None)
@@ -117,7 +226,12 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
                 # fresh per-entry query for every feed row.
                 for entry_author in sorted(entry.entry_authors.all(), key=lambda ea: ea.position)
             ],
-            summary=Summary(type="text", value=entry.summary),
+            identifiers=entry_identifier_uris(entry),
+            language=entry.language.alpha2 if entry.language_id else None,
+            publisher=entry.publisher or None,
+            issued=str(entry.published_at) if entry.published_at else None,
+            # `Entry.summary` is nullable; a `None` here 500s the whole feed.
+            summary=Summary(type="text", value=entry.summary or ""),
         )
 
         if not complete:
@@ -145,8 +259,16 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
             acquisition_entry.links.append(
                 Link(
                     rel=LinkType.IMAGE,
-                    href=reverse("files:cover-download", kwargs={"entry_id": entry.id}),
+                    href=entry.image_url,
                     type=entry.image_mime,
+                )
+            )
+        if entry.thumbnail:
+            acquisition_entry.links.append(
+                Link(
+                    rel=LinkType.THUMBNAIL,
+                    href=entry.thumbnail_url,
+                    type=entry.thumbnail_mime or entry.image_mime or "image/jpeg",
                 )
             )
 
@@ -176,16 +298,8 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
             from apps.opds.services.borrow_link import BorrowLinkResolver
 
             resolver = BorrowLinkResolver(request, opds_version="1.2")
-            active_license = resolver.active_license_for(entry, user)
-            for borrow_link in resolver.emit_links(entry, active_license):
-                acquisition_entry.links.append(
-                    Link(
-                        rel=borrow_link.rel,
-                        href=borrow_link.href,
-                        type=borrow_link.type,
-                        title=borrow_link.title,
-                    )
-                )
+            for borrow_link in resolver.emit_links(entry, user):
+                acquisition_entry.links.append(Link.from_borrow_link(borrow_link))
 
         return acquisition_entry
 
@@ -199,7 +313,8 @@ class OpdsFeed(BaseXmlModel, tag="feed", nsmap=NSMAP):
     entries: List[Union[NavigationEntry, AcquisitionEntry]] = element(tag="entry", default=list())
 
 
-OPENSEARCH_NSMAP = {"": "http://a9.com/-/spec/opensearch/1.1/"}
+# `ef` declares the namespace of the catalog's own template parameters (`{ef:category_id?}`).
+OPENSEARCH_NSMAP = {"": "http://a9.com/-/spec/opensearch/1.1/", "ef": NSMAP["ef"]}
 
 
 class OpenSearchLink(BaseXmlModel, tag="Url", nsmap=OPENSEARCH_NSMAP):
@@ -208,11 +323,13 @@ class OpenSearchLink(BaseXmlModel, tag="Url", nsmap=OPENSEARCH_NSMAP):
     )
     template: str = attr(name="template")
 
-    def __init__(self, base_path: str, template_items: Dict[str, str], **data):
+    def __init__(self, base_path: str, template_items: Dict[str, str], fixed_items: Dict[str, str] = None, **data):
+        """`template_items`: parameter -> OpenSearch template name; `fixed_items`: parameter -> literal value."""
         from urllib.parse import quote
 
-        template = base_path + "?" + "&".join(f"{quote(k, safe='')}={{{v}}}" for k, v in template_items.items())
-        super().__init__(template=template, **data)
+        parts = [f"{quote(k, safe='')}={{{v}}}" for k, v in template_items.items()]
+        parts += [f"{quote(k, safe='')}={quote(str(v), safe='')}" for k, v in (fixed_items or {}).items()]
+        super().__init__(template=base_path + "?" + "&".join(parts), **data)
 
 
 class OpenSearchQuery(BaseXmlModel, tag="Query", nsmap=OPENSEARCH_NSMAP): ...

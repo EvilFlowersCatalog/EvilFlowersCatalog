@@ -22,6 +22,9 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     surname = models.CharField(max_length=150)
     is_active = models.BooleanField(default=True)
     auth_source = models.ForeignKey(AuthSource, on_delete=models.CASCADE)
+    #: Set by an administrator (a new account, a reset password): until the user changes their password with
+    #: `POST /api/v1/users/me/password`, every other REST call answers 403 `/password-change-required` (#8).
+    password_change_required = models.BooleanField(default=False)
 
     # LCP passphrase (stored as SHA-256 hash)
     lcp_passphrase_hash = models.CharField(

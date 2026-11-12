@@ -1,12 +1,18 @@
 from django.contrib import admin
 
-from apps.notifications.models import NotificationContact, NotificationLog
+from apps.notifications.models import NotificationBranding, NotificationContact, NotificationLog
+
+
+@admin.register(NotificationBranding)
+class NotificationBrandingAdmin(admin.ModelAdmin):
+    list_display = ("library_name", "logo", "primary_color", "updated_by", "updated_at")
+    raw_id_fields = ("updated_by",)
 
 
 @admin.register(NotificationContact)
 class NotificationContactAdmin(admin.ModelAdmin):
-    list_display = ("user", "type", "value", "is_primary", "created_at")
-    list_filter = ("type", "is_primary")
+    list_display = ("user", "type", "value", "is_primary", "source", "created_at")
+    list_filter = ("type", "is_primary", "source")
     search_fields = ("value", "user__username", "user__name", "user__surname")
     raw_id_fields = ("user",)
 

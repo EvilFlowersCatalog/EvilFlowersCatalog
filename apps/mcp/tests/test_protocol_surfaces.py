@@ -230,6 +230,23 @@ class ResourceLinkTests(SurfaceTestCase):
         links = [block for block in result["content"] if block["type"] == "resource_link"]
         self.assertEqual([link["uri"] for link in links], [uris.entry_uri(self.public_entry.pk)])
 
+    def test_localized_titles_become_string_link_names(self):
+        """Feed titles are `{"sk": ...}` mappings; a dict `name` makes clients reject the result.
+
+        Regression: on elvira-dev every `list_feeds` / `create_feed` call failed schema
+        validation client-side with `name: expected string, received object`.
+        """
+        for name, arguments in (
+            ("list_feeds", {}),
+            ("get_feed", {"feed_id": str(self.private_feed.pk)}),
+        ):
+            with self.subTest(tool=name):
+                result = self._call(name, arguments, self.member)
+                links = [block for block in result["content"] if block["type"] == "resource_link"]
+                self.assertTrue(links)
+                self.assertTrue(all(isinstance(link["name"], str) for link in links), links)
+                self.assertIn("Secret Shelf", {link["name"] for link in links})
+
     def test_older_clients_get_neither_links_nor_structured_content(self):
         """`resource_link` and `structuredContent` both postdate 2025-03-26.
 

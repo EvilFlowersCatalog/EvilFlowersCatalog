@@ -3,9 +3,10 @@ import binascii
 import logging
 import uuid
 from datetime import timedelta
+from functools import cache
 from http import HTTPStatus
 from typing import Optional, TypedDict, Dict
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 
 import ldap
 from joserfc import jwt
@@ -16,17 +17,49 @@ from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
+from django.core.signals import setting_changed
+from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.text import slugify
 from django.utils.translation import gettext as _
 
 from apps.core.errors import ProblemDetailException
 from apps.core.models import ApiKey, User, AuthSource, UserCatalog
+from apps.core.services.ldap_directory import (
+    apply_profile,
+    ldap_bind,
+    ldap_initialize,
+    requested_attributes,
+    search_profile,
+)
+from evil_flowers_catalog import tracing
 
 
+@cache
 def _jwt_key() -> KeyFlexible:
-    """Build a joserfc-compatible key object from the configured JWK dict."""
+    """The signing key, imported once per process (#125).
+
+    `SECURED_VIEW_JWK` is the RSA private key; importing it was a third of the
+    sampled CPU when it ran on every bearer-authenticated request.
+    """
     return import_key(settings.SECURED_VIEW_JWK)
+
+
+@cache
+def _jwt_verify_key() -> KeyFlexible:
+    """The public half of `_jwt_key`, which is all that verification needs."""
+    return import_key(_jwt_key().as_dict(private=False))
+
+
+@receiver(setting_changed)
+def _clear_jwt_keys(setting, **kwargs):
+    if setting == "SECURED_VIEW_JWK":
+        _jwt_key.cache_clear()
+        _jwt_verify_key.cache_clear()
+
+
+#: `ApiKey.last_seen_at` is written at most this often per key (#125); it was a full-row UPDATE per request.
+API_KEY_LAST_SEEN_RESOLUTION = timedelta(minutes=1)
 
 
 class JWTFactory:
@@ -97,7 +130,7 @@ class JWTFactory:
     def decode(cls, token: str):
         decoded = jwt.decode(
             token,
-            _jwt_key(),
+            _jwt_verify_key(),
             algorithms=[settings.SECURED_VIEW_JWT_ALGORITHM],
         )
         JWTClaimsRegistry().validate(decoded.claims)
@@ -111,14 +144,20 @@ class BearerBackend(ModelBackend):
         except JoseError as e:
             raise ProblemDetailException(_("Invalid token."), status=HTTPStatus.UNAUTHORIZED, previous=e)
 
+        # `access` | `api_key` | `scoped`: which kind of bearer token, for the server span (IP-029).
+        setattr(request, "auth_token_type", str(claims.get("type")))
+        tracing.set_attributes({tracing.AUTH_TOKEN_TYPE: claims.get("type")})
+
         if claims["type"] == "api_key":
             try:
                 api_key = ApiKey.objects.get(pk=claims["jti"], is_active=True)
             except (ApiKey.DoesNotExist, ValidationError):
                 raise ProblemDetailException(_("Invalid api key."), status=HTTPStatus.UNAUTHORIZED)
 
-            api_key.last_seen_at = timezone.now()
-            api_key.save()
+            now = timezone.now()
+            if api_key.last_seen_at is None or now - api_key.last_seen_at >= API_KEY_LAST_SEEN_RESOLUTION:
+                ApiKey.objects.filter(pk=api_key.pk).update(last_seen_at=now)
+                api_key.last_seen_at = now
             setattr(request, "api_key", api_key)
             user = api_key.user
         elif claims["type"] == "access":
@@ -158,25 +197,7 @@ class BasicBackend(ModelBackend):
 
     @staticmethod
     def _ldap_initialize(config: "BasicBackend.LdapConfig") -> ldap.ldapobject.LDAPObject:
-        uri = config["URI"]
-        parsed = urlparse(uri)
-
-        # Apply default port based on protocol if not specified in URI
-        if not parsed.port:
-            default_port = 636 if parsed.scheme == "ldaps" else 389
-            uri = urlunparse(parsed._replace(netloc=f"{parsed.hostname}:{default_port}"))
-
-        connection = ldap.initialize(uri=uri)
-        connection.set_option(ldap.OPT_REFERRALS, 0)
-
-        if parsed.scheme == "ldaps":
-            connection.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_DEMAND)
-            ca_cert_file = config.get("CA_CERT_FILE")
-            if ca_cert_file:
-                connection.set_option(ldap.OPT_X_TLS_CACERTFILE, ca_cert_file)
-            connection.set_option(ldap.OPT_X_TLS_NEWCTX, 0)
-
-        return connection
+        return ldap_initialize(config)
 
     def _ldap(self, username: str, password: str, auth_source: AuthSource) -> Optional[User]:
         config: BasicBackend.LdapConfig = auth_source.content
@@ -186,17 +207,23 @@ class BasicBackend(ModelBackend):
         if config.get("PROXY_USER_DN", False):
             try:
                 # Bind with service account
-                connection.simple_bind_s(config["PROXY_USER_DN"], config["PROXY_USER_PASSWORD"])
+                ldap_bind(connection, config, config["PROXY_USER_DN"], config["PROXY_USER_PASSWORD"], mode="proxy")
 
                 # Search for user to verify existence and get DN
-                user_search = connection.search(
-                    f"{config['ROOT_DN']}",
-                    ldap.SCOPE_SUBTREE,
-                    config["FILTER"].format(username=username),
-                    ["dn"],
-                )
+                with tracing.client_span(
+                    "ldap search",
+                    system="ldap",
+                    server_address=urlparse(config["URI"]).hostname,
+                    attributes={"evilflowers.ldap.purpose": "resolve_dn"},
+                ):
+                    user_search = connection.search(
+                        f"{config['ROOT_DN']}",
+                        ldap.SCOPE_SUBTREE,
+                        config["FILTER"].format(username=username),
+                        ["dn"],
+                    )
 
-                user_type, user_results = connection.result(user_search, 60)
+                    user_type, user_results = connection.result(user_search, 60)
 
                 if not user_results:
                     logging.warning(f"User {username} not found in LDAP directory")
@@ -207,12 +234,12 @@ class BasicBackend(ModelBackend):
                 # Unbind proxy connection and test user credentials
                 connection.unbind()
                 connection = self._ldap_initialize(config)
-                connection.simple_bind_s(user_dn, password)
+                ldap_bind(connection, config, user_dn, password, mode="user")
 
                 # Rebind with service account for attribute retrieval
                 connection.unbind()
                 connection = self._ldap_initialize(config)
-                connection.simple_bind_s(config["PROXY_USER_DN"], config["PROXY_USER_PASSWORD"])
+                ldap_bind(connection, config, config["PROXY_USER_DN"], config["PROXY_USER_PASSWORD"], mode="proxy")
 
             except ldap.LDAPError as e:
                 logging.warning(
@@ -222,7 +249,7 @@ class BasicBackend(ModelBackend):
         else:
             # Direct authentication mode (existing behavior)
             try:
-                connection.simple_bind_s(config["BIND"].format(username=username), password)
+                ldap_bind(connection, config, config["BIND"].format(username=username), password, mode="user")
             except ldap.LDAPError as e:
                 logging.warning(
                     f"Unable to bind with external service (id={auth_source.pk}, name={auth_source.name}): {e}"
@@ -236,35 +263,14 @@ class BasicBackend(ModelBackend):
             user.set_unusable_password()
             user.save()
 
-        result = connection.search(
-            f"{config['ROOT_DN']}",
-            ldap.SCOPE_SUBTREE,
-            config["FILTER"].format(username=username),
-            ["*"],
-        )
+        # Attributes are requested by name: ldap.stuba.sk filters `*` for
+        # anonymous binds, and servers keep an operational `memberOf` out of it.
+        attrs = search_profile(connection, config, username, requested_attributes(config))
 
-        user_type, profiles = connection.result(result, 60)
-
-        if profiles:
-            name, attrs = profiles[0]
-
-            # LDAP properties
-            for model_property, ldap_property in config["USER_ATTR_MAP"].items():
-                # May not exist in LDAP profile
-                if ldap_property in attrs:
-                    setattr(user, model_property, attrs[ldap_property][0].decode())
-
-            # Notification contacts (NOTIFICATION_CONTACT_MAP)
-            for contact_type, ldap_attr in config.get("NOTIFICATION_CONTACT_MAP", {}).items():
-                if ldap_attr in attrs:
-                    from apps.notifications.models import NotificationContact
-
-                    contact_value = attrs[ldap_attr][0].decode()
-                    NotificationContact.objects.update_or_create(
-                        user=user,
-                        type=contact_type,
-                        defaults={"value": contact_value, "is_primary": True},
-                    )
+        if attrs is not None:
+            # Profile attributes and notification contacts — shared with the
+            # background sync (`sync_ldap_profiles`, IP-025).
+            apply_profile(user, attrs, config)
 
             # LDAP groups
             user.groups.clear()
@@ -329,10 +335,16 @@ class BasicBackend(ModelBackend):
         user = None
 
         for auth_source in AuthSource.objects.filter(is_active=True):
-            if auth_source.driver == AuthSource.Driver.DATABASE:
-                user = self._database(request, username, password)
-            elif auth_source.driver == AuthSource.Driver.LDAP:
-                user = self._ldap(username, password, auth_source)
+            # One step per source tried, so a slow directory shows as its own bar (IP-029).
+            with tracing.span(
+                "auth.source",
+                {"evilflowers.auth_source.id": auth_source.pk, "evilflowers.auth_source.driver": auth_source.driver},
+            ) as span:
+                if auth_source.driver == AuthSource.Driver.DATABASE:
+                    user = self._database(request, username, password)
+                elif auth_source.driver == AuthSource.Driver.LDAP:
+                    user = self._ldap(username, password, auth_source)
+                span.set_attribute(tracing.AUTH_OUTCOME, "accepted" if user else "rejected")
 
             if user:
                 break

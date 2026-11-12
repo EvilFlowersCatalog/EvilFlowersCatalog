@@ -4,34 +4,30 @@ import logging
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.db.models import Sum
 from django.utils import timezone
 from django.utils.html import strip_tags
 
-from apps.assistant import contexts
+from apps.assistant import contexts, prompts
 from apps.assistant.models import Chat, ChatMessage
-from apps.assistant.tools import DISPLAY_BOOKS
+from apps.assistant.tools import DISPLAY_BOOKS, FIND_SIMILAR, READ_PAGE, SEARCH_PASSAGES
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    "You are Elvíra, the assistant of a digital publication library. You help readers find "
-    "publications in this library and answer questions about them.\n\n"
-    "Use `search_entries` to find publications. It filters by title, author, category, language, "
-    "publication date and borrowing availability — use the `lcp_states` filter when the reader "
-    "asks what they can borrow right now. Use `get_entry` for details about one publication.\n\n"
-    "Most publications are catalogued in English. When a search with the reader's own words finds "
-    "nothing, translate the key terms to English and search again before saying nothing was found.\n\n"
-    "Always reply in the language the reader writes in. A reader writing in Slovak must get Slovak, "
-    "never Czech.\n\n"
-    f"Whenever you mention specific publications, call `{DISPLAY_BOOKS}` with their ids so the "
-    "reader sees them as cards, and keep your own reply brief instead of repeating titles and "
-    "authors in prose.\n\n"
-    "You cannot borrow, reserve or return anything on the reader's behalf — they do that "
-    "themselves in the library interface. If asked about something unrelated to the library, "
-    "look for publications on that topic and say that searching the library is what you are for."
+#: IP-022. Sections in a fixed order: role, tool policy, grounding, language,
+#: limits, style. Nothing per request goes in here — it is the head of the
+#: cached prefix (IP-015 D3); the reader's language is pinned by the last
+#: message of every request instead (`language_instruction`). The text is
+#: `prompts/chat.md` (#116).
+SYSTEM_PROMPT = prompts.render(
+    "chat",
+    search_passages=SEARCH_PASSAGES,
+    find_similar=FIND_SIMILAR,
+    display_books=DISPLAY_BOOKS,
+    read_page=READ_PAGE,
 )
 
 
@@ -73,8 +69,11 @@ def assert_not_blocked(user) -> None:
 
 
 def day_start() -> "timezone.datetime":
-    """Start of the current quota day, honouring the configured reset hour."""
-    now = timezone.localtime()
+    """Start of the current quota day: midnight in EVILFLOWERS_DISPLAY_TIME_ZONE.
+
+    The processes run in UTC (#107); the reader's day starts at their midnight.
+    """
+    now = timezone.localtime(timezone=ZoneInfo(settings.EVILFLOWERS_DISPLAY_TIME_ZONE))
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     if now < start:
         start -= timedelta(days=1)
@@ -125,14 +124,20 @@ def _history_queryset(chat: Chat):
     return chat.messages.select_related("entry").order_by("created_at")
 
 
-def conversation(chat: Chat, document=None) -> List[dict]:
+def conversation(chat: Chat, document=None, language: Optional[str] = None) -> List[dict]:
     """Rebuild the message array to send to the model.
 
-    IP-015 D3. While a conversation is warm the entire history is replayed
-    unchanged, so the prompt prefix is byte-identical to last turn's and the
-    backend can reuse its KV cache. Once the last message is older than the
-    configured TTL that cache is gone anyway, so the tail is replayed instead
-    and becomes the new stable prefix.
+    IP-015 D3. Every request of a conversation must extend the previous one:
+    the previous request's messages, unchanged and in order, then only new ones.
+    The model is hybrid (Gated DeltaNet), so the backend cannot cut its cache at
+    any token; it restores a checkpoint taken at the end of an earlier prompt,
+    and only when that whole prompt is a prefix of the new one (#138).
+
+    - History is replayed from `chat.history_start`, which `start_turn` moves
+      only at the start of a turn, so the cut never slides between rounds.
+    - The language pin follows every user message rather than closing the
+      request: a trailing message is displaced by the next round's assistant and
+      tool messages, and the prompt stops being a prefix of the next one.
 
     Nothing volatile — no timestamps, no counters — may be added to the prefix,
     or the cache is invalidated on every turn.
@@ -144,19 +149,68 @@ def conversation(chat: Chat, document=None) -> List[dict]:
         messages.append({"role": "system", "content": opening})
 
     rows = _history_queryset(chat)
+    if chat.history_start is not None:
+        rows = rows.filter(created_at__gte=chat.history_start)
 
-    if _is_cold(chat):
-        keep = settings.EVILFLOWERS_ASSISTANT_TRIM_MESSAGES
-        # Take the newest `keep` rows, then restore chronological order.
-        rows = list(reversed(list(rows.reverse()[:keep])))
-
+    instruction = language_instruction(language)
     for row in rows:
         messages.append(_as_message(row))
+        if instruction and row.role == ChatMessage.Role.USER:
+            messages.append({"role": "system", "content": instruction})
 
     return messages
 
 
-def _is_cold(chat: Chat) -> bool:
+def start_turn(chat: Chat, was_cold: bool) -> None:
+    """Fix where this turn's history starts, once, before its first round (#138).
+
+    A cold conversation's cache is gone anyway, so the history is cut to about
+    the newest `EVILFLOWERS_ASSISTANT_TRIM_MESSAGES` rows, at a user message so no
+    tool result is replayed without the call that asked for it. The cut is
+    stored and the following warm turns replay from it, so it becomes the new
+    stable prefix. `was_cold` is `is_cold(chat)` read before this turn's user
+    message was stored.
+    """
+    if not was_cold:
+        return
+    keep = settings.EVILFLOWERS_ASSISTANT_TRIM_MESSAGES
+    rows = _history_queryset(chat)
+    if chat.history_start is not None:
+        rows = rows.filter(created_at__gte=chat.history_start)
+    newest = list(rows.reverse().values_list("created_at", flat=True)[:keep])
+    if not newest:
+        return
+    oldest_kept = newest[-1]
+    start = (
+        rows.filter(role=ChatMessage.Role.USER, created_at__gte=oldest_kept)
+        .order_by("created_at")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    if start is None or start == chat.history_start:
+        return
+    chat.history_start = start
+    Chat.objects.filter(pk=chat.pk).update(history_start=start)
+
+
+def shared_prefix(previous: Optional[List[dict]], messages: List[dict]) -> int:
+    """How many leading messages `messages` shares with `previous` (#138 diagnostics).
+
+    Equal to `len(previous)` when the new request extends the previous one, which
+    is what lets the backend restore its prompt-cache checkpoint.
+    """
+    if not previous:
+        return 0
+    shared = 0
+    for before, now in zip(previous, messages):
+        if before != now:
+            break
+        shared += 1
+    return shared
+
+
+def is_cold(chat: Chat) -> bool:
+    """Whether the conversation's last message is older than the backend's cache TTL."""
     if chat.last_message_at is None:
         return False
     age = (timezone.now() - chat.last_message_at).total_seconds()
@@ -221,8 +275,7 @@ def reader_notes(row: ChatMessage) -> str:
     return "\n".join(notes)
 
 
-#: UI languages the reader can switch between, by code.
-LANGUAGE_NAMES = {"sk": "Slovak", "en": "English"}
+LANGUAGE_NAMES = prompts.LANGUAGE_NAMES
 
 
 def language_instruction(language: Optional[str]) -> Optional[str]:
@@ -232,17 +285,32 @@ def language_instruction(language: Optional[str]) -> Optional[str]:
     changes the cached prefix. Small models drift (Slovak into Czech, a DRM
     notice into Russian), so the language is named and Czech is ruled out.
     """
-    code = (language or "").split("-")[0].lower()
-    name = LANGUAGE_NAMES.get(code)
+    name = prompts.language_name(language)
     if name is None:
         return None
-    instruction = (
+    return (
         f"Write your answer in {name}, whatever language the reader's message, the publication or a tool "
-        "result is in."
+        "result is in." + prompts.not_czech(language)
     )
-    if code == "sk":
-        instruction += " It must be Slovak, never Czech."
-    return instruction
+
+
+def start_agent_annotation(user_acquisition, prompt: str, language: Optional[str] = None):
+    """A pending agent annotation of the reader's copy, its highlight task queued on commit (IP-018)."""
+    from django.db import transaction
+
+    from apps.assistant import tasks
+    from apps.core.models import Annotation
+
+    prompt = prompt.strip()
+    annotation = Annotation.objects.create(
+        user_acquisition=user_acquisition,
+        kind=Annotation.Kind.AGENT,
+        status=Annotation.Status.PENDING,
+        title=prompt if len(prompt) <= 80 else prompt[:79] + "…",
+        prompt=prompt,
+    )
+    transaction.on_commit(lambda: tasks.highlight_annotation.delay(str(annotation.pk), language))
+    return annotation
 
 
 def reading_note(document) -> str:
@@ -250,12 +318,16 @@ def reading_note(document) -> str:
     return (
         f"You can read this publication's PDF, numbered as the reader's viewer numbers it. It has "
         f"{document.page_count} pages. "
-        "Use `read_pdf_page` to read pages and `search_pdf` to find where something is discussed; base "
+        "Use `search_paragraphs` to find passages by meaning, `search_pdf` for an exact term (with "
+        "`regex: true` for a regular expression, e.g. every 'Table 2.x') and "
+        "`read_pdf_page` to read pages; `list_regions` lists every figure, table and equation, which you "
+        "cite as [[region:ID]]. When the reader asks you to mark, highlight or find passages for them, "
+        "call `create_highlights` with what to look for; the highlights appear in their viewer. Base "
         "answers about the publication on what it says and never invent its content. Answer in your own "
         "words and briefly: never paste the text of a page back to the reader, quote at most a sentence.\n"
         "Cite the page of everything you take from the publication as [[page:N]] with the viewer's page "
         "number, for example [[page:12]], right after the sentence it supports; the reader clicks it to "
-        "jump there. A figure, table or equation the reader attached can be "
+        "jump there. A figure, table or equation can be "
         "cited as [[region:ID]] with its id. Never use page numbers printed in the book itself; they differ "
         "from the viewer's."
     )

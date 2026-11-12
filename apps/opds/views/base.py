@@ -7,6 +7,7 @@ from object_checker.base_object_checker import has_object_permission
 from apps.core.errors import ProblemDetailException, UnauthorizedException
 from apps.core.models import Catalog
 from apps.core.views import SecuredView
+from apps.opds2.views.auth import authentication_required
 
 
 class OpdsCatalogView(SecuredView):
@@ -15,6 +16,16 @@ class OpdsCatalogView(SecuredView):
         super().__init__(*args, **kwargs)
 
     def dispatch(self, request, *args, **kwargs):
+        try:
+            return self._dispatch(request, *args, **kwargs)
+        except ProblemDetailException as e:
+            # Authentication for OPDS 1.0 applies to Atom catalogs too: the
+            # 401 body is the Authentication Document (see opds2 auth view).
+            if e.status == HTTPStatus.UNAUTHORIZED:
+                return authentication_required(request, self.catalog)
+            raise
+
+    def _dispatch(self, request, *args, **kwargs):
         try:
             self.catalog = Catalog.objects.get(url_name=kwargs["catalog_name"])
         except Catalog.DoesNotExist:

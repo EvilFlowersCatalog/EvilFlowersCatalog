@@ -12,7 +12,6 @@ from typing import Optional
 from uuid import UUID
 
 from django.conf import settings
-from django.db import transaction
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -20,16 +19,17 @@ from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
 from apps.api.response import Ordering, PaginationResponse, SingleResponse
-from apps.assistant import explain, services, tasks, turn
+from apps.assistant import explain, services, turn
 from apps.assistant.forms import ChatForm, ExplainForm, HighlightForm, MessageForm
 from apps.assistant.llm import LLMUnavailable
 from apps.assistant.models import Chat
-from apps.assistant.pdf import DocumentUnavailable, ReaderDocument
+from apps.assistant.pdf import DocumentUnavailable, ReaderDocument, open_access_document
 from apps.assistant.serializers import AgentAnnotationSerializer, ChatSerializer, ExplanationSerializer
 from apps.core.errors import AuthorizationException, ProblemDetailException, UnauthorizedException, ValidationException
 from apps.core.models import Annotation, UserAcquisition
 from apps.core.views import SecuredView
 from apps.files.views import _check_ip_block
+from evil_flowers_catalog import telemetry
 
 
 class AssistantView(SecuredView):
@@ -87,8 +87,7 @@ class AssistantView(SecuredView):
                 self._reader_copy(request, copy)
                 return ReaderDocument.for_user_acquisition(copy)
             if entry is not None:
-                _check_ip_block(request, entry)
-                return ReaderDocument.for_open_access(entry)
+                return open_access_document(request, entry)
         except (AuthorizationException, ProblemDetailException, DocumentUnavailable):
             pass
         return None
@@ -274,16 +273,21 @@ class ChatMessages(AssistantView):
                 extra_headers=(("Retry-After", str(retry_after)),),
             ) from error
 
+        # The turn runs while the body streams, after the request span has
+        # ended; bind it to the request's trace so the model call, its tools
+        # and its queries stay in that trace (IP-019).
         response = StreamingHttpResponse(
-            turn.run(
-                request,
-                chat,
-                form.cleaned_data["message"],
-                entry=form.cleaned_data.get("entry_id"),
-                contexts=form.cleaned_data.get("contexts"),
-                page=form.cleaned_data.get("page"),
-                document=self._chat_document(request, chat, form.cleaned_data.get("entry_id")),
-                language=form.cleaned_data.get("language") or None,
+            telemetry.ContextBoundIterator(
+                turn.run(
+                    request,
+                    chat,
+                    form.cleaned_data["message"],
+                    entry=form.cleaned_data.get("entry_id"),
+                    contexts=form.cleaned_data.get("contexts"),
+                    page=form.cleaned_data.get("page"),
+                    document=self._chat_document(request, chat, form.cleaned_data.get("entry_id")),
+                    language=form.cleaned_data.get("language") or None,
+                )
             ),
             content_type="text/event-stream",
         )
@@ -296,7 +300,8 @@ class ChatMessages(AssistantView):
 class Explain(AssistantView):
     @openapi.metadata(
         description=(
-            "Explain a passage the reader selected in the viewer. The model is given the page the "
+            "Explain a passage the reader selected in the viewer, or a figure, table or equation of "
+            "their copy by `region_id` (IP-018). The model is given the page the "
             "selection is on and reads further pages of the reader's copy, or searches its text, until "
             "it can say what the passage means in context. Returns a short explanation, examples and "
             "the pages it drew on. Responds 429 when the caller's daily allowance is spent, 403 when "
@@ -341,11 +346,21 @@ class Explain(AssistantView):
                 detail=_("Only PDF publications can be read by the assistant."),
             ) from error
 
+        text, page = form.cleaned_data.get("text"), form.cleaned_data.get("page")
+        if form.cleaned_data.get("region_id"):
+            from apps.extraction.reader import ReaderExtraction
+
+            extraction = ReaderExtraction.for_document(document)
+            found = extraction and extraction.region_text(form.cleaned_data["region_id"])
+            if not found:
+                raise ProblemDetailException(_("Region not found"), status=HTTPStatus.NOT_FOUND)
+            text, page = found
+
         try:
             explanation = explain.explain(
                 document,
-                text=form.cleaned_data["text"],
-                page=form.cleaned_data.get("page"),
+                text=text,
+                page=page,
                 title=entry.title,
                 authors=", ".join(author.full_name for author in entry.authors.all()),
                 language=form.cleaned_data.get("language") or None,
@@ -423,16 +438,9 @@ class Highlights(AssistantView):
                 detail=_("Only PDF publications can be read by the assistant."),
             ) from error
 
-        prompt = form.cleaned_data["prompt"]
-        annotation = Annotation.objects.create(
-            user_acquisition=user_acquisition,
-            kind=Annotation.Kind.AGENT,
-            status=Annotation.Status.PENDING,
-            title=prompt if len(prompt) <= 80 else prompt[:79] + "…",
-            prompt=prompt,
+        annotation = services.start_agent_annotation(
+            user_acquisition, form.cleaned_data["prompt"], form.cleaned_data.get("language") or None
         )
-        language = form.cleaned_data.get("language") or None
-        transaction.on_commit(lambda: tasks.highlight_annotation.delay(str(annotation.pk), language))
 
         return SingleResponse(
             request,

@@ -47,29 +47,6 @@ services:
       - elasticsearch
 
 
-  apm-server:
-    image: docker.elastic.co/apm/apm-server:8.17.0
-    environment:
-      - ELASTICSEARCH_HOSTS=https://elasticsearch:9200
-      - ELASTICSEARCH_USERNAME=elastic
-      - ELASTICSEARCH_PASSWORD=admin
-      - output.elasticsearch.hosts=["https://elasticsearch:9200"]
-      - output.elasticsearch.username=apm_system
-      - output.elasticsearch.password=${APM_SYSTEM_PASSWORD}
-      - apm-server.secret_token=ba2fd8d1-6552-4871-a730-daf8a1ecb06b
-      - apm-server.ssl.enabled=true
-      - apm-server.ssl.key=/usr/share/apm-server/config/certs/elastic-certificates.p12
-      - apm-server.ssl.certificate=/usr/share/apm-server/config/certs/elastic-stack-ca.p12
-      - setup.template.enabled=true
-      - setup.template.overwrite=true
-      - logging.level=info
-    volumes:
-      - ./data/elasticsearch/certs:/usr/share/apm-server/config/certs
-    ports:
-      - "8200:8200"
-    depends_on:
-      - elasticsearch
-
   readium:
     image: "ghcr.io/evilflowerscatalog/readium-lcp-server:master"
     user: "0:0"  # Run as root to avoid permission issues with mounted volumes
@@ -95,11 +72,21 @@ services:
       - ./data/evilflowers/storage:/mnt/data
 
   evilflowers-lcpencrypt-worker:
-    image: "ghcr.io/evilflowerscatalog/evilflowers-lcpencrypt-worker:master"
+    # `:develop` tracks the worker's develop branch (the one deployed to evilflowers-dev)
+    image: "ghcr.io/evilflowerscatalog/evilflowers-lcpencrypt-worker:develop"
     environment:
       BROKER: "redis://docker.for.mac.localhost:6379/7"
       STORAGE_PATH: /mnt/data
-      LCPSV_URL: "http://readium:8989"
+      # The License Server URL is not configured here: the catalog sends it with
+      # every task (`lcpsv` kwarg, from EVILFLOWERS_READIUM_LCPSV_URL).
+      # Telemetry (IP-019): OTLP/HTTP + JSON logs carrying trace_id; the span
+      # continues the catalog's trace. Without a collector the worker logs
+      # "telemetry is off" once and runs normally. Like the catalog in
+      # compose.yml it probes <default gateway>:4318 on its own; with
+      # `--profile observability` up, otel-lgtm publishes 4318 on the host.
+      # OTEL_EXPORTER_OTLP_ENDPOINT: "http://docker.for.mac.localhost:4318"  # explicit, skips discovery
+      OTEL_RESOURCE_ATTRIBUTES: "service.namespace=elvira,deployment.environment.name=development"  # same as the catalog in compose.yml
+      # LOG_FORMAT: "text"  # readable terminal lines (image default: json)
     volumes:
       - ./data/evilflowers/storage:/mnt/data
 

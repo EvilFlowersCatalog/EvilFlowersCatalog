@@ -1,5 +1,4 @@
 import traceback
-import warnings
 from enum import Enum
 from http import HTTPStatus
 from typing import Tuple, Optional, List, Any
@@ -22,6 +21,9 @@ class DetailType(Enum):
     INTERNAL_ERROR = "/internal-error"
     PASSPHRASE_REQUIRED = "/passphrase-required"
     READIUM_AMOUNT_BELOW_ACTIVE_COUNT = "/readium-amount-below-active-count"
+    FEED_URL_NAME_TAKEN = "/feed-url-name-taken"
+    PASSWORD_CHANGE_REQUIRED = "/password-change-required"
+    RATE_LIMITED = "/rate-limited"
 
 
 class ProblemDetail(Serializer):
@@ -49,7 +51,6 @@ class ProblemDetailException(Exception):
         *,
         status: int = HTTPStatus.INTERNAL_SERVER_ERROR,
         previous: Optional[BaseException] = None,
-        to_sentry: Optional[bool] = False,
         additional_data: Optional[dict] = None,
         detail_type: Optional[DetailType] = None,
         detail: Optional[str] = None,
@@ -68,17 +69,6 @@ class ProblemDetailException(Exception):
             self._additional_data = additional_data
         else:
             self._additional_data = {}
-
-        if to_sentry:
-            try:
-                import sentry_sdk
-
-                with sentry_sdk.push_scope() as scope:
-                    for key, value in self.__dict__.items():
-                        scope.set_extra(key, value)
-                    sentry_sdk.capture_exception(self)
-            except ImportError:
-                warnings.warn("sentry_sdk module is not installed")
 
     @property
     def status(self) -> int:
@@ -168,7 +158,8 @@ class ValidationException(ProblemDetailException):
                 ValidationErrorItem(
                     code=item.code,
                     message=item.message % (item.params or ()),
-                    path=getattr(item, "path", ["$body"]),
+                    # A list index in the path (`prices.0.value`) is an int; the schema says strings.
+                    path=[str(part) for part in getattr(item, "path", ["$body"])],
                 )
                 for item in self._form.errors
             ],

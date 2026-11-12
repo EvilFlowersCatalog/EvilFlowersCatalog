@@ -18,6 +18,7 @@ from apps.api.views import (
     annotation_items,
     languages,
     notification_contacts,
+    reviews,
 )
 
 # IP-008 Phase 4: the Dataverse integration moved to `apps.dataverse`.
@@ -28,6 +29,10 @@ from apps.api.views import (
 # observability so an unexpected POST is visible in logs rather than
 # silently 404ing.
 from apps.dataverse.views import PrepublishView as _DataversePrepublishView
+from apps.extraction import admin_views as extraction_admin
+from apps.extraction import discovery as extraction_discovery
+from apps.extraction import views as extraction_views
+from apps.readium.views.statistics import StatisticsView
 
 urlpatterns = [
     # API keys
@@ -36,6 +41,7 @@ urlpatterns = [
     # Users
     path("users", users.UserManagement.as_view()),
     path("users/me", users.UserMe.as_view()),
+    path("users/me/password", users.UserPassword.as_view(), name="user-password"),
     path("users/<uuid:user_id>", users.UserDetail.as_view()),
     # Catalogs
     path("catalogs", catalogs.CatalogManagement.as_view()),
@@ -60,6 +66,33 @@ urlpatterns = [
     # Entries
     path("entries", entries.EntryPaginator.as_view()),
     path("entries/facets", entries.EntryFacets.as_view()),
+    path("entries/suggest", entries.EntrySuggest.as_view()),
+    path("entries/passages", extraction_discovery.EntryPassages.as_view(), name="entry-passages"),
+    # Recommendations and figures from the extraction index (IP-018 Phase 8)
+    path("entries/<uuid:entry_id>/similar", extraction_discovery.EntrySimilar.as_view(), name="entry-similar"),
+    # IP-023: ratings and reviews
+    path("entries/<uuid:entry_id>/reviews", reviews.EntryReviewList.as_view(), name="entry-reviews"),
+    path("entries/<uuid:entry_id>/reviews/mine", reviews.OwnEntryReview.as_view(), name="entry-review-mine"),
+    path("reviews", reviews.ReviewList.as_view(), name="review-list"),
+    path("reviews/<uuid:review_id>", reviews.EntryReviewDetail.as_view(), name="review-detail"),
+    path("entries/<uuid:entry_id>/figures", extraction_discovery.EntryFigures.as_view(), name="entry-figures"),
+    # Extraction for the entry's managers: status, runs, queue, (re)processing (IP-018 admin)
+    path("entries/<uuid:entry_id>/extraction", extraction_admin.EntryExtraction.as_view(), name="entry-extraction"),
+    path(
+        "entries/<uuid:entry_id>/extraction/regions",
+        extraction_admin.EntryExtractionRegions.as_view(),
+        name="entry-extraction-regions",
+    ),
+    path(
+        "entries/<uuid:entry_id>/extraction/regions/<uuid:region_id>/image",
+        extraction_admin.EntryExtractionRegionImage.as_view(),
+        name="entry-extraction-region-image",
+    ),
+    path(
+        "entries/<uuid:entry_id>/extraction/paragraphs",
+        extraction_admin.EntryExtractionParagraphs.as_view(),
+        name="entry-extraction-paragraphs",
+    ),
     path("entry-introspection", entries.EntryIntrospection.as_view()),
     path("catalogs/<uuid:catalog_id>/entries", entries.EntryManagement.as_view()),
     path(
@@ -105,6 +138,27 @@ urlpatterns = [
         user_acquisitions.UserAcquisitionDetail.as_view(),
         name="user-acquisition-detail",
     ),
+    # Extraction (IP-018): regions of a reader's copy, in the reader's page numbers
+    path(
+        "user-acquisitions/<uuid:user_acquisition_id>/extraction",
+        extraction_views.UserAcquisitionExtraction.as_view(),
+        name="user-acquisition-extraction",
+    ),
+    path(
+        "user-acquisitions/<uuid:user_acquisition_id>/similar",
+        extraction_discovery.UserAcquisitionSimilar.as_view(),
+        name="user-acquisition-similar",
+    ),
+    path(
+        "user-acquisitions/<uuid:user_acquisition_id>/regions",
+        extraction_views.UserAcquisitionRegions.as_view(),
+        name="user-acquisition-regions",
+    ),
+    path(
+        "user-acquisitions/<uuid:user_acquisition_id>/regions/<uuid:region_id>",
+        extraction_views.UserAcquisitionRegionDetail.as_view(),
+        name="user-acquisition-region-detail",
+    ),
     # Annotations
     path(
         "annotations",
@@ -139,6 +193,8 @@ urlpatterns = [
     ),
     # Status
     path("status", status.StatusManagement.as_view(), name="status"),
+    # GitHub #131: admin dashboard statistics
+    path("statistics", StatisticsView.as_view(), name="statistics"),
     # Tokens
     path("token/refresh", tokens.RefreshTokenManagement.as_view(), name="refresh"),
     path("token", tokens.AccessTokenManagement.as_view(), name="login"),

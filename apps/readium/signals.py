@@ -10,9 +10,10 @@ the previous status on the instance via `__original_status` set on pre_save.
 """
 
 import logging
+import posixpath
 
 from django.conf import settings
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
 from apps.core.models import Entry, User, UserActivity
@@ -69,7 +70,11 @@ def _notify_license_transitions(sender, instance: License, created: bool, **kwar
         "license_id": str(instance.pk),
     }
 
-    if instance.state == License.LicenseState.RETURNED:
+    # The Status Server turns the return of a never-opened (`ready`) loan into
+    # `cancelled`, so most portal returns end there — without this branch the
+    # reader got no confirmation at all (#109). Staff `cancel` lands here too and
+    # sends the same "loan returned" text, which reads correctly for both.
+    if instance.state in (License.LicenseState.RETURNED, License.LicenseState.CANCELLED):
         _enqueue("license_returned", instance.user, base_context)
     elif instance.state == License.LicenseState.REVOKED:
         _enqueue("license_revoked", instance.user, base_context | {"reason": ""})
@@ -247,20 +252,76 @@ def _notify_passphrase_change(sender, instance: User, created: bool, **kwargs):
 # readium app subscribes to the core-owned `Entry.post_save` signal here.
 
 
+@receiver(pre_save, sender=Entry)
+def _stash_original_readium_enabled(sender, instance: Entry, **kwargs):
+    """Remember whether LCP was on before this save, so post_save can see the off → on switch."""
+    if instance.pk is None or not instance.read_config("readium_enabled"):
+        # Not LCP after this save: post_save returns at once, the old value is irrelevant.
+        # Skips the lookup for the bulk of saves (e.g. `touch_entry` on every upload).
+        instance._original_readium_enabled = False
+        return
+    update_fields = kwargs.get("update_fields")
+    if update_fields is not None and "config" not in update_fields:
+        # `config` is not being written, so the flag cannot change in this save.
+        instance._original_readium_enabled = bool(instance.read_config("readium_enabled"))
+        return
+    config = Entry.objects.filter(pk=instance.pk).values_list("config", flat=True).first() or {}
+    instance._original_readium_enabled = bool(config.get("readium_enabled"))
+
+
 @receiver(post_save, sender=Entry)
 def _trigger_readium_encryption(sender, instance: Entry, **kwargs):
-    """Trigger LCP encryption when readium_enabled is set on an entry with existing acquisitions."""
+    """Trigger LCP encryption when readium_enabled is set on an entry with existing acquisitions.
+
+    An acquisition without an `encrypted_content` row is queued. One whose job
+    `failed` is re-queued — but only when LCP is switched from off to on: the
+    receiver runs on every save (metadata edits, `touched_at` bumps), and a job
+    that fails for good (the source file is missing) must not be resent on each
+    of them. Before this, turning protection off and on again never retried a
+    failed job; only the admin `requeue_encryption` tool did.
+    """
     if not instance.read_config("readium_enabled"):
         return
 
+    from apps.readium.models import EncryptedContent
     from apps.readium.services import ContentEncryptionService
 
+    switched_on = not getattr(instance, "_original_readium_enabled", True)
+
     for acquisition in instance.acquisitions.filter(mime__in=["application/epub+zip", "application/pdf"]):
-        if not acquisition.content or hasattr(acquisition, "encrypted_content"):
+        if not acquisition.content:
             continue
 
+        # The reverse one-to-one raises RelatedObjectDoesNotExist, an AttributeError.
+        existing = getattr(acquisition, "encrypted_content", None)
         try:
-            ContentEncryptionService.encrypt_acquisition(acquisition)
-            logger.info("Triggered LCP encryption for acquisition %s", acquisition.pk)
+            if existing is None:
+                ContentEncryptionService.encrypt_acquisition(acquisition)
+                logger.info("Triggered LCP encryption for acquisition %s", acquisition.pk)
+            elif switched_on and existing.status == EncryptedContent.EncryptionStatus.FAILED:
+                ContentEncryptionService.requeue(existing)
+                logger.info("Re-queued failed LCP encryption for acquisition %s", acquisition.pk)
         except ValueError as e:
             logger.warning("Failed to trigger encryption for acquisition %s: %s", acquisition.pk, e)
+
+
+@receiver(post_delete, sender="readium.EncryptedContent", dispatch_uid="readium.remove_encrypted_package")
+def _remove_encrypted_package(sender, instance, **kwargs):
+    """Delete the `.lcpdf`/`.epub` package and its stamped source copy with the row.
+
+    The LCP server keeps its `content` record — lcpserver has no API to remove
+    one. It is harmless once Elvira forgets the id (no licence can be issued for
+    it any more and its download URL answers 404), but it is logged so an
+    operator can match the two databases.
+    """
+    from apps.files.signals import schedule_removal
+
+    folders = []
+    if instance.encrypted_path:
+        folders.append(f"{posixpath.dirname(instance.encrypted_path)}/source/{instance.lcp_content_id}")
+    schedule_removal(files=[instance.encrypted_path], folders=folders)
+    logger.info(
+        "readium.content_forgotten lcp_content_id=%s status=%s — the LCP server keeps its content row",
+        instance.lcp_content_id,
+        instance.status,
+    )

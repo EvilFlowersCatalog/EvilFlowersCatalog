@@ -89,13 +89,13 @@ def basic(username: str, password: str) -> str:
     return f"Basic {base64.b64encode(f'{username}:{password}'.encode()).decode()}"
 
 
+@override_settings(EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=["Bearer", "Basic"])
 class BasicAuthenticationTests(AuthenticationTestCase):
     """Username/password, through the same `AuthSource` chain the REST API uses.
 
-    Many MCP clients can only attach a username and a password, and a librarian
-    curating the catalog through an agent should not have to mint an API key
-    first. Basic therefore ships enabled — and an operator who would rather
-    agents never hold a reusable password can narrow the endpoint back to Bearer.
+    Many MCP clients can only attach a username and a password. Basic ships
+    disabled (issue #100: with LDAP users it is the directory password), and a
+    deployment that needs it opts in with `Bearer,Basic`.
     """
 
     def test_a_username_and_password_authenticate_the_session(self):
@@ -138,14 +138,12 @@ class BasicAuthenticationTests(AuthenticationTestCase):
 
 
 class SchemeRestrictionTests(AuthenticationTestCase):
-    @override_settings(EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=["Bearer"])
-    def test_basic_can_be_switched_off(self):
+    def test_basic_is_off_by_default(self):
         response = self.call("whoami", headers={"Authorization": basic("agent", "correct-horse-battery-staple")})
 
         self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
         self.assertIn("Bearer", json.loads(response.content)["detail"])
 
-    @override_settings(EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=["Bearer"])
     def test_a_refusal_never_suggests_a_scheme_the_endpoint_rejects(self):
         # The hint a model reads has to track the configuration, or it will
         # keep retrying with a credential this deployment will never accept.
@@ -153,7 +151,8 @@ class SchemeRestrictionTests(AuthenticationTestCase):
 
         self.assertNotIn("Basic", body["result"]["content"][0]["text"])
 
-    def test_a_refusal_offers_both_schemes_by_default(self):
+    @override_settings(EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=["Bearer", "Basic"])
+    def test_a_refusal_offers_both_schemes_once_basic_is_enabled(self):
         body = json.loads(self.call("get_my_shelf").content)
         message = body["result"]["content"][0]["text"]
 
@@ -215,12 +214,13 @@ class ProtectedResourceMetadataTests(AuthenticationTestCase):
 
     def test_it_declares_every_accepted_scheme(self):
         payload = json.loads(self.client.get("/.well-known/oauth-protected-resource/mcp/v1").content)
-        self.assertEqual(payload["authentication_schemes_supported"], ["Bearer", "Basic"])
+        self.assertEqual(payload["authentication_schemes_supported"], ["Bearer"])
 
-        with override_settings(EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=["Bearer"]):
+        with override_settings(EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=["Bearer", "Basic"]):
             payload = json.loads(self.client.get("/.well-known/oauth-protected-resource/mcp/v1").content)
-            self.assertEqual(payload["authentication_schemes_supported"], ["Bearer"])
+            self.assertEqual(payload["authentication_schemes_supported"], ["Bearer", "Basic"])
 
+    @override_settings(EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=["Bearer", "Basic"])
     def test_a_401_challenges_with_every_accepted_scheme(self):
         response = self.call("whoami", token="not-a-jwt")
         header = response.headers["WWW-Authenticate"]

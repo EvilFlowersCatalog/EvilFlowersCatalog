@@ -9,15 +9,21 @@ import logging
 import os
 
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.module_loading import import_string
+from partial_date import PartialDate
 from typing import Optional
 import uuid
 
+from apps.core.fields.localized import localize
 from apps.core.models import Acquisition
 from apps.files.storage import get_storage
+from apps.opds.services.identifiers import entry_identifier_uris
 from apps.readium.models import EncryptedContent, License
 from apps.events.services import get_event_broker
+from evil_flowers_catalog import telemetry
+from evil_flowers_catalog.log_format import current_trace_ids
 
 logger = logging.getLogger(__name__)
 
@@ -103,10 +109,12 @@ class ContentEncryptionService:
         """Send a stuck or failed encryption job to the worker again.
 
         `encrypt_acquisition` returns early once an `EncryptedContent` row
-        exists, so a job lost in transit (wrong broker, worker without the
-        storage mount) stays PENDING forever — lcpencrypt only reports back on
-        success. This re-sends the task for the existing row, keeping its
-        `lcp_content_id` and `encrypted_path`, and resets it to PENDING.
+        exists, so a job lost in transit (wrong broker, worker down) stays
+        PENDING forever — nothing reports on a task no worker ran. A job the
+        worker failed turns FAILED through its result report (issue #99).
+        This re-sends the task for the existing row, keeping its
+        `lcp_content_id` and `encrypted_path`, and resets it to PENDING under
+        a new task id.
 
         Raises:
             ValueError: If the row is already COMPLETED or REGISTERED.
@@ -255,37 +263,116 @@ class ContentEncryptionService:
         # notify = callback URL lcpencrypt POSTs to on success; the webhook
         # (`apps/readium/views/hooks.py`) is what flips the row to REGISTERED.
         # The worker drops the flag when it is None.
+        # report = URL the worker POSTs the outcome of the task to, success or
+        # failure (`EncryptionResultWebhook`, issue #99). None: no report.
         #
-        # title/author: publication display metadata. For the LCP-for-PDF
-        # profile (`.lcpdf`) lcpencrypt wraps the raw PDF into a Readium
-        # package and generates its `manifest.json`; a raw PDF carries no
-        # embedded title/author, so without these the manifest falls back to
-        # the filename (title) and empty authors — which is why Thorium shows
-        # "no title and no authors available" for borrowed PDFs. We forward
-        # the Entry's metadata so the worker can inject it into the package
-        # manifest. (The worker must consume these keys — see
-        # evilflowers-lcpencrypt-worker; unknown keys are ignored by older
-        # workers, so sending them is backwards compatible.)
-        entry = acquisition.entry
-        author_name = entry.first_author_name
+        # Publication metadata: for the LCP-for-PDF profile (`.lcpdf`) the
+        # worker wraps the raw PDF into a Readium package and writes its
+        # `manifest.json`. A raw PDF carries no embedded metadata, so without
+        # these the manifest falls back to the filename and Thorium shows
+        # "no title and no authors available". See `publication_metadata`
+        # (issue #96). Older workers ignore unknown kwargs.
+        kwargs = {
+            "input_file": input_file,
+            "contentid": encrypted_content.lcp_content_id,
+            "storage": f"{acquisition.upload_base_path()}/encrypted",
+            "filename": encrypted_content.lcp_content_id,
+            "lcpsv": getattr(settings, "EVILFLOWERS_READIUM_LCPSV_URL", None),
+            "notify": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None),
+            "report": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_REPORT_URL", None),
+            "url": f"{settings.EVILFLOWERS_READIUM_BASE_URL}/readium/v1/content",
+        }
+        kwargs.update(ContentEncryptionService.publication_metadata(acquisition.entry))
+
         event_broker = get_event_broker()
         event_broker.execute(
             "evilflowers_lcpencrypt_worker.lcpencrypt",
             {
-                "kwargs": {
-                    "input_file": input_file,
-                    "contentid": encrypted_content.lcp_content_id,
-                    "storage": f"{acquisition.upload_base_path()}/encrypted",
-                    "filename": encrypted_content.lcp_content_id,
-                    "lcpsv": getattr(settings, "EVILFLOWERS_READIUM_LCPSV_URL", None),
-                    "notify": getattr(settings, "EVILFLOWERS_READIUM_LCPENCRYPT_NOTIFY_URL", None),
-                    "url": f"{settings.EVILFLOWERS_READIUM_BASE_URL}/readium/v1/content",
-                    "title": entry.title,
-                    "author": author_name,
-                },
+                "kwargs": kwargs,
                 "queue": "evilflowers_lcpencrypt_worker",
+                "task_id": ContentEncryptionService._record_dispatch(encrypted_content),
             },
         )
+
+    @staticmethod
+    def _record_dispatch(encrypted_content: EncryptedContent) -> str:
+        """Start a new attempt on the row and return the task id to send it under (issue #99).
+
+        The task id is minted here, not read back from the broker, so the row
+        knows it before the worker can possibly report on it; it is saved
+        before dispatch for the same reason. The dispatch span gets
+        `lcp.content_id`, so `{span.lcp.content_id="…"}` finds this trace.
+        """
+        task_id = str(uuid.uuid4())
+        telemetry.set_span_attributes(lcp__content_id=encrypted_content.lcp_content_id, lcp__task_id=task_id)
+        encrypted_content.task_id = task_id
+        encrypted_content.trace_id, _span_id = current_trace_ids()
+        encrypted_content.attempts = (encrypted_content.attempts or 0) + 1
+        encrypted_content.last_dispatched_at = timezone.now()
+        encrypted_content.report = None
+        encrypted_content.reported_at = None
+        encrypted_content.save(
+            update_fields=["task_id", "trace_id", "attempts", "last_dispatched_at", "report", "reported_at"]
+        )
+        return task_id
+
+    @staticmethod
+    def publication_metadata(entry) -> dict:
+        """Entry metadata for the package manifest the worker writes (issue #96).
+
+        Public so `reencrypt_publication`'s dry run can show what would be sent.
+
+        `title` and `author` (first author) are always sent: older workers
+        read only those two. The rest is sent only when the entry has data,
+        since the worker treats a missing key and an empty value alike.
+
+        `published` goes out only with day precision: lcpencrypt's Go date
+        parser rejects `2023` and `2023-05`.
+        """
+        authors = [
+            entry_author.author.full_name
+            for entry_author in entry.entry_authors.select_related("author").order_by("position")
+        ]
+        authors = [name for name in authors if name]
+
+        # `author` must match `authors[0]`; `first_author_name` ignores `position`.
+        metadata = {
+            "title": entry.title,
+            "author": authors[0] if authors else entry.first_author_name,
+        }
+        if authors:
+            metadata["authors"] = authors
+
+        if entry.publisher:
+            metadata["publisher"] = entry.publisher
+
+        if entry.summary:
+            metadata["description"] = entry.summary
+
+        language = entry.language.alpha2 if entry.language else None
+        if language:
+            metadata["language"] = language
+
+        published_at = entry.published_at
+        if published_at and published_at.precision == PartialDate.DAY:
+            metadata["published"] = published_at.date.isoformat()
+
+        # Category labels in the publication's own language where available.
+        subjects = [localize(category.label, language) or category.term for category in entry.categories.all()]
+        if subjects:
+            metadata["subjects"] = subjects
+
+        # Same URI as the OPDS feeds, so a reader matches the package to the
+        # catalog record; `[]` when the entry has neither ISBN nor DOI.
+        uris = entry_identifier_uris(entry)
+        if uris:
+            metadata["identifier"] = uris[0]
+
+        # Storage-relative path; without it the worker renders page 1.
+        if entry.image:
+            metadata["cover"] = entry.image.name
+
+        return metadata
 
     @staticmethod
     def mark_encryption_completed(lcp_content_id: str, encrypted_url: Optional[str] = None) -> EncryptedContent:
@@ -309,23 +396,75 @@ class ContentEncryptionService:
             # Generate default URL
             encrypted_content.encrypted_url = ContentEncryptionService.get_encrypted_content_url(encrypted_content)
 
-        encrypted_content.save()
+        # Only the columns this method owns: the worker's result report may be
+        # stored concurrently (issue #99) and a full save would erase it.
+        encrypted_content.save(update_fields=["status", "encrypted_at", "encrypted_url", "updated_at"])
         return encrypted_content
 
     @staticmethod
-    def mark_encryption_failed(lcp_content_id: str, error_message: str):
-        """Mark encryption as failed."""
-        encrypted_content = EncryptedContent.objects.get(lcp_content_id=lcp_content_id)
-        encrypted_content.status = EncryptedContent.EncryptionStatus.FAILED
-        encrypted_content.error_message = error_message
-        encrypted_content.save()
+    def _current_task(lcp_content_id: str, task_id: Optional[str]):
+        """Queryset of the row, narrowed to `task_id` when one is given.
+
+        A row dispatched before task ids were stored (`task_id` NULL) accepts
+        any report. Updating through this queryset makes the stale-report check
+        and the write one statement, so a concurrent re-queue cannot slip in
+        between them.
+        """
+        queryset = EncryptedContent.objects.filter(lcp_content_id=lcp_content_id)
+        if task_id:
+            queryset = queryset.filter(Q(task_id=task_id) | Q(task_id__isnull=True))
+        return queryset
+
+    @staticmethod
+    def mark_encryption_failed(
+        lcp_content_id: str, error_message: str, task_id: Optional[str] = None, report: Optional[dict] = None
+    ) -> bool:
+        """Mark encryption as failed.
+
+        With `task_id`, only while that task is still the row's current one;
+        returns False (and changes nothing) for a report about an older task.
+        """
+        now = timezone.now()
+        changes = {
+            "status": EncryptedContent.EncryptionStatus.FAILED,
+            "error_message": error_message,
+            "updated_at": now,
+        }
+        if task_id:
+            changes.update(task_id=task_id, report=report, reported_at=now)
+        return ContentEncryptionService._current_task(lcp_content_id, task_id).update(**changes) > 0
+
+    @staticmethod
+    def record_encryption_report(
+        lcp_content_id: str, task_id: Optional[str], trace_id: Optional[str], report: Optional[dict]
+    ) -> bool:
+        """Store the worker's report of a successful task (issue #99).
+
+        The status is left alone: the notify webhook flips it to REGISTERED,
+        and may arrive before or after this report. Returns False for a report
+        about an older task.
+        """
+        now = timezone.now()
+        updated = ContentEncryptionService._current_task(lcp_content_id, task_id).update(
+            report=report, reported_at=now, updated_at=now
+        )
+        if updated and task_id:
+            # Rows dispatched before this was tracked learn their task now.
+            EncryptedContent.objects.filter(lcp_content_id=lcp_content_id, task_id__isnull=True).update(
+                task_id=task_id
+            )
+        if updated and trace_id:
+            EncryptedContent.objects.filter(lcp_content_id=lcp_content_id, trace_id__isnull=True).update(
+                trace_id=trace_id
+            )
+        return updated > 0
 
     @staticmethod
     def mark_registered_with_lcp_server(encrypted_content: EncryptedContent):
         """Mark content as registered with LCP Server."""
         encrypted_content.status = EncryptedContent.EncryptionStatus.REGISTERED
         encrypted_content.registered_at = timezone.now()
-        encrypted_content.save()
+        encrypted_content.save(update_fields=["status", "registered_at", "updated_at"])
 
         # lcpencrypt has read its input by the time it notifies us.
         try:

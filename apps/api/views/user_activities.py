@@ -3,6 +3,7 @@ from django.utils.translation import gettext as _
 from apps import openapi
 from apps.api.filters.user_activities import UserActivityFilter
 from apps.api.response import Ordering, PaginationResponse
+from apps.api.serializers.entries import with_entry_graph
 from apps.api.serializers.user_activities import UserActivitySerializer
 from apps.core.errors import UnauthorizedException
 from apps.core.models import UserActivity
@@ -27,15 +28,8 @@ class UserActivityManagement(SecuredView):
         if request.user.is_anonymous:
             raise UnauthorizedException(detail=_("You need to be logged in to access your history"))
 
-        activities = (
-            UserActivityFilter(request.GET, queryset=UserActivity.objects.all(), request=request)
-            .qs.select_related("entry", "entry__language")
-            .prefetch_related(
-                "entry__entry_authors__author",
-                "entry__categories",
-                "entry__feeds",
-                "entry__acquisitions",
-            )
+        activities = with_entry_graph(
+            UserActivityFilter(request.GET, queryset=UserActivity.objects.all(), request=request).qs, "entry"
         )
         ordering = (
             Ordering.create_from_request(request) if "order_by" in request.GET else Ordering(["-last_occurred_at"])

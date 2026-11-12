@@ -18,8 +18,10 @@ from typing import List, Optional
 
 from django.conf import settings
 from django.utils.translation import gettext as _
+from opentelemetry.trace import SpanKind, StatusCode
 
 from apps.core.errors import ProblemDetailException
+from apps.core.fields.localized import localize
 from apps.mcp import completions, prompts, resources
 from apps.mcp.errors import ToolError
 from apps.mcp.metadata import credential_hint
@@ -36,9 +38,36 @@ from apps.mcp.protocol import (
     supports_structured_output,
 )
 from apps.mcp.registry import Tool, ToolAccess, ToolRegistry
+from evil_flowers_catalog import telemetry
 
 logger = logging.getLogger("apps.mcp.server")
 audit = logging.getLogger("apps.mcp.audit")
+
+# Semantic conventions for MCP (`mcp.*`, `gen_ai.tool.name`, `error.type`).
+_tracer = telemetry.get_tracer("apps.mcp")
+_operation_duration = telemetry.get_meter("apps.mcp").create_histogram(
+    "mcp.server.operation.duration",
+    unit="s",
+    description="Duration of one MCP request handled by the server.",
+    explicit_bucket_boundaries_advisory=[0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300],
+)
+
+KNOWN_METHODS = frozenset(
+    {
+        "initialize",
+        "ping",
+        "tools/list",
+        "tools/call",
+        "resources/list",
+        "resources/templates/list",
+        "resources/read",
+        "prompts/list",
+        "prompts/get",
+        "completion/complete",
+        "notifications/initialized",
+        "notifications/cancelled",
+    }
+)
 
 READ_INSTRUCTIONS = (
     "This server exposes an OPDS publication catalog — a digital library.\n\n"
@@ -50,7 +79,9 @@ READ_INSTRUCTIONS = (
     "read one publication in full.\n\n"
     "Results are always scoped to what the calling credential may read; an unauthenticated "
     "session sees public catalogs only. `whoami`, `get_my_shelf` and `list_my_loans` describe the "
-    "authenticated user's own library and require credentials."
+    "authenticated user's own library and require credentials. `get_user` and `list_api_keys` "
+    "describe the caller's own account and API keys; administrators see everyone's through "
+    "`list_users` and `get_user`."
 )
 
 WRITE_INSTRUCTIONS = (
@@ -58,12 +89,15 @@ WRITE_INSTRUCTIONS = (
     "created, updated and deleted, publications can be filed under categories "
     "(`classify_entries`) and moved in and out of feeds (`add_entries_to_feed`, "
     "`remove_entries_from_feed`).\n\n"
-    "Publications themselves are added with `create_entry` and corrected with `update_entry`. A "
+    "Publications themselves are added with `create_entry`, corrected with `update_entry` and "
+    "removed with `delete_entry` (files included — run it with `dry_run: true` first and show "
+    "the user the report). A "
     "file never travels through a tool call: `create_upload_link` returns a signed single-use URL "
     "and the file is POSTed there as multipart `content`. Set `lcp_enabled` and `lcp_copies` for "
-    "DRM-protected titles — encryption is queued when the file arrives. The catalog refuses a "
+    "DRM-protected titles — encryption is queued when the file arrives; `ip_block`, `allow_print`, "
+    "`allow_share` and `allow_annotations` set who may read it and how. The catalog refuses a "
     "second publication with the same title, ISBN or DOI; search before importing.\n\n"
-    "Every management tool needs `manage` access on the catalog in question. Start with "
+    "Every curation tool needs `manage` access on the catalog in question. Start with "
     "`list_catalogs` — each result carries an `access` level — or `whoami` for the count. "
     "Creating a *catalog* additionally requires administrator rights, which `manage` on an "
     "existing catalog does not confer.\n\n"
@@ -83,10 +117,26 @@ WRITE_INSTRUCTIONS = (
     "cannot be undone: confirm with the user first, note that `delete_category` reports how many "
     "publications lost the classification, and treat `delete_catalog` — which destroys every "
     "publication and file inside it — as something to propose, never to volunteer.\n\n"
-    "Administrators also get two operations tools for Readium LCP encryption: "
+    "Administrators also get operations tools for Readium LCP encryption: "
     "`list_encryption_jobs` finds jobs stuck in `pending` or `failed` (a publication cannot be "
     "lent until its job is `registered`), and `requeue_encryption` sends them to the worker again. "
-    "Re-queuing does not fix whatever lost the job — say so if the cause looks like deployment."
+    "Re-queuing does not fix whatever lost the job — say so if the cause looks like deployment. "
+    "`reencrypt_publication` re-runs an already `registered` job, e.g. after a worker upgrade; run "
+    "it with `dry_run: true` first, and never pass `force` (which breaks active loans) without "
+    "the user's confirmation.\n\n"
+    "Superusers also shape the notification e-mails: `get_notification_branding` shows the effective "
+    "branding, the logo images and template overrides on the deployment's volume; "
+    "`update_notification_branding` changes name, logo, colours and footer for every e-mail — check "
+    "the result with `preview_notification` and `send_test_notification` (your own inbox only). "
+    "`sync_ldap_profiles` imports e-mail addresses of LDAP users who have not logged in yet; run it "
+    "with `dry_run: true` first.\n\n"
+    "Accounts and credentials: `create_api_key` mints a Bearer key for the caller and returns its "
+    "token exactly once — give it to the user straight away, it cannot be retrieved later; "
+    "`revoke_api_key` disables one. Administrators can also `create_user`, `update_user` and "
+    "`delete_user`, and a superuser can mint a key for another account (e.g. an API-key-only "
+    "service account created without a password). Nobody can change their own role, active flag "
+    "or password here, and only a superuser can touch an administrator's account. Prefer "
+    "deactivating a user over `delete_user`, which also destroys their loans and annotations."
 )
 
 READ_ONLY_NOTE = "\n\nThis deployment is read-only: no tool here borrows, reserves, edits or deletes."
@@ -107,7 +157,53 @@ class McpServer:
 
         JSON-RPC forbids answering a notification (a message with no `id`), so
         `None` here means "the caller should send nothing back for this one".
+
+        Every message gets one INTERNAL span, `"{mcp.method.name} {gen_ai.tool.name}"`,
+        and one `mcp.server.operation.duration` point (IP-019). Method and tool
+        names come from the client, so anything we do not know is `_OTHER`.
         """
+        method, tool = self._telemetry_names(message)
+        attributes = {"mcp.method.name": method}
+        if tool:
+            attributes["gen_ai.tool.name"] = tool
+        stopwatch = telemetry.Stopwatch()
+
+        with _tracer.start_as_current_span(
+            f"{method} {tool}" if tool else method, kind=SpanKind.INTERNAL, attributes=attributes
+        ) as span:
+            response = self._handle(request, message, protocol_version)
+
+            error_type = self._error_type(response)
+            if error_type:
+                attributes["error.type"] = error_type
+                span.set_attribute("error.type", error_type)
+                span.set_status(StatusCode.ERROR)
+
+        _operation_duration.record(stopwatch.elapsed, attributes)
+        return response
+
+    def _telemetry_names(self, message):
+        if not isinstance(message, dict) or not isinstance(message.get("method"), str):
+            return "_OTHER", None
+        method = message["method"] if message["method"] in KNOWN_METHODS else "_OTHER"
+        if method != "tools/call":
+            return method, None
+        name = (message.get("params") or {}).get("name") if isinstance(message.get("params"), dict) else None
+        return method, (name if isinstance(name, str) and self._registry.get(name) else "_OTHER")
+
+    @staticmethod
+    def _error_type(response) -> Optional[str]:
+        """JSON-RPC error code, or `tool_error` for a tool result with `isError`."""
+        if not isinstance(response, dict):
+            return None
+        if isinstance(response.get("error"), dict):
+            return str(response["error"].get("code", "_OTHER"))
+        result = response.get("result")
+        if isinstance(result, dict) and result.get("isError"):
+            return "tool_error"
+        return None
+
+    def _handle(self, request, message, protocol_version: str = ""):
         if not isinstance(message, dict):
             return failure(None, JsonRpcError(INVALID_REQUEST, "A JSON-RPC message must be an object."))
 
@@ -235,10 +331,7 @@ class McpServer:
         if not request.user.is_authenticated:
             if tool.writes:
                 return self._error_result(
-                    _(
-                        "`%(tool)s` changes catalog data and requires an authenticated session with "
-                        "`manage` access on the catalog. Connect with %(hint)s."
-                    )
+                    _("`%(tool)s` changes data and requires an authenticated session. " "Connect with %(hint)s.")
                     % {"tool": tool.name, "hint": credential_hint()}
                 )
             return self._error_result(
@@ -319,7 +412,11 @@ class McpServer:
                 {
                     "type": "resource_link",
                     "uri": uri,
-                    "name": item.get("title") or item.get("term") or uri,
+                    # `name` must be a string. Feed titles and category labels are
+                    # localized mappings ({"sk": ..., "en": ...}); passing one through
+                    # made clients reject the whole result — after the write had
+                    # already been committed.
+                    "name": localize(item.get("title")) or localize(item.get("term")) or uri,
                     "mimeType": "application/json",
                 }
             )

@@ -18,6 +18,22 @@ from apps.readium.capability_scopes import (
 )
 from apps.readium.models import License, Reservation
 
+_LOOPBACK_MARKERS = ("://127.0.0.1", "://localhost", "://0.0.0.0", "://[::1]")
+
+
+def _public_base_url() -> str:
+    """The configured public origin, or "" when it is unset or loopback.
+
+    Behind the k8s edge gateway the request reaches Django as plain http, so
+    `request.build_absolute_uri` yields an `http://` link that browsers block
+    on the https portal (mixed content). The configured origin is the one
+    clients actually use, same as the e-mailed `.lcpl` links.
+    """
+    base_url = str(getattr(settings, "EVILFLOWERS_BASE_URL", "") or "").rstrip("/")
+    if not base_url or any(marker in base_url for marker in _LOOPBACK_MARKERS):
+        return ""
+    return base_url
+
 
 def _mint_lcpl_download_url(license_id: UUID, user_id: UUID, info: ValidationInfo) -> str:
     """
@@ -62,7 +78,11 @@ def _mint_lcpl_download_url(license_id: UUID, user_id: UUID, info: ValidationInf
         ttl=ttl,
         single_use=single_use,
     )
-    return request.build_absolute_uri(f"{relative}?token={token}")
+    path = f"{relative}?token={token}"
+    public_base = _public_base_url()
+    if public_base:
+        return f"{public_base}{path}"
+    return request.build_absolute_uri(path)
 
 
 class LicenseSerializer:
@@ -126,12 +146,29 @@ class LicenseSerializer:
             refused (`requested_end` is capped at `now + max_renew_days`) and
             could not explain the embargo to the user. Publishing the policy keeps
             one source of truth: `evaluate_renew` and the UI read the same numbers.
+
+            `embargo_days` is an upper bound: the embargo is capped at half the
+            loan. Use `renewable_from` for this loan's actual date (#110).
             """
             return {
                 "max_renew_days": settings.EVILFLOWERS_READIUM_MAX_RENEW_DAYS,
                 "embargo_days": settings.EVILFLOWERS_READIUM_RENEW_EMBARGO_DAYS,
                 "max_renewals": getattr(settings, "EVILFLOWERS_READIUM_MAX_RENEWALS", None),
             }
+
+        @computed_field
+        @property
+        def renewable_from(self) -> Optional[datetime]:
+            """When the renewal embargo lifts for this loan; `None` if it does not apply.
+
+            Computed by the same helper `evaluate_renew` uses, so a client that
+            disables "renew" until this moment never offers a renewal the API
+            refuses for the embargo — and never withholds one it would allow.
+            Other denials (queue, cap) still come back as a 403 with a `code`.
+            """
+            from apps.readium.services.renew_policy import renewable_from
+
+            return renewable_from(self.starts_at, self.expires_at, self.renewal_count)
 
         @computed_field
         @property

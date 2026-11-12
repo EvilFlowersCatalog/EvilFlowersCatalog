@@ -13,13 +13,14 @@ loop runs in memory and the answer is returned whole.
 """
 
 import json
+import uuid
 import logging
-import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
 from django.conf import settings
 
+from apps.assistant import prompts, structured
 from apps.assistant.llm import OllamaClient
 from apps.assistant.pdf import ReaderDocument
 
@@ -39,21 +40,24 @@ MAX_PAGE_CHARS = 6000
 
 READ_PDF_PAGE = "read_pdf_page"
 SEARCH_PDF = "search_pdf"
+LIST_PAGE_REGIONS = "list_page_regions"
+GET_REGION = "get_region"
+LIST_REGIONS = "list_regions"
+SEARCH_PARAGRAPHS = "search_paragraphs"
 
-SYSTEM_PROMPT = (
-    "You explain passages from a publication to a reader who selected them in a PDF viewer. "
-    "The reader is in the middle of reading and wants to understand what the passage means in "
-    "context — what it refers to, what the terms mean and why it matters at this point.\n\n"
-    "You are given the page the passage is on. When it refers to something defined elsewhere "
-    f'("this method", "the theorem above", an abbreviation), find it: use `{SEARCH_PDF}` to '
-    f"locate where a term is introduced and `{READ_PDF_PAGE}` to read earlier pages. Read only "
-    "what you need. Base the explanation on what the book says; never invent its content.\n\n"
-    "When you are done reading, answer with a single JSON object and nothing else:\n"
-    '{"simple": "<a short plain-language explanation, 2-5 sentences>", '
-    '"examples": [{"label": "<short title>", "description": "<a concrete example or analogy>"}]}\n'
-    "Give 1-3 examples. Do not mention page numbers: the viewer's numbering differs from the "
-    "numbers printed in the book, and small raised numbers in the text are footnote markers."
+#: Paragraphs `search_paragraphs` returns, best first.
+MAX_PARAGRAPH_RESULTS = 8
+
+#: Characters of each paragraph `search_paragraphs` returns.
+MAX_PARAGRAPH_CHARS = 1200
+
+#: `prompts/explain.md` (#116).
+SYSTEM_PROMPT = prompts.render(
+    "explain", search_paragraphs=SEARCH_PARAGRAPHS, search_pdf=SEARCH_PDF, read_pdf_page=READ_PDF_PAGE
 )
+
+#: Tools run against the reader's copy, in explain, highlight and bound chats.
+DOCUMENT_TOOLS = (READ_PDF_PAGE, SEARCH_PDF, LIST_PAGE_REGIONS, GET_REGION, LIST_REGIONS, SEARCH_PARAGRAPHS)
 
 TOOL_SPECIFICATIONS = [
     {
@@ -82,15 +86,92 @@ TOOL_SPECIFICATIONS = [
         "function": {
             "name": SEARCH_PDF,
             "description": (
-                "Search the publication's full text. Returns the best matching pages with a snippet "
-                "around the match. Use it to find where a term, name or method is introduced."
+                "Search the publication's full text for words. Returns the best matching pages with a "
+                "snippet around the match. Use it to find where a term, name or method is introduced. "
+                "With `regex: true` the query is a regular expression (Python syntax, case-insensitive) "
+                "and every page with a match is returned in reading order with its match count, e.g. "
+                r"`table\s+2\.\d` or `scaffold(ing|ed)`."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Words or a phrase to look for."},
+                    "query": {"type": "string", "description": "Words or a phrase, or a regular expression."},
+                    "regex": {
+                        "type": "boolean",
+                        "description": "Treat `query` as a regular expression. Defaults to false.",
+                    },
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": LIST_PAGE_REGIONS,
+            "description": (
+                "List the figures, tables and equations the catalog found on a page (IP-018), each "
+                "with its id, kind and caption or first line. Empty when the publication has not been "
+                "processed or the page has none."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"page": {"type": "integer", "description": "Page, as the reader's viewer numbers it."}},
+                "required": ["page"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": LIST_REGIONS,
+            "description": (
+                "List every figure, table and equation the catalog found in the publication, with id, kind, "
+                "page and caption, in reading order. Use it to see all figures at once or to find one by its "
+                "caption; cite one as [[region:ID]]. Empty when the publication has not been processed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["figure", "table", "equation"],
+                        "description": "Only this kind. Omit for all.",
+                    }
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": SEARCH_PARAGRAPHS,
+            "description": (
+                "Find passages of the publication by meaning, not by words: returns the best matching "
+                "paragraphs with their page, section and a relevance score. Prefer it over "
+                f"`{SEARCH_PDF}` for questions and topics; use `{SEARCH_PDF}` for an exact term or name."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What to look for, in a sentence or a few words."}
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": GET_REGION,
+            "description": (
+                "Read one figure, table or equation by the id `list_page_regions` returned: a figure's "
+                "caption and category, a table's content as markdown, an equation's LaTeX."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"region_id": {"type": "string", "description": "Region id."}},
+                "required": ["region_id"],
             },
         },
     },
@@ -129,6 +210,16 @@ def explain(
         tokens += used
 
         if not tool_calls:
+            if structured.parse_object(content, _valid) is None:
+                # Tools were offered, so `format` was not: once, ask again constrained to the schema (IP-024).
+                messages.append({"role": "assistant", "content": content})
+                messages.append(
+                    {"role": "user", "content": f"{structured.RETRY_INSTRUCTION} {_language_instruction(language)}"}
+                )
+                retry, _tool_calls, used = _complete(client, messages, None, ANSWER_SCHEMA)
+                tokens += used
+                if structured.parse_object(retry, _valid) is not None:
+                    content = retry
             return _parse(content, pages_read, tokens)
 
         messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
@@ -142,7 +233,7 @@ def explain(
             "content": f"Stop reading now and answer with the JSON object. {_language_instruction(language)}",
         }
     )
-    content, _tool_calls, used = _complete(client, messages, None)
+    content, _tool_calls, used = _complete(client, messages, None, ANSWER_SCHEMA)
     return _parse(content, pages_read, tokens + used)
 
 
@@ -164,8 +255,7 @@ def _opening(document, text, page, title, authors, language, pages_read) -> str:
     return "\n\n".join(parts)
 
 
-#: UI languages the reader can switch between, by code.
-LANGUAGE_NAMES = {"sk": "Slovak", "en": "English"}
+LANGUAGE_NAMES = prompts.LANGUAGE_NAMES
 
 
 def _language_instruction(language: Optional[str]) -> str:
@@ -174,22 +264,43 @@ def _language_instruction(language: Optional[str]) -> str:
     A bare code is not enough: asked for `sk`, small models drift into Czech, so
     the language is named and Czech is ruled out explicitly.
     """
-    code = (language or "").split("-")[0].lower()
-    name = LANGUAGE_NAMES.get(code)
+    name = prompts.language_name(language)
     if name is None:
         return "Write the explanation in the language of the selected passage."
+    return (
+        f"Write `simple` and every example in {name}, even when the publication is in another language."
+        + prompts.not_czech(language)
+    )
 
-    instruction = f"Write `simple` and every example in {name}, even when the publication is in another language."
-    if code == "sk":
-        instruction += " It must be Slovak, never Czech."
-    return instruction
+
+#: The explanation's shape, for Ollama's `format` when no tools are offered (IP-022): the
+#: answer is constrained to it rather than parsed out of free text.
+ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "simple": {"type": "string"},
+        "examples": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"label": {"type": "string"}, "description": {"type": "string"}},
+                "required": ["label", "description"],
+            },
+        },
+    },
+    "required": ["simple", "examples"],
+}
 
 
-def _complete(client: OllamaClient, messages: List[dict], specifications: Optional[List[dict]]):
+def _complete(client: OllamaClient, messages: List[dict], specifications: Optional[List[dict]], response_format=None):
     content = ""
     tool_calls: List[dict] = []
     tokens = 0
-    for delta in client.chat(messages, tools=specifications):
+    # A constrained format and tools do not mix: with tools offered the model must
+    # be free to emit a call instead of the JSON answer.
+    if specifications:
+        response_format = None
+    for delta in client.chat(messages, tools=specifications, response_format=response_format):
         content += delta.content
         tool_calls.extend(delta.tool_calls)
         if delta.done:
@@ -197,15 +308,19 @@ def _complete(client: OllamaClient, messages: List[dict], specifications: Option
     return content, tool_calls, tokens
 
 
-def run_document_tool(document: ReaderDocument, call: dict, pages_read: List[int]) -> str:
+def run_document_tool(
+    document: ReaderDocument, call: dict, pages_read: List[int], budget: Optional[int] = None
+) -> str:
     """Run `read_pdf_page` or `search_pdf`; also used by chat turns bound to a reader's copy.
 
     `pages_read` is the request's reading so far. Distinct pages are capped by
     `EVILFLOWERS_ASSISTANT_MAX_PAGES_READ` (IP-018 Q5): a page already read is
     free to read again, a new one past the budget is refused so the model answers
-    from what it has. Searching does not count.
+    from what it has. Searching does not count. `budget` overrides the setting: a
+    plain chat reading several publications shares one budget across them (#127).
     """
-    budget = settings.EVILFLOWERS_ASSISTANT_MAX_PAGES_READ
+    if budget is None:
+        budget = settings.EVILFLOWERS_ASSISTANT_MAX_PAGES_READ
     function = call.get("function") or {}
     name = function.get("name") or ""
     arguments = function.get("arguments") or {}
@@ -248,11 +363,95 @@ def run_document_tool(document: ReaderDocument, call: dict, pages_read: List[int
             query = str(arguments.get("query") or "").strip()
             if not query:
                 return json.dumps({"error": "`query` is required."})
+            if arguments.get("regex") is True:
+                try:
+                    return json.dumps({"results": document.search_regex(query)}, ensure_ascii=False)
+                except ValueError as error:
+                    return json.dumps({"error": str(error)})
             return json.dumps({"results": document.search(query)}, ensure_ascii=False)
+
+        if name in (LIST_PAGE_REGIONS, GET_REGION, LIST_REGIONS):
+            return _run_region_tool(document, name, arguments)
+
+        if name == SEARCH_PARAGRAPHS:
+            return _search_paragraphs(document, str(arguments.get("query") or "").strip())
     except (TypeError, ValueError):
         return json.dumps({"error": f"Invalid arguments for `{name}`."})
 
     return json.dumps({"error": f"Unknown tool `{name}`."})
+
+
+def _run_region_tool(document: ReaderDocument, name: str, arguments: dict) -> str:
+    """Regions of the reader's copy (IP-018 Phase 5); reading them costs no page budget."""
+    extraction = _extraction(document)
+    if extraction is None:
+        return json.dumps({"error": "This publication has no extracted figures, tables or equations yet."})
+
+    if name == LIST_PAGE_REGIONS:
+        return json.dumps({"regions": extraction.page_regions(int(arguments.get("page")))}, ensure_ascii=False)
+
+    if name == LIST_REGIONS:
+        kind = arguments.get("kind") if arguments.get("kind") in ("figure", "table", "equation") else None
+        return json.dumps({"regions": extraction.all_regions(kind)}, ensure_ascii=False)
+
+    try:
+        region = extraction.region(uuid.UUID(str(arguments.get("region_id"))))
+    except ValueError:
+        region = None
+    if region is None:
+        return json.dumps({"error": "No such region in this publication."})
+    return json.dumps({"region": region}, ensure_ascii=False)
+
+
+def _extraction(document: ReaderDocument):
+    from apps.extraction.reader import ReaderExtraction
+
+    if not hasattr(document, "_extraction"):
+        document._extraction = ReaderExtraction.for_document(document)
+    return document._extraction
+
+
+def _search_paragraphs(document: ReaderDocument, query: str) -> str:
+    """Paragraphs by meaning over the paragraph index (IP-018 Phase 8); `search_pdf` without one."""
+    from apps.extraction.reader import EmbeddingUnavailable
+
+    if not query:
+        return json.dumps({"error": "`query` is required."})
+
+    extraction = _extraction(document)
+    if extraction is not None and extraction.has_paragraphs():
+        try:
+            vector = extraction.embed(query)
+        except EmbeddingUnavailable:
+            vector = None
+        if vector is not None:
+            candidates = extraction.search_paragraphs(
+                vector, settings.EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE, MAX_PARAGRAPH_RESULTS
+            )
+            best = sorted(candidates, key=lambda c: -c.score)[:MAX_PARAGRAPH_RESULTS]
+            paragraphs = [
+                {
+                    "page": candidate.page,
+                    "score": candidate.score,
+                    "section": candidate.paragraph.section,
+                    "text": _clip_to(candidate.paragraph.text, MAX_PARAGRAPH_CHARS),
+                }
+                for candidate in sorted(best, key=lambda c: c.paragraph.seq)
+            ]
+            return json.dumps({"paragraphs": paragraphs}, ensure_ascii=False)
+
+    # No index or no embedding: the word search, said so, so the model can adapt its queries.
+    return json.dumps(
+        {
+            "note": "Search by meaning is not available for this publication; these are word matches.",
+            "results": document.search(query),
+        },
+        ensure_ascii=False,
+    )
+
+
+def _clip_to(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit] + " […]"
 
 
 def _clip(text: str) -> str:
@@ -261,25 +460,20 @@ def _clip(text: str) -> str:
     return text[:MAX_PAGE_CHARS] + " […]"
 
 
-_JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
+def _valid(data: dict) -> bool:
+    return isinstance(data.get("simple"), str)
 
 
 def _parse(content: str, pages_read: List[int], tokens: int) -> Explanation:
     """The model's JSON answer, or its prose when it did not follow the format."""
-    match = _JSON_OBJECT.search(content or "")
-    if match:
-        try:
-            data = json.loads(match.group(0))
-        except json.JSONDecodeError:
-            data = None
-
-        if isinstance(data, dict) and isinstance(data.get("simple"), str):
-            examples = [
-                {"label": str(example.get("label") or ""), "description": str(example.get("description") or "")}
-                for example in data.get("examples") or []
-                if isinstance(example, dict)
-            ]
-            return Explanation(simple=data["simple"].strip(), examples=examples, pages=pages_read, tokens_used=tokens)
+    data = structured.parse_object(content, _valid)
+    if data is not None:
+        examples = [
+            {"label": str(example.get("label") or ""), "description": str(example.get("description") or "")}
+            for example in data.get("examples") or []
+            if isinstance(example, dict)
+        ]
+        return Explanation(simple=data["simple"].strip(), examples=examples, pages=pages_read, tokens_used=tokens)
 
     logger.warning("Explain answer was not the expected JSON: %r", (content or "")[:200])
     return Explanation(simple=(content or "").strip(), pages=pages_read, tokens_used=tokens)

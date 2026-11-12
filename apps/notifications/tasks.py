@@ -1,7 +1,9 @@
 from celery import shared_task
 
 
-@shared_task
+# Early ack whatever CELERY_TASK_ACKS_LATE says (#142): nothing dedups a send, so a
+# redelivery after the SMTP hand-off would e-mail the reader twice.
+@shared_task(acks_late=False)
 def send_notification(
     notification_type: str,
     recipient_user_id: str,

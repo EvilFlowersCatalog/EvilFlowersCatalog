@@ -15,6 +15,7 @@ class Properties(BaseModel):
     indirect_acquisition: Optional[list[Link]] = Field(None, alias="indirectAcquisition")
     availability: Optional[Any] = None
     copies: Optional[Any] = None
+    holds: Optional[Any] = None
     authenticate: Optional[Link] = None
 
 

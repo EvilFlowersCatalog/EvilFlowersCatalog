@@ -10,8 +10,12 @@ What an agent may set is narrower than `EntryForm` on purpose:
 - **Descriptive metadata** — title, authors, publisher, date, language, summary,
   identifiers — plus the catalog's own categories and feeds.
 - **Readium LCP lending** — `lcp_enabled` and `lcp_copies`, which map to
-  `config.readium_enabled` / `config.readium_amount`. Nothing else in `config`
-  (OCR, annotations, printing, IP blocking) is reachable from here.
+  `config.readium_enabled` / `config.readium_amount`.
+- **Access settings** — `ip_block`, `allow_print`, `allow_share`,
+  `allow_annotations` (`CONFIG_ARGUMENTS`). OCR and render type stay REST-only:
+  they trigger reprocessing and are not curation decisions.
+- **Deletion** — `delete_entry` removes a publication; the stored files go with
+  it (`apps.files.signals`). `dry_run` reports what would be removed first.
 - **No cover images and no inline files.** A file goes through
   `create_upload_link` (see `apps/mcp/uploads.py`), because JSON-RPC cannot
   carry a PDF.
@@ -38,6 +42,7 @@ from apps.api.forms.entries import EntryForm
 from apps.api.services.entry import EntryService
 from apps.api.views.entries import _assert_readium_amount_above_active, shelf_record_mapping
 from apps.core.models import Acquisition, Entry
+from apps.files.signals import entry_folder
 from apps.mcp import uploads
 from apps.mcp.arguments import Arguments
 from apps.mcp.errors import ToolConflict, ToolError, ToolNotFound, ToolPermissionDenied, ToolValidationError
@@ -45,7 +50,7 @@ from apps.mcp.projections import entry_detail
 from apps.mcp.registry import ToolAccess, registry
 from apps.mcp.schemas import ENTRY_DETAIL_SCHEMA, UUID_SCHEMA, single_output
 from apps.mcp.tools.common import resolve_catalog_for_management
-from apps.readium.models import License
+from apps.readium.models import License, Reservation
 from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
 
 logger = logging.getLogger("apps.mcp.audit")
@@ -114,9 +119,29 @@ ENTRY_FIELDS = {
         "minimum": 1,
         "description": "How many readers may hold an LCP loan at the same time. Required with `lcp_enabled: true`.",
     },
+    "ip_block": {
+        "type": "boolean",
+        "description": (
+            "Restrict reading and download to the institution's network (the configured IP ranges). "
+            "Works with or without LCP."
+        ),
+    },
+    "allow_print": {"type": "boolean", "description": "Whether the web viewer offers printing."},
+    "allow_share": {"type": "boolean", "description": "Whether readers may share a link to the publication."},
+    "allow_annotations": {"type": "boolean", "description": "Whether readers may create annotations and highlights."},
 }
 
 EDITABLE = tuple(ENTRY_FIELDS.keys())
+
+# Tool argument → `Entry.config` key. Everything here is written by the config-only
+# path of `update_entry` without going through `EntryForm`.
+CONFIG_ARGUMENTS = {
+    "lcp_enabled": "readium_enabled",
+    "ip_block": "evilflowers_ip_block",
+    "allow_print": "evilflowers_viewer_print",
+    "allow_share": "evilflowers_share_enabled",
+    "allow_annotations": "evilflowers_annotations_create",
+}
 
 
 def _readable_entry(request, entry_id: str) -> Entry:
@@ -183,9 +208,10 @@ def _payload(arguments: Arguments, raw: dict, *, current_identifiers=None) -> di
         payload["feeds"] = arguments.uuid_sequence("feed_ids") or []
 
     config = {}
-    lcp_enabled = arguments.boolean("lcp_enabled")
-    if lcp_enabled is not None:
-        config["readium_enabled"] = lcp_enabled
+    for argument, key in CONFIG_ARGUMENTS.items():
+        value = arguments.boolean(argument)
+        if value is not None:
+            config[key] = value
     if "lcp_copies" in raw:
         config["readium_amount"] = arguments.integer("lcp_copies", default=None, minimum=1, maximum=100_000)
     if config:
@@ -295,12 +321,12 @@ def create_entry(request, raw_arguments: dict) -> dict:
     return _entry_payload(request, entry)
 
 
-def _update_lending_only(request, entry: Entry, config: dict) -> dict:
-    """`update_entry` with nothing but `lcp_enabled` / `lcp_copies`.
+def _update_config_only(request, entry: Entry, config: dict) -> dict:
+    """`update_entry` with nothing but lending/viewer settings (`CONFIG_ARGUMENTS`, `lcp_copies`).
 
     Skips `EntryForm`: that path rewrites title and language on every call and
     refuses an entry with no language, which several legacy records are. Here
-    only the two `config` keys change, saved with `update_fields` so no other
+    only the named `config` keys change, saved with `update_fields` so no other
     column is rewritten. `Entry.post_save` still fires, which is what queues
     encryption for any PDF/EPUB not yet encrypted when protection is switched on.
     """
@@ -341,9 +367,12 @@ def _update_lending_only(request, entry: Entry, config: dict) -> dict:
         "Only the arguments you pass change; `identifiers` are merged key by key (null removes "
         "one), while `authors`, `category_ids` and `feed_ids` **replace** the whole set.\n\n"
         "Setting `lcp_enabled: true` on a publication that already has a PDF or EPUB queues its "
-        "encryption immediately. `lcp_copies` cannot go below the number of loans currently out. "
-        "A call that passes only `lcp_enabled` / `lcp_copies` changes those and nothing else — "
-        "the way to protect publications that are already in the catalog."
+        "encryption immediately (and retries a job that had `failed`). `lcp_copies` cannot go "
+        "below the number of loans currently out.\n\n"
+        "Access settings: `ip_block` limits the title to the institution's network; "
+        "`allow_print`, `allow_share` and `allow_annotations` switch those reader features. "
+        "A call that passes only these and/or `lcp_enabled` / `lcp_copies` changes those and "
+        "nothing else — the way to protect publications that are already in the catalog."
     ),
     input_schema={
         "type": "object",
@@ -369,7 +398,7 @@ def update_entry(request, raw_arguments: dict) -> dict:
         raise ToolError(_("Nothing to change — pass at least one field besides `entry_id`."))
 
     if set(payload) == {"config"}:
-        return _update_lending_only(request, entry, payload["config"])
+        return _update_config_only(request, entry, payload["config"])
 
     # `EntryForm` requires these two on every write; carry the current values.
     payload.setdefault("title", entry.title)
@@ -397,6 +426,136 @@ def update_entry(request, raw_arguments: dict) -> dict:
         ",".join(sorted(key for key in raw_arguments if key != "entry_id")),
     )
     return _entry_payload(request, entry)
+
+
+def _deletion_report(entry: Entry) -> dict:
+    """Everything `entry.delete()` will take with it, so a caller can decide first."""
+    now = timezone.now()
+    acquisitions = list(entry.acquisitions.select_related("encrypted_content").all())
+    files = [entry.image.name if entry.image else None, entry.thumbnail.name if entry.thumbnail else None]
+    lcp_content_ids = []
+    for acquisition in acquisitions:
+        if acquisition.storage_backend == Acquisition.StorageBackend.LOCAL and acquisition.content:
+            files.append(acquisition.content.name)
+        encrypted = getattr(acquisition, "encrypted_content", None)
+        if encrypted is not None:
+            files.append(encrypted.encrypted_path)
+            lcp_content_ids.append(encrypted.lcp_content_id)
+
+    licenses = License.objects.filter(entry=entry)
+    return {
+        "acquisitions": len(acquisitions),
+        "files": [name for name in files if name],
+        "folder": entry_folder(entry),
+        "active_loans": licenses.filter(
+            state__in=[License.LicenseState.READY, License.LicenseState.ACTIVE], expires_at__gt=now
+        ).count(),
+        "licenses": licenses.count(),
+        "queued_reservations": Reservation.objects.filter(
+            entry=entry, status__in=Reservation.NON_TERMINAL_STATUSES
+        ).count(),
+        "shelf_records": entry.shelf_records.count(),
+        "lcp_content_ids": lcp_content_ids,
+    }
+
+
+@registry.tool(
+    name="delete_entry",
+    title="Delete a publication",
+    description=(
+        "Permanently delete a publication and everything attached to it: its files (PDF/EPUB, "
+        "cover, thumbnail, extraction crops, LCP package — removed from storage once the delete "
+        "commits), feed memberships, classifications, shelf records, annotations and loan history. "
+        "Requires `manage` access. This cannot be undone — confirm with the user first.\n\n"
+        "Pass `dry_run: true` to get the same report without deleting anything. A publication "
+        "with active loans or a waiting reservation queue is refused unless `force: true`: "
+        "readers would lose a book they borrowed. The LCP server keeps its own record of an "
+        "encrypted publication (lcpserver cannot delete one); it becomes unreachable and is "
+        "listed in `lcp_content_ids` for the operator."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "entry_id": {**UUID_SCHEMA, "description": "Publication to delete, from `search_entries`."},
+            "dry_run": {
+                "type": "boolean",
+                "default": False,
+                "description": "Report what would be removed, delete nothing.",
+            },
+            "force": {
+                "type": "boolean",
+                "default": False,
+                "description": "Delete even with active loans or queued reservations.",
+            },
+        },
+        "required": ["entry_id"],
+        "additionalProperties": False,
+    },
+    output_schema={
+        "type": "object",
+        "properties": {
+            "deleted": {"type": "boolean"},
+            "dry_run": {"type": "boolean"},
+            "id": UUID_SCHEMA,
+            "title": {"type": "string"},
+            "catalog_id": UUID_SCHEMA,
+            "acquisitions": {"type": "integer"},
+            "files": {"type": "array", "items": {"type": "string"}},
+            "folder": {"type": ["string", "null"]},
+            "active_loans": {"type": "integer"},
+            "licenses": {"type": "integer"},
+            "queued_reservations": {"type": "integer"},
+            "shelf_records": {"type": "integer"},
+            "lcp_content_ids": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["deleted", "dry_run", "id"],
+    },
+    access=ToolAccess.WRITE,
+    destructive=True,
+    idempotent=False,
+)
+@transaction.atomic
+def delete_entry(request, raw_arguments: dict) -> dict:
+    arguments = Arguments(raw_arguments, allowed=("entry_id", "dry_run", "force"))
+    entry = _manageable_entry(request, arguments.uuid("entry_id", required=True), "delete")
+    dry_run = arguments.boolean("dry_run", default=False)
+    force = arguments.boolean("force", default=False)
+
+    report = _deletion_report(entry)
+    result = {
+        "deleted": False,
+        "dry_run": dry_run,
+        "id": str(entry.pk),
+        "title": entry.title,
+        "catalog_id": str(entry.catalog_id),
+        **report,
+    }
+    if dry_run:
+        return result
+
+    if (report["active_loans"] or report["queued_reservations"]) and not force:
+        raise ToolConflict(
+            _(
+                "'%(title)s' has %(loans)d active loan(s) and %(queue)d queued reservation(s). Deleting "
+                "it takes the book away from those readers. Wait for the loans to end, or pass "
+                "`force: true` if the user confirmed."
+            )
+            % {"title": entry.title, "loans": report["active_loans"], "queue": report["queued_reservations"]}
+        )
+
+    # `entry.delete()`, not a queryset delete — either works for the file receivers,
+    # but this is the path REST takes, so both surfaces behave the same.
+    entry.delete()
+    logger.info(
+        "mcp.write user=%s action=delete_entry entry=%s catalog=%s files=%d forced=%s lcp_contents=%s",
+        request.user.pk,
+        result["id"],
+        result["catalog_id"],
+        len(report["files"]),
+        force,
+        ",".join(report["lcp_content_ids"]) or "-",
+    )
+    return {**result, "deleted": True}
 
 
 @registry.tool(

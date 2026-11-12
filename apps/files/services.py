@@ -14,14 +14,16 @@ ran before the auth branch.
 
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Optional
 
 from django.core.files import File
-from django.http import FileResponse, HttpResponseRedirect, HttpResponse
+from django.http import HttpResponseRedirect
+from django.http.response import HttpResponseBase
 from django.utils.text import slugify
 from mimetypes import guess_extension
 
 from apps.core.models import Acquisition
+from apps.files.ranges import ranged_file_response
 from apps.files.storage import get_storage
 
 
@@ -111,17 +113,23 @@ class AcquisitionStorageService:
         if path and storage.exists(path):
             storage.delete(path)
 
+        # IP-018: crops of every extraction run of this acquisition.
+        from apps.extraction.services import delete_for_acquisition
+
+        delete_for_acquisition(acquisition)
+
     @classmethod
     def download_response(
         cls,
         acquisition: Acquisition,
+        request,
         *,
         as_attachment: bool = True,
-    ) -> Union[FileResponse, HttpResponseRedirect, HttpResponse]:
+    ) -> HttpResponseBase:
         """Build the right HTTP response for serving the payload.
 
         - EXTERNAL_URL: 302 redirect to `file_url`.
-        - LOCAL: `FileResponse` streaming the storage backend file.
+        - LOCAL: the stored file, honouring a `Range` request header (#70).
 
         Callers MUST run their auth / IP-block / UserAcquisition
         bookkeeping BEFORE invoking this method.
@@ -135,9 +143,22 @@ class AcquisitionStorageService:
 
         if not acquisition.content:
             raise AcquisitionStorageError(f"Acquisition {acquisition.pk} has no content stored")
+        # A missing or empty file is "not found", not a server error (#112).
+        try:
+            size = acquisition.content.storage.size(acquisition.content.name)
+        except (FileNotFoundError, OSError) as exc:
+            raise AcquisitionStorageError(f"Acquisition {acquisition.pk}: file missing from storage") from exc
+        if not size:
+            raise AcquisitionStorageError(f"Acquisition {acquisition.pk}: stored file is empty")
 
-        filename = cls._safe_filename(acquisition)
-        return FileResponse(acquisition.content, as_attachment=as_attachment, filename=filename)
+        return ranged_file_response(
+            request,
+            acquisition.content.storage,
+            acquisition.content.name,
+            content_type=acquisition.mime or None,
+            filename=cls._safe_filename(acquisition),
+            as_attachment=as_attachment,
+        )
 
     @staticmethod
     def _safe_filename(acquisition: Acquisition) -> str:

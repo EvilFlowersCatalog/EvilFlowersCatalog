@@ -20,13 +20,18 @@ from django.contrib import admin
 from django.urls import path, include
 from django.views.static import serve
 
+from apps.notifications.views import NotificationAsset
+
 urlpatterns = [
+    # IP-025: images for notification e-mails (STU logo), from the IaC-mounted overrides volume.
+    path("notifications/v1/assets/<str:name>", NotificationAsset.as_view(), name="notification-asset"),
     path("api/v1/", include(("apps.api.urls", "api"), namespace="api")),
     path("opds/v1.2/", include(("apps.opds.urls", "opds"), namespace="opds")),
     path("opds/v2/", include(("apps.opds2.urls", "opds2"), namespace="opds2")),
     path("readium/v1/", include(("apps.readium.urls", "readium"), namespace="readium")),
     path("data/v1/", include(("apps.files.urls", "files"), namespace="files")),
     path("docs/", include(("apps.openapi.urls", "openapi"), namespace="openapi")),
+    path("extraction/v1/", include(("apps.extraction.urls", "extraction"), namespace="extraction")),
     path("admin/", admin.site.urls),
 ]
 

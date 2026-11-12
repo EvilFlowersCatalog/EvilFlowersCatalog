@@ -16,5 +16,4 @@ This is only an estimate: the book may come back earlier if the current reader r
 {% endif %}
 We will email you again as soon as a slot opens up. You will have {{ claim_window_hours }} hours to claim it.
 
---
-This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.
+{% include "notifications/_footer.txt" %}

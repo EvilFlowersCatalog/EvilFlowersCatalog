@@ -10,6 +10,38 @@ class TemplateRegistry:
     REQUIRED_EXTENSIONS = (".mjml", ".txt")
 
     @classmethod
+    def sample_context(cls, user_name: str = "Alena Nováková") -> dict:
+        """One context that fills every variable any notification template uses — for previews (IP-025).
+
+        Times are relative to now so "expires in N days" reads plausibly.
+        """
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        now = timezone.now()
+        return {
+            "user_name": user_name,
+            "entry_title": "Úvod do teórie grafov",
+            "entry_author": "Ján Novák",
+            "starts_at": now.isoformat(),
+            "expires_at": (now + timedelta(days=14)).isoformat(),
+            "days_left": 3,
+            "passphrase_hint": "meno môjho prvého psa",
+            "download_url": "https://example.invalid/readium/v1/licenses/preview.lcpl?access_token=preview",
+            "download_expires_hours": 72,
+            "claim_url": "https://example.invalid/library/reservations/preview/claim",
+            "claim_deadline": (now + timedelta(hours=48)).isoformat(),
+            "claim_window_hours": 48,
+            "position": 2,
+            "old_position": 3,
+            "new_position": 2,
+            "estimated_available_from": (now + timedelta(days=5)).isoformat(),
+            "estimated_available_until": (now + timedelta(days=12)).isoformat(),
+            "reason": "Ukážkový dôvod / sample reason",
+        }
+
+    @classmethod
     def get_template_names(cls) -> list[str]:
         """Return list of notification type names that have all required templates."""
         from django.conf import settings

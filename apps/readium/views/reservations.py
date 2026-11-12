@@ -21,6 +21,7 @@ from django.utils.translation import gettext as _
 
 from apps import openapi
 from apps.api.response import PaginationResponse, SingleResponse
+from apps.api.serializers.entries import with_entry_graph
 from apps.core.errors import DetailType, ProblemDetailException, ValidationException
 from apps.core.models import UserCatalog
 from apps.core.views import SecuredView
@@ -56,7 +57,7 @@ class ReservationCollection(SecuredView):
     def get(self, request):
         qs = ReservationFilter(
             request.GET,
-            queryset=Reservation.objects.select_related("entry").prefetch_related("entry__authors"),
+            queryset=with_entry_graph(Reservation.objects.all(), "entry"),
             request=request,
         ).qs
         return PaginationResponse(

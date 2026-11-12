@@ -62,6 +62,10 @@ COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 ENV GUNICORN_CMD_ARGS=''
 ENV LOGLEVEL=info
+# Celery node name of the catalog worker (#106). supervisord refuses to start
+# when %(ENV_CELERY_HOSTNAME)s is unset, hence the default; Celery expands %h
+# to the container hostname. k8s sets a stable name (catalog@dev).
+ENV CELERY_HOSTNAME=catalog@%h
 
 RUN date -I > BUILD.txt
 

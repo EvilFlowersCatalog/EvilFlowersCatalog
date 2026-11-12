@@ -8,6 +8,7 @@ from apps import openapi
 from apps.api.filters.shelf_records import ShelfRecordFilter
 from apps.api.forms.shelf_records import ShelfRecordForm
 from apps.api.response import SingleResponse, PaginationResponse
+from apps.api.serializers.entries import with_entry_graph
 from apps.api.serializers.shelf_records import ShelfRecordSerializer
 from apps.core.errors import (
     ValidationException,
@@ -31,7 +32,7 @@ class ShelfRecordManagement(SecuredView):
 
         shelf_records = ShelfRecordFilter(
             request.GET,
-            queryset=ShelfRecord.objects.filter(user=request.user),
+            queryset=with_entry_graph(ShelfRecord.objects.filter(user=request.user), "entry"),
             request=request,
         ).qs
 

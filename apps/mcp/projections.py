@@ -172,6 +172,9 @@ def availability(lcp_row: Optional[dict]) -> Optional[dict]:
     return _compact(
         {
             "state": state,
+            # False: the package is not registered yet, so nothing can be lent
+            # (`list_encryption_jobs` shows why).
+            "package_ready": lcp_row.get("lcp_ready"),
             "available_slots": lcp_row.get("available_slots"),
             "total_slots": lcp_row.get("total_slots"),
             "next_available_at": _iso(lcp_row.get("next_available_at")),
@@ -211,6 +214,8 @@ def entry_summary(
             "summary_truncated": summary_truncated or None,
             "page_count": instance.page_count,
             "popularity": instance.popularity or None,
+            # IP-023: only rated entries carry it; `_compact` drops the None.
+            "rating": instance.rating if instance.rating_count and instance.rating else None,
             "availability": availability(lcp_states.get(instance.pk)),
             "on_my_shelf": True if instance.pk in shelf_records else None,
             "resource_uri": uris.entry_uri(instance.pk),

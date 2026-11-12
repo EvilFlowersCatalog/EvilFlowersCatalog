@@ -9,11 +9,11 @@ only usable with a valid LCP license.
 import logging
 from http import HTTPStatus
 
-from django.http import FileResponse
 from django.utils.translation import gettext as _
 from django.views import View
 
 from apps.core.errors import ProblemDetailException, DetailType
+from apps.files.ranges import ranged_file_response
 from apps.files.storage import get_storage
 from apps.readium.models import EncryptedContent
 
@@ -63,8 +63,11 @@ class EncryptedContentDownloadView(View):
         # apps know the payload is encrypted. EPUB stays as-is per the
         # Readium LCP for EPUB profile (LCP-ness lives inside the zip);
         # PDF gets the +lcp variant.
-        response = FileResponse(
-            storage.open(encrypted_content.encrypted_path),
+        # The package is the same for every borrower, so byte ranges are safe (#70).
+        response = ranged_file_response(
+            request,
+            storage,
+            encrypted_content.encrypted_path,
             content_type=_lcp_content_type(encrypted_content.acquisition.mime),
         )
         # Encrypted content must never be cached by intermediaries.

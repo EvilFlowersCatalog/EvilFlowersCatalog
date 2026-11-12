@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
 
+from django.db.models import Prefetch
 from pydantic import field_validator, Field
 from pydantic_core.core_schema import ValidationInfo
 
@@ -26,13 +27,15 @@ class FeedSerializer:
         created_at: datetime
         updated_at: datetime
 
+        # Iterate `.all()` so a `parents`/`children` prefetch is reused; `values_list` on a
+        # related manager is always a new query, three per feed in an entry list (#124).
         @field_validator("parents", mode="before")
         def generate_parents(cls, v, info: ValidationInfo) -> List[UUID]:
-            return v.all().values_list("id", flat=True)
+            return [feed.pk for feed in v.all()]
 
         @field_validator("children", mode="before")
         def generate_children(cls, v, info: ValidationInfo) -> List[UUID]:
-            return v.all().values_list("id", flat=True)
+            return [feed.pk for feed in v.all()]
 
         @field_validator("url", mode="before")
         def generate_absolute_url(cls, v, info: ValidationInfo) -> Optional[UUID]:
@@ -40,3 +43,14 @@ class FeedSerializer:
 
         class Meta:
             examples = {}
+
+
+def feed_queryset():
+    """
+    Feeds with what `FeedSerializer.Base` reads: `catalog` (for `url`), `parents` and `children`.
+    Of a parent or child the serializer reads only the id: no other column is loaded for them.
+    """
+    return Feed.objects.select_related("catalog").prefetch_related(
+        Prefetch("parents", queryset=Feed.objects.only("id")),
+        Prefetch("children", queryset=Feed.objects.only("id")),
+    )

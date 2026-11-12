@@ -8,5 +8,4 @@ Your loan for "{{ entry_title }}"{% if entry_author %} by {{ entry_author }}{% e
 
 If you need more time, renew the loan from your library shelf.
 
---
-This is an automated notification from {{ library_name }}. Please do not reply to this e-mail.
+{% include "notifications/_footer.txt" %}

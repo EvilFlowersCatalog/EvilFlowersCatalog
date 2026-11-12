@@ -1,14 +1,16 @@
 import datetime
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from django.conf import settings
 from django.db.models import QuerySet
 from django.urls import reverse
+from lxml import etree
 
 from apps.core.fields.localized import localize
 from apps.core.models import Entry, Acquisition, Feed, User
 from apps.opds.schema import (
+    NSMAP,
     OpdsFeed,
     Link,
     AcquisitionEntry,
@@ -18,6 +20,7 @@ from apps.opds.schema import (
     Category,
     NavigationEntry,
     Content,
+    feed_type,
 )
 
 
@@ -30,19 +33,32 @@ class BaseFeed(ABC):
         updated_at: datetime.datetime,
         links: List[Link] = None,
         qs: Optional[QuerySet] = None,
+        entries: Optional[Iterable] = None,
+        fh_complete: bool = False,
         **kwargs,
     ):
+        """
+        `qs` and `entries` are alternative inputs: `entries` takes an already
+        ordered iterable of models (paged feeds load one page by primary key
+        and restore its order in Python, see `apps/opds/services/paging.py`).
+
+        `fh_complete` emits RFC 5005 `<fh:complete/>` in the feed head; only
+        an unpaged Complete Acquisition Feed may carry it (OPDS 1.2 §2.5).
+        """
         self._id: str = opds_feed_id
         self._title: str = title
         self._author: User = author
         self._updated_at: datetime.datetime = updated_at
         self._entries: List[AcquisitionEntry | NavigationEntry] = []
         self._links: List[Link] = links or []
+        self._fh_complete = fh_complete
         self._extras = kwargs
 
         if qs:
             for entry in qs.all():
                 self.add_entry(entry)
+        for entry in entries or ():
+            self.add_entry(entry)
 
     @abstractmethod
     def add_entry(self, entry):
@@ -62,11 +78,25 @@ class BaseFeed(ABC):
         )
 
     def to_xml(self):
-        return self.serialize().to_xml(
+        feed = self.serialize()
+        if not self._fh_complete:
+            return feed.to_xml(
+                pretty_print=settings.DEBUG,
+                encoding="UTF-8",
+                standalone=True,
+                skip_empty=True,
+            )
+
+        # `skip_empty=True` drops an empty pydantic-xml element, so the
+        # `<fh:complete/>` marker is inserted into the serialized tree.
+        tree = feed.to_xml_tree(skip_empty=True)
+        tree.insert(1, etree.Element(f"{{{NSMAP['fh']}}}complete"))
+        return etree.tostring(
+            tree,
             pretty_print=settings.DEBUG,
             encoding="UTF-8",
+            xml_declaration=True,
             standalone=True,
-            skip_empty=True,
         )
 
 
@@ -86,10 +116,10 @@ class NavigationFeed(BaseFeed):
                                 "feed_name": feed.url_name,
                             },
                         ),
-                        type="application/atom+xml;profile=opds;kind=navigation",
+                        type=feed_type(feed.kind),
                     )
                 ],
-                content=Content(type="text", value=feed.content),
+                content=Content(type="text", value=feed.content or localize(feed.title, self._extras.get("language"))),
                 updated=feed.updated_at,
             )
         )

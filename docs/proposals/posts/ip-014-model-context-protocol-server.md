@@ -117,7 +117,8 @@ graph LR
 9. **`resources.py` / `prompts.py` / `completions.py`** — the non-tool protocol surfaces.
 10. **`uris.py`** — the `evilflowers://` URI space, shared by resource reads and the
     `resource_link` blocks tool results emit.
-11. **`tools/`** — seven modules, thirty tools (Phase 11 added `publishing.py`).
+11. **`tools/`** — nine modules, thirty-eight tools (Phase 11 added `publishing.py`, Phase 12
+    `users.py` and `api_keys.py`).
 
 ### The tools
 
@@ -145,6 +146,11 @@ catalog") stays with the handler, because only it knows which object is involved
 | `create_entry` / `update_entry` | Add a publication, or correct its metadata and LCP lending settings | **manage** |
 | `create_upload_link` | Signed single-use URL the file is POSTed to (files never travel in JSON-RPC) | **manage** |
 | `list_encryption_jobs` / `requeue_encryption` | Find and retry stuck Readium LCP encryption jobs | **administrators** |
+| `reencrypt_publication` | Re-encrypt an already registered publication (worker upgrade); active-loan guard unless `force`, `dry_run` | **administrators** |
+| `list_users` / `get_user` | Accounts — everyone with `core.view_user`, otherwise only yourself | user |
+| `create_user` / `update_user` / `delete_user` | Account lifecycle; own profile editable by anyone, the rest needs `core.*_user`; administrator accounts only by a superuser | **administrators** |
+| `list_api_keys` / `revoke_api_key` | Your own keys (everyone's for a superuser); revoke = deactivate | user / write |
+| `create_api_key` | Mint a Bearer key, token returned once; for another user — **superusers only** | write |
 
 "public" still means access-controlled — an anonymous session sees public catalogs only. It
 describes the *session* requirement, never the data.
@@ -456,6 +462,24 @@ Driven by the STU bulk import (~500 PDFs, most LCP-protected with one copy each)
 - [x] `test_publishing.py` (28 tests); both write-surface sweeps extended.
 - [ ] Deploy to elvira.stuba.sk; confirm the reverse proxy's body limit ≥ 200 MB (Q16).
 
+### Phase 12: Accounts and API keys — complete (tests pass, not yet deployed)
+
+- [x] `list_users` / `get_user` through `UserFilter`; a user outside the caller's view is
+      "does not exist", never 403. `get_user` catalog grants filtered through `CatalogFilter` for
+      anyone but a superuser or the subject; `active_api_keys` only where `ApiKeyFilter` would show them.
+- [x] `create_user` (`core.add_user`): optional password → API-key-only service account; username
+      lower-cased (Basic login lower-cases); database auth source only; superuser role only by a superuser.
+- [x] `update_user`: own profile fields for anyone; others need `core.change_user`; only a superuser
+      touches an administrator or changes roles; no self role/active/password change.
+- [x] `delete_user` (`core.delete_user`): permission checked before lookup, `confirm_username`, no
+      self-deletion, administrators only by a superuser.
+- [x] `list_api_keys` (no tokens, `is_current`), `create_api_key` (token once; `user_id` superuser-only,
+      refused for a deactivated owner), `revoke_api_key` (deactivate, idempotent).
+- [x] Audit lines for every account write; tokens never logged.
+- [x] `test_accounts.py`; write-surface sweeps cover the new tools.
+- [x] Resolve Q18 — REST fixed the same way (`test_account_endpoints.py`).
+- [ ] Resolve Q17.
+
 ## Technical Details
 
 ### Why no MCP SDK
@@ -486,7 +510,7 @@ Older revisions ignore the unknown key, so one result shape serves all three (Q6
 ```bash
 EVILFLOWERS_MCP_ENABLED=1                        # 0 unmounts the route entirely (404, not a disabled endpoint)
 EVILFLOWERS_MCP_ALLOW_WRITE=1                    # 0 unadvertises all thirteen management tools
-EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=Bearer,Basic
+EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=Bearer    # Bearer,Basic opts in to passwords (issue #100)
 EVILFLOWERS_MCP_REQUIRE_AUTHENTICATION=0
 EVILFLOWERS_MCP_DEFAULT_LIMIT=10
 EVILFLOWERS_MCP_MAX_LIMIT=50                     # deliberately below the REST ceiling
@@ -494,7 +518,7 @@ EVILFLOWERS_MCP_MAX_BULK_ITEMS=100               # records one bulk write may to
 EVILFLOWERS_MCP_SUMMARY_MAX_CHARS=600
 EVILFLOWERS_MCP_CONTENT_MAX_CHARS=4000
 EVILFLOWERS_MCP_MAX_REQUEST_BYTES=1048576
-EVILFLOWERS_MCP_ALLOWED_ORIGINS=                 # unset = no Origin check (non-browser clients send none)
+EVILFLOWERS_MCP_ALLOWED_ORIGINS=                 # unset = origin of EVILFLOWERS_BASE_URL; * = no check; no Origin header always passes
 ```
 
 ### Client configuration
@@ -1087,16 +1111,19 @@ in its environment and issue API keys to the librarians who need them?
 **Options**:
 - [ ] **A**: `Bearer,Basic` everywhere, documented trade-off. **(implemented)**
 - [ ] **B**: `Bearer,Basic` as the shipped default, but STU pins `Bearer` in its own `.env`.
-- [ ] **C**: Revert the default to `Bearer` and let deployments opt into Basic.
+- [x] **C**: Revert the default to `Bearer` and let deployments opt into Basic.
 
 **Answer**:
 ```
-[User fills this in]
+C — issue #100 (2026-11-08).
 ```
 
 **Resolution**:
 ```
-[AI writes this]
+`EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS` defaults to `Bearer`; deployments that need
+username/password clients set `Bearer,Basic`. In the same change
+`EVILFLOWERS_MCP_ALLOWED_ORIGINS` defaults to the origin of `EVILFLOWERS_BASE_URL`
+(the guard is on unless set to `*`), and CORS is read from `CORS_ALLOWED_ORIGINS`.
 ```
 
 ---
@@ -1165,6 +1192,81 @@ self-contained. Separately, the reverse proxy on elvira.stuba.sk must accept bod
 
 ---
 
+### Q17: ⚠️ Medium — may an API-key session mint more API keys?
+
+**Issue**: `create_api_key` (Phase 12) is open to any authenticated session, including one
+authenticated *by* an API key. A leaked key can therefore mint fresh keys that survive the
+original being revoked.
+
+**Context**: This is persistence, not escalation — every new key belongs to the same account and
+carries the same permissions, and REST `POST /api/v1/api_keys` already behaves this way. The
+counter-measures that exist today are deactivating the *account* (kills every key at once,
+`BearerBackend.user_can_authenticate`) and the audit line `mcp.write … action=create_api_key`,
+which records who minted each key and for whom.
+
+**Question**: Leave key minting open to API-key sessions, or require a password (Basic) session?
+
+**Options**:
+- [ ] **A**: Leave it open, matching REST. **(implemented)**
+- [ ] **B**: Refuse `create_api_key` when `request.api_key` is set; Basic sessions only.
+- [ ] **C**: Make it a setting (`EVILFLOWERS_MCP_API_KEY_SESSIONS_MAY_MINT`), default off.
+
+**Answer**:
+```
+[User fills this in]
+```
+
+**Resolution**:
+```
+[AI writes this]
+```
+
+---
+
+### Q18: 🔴 Critical — REST hands out every API key's token on every listing, and lets user administrators act on superusers
+
+**Issue**: Two REST defects surfaced while mirroring the account endpoints; the MCP tools do not
+reproduce either.
+
+1. `ApiKeySerializer.Base.token` is a `computed_field`, so `GET /api/v1/api_keys` re-issues the
+   bearer token of every listed key — for a superuser, every key in the deployment. A token is
+   meant to be shown once.
+2. `PUT /api/v1/users/{id}` and `DELETE /api/v1/users/{id}` check only `core.change_user` /
+   `core.delete_user`. A non-superuser holding those (e.g. via an LDAP `GROUP_MAP` group) can
+   reset a superuser's password and log in as them. `UserDetail._get_user` also answers 404 vs 403,
+   an existence oracle for user ids.
+
+**Context**: (1) is a credential leak through an ordinary read; (2) is a privilege escalation.
+`list_api_keys` returns metadata only; `update_user` / `delete_user` refuse a non-superuser acting on
+a superuser and answer "does not exist" for any account outside the caller's view.
+
+**Question**: Fix REST the same way?
+
+**Options**:
+- [x] **A**: Yes — drop `token` from the list serializer (return it from `POST` only) and add the
+      superuser guard to `UserDetail`. (recommended)
+- [ ] **B**: Fix only the escalation (2) now; the token change breaks portal code that reads it.
+
+**Answer**:
+```
+A — fix both REST bugs too.
+```
+
+**Resolution**:
+```
+Implemented 2026-11-08.
+(1) `ApiKeySerializer.Base` no longer has `token`; new `ApiKeySerializer.Created` adds it and is
+    used only by `POST /api/v1/api_keys`. `GET /api/v1/api_keys` returns metadata only. Portal code
+    that read `token` from the listing must keep it from the create response instead.
+(2) `UserDetail._get_user`: an account the caller may not view (not self, no `core.view_user`)
+    answers 404 like a missing id. PUT/DELETE by a non-superuser on a superuser answer 403.
+    GET of a superuser by a `core.view_user` holder still works. Side effect: `core.change_user`
+    without `core.view_user` now gets 404 for other accounts (previously could edit them blind).
+Regression tests: `apps/core/tests/test_account_endpoints.py` (9).
+```
+
+---
+
 ## Changelog
 
 | Date | Author | Changes |
@@ -1174,3 +1276,7 @@ self-contained. Separately, the reverse proxy on elvira.stuba.sk must accept bod
 | 2026-09-10 | jdubec | Phase 8 (curation) and Phase 9 (username/password auth). Added `create_catalog` / `update_catalog` / `delete_catalog`, `get_catalog`, `classify_entries`, `create_categories`, `add_entries_to_feed`, `remove_entries_from_feed` — 25 tools, 186 tests. Added `EVILFLOWERS_MCP_MAX_BULK_ITEMS`; `EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS` now defaults to `Bearer,Basic`. Added the `classify_collection` prompt and registry-driven write-surface sweeps. Documented the one-catalog-per-write rule, all-or-nothing bulk semantics and the `confirm_title` guard. New Review Questions Q12–Q15 covering entry metadata editing, the deletion guard, the Basic default and the bulk ceiling. |
 | 2026-09-29 | jdubec | Answered Q12 and added Phase 11 (publishing) for the STU bulk import: `create_entry`, `update_entry`, `create_upload_link` + the signed upload endpoint, shared `attach_acquisition()` service, `entry_ids` on `list_encryption_jobs`, two upload settings, 24 new tests. Rewrote "What the write surface deliberately excludes". Added Review Question Q16 (token in the upload URL path; proxy body limit). |
 | 2026-09-29 | jdubec | `update_entry` lending-only path for protecting existing publications without touching anything else (no new tool); `lcp_copies` now required whenever a call enables LCP, even if the entry stores a default. 4 more tests. |
+| 2026-11-08 | jdubec | Phase 12 (accounts): `list_users`, `get_user`, `create_user`, `update_user`, `delete_user`, `list_api_keys`, `create_api_key`, `revoke_api_key` in `tools/users.py` and `tools/api_keys.py` — 38 tools. Superuser-only guard on administrator accounts, no self role/active/password changes, `confirm_username` on deletion, tokens shown once, revoke = deactivate. `test_accounts.py` (39 tests); both write-surface sweeps and the transport tool sets extended. New Review Questions Q17 (API-key sessions minting keys) and Q18 (REST token re-issue and superuser escalation). |
+| 2026-11-08 | jdubec | Answered Q18 (A): REST no longer returns tokens from `GET /api/v1/api_keys` (`ApiKeySerializer.Created` for POST only); `UserDetail` answers 404 for hidden accounts and 403 when a non-superuser modifies or deletes a superuser. 9 regression tests in `apps/core/tests/test_account_endpoints.py`. |
+| 2026-11-08 | jdubec | Added `reencrypt_publication` (administrators, write, non-idempotent) for issue #98: re-runs `registered` jobs through `ContentEncryptionService.reencrypt`, active-loan guard unless `force`, `dry_run`; 10 tests in `test_encryption.py`, write-surface sweep and transport sets extended. |
+| 2026-11-08 | jdubec | Answered Q14 (C) per issue #100: Basic is opt-in (`Bearer` default); the origin guard defaults to the instance's own origin (`*` disables it). Tests updated, `OriginGuardTests` added. |

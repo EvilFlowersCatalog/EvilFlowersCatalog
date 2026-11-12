@@ -1,3 +1,4 @@
+from http import HTTPStatus
 from typing import Dict, Union
 
 from django.conf import settings
@@ -8,10 +9,24 @@ from django.contrib.auth.models import AnonymousUser
 from django.utils.translation import gettext as _
 from django.views import View
 
-from apps.core.errors import UnauthorizedException
+from apps.core import ratelimit
+from apps.core.errors import DetailType, ProblemDetailException, UnauthorizedException
+from evil_flowers_catalog import tracing
 
 
 class SecuredView(View):
+    #: Counted against the client's request budget (#21). Set False on a view that must never be refused for
+    #: volume, e.g. a server-to-server callback.
+    rate_limited = True
+
+    #: Views a user whose password must be changed may still call (#8): reading their own account and changing
+    #: the password. Everything else answers 403 with `/password-change-required` until they do.
+    allowed_while_password_change_required = False
+
+    #: False on a view whose response does not depend on the caller (cover, thumbnail): any credential sent
+    #: along is ignored instead of costing a JWT verification and a user lookup per request (#126).
+    authenticates = True
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._backends: Dict[str, BaseBackend] = {}
@@ -19,6 +34,9 @@ class SecuredView(View):
             self._backends[schema.lower()] = load_backend(backend)
 
     def _authenticate(self, request) -> Union[AnonymousUser, AbstractBaseUser]:
+        if not self.authenticates:
+            return AnonymousUser()
+
         auth_header = request.headers.get("Authorization", "")
 
         if not auth_header:
@@ -37,11 +55,54 @@ class SecuredView(View):
         if not auth_header[0] in settings.SECURED_VIEW_AUTHENTICATION_SCHEMAS.keys():
             raise UnauthorizedException(detail=_("Unsupported authentication schema"))
 
-        auth_params = {auth_header[0].lower(): auth_header[1]}
+        scheme = auth_header[0].lower()
+        auth_params = {scheme: auth_header[1]}
 
-        return self._backends[auth_header[0].lower()].authenticate(request, **auth_params)
+        # The credential check and its lookups (API key, user, the LDAP round trip) as one step (IP-029).
+        with tracing.span("auth.authenticate", {tracing.AUTH_METHOD: scheme}) as span:
+            user = self._backends[scheme].authenticate(request, **auth_params)
+            span.set_attribute(tracing.AUTH_OUTCOME, "accepted" if user else "rejected")
+            request.auth_method = scheme
+            return user
 
     def dispatch(self, request, *args, **kwargs):
-        request.user = self._authenticate(request)
+        try:
+            request.user = self._authenticate(request)
+            tracing.set_caller(request, getattr(request, "auth_method", None))
+        except ProblemDetailException as error:
+            # Refused credentials count against the IP: passwords cannot be tried freely (#21).
+            if error.status == HTTPStatus.UNAUTHORIZED:
+                decision = ratelimit.check_failed_authentication(request)
+                if decision is not None and not decision.allowed:
+                    raise self._rate_limited(decision)
+            raise
 
-        return super().dispatch(request, *args, **kwargs)
+        decision = ratelimit.check(request, self)
+        if decision is not None and not decision.allowed:
+            raise self._rate_limited(decision)
+
+        if (
+            getattr(request.user, "password_change_required", False)
+            and not self.allowed_while_password_change_required
+        ):
+            raise ProblemDetailException(
+                _("You have to change your password first."),
+                status=HTTPStatus.FORBIDDEN,
+                detail_type=DetailType.PASSWORD_CHANGE_REQUIRED,
+            )
+
+        response = super().dispatch(request, *args, **kwargs)
+        if decision is not None:
+            for name, value in decision.headers():
+                response[name] = value
+        return response
+
+    @staticmethod
+    def _rate_limited(decision) -> ProblemDetailException:
+        return ProblemDetailException(
+            _("Too many requests"),
+            status=HTTPStatus.TOO_MANY_REQUESTS,
+            detail_type=DetailType.RATE_LIMITED,
+            detail=_("The request limit for this period is used up; see Retry-After."),
+            extra_headers=decision.headers(),
+        )

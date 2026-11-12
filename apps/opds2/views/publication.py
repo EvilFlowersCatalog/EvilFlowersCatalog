@@ -7,18 +7,30 @@ from django.utils.translation import gettext as _
 from apps.api.utils.parse import parse_int_query
 from apps.core.errors import ProblemDetailException
 from apps.core.models import Entry
+from apps.opds.services.entry_search import EntrySearchService
 from apps.opds2.services import FeedBuilder, ManifestBuilder
 from apps.opds2.views.base import Opds2CatalogView
 
 
 class PublicationFeedView(Opds2CatalogView):
     def get(self, request, catalog_name: str):
-        entries = Entry.objects.filter(catalog=self.catalog).order_by("-created_at")
+        # Entry filters (language_code, category_id, author_id, ...) narrow the feed; its facets
+        # link to them (IP-020).
+        entry_filter = EntrySearchService.catalog_filter(self.catalog, request)
+        entries = entry_filter.qs
+        if "query" not in request.GET:
+            entries = entries.order_by("-created_at")
         page = parse_int_query(request, "page", default=1, min_value=1)
         per_page = parse_int_query(request, "per_page", default=0, min_value=0) or None
 
         feed = FeedBuilder.build_publication_feed(
-            entries, self.catalog, request, page=page, per_page=per_page, title=f"{self.catalog.title} - Publications"
+            entries,
+            self.catalog,
+            request,
+            page=page,
+            per_page=per_page,
+            title=f"{self.catalog.title} - Publications",
+            facets=EntrySearchService.catalog_facets(self.catalog, request, entry_filter),
         )
         return self.opds_response(feed.model_dump(exclude_none=True, by_alias=True))
 
@@ -28,15 +40,14 @@ class PublicationDetailView(Opds2CatalogView):
         try:
             entry = (
                 Entry.objects.select_related("catalog", "language")
-                .prefetch_related("entry_authors__author", "categories", "acquisitions")
+                .prefetch_related("entry_authors__author", "categories", "acquisitions__encrypted_content")
                 .get(pk=entry_id, catalog=self.catalog)
             )
         except Entry.DoesNotExist:
             raise ProblemDetailException(_("Publication not found"), status=HTTPStatus.NOT_FOUND)
 
-        base_url = f"{request.scheme}://{request.get_host()}"
-        publication = ManifestBuilder.build_publication(entry, base_url=base_url)
-        return self.opds_response(publication.model_dump(exclude_none=True, by_alias=True))
+        publication = ManifestBuilder.build_publication(entry, request, user=request.user)
+        return self.publication_response(publication.model_dump(exclude_none=True, by_alias=True))
 
 
 class PublicationManifestView(Opds2CatalogView):
@@ -44,13 +55,13 @@ class PublicationManifestView(Opds2CatalogView):
         try:
             entry = (
                 Entry.objects.select_related("catalog", "language")
-                .prefetch_related("entry_authors__author", "categories", "acquisitions")
+                .prefetch_related("entry_authors__author", "categories", "acquisitions__encrypted_content")
                 .get(pk=entry_id, catalog=self.catalog)
             )
         except Entry.DoesNotExist:
             raise ProblemDetailException(_("Publication not found"), status=HTTPStatus.NOT_FOUND)
 
-        base_url = f"{request.scheme}://{request.get_host()}"
+        base_url = ManifestBuilder.base_url(request)
         manifest = ManifestBuilder.build_manifest(entry, base_url=base_url)
         return JsonResponse(
             manifest.model_dump(exclude_none=True, by_alias=True),

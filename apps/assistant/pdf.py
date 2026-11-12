@@ -32,7 +32,31 @@ LICENSE_PAGE_TEXT = "(This page is the library's license notice; it is not part 
 #: Characters of context kept around each search hit.
 SNIPPET_RADIUS = 200
 
+#: Longest pattern `search_regex` accepts.
+MAX_PATTERN_LENGTH = 200
+
+#: A quantified group that is itself quantified, e.g. `(a+)+` or `(\w*)*`: exponential
+#: backtracking that would hold a worker. Such patterns are refused, not run.
+_NESTED_QUANTIFIER = re.compile(r"\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)\s*[+*{]")
+
 _WORD = re.compile(r"\w+", re.UNICODE)
+
+
+def reader_source_pages(page_count: int, page_range: Optional[str], mime: str) -> List[Optional[int]]:
+    """The original file's 1-based page behind each page the reader sees; None for the license page.
+
+    The reader's copy is cut to the acquisition's range and, for the MIME types
+    the library modifies, gets the license page at index 1 (`PDFModifier.generate`).
+    Shared by the assistant and the extraction region API (IP-018).
+    """
+    sources: List[Optional[int]] = [
+        page for page in (depack(page_range) if page_range else []) if 1 <= page <= page_count
+    ]
+    if not sources:
+        sources = list(range(1, page_count + 1))
+    if mime in settings.EVILFLOWERS_MODIFIERS:
+        sources.insert(1, None)
+    return sources
 
 
 class DocumentUnavailable(Exception):
@@ -119,22 +143,9 @@ class ReaderDocument:
             raise DocumentUnavailable(str(error)) from error
 
         with document:
-            # 1-based source page numbers, in the order the reader sees them.
-            source_pages = [page for page in (depack(page_range) if page_range else []) if 1 <= page <= len(document)]
-            if not source_pages:
-                source_pages = list(range(1, len(document) + 1))
-
-            pages = [document[page - 1].get_text("text").strip() for page in source_pages]
-            reader_page = {source: index + 1 for index, source in enumerate(source_pages)}
-            sources: List[Optional[int]] = list(source_pages)
-
-            # Mirrors `PDFModifier.generate`, which inserts the license page at
-            # index 1 of every PDF it serves.
-            licensed = acquisition.mime in settings.EVILFLOWERS_MODIFIERS
-            if licensed:
-                pages.insert(1, LICENSE_PAGE_TEXT)
-                sources.insert(1, None)
-                reader_page = {source: page + 1 if page > 1 else page for source, page in reader_page.items()}
+            sources = reader_source_pages(len(document), page_range, acquisition.mime)
+            pages = [document[page - 1].get_text("text").strip() if page else LICENSE_PAGE_TEXT for page in sources]
+            reader_page = {source: index + 1 for index, source in enumerate(sources) if source}
 
             toc = [
                 (level, title.strip(), reader_page[page])
@@ -180,6 +191,42 @@ class ReaderDocument:
     def outline(self) -> List[dict]:
         return [{"level": heading.level, "title": heading.title, "page": heading.page} for heading in self.toc]
 
+    def search_regex(self, pattern: str, limit: int = 12) -> List[dict]:
+        """Pages matching a regular expression (case-insensitive), in reading order.
+
+        Each hit has the page, how many matches it holds and a snippet around the
+        first one, in the page's own case with whitespace collapsed. Raises
+        ValueError for an invalid, overlong or nested-quantifier pattern.
+        """
+        if not pattern or len(pattern) > MAX_PATTERN_LENGTH:
+            raise ValueError(f"The pattern must be 1-{MAX_PATTERN_LENGTH} characters.")
+        if _NESTED_QUANTIFIER.search(pattern):
+            raise ValueError("Nested quantifiers such as (a+)+ are not allowed.")
+        try:
+            compiled = re.compile(pattern, re.IGNORECASE | re.UNICODE)
+        except re.error as error:
+            raise ValueError(f"Invalid regular expression: {error}") from error
+
+        hits = []
+        for index, text in enumerate(self.pages):
+            flat = " ".join(text.split())
+            matches = list(compiled.finditer(flat))
+            matches = [match for match in matches if match.end() > match.start()]
+            if not matches:
+                continue
+            first = matches[0]
+            start = max(first.start() - SNIPPET_RADIUS, 0)
+            hits.append(
+                {
+                    "page": index + 1,
+                    "matches": len(matches),
+                    "snippet": flat[start : first.end() + SNIPPET_RADIUS],
+                }
+            )
+            if len(hits) >= limit:
+                break
+        return hits
+
     def search(self, query: str, limit: int = 8) -> List[dict]:
         """Pages ranked by how many of the query's words they contain.
 
@@ -211,3 +258,29 @@ class ReaderDocument:
 
         hits.sort(key=lambda hit: (-hit["score"], hit["page"]))
         return hits[:limit]
+
+
+#: Why a publication cannot be read, as `DocumentUnavailable.args[0]`.
+READIUM = "readium"
+IP_BLOCKED = "ip_blocked"
+NO_PDF = "no readable PDF"
+
+
+def open_access_document(request, entry) -> ReaderDocument:
+    """The entry's open-access PDF, if this reader may read it outside the viewer.
+
+    The rule a chat bound to a publication without a reader's copy has followed since IP-018, and the one the
+    plain chat's `read_pdf_page` and `search_library_text(entry_id)` follow (#127): never Readium LCP, never from
+    outside the entry's allowed IP ranges, only a stored PDF that is not lent or restricted. Visibility (the
+    catalog ACL) is the caller's check. Raises `DocumentUnavailable` with one of the reasons above.
+    """
+    from apps.core.errors import ProblemDetailException
+    from apps.files.views import _check_ip_block
+
+    if entry.read_config("readium_enabled"):
+        raise DocumentUnavailable(READIUM)
+    try:
+        _check_ip_block(request, entry)
+    except ProblemDetailException as error:
+        raise DocumentUnavailable(IP_BLOCKED) from error
+    return ReaderDocument.for_open_access(entry)

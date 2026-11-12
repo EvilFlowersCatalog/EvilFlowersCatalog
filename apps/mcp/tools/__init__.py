@@ -8,13 +8,16 @@ half-populated catalogue.
 
 from apps.mcp.registry import registry
 from apps.mcp.tools import (  # noqa: F401  (registration side effect)
+    api_keys,
     catalogs,
     categories,
     encryption,
     entries,
     feeds,
     library,
+    notifications,
     publishing,
+    users,
 )
 
 __all__ = ["registry"]

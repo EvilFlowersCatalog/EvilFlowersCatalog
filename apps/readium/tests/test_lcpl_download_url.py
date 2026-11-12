@@ -19,7 +19,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
-from django.test import RequestFactory, SimpleTestCase
+from django.test import RequestFactory, SimpleTestCase, override_settings
 from django.utils import timezone
 
 from apps.readium.models import License
@@ -43,6 +43,7 @@ def _license_stub():
 
 @patch("apps.readium.serializers.CapabilityTokenService.mint", return_value="TESTTOKEN")
 class LcplDownloadUrlTests(SimpleTestCase):
+    @override_settings(EVILFLOWERS_BASE_URL="http://localhost:8000")
     def test_request_context_yields_absolute_tokenised_url(self, _mint):
         license_obj = _license_stub()
         request = RequestFactory().get("/readium/v1/licenses")
@@ -55,6 +56,20 @@ class LcplDownloadUrlTests(SimpleTestCase):
         )
         self.assertIn("token=TESTTOKEN", data.download_url)
         self.assertIn(str(license_obj.id), data.download_url)
+
+    @override_settings(EVILFLOWERS_BASE_URL="https://catalog.example.com/")
+    def test_public_base_url_wins_over_request_scheme(self, _mint):
+        """Behind the edge gateway the request is plain http; the link must not be."""
+        license_obj = _license_stub()
+        request = RequestFactory().get("/readium/v1/licenses")
+
+        data = LicenseSerializer.Base.model_validate(license_obj, context={"request": request})
+
+        self.assertTrue(
+            data.download_url.startswith(f"https://catalog.example.com/readium/v1/licenses/{license_obj.id}"),
+            data.download_url,
+        )
+        self.assertIn("token=TESTTOKEN", data.download_url)
 
     def test_missing_context_yields_unusable_url(self, _mint):
         """Documents the operator/test fallback: no request → no token.

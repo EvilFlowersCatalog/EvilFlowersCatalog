@@ -154,9 +154,10 @@ class FeedCreationTests(ManagementTestCase):
         self.ok("create_feed", arguments, self.manager)
         message = self.refused("create_feed", {**arguments, "title": "Second"}, self.manager)
         self.assertIn("url_name 'dupe' already exists", message)
+        self.assertIn("'dupe-2' is free", message)
 
-    def test_a_duplicate_title_is_a_conflict_too(self):
-        """`(catalog, title)` is unique. REST misses this and 500s on it."""
+    def test_a_duplicate_title_is_allowed(self):
+        """Only the slug identifies a feed; two feeds may share a title."""
         arguments = {
             "catalog_id": str(self.catalog.pk),
             "title": "Same Title",
@@ -165,8 +166,8 @@ class FeedCreationTests(ManagementTestCase):
             "content": "x",
         }
         self.ok("create_feed", arguments, self.manager)
-        message = self.refused("create_feed", {**arguments, "url_name": "two"}, self.manager)
-        self.assertIn("already exists", message)
+        self.ok("create_feed", {**arguments, "url_name": "two"}, self.manager)
+        self.assertEqual(Feed.objects.filter(catalog=self.catalog, url_name__in=["one", "two"]).count(), 2)
 
 
 class FeedPermissionTests(ManagementTestCase):
