@@ -68,6 +68,16 @@ def sync_ldap_profiles() -> dict:
 
 
 @shared_task
+def fail_stale_extraction_runs() -> int:
+    """Fail extraction runs stuck in `running`, so a backfill can retry them."""
+    from apps.extraction.services import fail_stale_runs
+
+    if not settings.EVILFLOWERS_EXTRACTION_STALE_HOURS:
+        return 0
+    return fail_stale_runs(settings.EVILFLOWERS_EXTRACTION_STALE_HOURS)
+
+
+@shared_task
 def prune_user_activity() -> int:
     from apps.core.services.activity import ActivityService
 

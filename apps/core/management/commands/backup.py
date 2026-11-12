@@ -58,6 +58,7 @@ class Command(TracedCommandMixin, BaseCommand):
             "--no-owner",
             "--no-privileges",
             "--no-comments",
+            *(f"--exclude-table-data={pattern}" for pattern in settings.EVILFLOWERS_BACKUP_EXCLUDE_TABLE_DATA),
             "-f",
             tmp_file,
         ]

@@ -1,6 +1,10 @@
-"""Ingestion survives an analyzer pass done twice (#120)."""
+"""Ingestion survives an analyzer pass done twice (#120), and a run nobody reports to is failed."""
+
+from datetime import timedelta
+from unittest import mock
 
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.core.models import Acquisition, AuthSource, Catalog, Entry, User
 from apps.extraction import services
@@ -70,3 +74,36 @@ class IngestionTests(TestCase):
         self.assertEqual(self.run.status, ExtractionRun.Status.RUNNING)
         self.assertEqual(self.run.jobs["paragraphs"], "done")
         self.assertIsNone(self.run.error)
+
+    def idle_for(self, hours: float) -> None:
+        # `updated_at` is auto_now: move it back with a queryset update.
+        ExtractionRun.objects.filter(pk=self.run.pk).update(updated_at=timezone.now() - timedelta(hours=hours))
+
+    def test_a_run_nobody_reports_to_is_failed_and_says_what_was_pending(self):
+        self.start(jobs=("paragraphs", "tables", "equations"))
+        services.report_job(self.run, "paragraphs", failed=False, error=None, provenance={})
+        ExtractionRun.objects.filter(pk=self.run.pk).update(error="figures: earlier")
+        self.idle_for(25)
+
+        self.assertEqual(services.fail_stale_runs(24), 1)
+
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.status, ExtractionRun.Status.FAILED)
+        self.assertEqual(self.run.error, "figures: earlier\nno report for 24 h, pending: equations, tables")
+        self.assertIsNotNone(self.run.finished_at)
+        # A failed run is what `queue` retries.
+        with mock.patch.object(services, "_send"), self.settings(EVILFLOWERS_EXTRACTION_ENABLED=True):
+            with self.captureOnCommitCallbacks(execute=True):
+                self.assertEqual(services.queue(self.acquisition).status, ExtractionRun.Status.QUEUED)
+
+    def test_a_run_with_a_recent_report_is_left_alone(self):
+        self.start()
+        self.idle_for(23)
+        self.assertEqual(services.fail_stale_runs(24), 0)
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.status, ExtractionRun.Status.RUNNING)
+
+    def test_only_running_runs_are_swept(self):
+        # Queued runs wait on the analyzer's backlog; they are never started, so never stale here.
+        self.idle_for(100)
+        self.assertEqual(services.fail_stale_runs(24), 0)

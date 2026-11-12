@@ -8,6 +8,7 @@ service over Celery; the services post their results back through
 import logging
 import shutil
 import uuid
+from datetime import timedelta
 from typing import Iterable, List, Optional
 
 from django.conf import settings
@@ -268,6 +269,32 @@ def fail(run: ExtractionRun, error: str) -> None:
     run.save()
     domain_metrics.record_extraction_run("failed", run.started_at, run.finished_at)
     tracing.set_attributes({"evilflowers.extraction.run.status": run.status})
+
+
+def fail_stale_runs(idle_hours: float) -> int:
+    """Fail the `running` runs no service has reported to for `idle_hours`; returns how many.
+
+    A job whose task was lost never reports, and its run stays `running` for good: `queue`
+    keeps a run that has not failed, so a backfill never retries it. Seen on dev in Nov 2026,
+    runs waiting a day on a job text-service kept redelivering against a 409. Idle time counts
+    from the last report (`updated_at`), not the start, because a long equations queue keeps
+    healthy runs waiting for hours.
+    """
+    cutoff = timezone.now() - timedelta(hours=idle_hours)
+    stale = ExtractionRun.objects.filter(status=ExtractionRun.Status.RUNNING, updated_at__lt=cutoff)
+    failed = 0
+    for run_id in stale.values_list("pk", flat=True):
+        with transaction.atomic():
+            run = ExtractionRun.objects.select_for_update().get(pk=run_id)
+            # A report may have landed since the query.
+            if run.status != ExtractionRun.Status.RUNNING or run.updated_at >= cutoff:
+                continue
+            pending = sorted(job for job, status in run.jobs.items() if status == ExtractionRun.JobStatus.PENDING)
+            reason = f"no report for {idle_hours:g} h, pending: {', '.join(pending) or 'none'}"
+            logger.warning("Extraction run stale, failing it: run_id=%s %s", run.pk, reason)
+            fail(run, "\n".join(filter(None, [run.error, reason])))
+            failed += 1
+    return failed
 
 
 def _finish(run: ExtractionRun) -> None:

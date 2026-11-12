@@ -2,12 +2,15 @@
 
 from unittest import mock
 
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 
 from apps.core.models import Acquisition, Catalog, Entry
 from apps.core.search import embeddings
 from apps.core.tests.test_search_golden import SearchFixtureMixin
 from apps.core.tests.test_search_hybrid import axis
+from apps.extraction.discovery import _embedded_runs, _nearest_paragraphs
 from apps.extraction.models import ExtractionRun, Paragraph
 
 MODEL = "test-model@1"
@@ -94,6 +97,31 @@ class PassageSearchTests(SearchFixtureMixin, TestCase):
         passage = self.search()["items"][0]["passages"][0]
         self.assertEqual(passage["page"], 3)
         self.assertIsNone(passage["text"])
+
+    def test_vector_ranking_can_use_the_hnsw_index(self):
+        # The index serves only `ORDER BY distance LIMIT n` on the paragraph table: no join to the runs
+        # and no distance cut in SQL, or the planner sorts every paragraph in scope (~1 s on dev, Nov 2026).
+        with CaptureQueriesContext(connection) as queries:
+            self.search()
+        (sql,) = [query["sql"] for query in queries.captured_queries if "<=>" in query["sql"]]
+        self.assertNotIn("JOIN", sql)
+        self.assertNotIn("<= ", sql.split("ORDER BY")[0].split("FROM")[1])
+        self.assertTrue(any("hnsw.iterative_scan" in query["sql"] for query in queries.captured_queries))
+
+    def test_nearest_paragraphs_stay_within_the_runs_given(self):
+        # As "similar to this passage" calls it: every run of the model but the reader's own entry's.
+        runs = dict(
+            _embedded_runs(MODEL)
+            .exclude(acquisition__entry_id=self.keys["ml"])
+            .values_list("pk", "acquisition__entry_id")
+        )
+        rows = _nearest_paragraphs(runs, axis(0), 10)
+        entries = [runs[run_id] for _pk, run_id, _distance in rows]
+        self.assertNotIn(self.keys["ml"], entries)
+        self.assertNotIn(self.keys["rudin"], entries)  # another model
+        self.assertEqual(entries[0], self.hidden.pk)  # access control is the caller's (`_ranked`)
+        self.assertEqual([row[2] for row in rows], sorted(row[2] for row in rows))
+        self.assertEqual(_nearest_paragraphs({}, axis(0), 10), [])
 
     def test_tei_down_says_so(self):
         result = self.search(vector=None)

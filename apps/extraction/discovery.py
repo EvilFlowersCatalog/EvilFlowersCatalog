@@ -18,10 +18,13 @@ from uuid import UUID
 
 from django import forms
 from django.conf import settings
+from django.db import connection, transaction
+from django.db.models import Exists, OuterRef
 from django.http import FileResponse
 from django_api_forms import Form
 from django.urls import reverse
 from django.utils.translation import gettext as _
+from pgvector import HalfVector
 from pgvector.django import CosineDistance
 
 from apps import openapi
@@ -254,25 +257,46 @@ class UserAcquisitionSimilar(ReaderView):
             return SingleResponse(request, data=[])
 
         scores: Dict = {}
-        paragraphs = (
-            _embedded_paragraphs(extraction.embedding_model)
-            .exclude(run__acquisition__entry_id=entry_id)
-            .annotate(distance=CosineDistance("embedding", vector))
-            .order_by("distance")
-            .values_list("run__acquisition__entry_id", "distance")[:PASSAGE_PARAGRAPHS]
-        )
-        for other_entry_id, distance in paragraphs:
-            scores.setdefault(other_entry_id, 1 - distance)
+        runs = _embedded_runs(extraction.embedding_model).exclude(acquisition__entry_id=entry_id)
+        entry_of_run = dict(runs.values_list("pk", "acquisition__entry_id"))
+        for _pk, run_id, distance in _nearest_paragraphs(entry_of_run, vector, PASSAGE_PARAGRAPHS):
+            scores.setdefault(entry_of_run[run_id], 1 - distance)
         return SingleResponse(request, data=_ranked(request, scores, limit))
 
 
-def _embedded_paragraphs(model: str):
-    """Paragraphs of active runs embedded by `model`: vectors of two models are never compared."""
-    return Paragraph.objects.filter(
-        run__is_active=True,
-        embedding__isnull=False,
-        run__provenance__paragraphs__embedding_model=model,
+def _embedded_runs(model: str):
+    """Active runs with paragraphs embedded by `model`: vectors of two models are never compared."""
+    return ExtractionRun.objects.filter(
+        Exists(Paragraph.objects.filter(run=OuterRef("pk"), embedding__isnull=False)),
+        is_active=True,
+        provenance__paragraphs__embedding_model=model,
     )
+
+
+def _nearest_paragraphs(run_ids, vector, limit: int) -> List[tuple]:
+    """`(paragraph_id, run_id, distance)` of the paragraphs of these runs closest to `vector`, best first.
+
+    The runs are passed as a list of ids, not joined: with a join to runs, acquisitions and entries the
+    planner sorts every embedded paragraph in scope (~1 s at 277k paragraphs, the HNSW index never
+    scanned). With the ids it walks the index and checks each candidate's run; `iterative_scan` keeps it
+    walking when the runs are a small part of the library. For a handful of runs the planner still
+    prefers an exact scan of their paragraphs, which is the right plan there.
+    """
+    run_ids = list(run_ids)
+    if not run_ids:
+        return []
+    with transaction.atomic(), connection.cursor() as cursor:
+        # SET LOCAL ends with this transaction; ef_search is the candidate list, at least `limit`.
+        cursor.execute("SET LOCAL hnsw.iterative_scan = relaxed_order")
+        cursor.execute(f"SET LOCAL hnsw.ef_search = {min(max(int(limit), 40), 1000)}")
+        rows = list(
+            Paragraph.objects.filter(run_id__in=run_ids, embedding__isnull=False)
+            .annotate(distance=CosineDistance("embedding", HalfVector(vector)))
+            .order_by("distance")
+            .values_list("pk", "run_id", "distance")[:limit]
+        )
+    # relaxed_order: the index may return close neighbours slightly out of order.
+    return sorted(rows, key=lambda row: row[2])
 
 
 def _int_param(request, name: str, default: int, maximum: int) -> int:
@@ -370,14 +394,17 @@ def search_passages(
     by_meaning: Dict = {}
     indexed = 0
     if vector is not None:
-        paragraphs = _embedded_paragraphs(model).filter(run__acquisition__entry__in=visible)
-        indexed = paragraphs.values("run__acquisition__entry_id").distinct().count()
-        by_meaning = dict(
-            paragraphs.annotate(distance=CosineDistance("embedding", vector))
-            .filter(distance__lte=1 - settings.EVILFLOWERS_SEARCH_PASSAGE_MIN_SCORE)
-            .order_by("distance")
-            .values_list("pk", "distance")[:PASSAGE_PARAGRAPHS]
+        entry_of_run = dict(
+            _embedded_runs(model).filter(acquisition__entry__in=visible).values_list("pk", "acquisition__entry_id")
         )
+        indexed = len(set(entry_of_run.values()))
+        # The score threshold cuts what the index returned; HNSW only serves ORDER BY distance LIMIT n.
+        max_distance = 1 - settings.EVILFLOWERS_SEARCH_PASSAGE_MIN_SCORE
+        by_meaning = {
+            pk: distance
+            for pk, _run_id, distance in _nearest_paragraphs(entry_of_run, vector, PASSAGE_PARAGRAPHS)
+            if distance <= max_distance
+        }
     by_words = _word_matches(active, text) if text else {}
 
     # Reciprocal rank fusion (IP-021's k): a passage both channels rank high comes first.

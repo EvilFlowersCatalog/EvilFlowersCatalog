@@ -145,6 +145,12 @@ if settings.EVILFLOWERS_LDAP_SYNC_SCHEDULE:
         "task": "apps.tasks.tasks.sync_ldap_profiles",
         "schedule": _cron(settings.EVILFLOWERS_LDAP_SYNC_SCHEDULE),
     }
+# IP-018: fail extraction runs no service has reported to for EVILFLOWERS_EXTRACTION_STALE_HOURS.
+if settings.EVILFLOWERS_EXTRACTION_ENABLED and settings.EVILFLOWERS_EXTRACTION_STALE_HOURS:
+    app.conf.beat_schedule["extraction-fail-stale-runs"] = {
+        "task": "apps.tasks.tasks.fail_stale_extraction_runs",
+        "schedule": crontab(minute=41),
+    }
 # IP-016: drop personal activity history older than the retention window.
 app.conf.beat_schedule["core-prune-user-activity"] = {
     "task": "apps.tasks.tasks.prune_user_activity",

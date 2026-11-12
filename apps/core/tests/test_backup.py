@@ -67,3 +67,16 @@ class BackupFailureTests(SimpleTestCase):
         ):
             with self.assertRaisesMessage(CommandError, "connection refused"):
                 call_command("backup", destination="/nonexistent")
+
+    @override_settings(EVILFLOWERS_BACKUP_EXCLUDE_TABLE_DATA=["extraction_*", "job_protocols"])
+    def test_excluded_tables_keep_their_schema_only(self):
+        failed = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="stop here")
+        with (
+            mock.patch("apps.core.management.commands.backup.subprocess.run", return_value=failed) as run,
+            mock.patch("apps.core.management.commands.backup.BackupDestination"),
+        ):
+            with self.assertRaises(CommandError):
+                call_command("backup", destination="/nonexistent")
+        command = run.call_args.args[0]
+        self.assertIn("--exclude-table-data=extraction_*", command)
+        self.assertIn("--exclude-table-data=job_protocols", command)

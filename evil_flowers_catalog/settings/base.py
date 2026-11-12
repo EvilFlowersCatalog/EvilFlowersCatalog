@@ -485,6 +485,9 @@ EVILFLOWERS_EXTRACTION_QUEUE = os.getenv("EVILFLOWERS_EXTRACTION_QUEUE", "evilfl
 # behind a book being extracted.
 EVILFLOWERS_EXTRACTION_EMBED_QUEUE = os.getenv("EVILFLOWERS_EXTRACTION_EMBED_QUEUE", "evilflowers_text_embed")
 EVILFLOWERS_EXTRACTION_EMBED_TIMEOUT = int(os.getenv("EVILFLOWERS_EXTRACTION_EMBED_TIMEOUT", 30))
+# A `running` run no service has reported to for this many hours is failed, so a backfill retries it
+# (a lost task never reports). Counted from the last report, not the start; 0 turns the sweep off.
+EVILFLOWERS_EXTRACTION_STALE_HOURS = float(os.getenv("EVILFLOWERS_EXTRACTION_STALE_HOURS", 24))
 
 # Events
 EVILFLOWERS_EVENT_BROKER_EXECUTOR = os.getenv("EVILFLOWERS_EVENT_BROKER_EXECUTOR")
@@ -723,6 +726,11 @@ EVILFLOWERS_PERSONALISED_COPY_IDLE_HOURS = float(os.getenv("EVILFLOWERS_PERSONAL
 # Direct PostgreSQL host/port for pg_dump, bypassing PgBouncer (#103). Unset = PGHOST/PGPORT.
 EVILFLOWERS_BACKUP_PGHOST = os.getenv("EVILFLOWERS_BACKUP_PGHOST") or None
 EVILFLOWERS_BACKUP_PGPORT = os.getenv("EVILFLOWERS_BACKUP_PGPORT") or None
+# Comma-separated table patterns whose rows pg_dump leaves out (`--exclude-table-data`); their schema is
+# kept. E.g. `extraction_*` on dev: re-derivable by re-extraction, and 490 s of an 8-minute dump.
+EVILFLOWERS_BACKUP_EXCLUDE_TABLE_DATA = [
+    pattern.strip() for pattern in os.getenv("EVILFLOWERS_BACKUP_EXCLUDE_TABLE_DATA", "").split(",") if pattern.strip()
+]
 EVILFLOWERS_BACKUP_SCHEDULE = os.getenv("EVILFLOWERS_BACKUP_SCHEDULE")
 EVILFLOWERS_BACKUP_DESTINATION = os.getenv("EVILFLOWERS_BACKUP_DESTINATION")
 EVILFLOWERS_BACKUP_S3_HOST = os.environ.get("EVILFLOWERS_BACKUP_S3_HOST")
