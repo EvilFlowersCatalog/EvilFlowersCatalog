@@ -856,6 +856,15 @@ CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", 30 * 60))  # De
 # container's CPU limit (16 prefork children in a 4-CPU pod, #129). Unset or 0 keeps
 # that default; the deployment sets it to the pod's CPU limit.
 CELERY_WORKER_CONCURRENCY = int(os.getenv("CELERY_WORKER_CONCURRENCY") or 0) or None
+# Messages a worker reserves per process beyond the one it runs. Reserved messages leave
+# the Redis list, so the queue length an autoscaler reads under-counts the backlog and a
+# new pod finds nothing to take (#142). 1 = a worker holds only what it runs. Default 4.
+CELERY_WORKER_PREFETCH_MULTIPLIER = int(os.getenv("CELERY_WORKER_PREFETCH_MULTIPLIER") or 4)
+# Opt-in at-least-once delivery (#142): ack a task when it finishes, and requeue it when
+# its child process dies (OOM, kill -9). A pod killed outright gets its tasks back only
+# after the visibility timeout above. Tasks that must not run twice set acks_late=False.
+CELERY_TASK_ACKS_LATE = _bool_env("CELERY_TASK_ACKS_LATE", default=False)
+CELERY_TASK_REJECT_ON_WORKER_LOST = _bool_env("CELERY_TASK_REJECT_ON_WORKER_LOST", default=False)
 CELERY_TASK_ROUTES = {
     "evilflowers_ocr_worker.*": {"queue": "evilflowers_ocr_worker"},
     "evilflowers_lcpencrypt_worker.*": {"queue": "evilflowers_lcpencrypt_worker"},
