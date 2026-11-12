@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "fb50fb165efd75e70f84fd312f34e0b4f1499225",
-    "short": "fb50fb1",
-    "message": "Passage search now uses the vector index",
+    "sha": "cc228f3bb25d5a9e7393551984207dfffca10f54",
+    "short": "cc228f3",
+    "message": "CHANGELOG",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/fb50fb165efd75e70f84fd312f34e0b4f1499225"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/cc228f3bb25d5a9e7393551984207dfffca10f54"
   },
-  "deployed_at": "2026-11-12T20:29:46Z",
+  "deployed_at": "2026-11-12T21:26:13Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
