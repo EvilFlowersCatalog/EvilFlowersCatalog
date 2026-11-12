@@ -1,0 +1,14 @@
+{
+  "ref": "0.15.0",
+  "slug": "0.15.0",
+  "kind": "release",
+  "commit": {
+    "sha": "0f1e54596caf732ac38261b06f6bd1914e2d5cdc",
+    "short": "0f1e545",
+    "message": "Merge pull request #144 from EvilFlowersCatalog/develop",
+    "author": "Jakub Dubec",
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/0f1e54596caf732ac38261b06f6bd1914e2d5cdc"
+  },
+  "deployed_at": "2026-11-12T21:43:04Z",
+  "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
+}
