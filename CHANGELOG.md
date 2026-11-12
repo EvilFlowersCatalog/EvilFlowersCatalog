@@ -2,65 +2,123 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
-## 0.15.0 : Unreleased
+## 0.15.0 : 2026-11-12 (The Library Reads Back)
 
-- **Added**: In-catalog chat assistant on `/assistant/v1/` reusing the MCP tools (IP-015, [#77](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/77)); chats can be resumed, carry an attached publication (`entry_id` on messages) and answer in the reader's UI language
-- **Added**: Assistant in the PDF viewer — `POST /assistant/v1/explain` explains a selection or a region, chats bind to the reader's copy and read it (`read_pdf_page`, `search_pdf` with `regex: true`), cite pages as `[[page:N]]` and store what the reader attached ([#87](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/87), [#89](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/89))
-- **Added**: Assistant reads open-access PDFs of non-Readium entries; `EVILFLOWERS_ASSISTANT_MAX_PAGES_READ` (default 20) caps pages read per turn; Readium LCP entries are never read
-- **Added**: Agent highlights — `POST/GET /assistant/v1/highlights` finds passages by semantic search over the paragraph index (agentic search as fallback) and stores them as an agent annotation; reader highlights carry `text` and `quads` (IP-018)
-- **Added**: `apps/extraction` (IP-018, [#92](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/92)) — extraction runs, regions (figures, tables, equations), paragraphs with pgvector embeddings and sentences; ingestion on `/extraction/v1/`, reader regions on `/api/v1/user-acquisitions/{id}/regions`, `backfill_extraction` command; off by default (`EVILFLOWERS_EXTRACTION_ENABLED`), requires the `vector` extension in PostgreSQL ⚠️
-- **Added**: Recommendations from the paragraph index — `GET /api/v1/entries/{id}/similar` and `POST /api/v1/user-acquisitions/{id}/similar` ([#62](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/62)); entry figures on `GET /api/v1/entries/{id}/figures` (not for Readium LCP entries)
-- **Added**: PDF outline stored as the entry's table of contents after upload; `backfill_table_of_contents` management command
-- **Added**: `GET /api/v1/entries/facets` with per-facet counts (languages, categories, feeds, availability) and publication year range; `reserved` pseudo-state in the `lcp_state` filter ([#74](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/74))
-- **Added**: User activity history (IP-016) on `GET /api/v1/activity`; admin search over users, user acquisitions, activities and Readium loans
-- **Added**: Localized titles of categories and feeds (IP-017, English and Slovak) ([#88](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/88))
-- **Added**: MCP publishing tools (`create_entry`, `update_entry`, `create_upload_link` with signed single-use upload URLs), Readium encryption tools (`list_encryption_jobs`, `requeue_encryption`), user management (`list_users`, `get_user`, `create_user`, `update_user`, `delete_user`) and API key tools (`list_api_keys`, `create_api_key`, `revoke_api_key`)
-- **Added**: OPDS 1.2 conditional GET with a user-aware `ETag` and RFC 5005 paging of acquisition feeds; `EVILFLOWERS_OPDS_PAGE_SIZE` (default 50) and `EVILFLOWERS_OPDS_COMPLETE_FEED_MAX_ENTRIES` (default 2000) ([#72](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/72))
-- **Added**: OpenTelemetry observability — traces, metrics and JSON logs for Django, Celery, gunicorn, the assistant and MCP (IP-019, see `docs/observability.md`)
-- **Added**: Continuous CPU profiling with the Pyroscope SDK (`pyroscope-io`, `pyroscope-otel` in the `otel` group): every gunicorn worker, Celery child, beat and the event handler starts the profiler after it has forked when `PYROSCOPE_SERVER_ADDRESS` is set (unset = off), so profiles name Python views, ORM calls and tasks where the eBPF profiler cannot unwind Python. `PYROSCOPE_APPLICATION_NAME`, `PYROSCOPE_TAGS` (plus a `role` tag per process). Root spans carry `pyroscope.profile.id` for Tempo's trace-to-profile link, except in the gevent gunicorn workers ([#111](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/111))
-- **Added**: The lcpencrypt worker receives full publication metadata for the LCP-for-PDF package manifest — all authors in order, publisher, description, language, day-precision `published`, subjects, ISBN/DOI `identifier` and the catalog cover ([#96](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/96))
-- **Added**: Kubernetes deployment in the build pipeline
-- **Added**: Readium encryption jobs record the Celery `task_id`, `trace_id`, attempt count and last dispatch time; `POST /readium/v1/hooks/encryption/result` accepts the lcpencrypt worker's report of every task, so a worker failure turns the job `failed` with its error; both encryption webhooks tag their span with `lcp.content_id`; `list_encryption_jobs` returns the tracking fields, the last report and a `stale` flag, `requeue_encryption` the new `task_id`. Needs `EVILFLOWERS_READIUM_LCPENCRYPT_REPORT_URL` and migration `readium.0008` ⚠️ ([#99](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/99))
-- **Added**: MCP tool `reencrypt_publication` (administrators) re-encrypts already `registered` publications, e.g. after a worker upgrade: by `content_ids` or `entry_ids`, keeps the LCP content id, skips jobs with `ready`/`active` loans unless `force` (reporting how many would break), `dry_run` shows the metadata that would be sent; returns each new dispatch's `task_id`/`trace_id` ([#98](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/98))
-- **Added**: In-database full-text search (IP-020, [#101](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/101)) — `entries.search_vector` (title A, authors + category labels B, publisher + summary C), stemmed for the entry's language and indexed accent-free; `query` understands web-search syntax (`"phrase"`, `-word`, `or`), matches inflected Slovak through a prefix fallback, falls back to any word and then to similar titles/authors when nothing matches, and is ranked by relevance by default (`order_by=relevance` explicitly). Items of `GET /api/v1/entries?query=` carry `search` (score, matched fields, `<mark>` highlights), `metadata.search` reports `relaxed`/`fallback`/`did_you_mean`, `include=facets` returns the facets in the same response. Migration `core.0046` needs `pg_trgm` and creates the `evilflowers_*` text search configurations; Slovak/Czech hunspell configurations are created when the PostgreSQL image ships the dictionaries ([evilflowers-postgresql#1](https://github.com/EvilFlowersCatalog/evilflowers-postgresql/issues/1)) — then run `manage.py reindex_search` and restart the application ⚠️
-- **Added**: Hybrid search (IP-021, [#102](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/102)) — the words are ranked by BM25 (ParadeDB `pg_search`, created by migration `core.0047` when the extension is available; English/German/Czech-stemmed and accent-folded fields) and fused by weighted Reciprocal Rank Fusion with the entries closest in meaning (`entries.embedding`, `halfvec(1024)` from `multilingual-e5-large-instruct` served by the shared `tei-embed`). `metadata.search.mode` is `hybrid`, `bm25`, `fulltext` or `semantic`, `fallback: "semantic"` marks results found by meaning only, items report `matched: ["semantic"]`; without TEI (or when it is down, `degraded: true`) search is words only. Entries are embedded by a Celery task after every change; `manage.py embed_entries --missing` backfills. Settings `EVILFLOWERS_EMBEDDING_URL`, `EVILFLOWERS_EMBEDDING_API_KEY`, `EVILFLOWERS_SEARCH_VECTOR_MIN_SCORE` (0.8), `EVILFLOWERS_SEARCH_VECTOR_WEIGHT` (0.5) ⚠️
-- **Added**: Search inside publications — `GET /api/v1/entries/passages?query=` ranks the paragraphs of every processed PDF the caller may see (other `/api/v1/entries` filters narrow it) and returns the best passages per publication with page, section and score; the text is withheld for Readium LCP entries and outside the entry's allowed IP ranges; `degraded` without TEI, `indexed` counts searchable publications. `EVILFLOWERS_SEARCH_PASSAGE_MIN_SCORE` (0.8) ([#60](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/60))
-- **Added**: Ratings and reviews (IP-023, [#57](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/57)) — readers rate an entry 1–5 with an optional title and text, one review per user: `PUT/GET/DELETE /api/v1/entries/{id}/reviews/mine`, `GET /api/v1/entries/{id}/reviews` (published reviews, `order_by` `-created_at`/`-rating`); catalog managers hide or publish a review with `PATCH /api/v1/reviews/{id}` or in the admin, and hidden reviews do not count. Entries carry `rating: {average, count, mine}`; `GET /api/v1/entries` accepts `order_by=-rating` (Bayesian average, `EVILFLOWERS_REVIEWS_PRIOR_MEAN` 3.0 / `EVILFLOWERS_REVIEWS_PRIOR_WEIGHT` 5) and `rating_min`; MCP entries carry `rating`. `EVILFLOWERS_REVIEWS_ENABLED` (default on), `EVILFLOWERS_REVIEWS_BODY_MAX_CHARS` (5000), `manage.py recompute_ratings [--check]`. Migration `core.0048` ⚠️. `GET /api/v1/reviews` lists reviews across entries for moderation (superusers: all, catalog managers: their catalogs; filters `state`, `catalog_id`, `entry_id`, `user_id`, `rating`, `rating__lte`, `query`; items carry `entry`)
-- **Added**: HTTP Range on acquisition, cover, thumbnail and Readium LCP content downloads — `Accept-Ranges: bytes`, `206 Partial Content` with `Content-Range` for one byte range, `416` past the end, an accurate `Content-Length`; S3 reads only the requested bytes. Popularity and download activity count the first request of a ranged download only. Personalised PDFs (`EVILFLOWERS_MODIFIERS`, the user-acquisition download) are still served whole: each render differs, so ranges cannot be combined. `GZipMiddleware` no longer compresses file responses (it dropped `Content-Length`) ([#70](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/70))
-- **Added**: Periodic orphan cleanup — `apps.tasks.tasks.cleanup_orphans` deletes storage directories no catalog or entry owns, keeping any with a file newer than `EVILFLOWERS_ORPHAN_CLEANUP_MIN_AGE_HOURS` (default 168); scheduled by `EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE` (cron, unset = off). `storage_audit --min-age-hours` applies the same guard by hand ([#30](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/30))
-- **Added**: PgBouncer transaction pooling ([#103](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/103)) — `PGBOUNCER_TRANSACTION_POOLING=1` sets `DISABLE_SERVER_SIDE_CURSORS`; `EVILFLOWERS_BACKUP_PGHOST` / `EVILFLOWERS_BACKUP_PGPORT` point `pg_dump` at the server instead of the pooler. No session-level state found (no `SET` GUCs, advisory locks, `LISTEN` or SQL `PREPARE`)
-- **Fixed**: `manage.py backup` raises when `pg_dump`, the upload or a catalog dump fails, so the `backup` Celery task fails instead of reporting success ([#103](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/103))
-- **Fixed**: OPDS 1.2 feeds no longer answer `304` after an entry's authors or categories change, an author or category is renamed, or an acquisition is deleted — these bump the entry's `touched_at` ([#72](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/72))
-- **Fixed**: The Celery event listener (`celery_event_handler`) no longer exits on an event it cannot store; it logs and skips it. Extraction tasks are sent under a deterministic UUID task id (`uuid5` of `extract:<acquisition>:v<N>`) instead of the `extract:…` string `JobProtocol` rejected ([#108](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/108))
-- **Added**: `GET /api/v1/entries/suggest` — type-ahead entries, authors, categories and feeds with counts in one call
-- **Added**: Facets `authors`, `publishers`, `formats` and `fulltext` with matching `publisher`, `format` and `fulltext` entry filters; `facet`, `facet_limit` and `facet_query` options; availability counts read only LCP entries' ids and config
-- **Added**: OPDS facets — OPDS 2.0 search and publications feeds carry `facets` (with `numberOfItems`, active facet `rel: self`; the publications feed accepts the entry filters), OPDS 1.2 search feeds `rel="http://opds-spec.org/facet"` links with `opds:facetGroup`, `opds:activeFacet` and `thr:count`; the OpenSearch descriptor declares `language_code`, `category_id`, `author_id`, `feed_id` and the publication date range as optional `ef:` parameters; parameters sent back unfilled (`{…}`) are ignored
-- **Changed**: One embedding model for entries, paragraphs and queries (IP-021): `extraction_paragraph.embedding` and `extraction_run.embedding` are `halfvec(1024)` (migration `extraction.0004` drops the 768-dimension Arctic vectors), queries are embedded by `tei-embed` instead of a Celery round-trip to text-service, `EVILFLOWERS_EXTRACTION_PIPELINE_VERSION` defaults to 2 — run `backfill_extraction --outdated` once text-service embeds through `tei-embed` ⚠️; `GET /api/v1/entries/{id}/similar` uses the entry vector, so it works without a processed PDF
-- **Changed**: OPDS 2.0 `mode=keyword` (words only) and `mode=semantic` (meaning only) run in PostgreSQL; the OPDS 2.0 publications feed and search no longer answer 502
-- **Removed**: evilflowers-search-service integration (IP-021) — `apps/api/services/search_service_client.py`, `SEARCH_SERVICE_URL` / `SEARCH_SERVICE_TIMEOUT_SECONDS`, the `process_pdf` send to text-service on upload (`apps/dataverse/services/text_publish.py`), `manage.py reindex_acquisitions` and the `search-service` compose service ⚠️
-- **Fixed**: `-word` in a search excludes the word in every language configuration (a stemmer that split it differently let it back in)
-- **Fixed**: Slovak/Czech text search configurations drop stop words before hunspell (`slovak_stop` / `czech_stop`, as the evilflowers-postgresql README prescribes); diacritics-free queries are highlighted in Slovak/Czech entries
-- **Changed**: Hardened defaults ([#100](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/100)) ⚠️ — CORS comes from the environment: `CORS_ALLOWED_ORIGINS` (comma-separated, default the origin of `EVILFLOWERS_PORTAL_URL`), `CORS_ALLOW_ALL_ORIGINS=1` is now an explicit opt-in; the MCP DNS-rebinding guard is on by default (`EVILFLOWERS_MCP_ALLOWED_ORIGINS` defaults to the origin of `EVILFLOWERS_BASE_URL`, `*` disables it); `EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS` defaults to `Bearer` — set `Bearer,Basic` to keep username/password MCP clients working
-- **Changed**: Docker image ships PostgreSQL 18 client tools from PGDG (`PG_MAJOR` build arg) ([#93](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/93), [#94](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/94))
-- **Changed**: `compose.services.yml` runs the lcpencrypt worker from `:develop`, drops the unused `LCPSV_URL` and documents its OpenTelemetry settings ([#95](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/95))
-- **Changed**: Feed titles no longer have to be unique within a catalog — only `url_name` is (migration `core.0045`); a taken `url_name` answers 409 `/feed-url-name-taken` naming the conflicting feed and a free `suggested_url_name`; `GET /api/v1/feeds` filters by exact `url_name` ([elvira-portal#30](https://github.com/EvilFlowersCatalog/elvira-portal/issues/30))
-- **Changed**: Category `label` included in the categories Base serializer ([#76](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/76))
-- **Fixed**: OPDS 1.2 / OPDS 2.0 compatibility with reading systems (Thorium lending, borrow links, authentication document, publication manifests)
-- **Fixed**: Readium LCP license page in encrypted PDFs, encryption notifications and download headers ([#86](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/86))
-- **Fixed**: Reservations are not promoted on entries with lending switched off
-- **Fixed**: Status document link rewrite and anonymous entry listing
-- **Fixed**: `GET /api/v1/entries?query=` keeps the relevance ranking instead of falling back to `created_at`; an explicit `order_by` still wins ([#60](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/60))
-- **Fixed**: ISBN/DOI already stored as a URI (`urn:isbn:…`, `https://doi.org/…`) is no longer prefixed twice in OPDS identifiers and in the LCP package manifest; the manifest now uses the same identifier URI as the feeds
-- **Fixed**: CI Docker build fails at "Install poetry" on a stale apt index ([#97](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/97))
-- **Fixed**: N+1 queries in list endpoints ([#124](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/124)) — `GET /api/v1/entries`, `/api/v1/feeds`, `/api/v1/activity`, `/api/v1/shelf-records`, `/api/v1/user-acquisitions`, `/readium/v1/licenses` and `/readium/v1/reservations` now cost the same number of queries for any page size: the feed serializer reads prefetched `parents`/`children`, feeds come with their catalog, and every view nesting entries prefetches the same entry graph (`with_entry_graph`)
-- **Fixed**: Bearer authentication imports the RSA JWK once per process instead of on every request (a third of the app's CPU on dev) and verifies with its public half; an API key's `last_seen_at` is written at most once a minute instead of saving the whole row per request ([#125](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/125))
-- **Fixed**: Covers and thumbnails ([#126](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/126)) ignore any credential (they are not access-controlled; IP-010) and are not rate limited, load only the columns they serve, and answer `If-None-Match`/`If-Modified-Since` with a 304 before storage is touched; `Last-Modified` is sent. An entry without a cover answers 404 instead of 500
-- **Fixed**: A search no longer waits ~9 s while `tei-embed` is slow: a reader's query is not retried on timeouts or connection errors (429/503 still are), and for 30 s after a failure searches skip TEI and stay lexical
-- **Fixed**: The Celery event listener stores task arguments holding sets, tuples or bytes (`set is not JSON serializable` lost the job protocol)
-- **Fixed**: The nightly backup no longer fails on a catalog without stored files (`dump_catalog` skips the missing storage directory; 8 of 11 dev catalogs had none), and compresses catalog archives with xz preset 1 instead of 6 — PDFs barely compress, and preset 6 spent ~17 min of a core on one catalog (`lzma_code`, the top function in the dev pod's eBPF profile)
-- **Fixed**: Extraction runs no longer fail when a book is processed twice ([#120](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/120)). The catalog's Celery app now waits 12 h before Redis redelivers an unacknowledged task (`CELERY_BROKER_VISIBILITY_TIMEOUT`, default `43200`). The old default of 1 h made it requeue the extraction services' long tasks in the shared Redis db. When the analyzer posts `/start` again for a `running` run, the earlier pass's paragraphs and regions are deleted. A paragraph batch that repeats a stored `seq` gets a 409 instead of a 500, so workers stop retrying it. A `failed` report for a job that is already `done` is ignored
-- **Changed**: `GET /api/v1/entries` costs less CPU per page (it was half of the app's CPU in the Nov 2026 k6 run). Facets build one entry filter per distinct parameter set instead of one per dimension (one instead of nine without dimension filters). Filter sets build their form class once per class instead of per request. The list no longer loads an entry's text, table of contents, identifiers or search columns (~8 KB per row on dev, including a 1024-dimension vector to parse). The prefetched authors, categories and acquisitions load only the columns the serializer reads. A feed's parents and children load only their ids. Gunicorn's worker count is configurable (`GUNICORN_WORKERS`, default `4`)
-- **Changed**: Extraction ingest validates a paragraph `embedding` as one list of finite numbers instead of a form field per dimension (~5 % of the app's CPU on dev); a number sent as a string is now rejected
+The catalog has learned to read its own books. It searches inside them, explains them and cites the page.
+Then a k6 run made it sweat, so it now does all of that with a fraction of the queries. Read the
+upgrade notes at the end before you deploy. The ⚠️ items in them are not optional.
+
+### Discovery
+
+- **Added**: Search rebuilt inside PostgreSQL:
+  - full-text search with Slovak/Czech stemming, highlights and "did you mean" ([#101])
+  - hybrid BM25 + semantic ranking (`multilingual-e5-large-instruct` served by `tei-embed`, IP-021, [#102])
+  - search inside publications on `GET /api/v1/entries/passages` ([#60], [#113])
+  - type-ahead on `GET /api/v1/entries/suggest`
+- **Added**: Facets with exact counts on `GET /api/v1/entries/facets`, in the list (`include=facets`) and in OPDS 1.2 / 2.0 search feeds ([#74])
+- **Added**: Ratings and reviews with moderation (IP-023, [#57])
+- **Added**: Similar publications and entry figures from the paragraph index ([#62]). The PDF outline becomes the entry's table of contents
+- **Added**: Reading history on `GET /api/v1/activity` (IP-016). Category and feed titles in English and Slovak (IP-017, [#88])
+- **Changed**: Feed titles may repeat within a catalog; only `url_name` must be unique, and a taken one answers 409 with a suggestion ([elvira-portal#30])
+- **Removed**: evilflowers-search-service integration: `SEARCH_SERVICE_URL`, `reindex_acquisitions`, and the `process_pdf` publish on upload ⚠️
+
+### Assistant
+
+- **Added**: A chat assistant on `/assistant/v1/`, built on the MCP tools (IP-015, [#77]). In the PDF viewer it explains a selection or a figure, cites pages and highlights passages ([#87], [#89])
+- **Added**: Grounded answers (IP-024, [#115]): evidence labels, citation checks, versioned prompts, chapter summaries. It reads the books a reader mentions ([#127]) and runs on a self-hosted Ollama model (`EVILFLOWERS_ASSISTANT_OLLAMA_*`, [#104], [#130], [#138])
+- **Added**: Extraction store (IP-018, [#92]): regions, paragraphs and pgvector embeddings, ingested on `/extraction/v1/`, plus `backfill_extraction`. Off by default (`EVILFLOWERS_EXTRACTION_ENABLED`). Readium LCP titles are never read by AI
+
+### Lending and operations
+
+- **Added**: Lending statistics for the admin dashboard on `GET /api/v1/statistics` (IP-028, [#131])
+- **Added**: Encryption jobs record their Celery task and accept worker failure reports ([#99]). MCP `reencrypt_publication` re-encrypts registered jobs ([#98]). The LCP manifest carries full metadata ([#96])
+- **Added**: MCP tools for publishing (`create_entry`, `create_upload_link`), users and API keys
+- **Added**: Branded notification e-mails and e-mail import from LDAP (IP-025)
+- **Added**: Users change their own password on `POST /api/v1/users/me/password` ([#8])
+- **Added**: Request rate limits (IP-026, [#21]). Off by default: campus NAT puts many readers behind one IP
+- **Fixed**: 1-week loans can be renewed ([#110]). Returning a never-opened loan sends its e-mail ([#109]). The licence list is fresh right after a return ([#123]). 0-byte uploads are refused ([#112])
+
+### Performance (or: what k6 taught us)
+
+- **Fixed**: N+1 queries are gone: list endpoints cost the same number of queries for any page size (`GET /api/v1/entries?limit=30` used to run 226 SELECTs) ([#124])
+- **Fixed**: The RSA JWK is imported once per process. It used to be imported on every request, which cost a third of the CPU ([#125])
+- **Changed**: Covers and thumbnails use versioned, immutable URLs. They answer 304 without touching storage and no longer care about tokens (IP-027, [#126], [#128])
+- **Changed**: HTTP Range on downloads ([#70]). OPDS 1.2 conditional GET and feed paging ([#72])
+- **Changed**: The entry list loads only what it serializes. Facets rank once ([#135]). Search waits at most 0.3 s for `tei-embed` ([#134])
+- **Added**: Optional psycopg pool (`EVILFLOWERS_DB_POOL`, [#133]) and support for PgBouncer transaction pooling ([#103])
+- **Added**: Celery settings for autoscaling: `CELERY_HOSTNAME`, `CELERY_WORKER_CONCURRENCY`, prefetch and late acks ([#106], [#107], [#129], [#142]). Broker visibility timeout of 12 h ([#120])
+
+### Observability
+
+- **Added**: OpenTelemetry traces, metrics and JSON logs (IP-019), semantic spans across the ecosystem (IP-029, [#139]) and Pyroscope profiling that stays cheap when idle ([#111], [#136])
+
+### Housekeeping
+
+- **Added**: Periodic cleanup of orphaned storage directories (`EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE`, off when unset, [#30])
+- **Fixed**: `manage.py backup` works against PostgreSQL 18, fails loudly instead of "succeeding" and no longer spends 17 minutes xz-compressing PDFs ([#93], [#103])
+- **Fixed**: The Celery event listener survives extraction tasks ([#108], [#122])
+- **Fixed**: OPDS compatibility with Thorium (lending, borrow links, authentication document) and the LCP licence page in encrypted PDFs ([#86])
+
+### Upgrade notes (0.15.0)
+
+- ⚠️ PostgreSQL needs the `vector` and `pg_trgm` extensions; `pg_search` is optional and enables BM25. Migrations: core 0045–0050, extraction 0001–0005, readium 0008–0010, assistant 0005–0009, notifications 0004
+- ⚠️ CORS is no longer open to every origin. Set `CORS_ALLOWED_ORIGINS`, or rely on the default, the origin of `EVILFLOWERS_PORTAL_URL` ([#100])
+- ⚠️ MCP accepts only Bearer by default and checks the origin. Set `EVILFLOWERS_MCP_AUTHENTICATION_SCHEMAS=Bearer,Basic` to keep password clients working ([#100])
+- New settings worth setting: `EVILFLOWERS_EMBEDDING_URL` (without it, search uses words only), `EVILFLOWERS_READIUM_LCPENCRYPT_REPORT_URL`, `EVILFLOWERS_BACKUP_PGHOST`
+- After migrating: `manage.py embed_entries --missing`; `manage.py reindex_search` if the Slovak/Czech dictionaries were added later
+
+[#8]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/8
+[#21]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/21
+[#30]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/30
+[#88]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/88
+[elvira-portal#30]: https://github.com/EvilFlowersCatalog/elvira-portal/issues/30
+[#57]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/57
+[#60]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/60
+[#62]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/62
+[#70]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/70
+[#72]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/72
+[#74]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/74
+[#77]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/77
+[#86]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/86
+[#87]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/87
+[#89]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/89
+[#92]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/92
+[#93]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pull/93
+[#96]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/96
+[#98]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/98
+[#99]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/99
+[#100]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/100
+[#101]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/101
+[#102]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/102
+[#103]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/103
+[#104]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/104
+[#106]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/106
+[#107]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/107
+[#108]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/108
+[#109]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/109
+[#110]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/110
+[#111]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/111
+[#112]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/112
+[#113]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/113
+[#115]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/115
+[#120]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/120
+[#122]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/122
+[#123]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/123
+[#124]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/124
+[#125]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/125
+[#126]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/126
+[#127]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/127
+[#128]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/128
+[#129]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/129
+[#130]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/130
+[#131]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/131
+[#133]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/133
+[#134]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/134
+[#135]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/135
+[#136]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/136
+[#138]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/138
+[#139]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/139
+[#142]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/142
 
 ## 0.14.0 : 2026-09-10
 
