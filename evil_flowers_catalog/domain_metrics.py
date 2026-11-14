@@ -87,7 +87,8 @@ def record_extraction_superseded(job: str, stage: str) -> None:
     extraction_jobs_superseded.add(
         1,
         {
-            "evilflowers.extraction.job": _bounded(job, EXTRACTION_JOBS),
+            # By kind: a per-batch job (`equations:0297-0304`, #150) must not become a label value.
+            "evilflowers.extraction.job": _bounded(str(job).split(":", 1)[0], EXTRACTION_JOBS),
             "evilflowers.extraction.superseded.stage": _bounded(stage, SUPERSEDED_STAGES),
         },
     )

@@ -16,6 +16,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.core.models import Acquisition
+from apps.extraction import batches
 from apps.extraction.models import ExtractionRun, Paragraph, ParagraphLink, Region, Sentence
 from apps.files.storage import get_storage
 from evil_flowers_catalog import domain_metrics, tracing
@@ -320,7 +321,8 @@ def report_job(
             return
         run.jobs = {**run.jobs, job: ExtractionRun.JobStatus.FAILED if failed else ExtractionRun.JobStatus.DONE}
         if provenance:
-            run.provenance = {**run.provenance, job: provenance}
+            # Per kind, not per batch: with per-batch dispatch a run has hundreds of jobs (#150).
+            run.provenance = batches.merge_provenance(run.provenance, job, provenance)
         if failed and error:
             run.error = "\n".join(filter(None, [run.error, f"{job}: {error}"]))
         if ExtractionRun.JobStatus.PENDING not in run.jobs.values():
@@ -364,8 +366,8 @@ def fail_stale_runs(idle_hours: float) -> int:
             # A report may have landed since the query.
             if run.status != ExtractionRun.Status.RUNNING or run.updated_at >= cutoff:
                 continue
-            pending = sorted(job for job, status in run.jobs.items() if status == ExtractionRun.JobStatus.PENDING)
-            reason = f"no report for {idle_hours:g} h, pending: {', '.join(pending) or 'none'}"
+            pending = [job for job, status in run.jobs.items() if status == ExtractionRun.JobStatus.PENDING]
+            reason = f"no report for {idle_hours:g} h, pending: {batches.pending_summary(pending)}"
             logger.warning("Extraction run stale, failing it: run_id=%s %s", run.pk, reason)
             fail(run, "\n".join(filter(None, [run.error, reason])))
             failed += 1

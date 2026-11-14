@@ -34,6 +34,7 @@ from apps.core.errors import DetailType, ProblemDetailException, ValidationExcep
 from apps.core.models import Acquisition, Entry
 from apps.core.views import SecuredView
 from apps.extraction import services
+from apps.extraction.batches import group_jobs
 from apps.extraction.models import ExtractionRun, ParagraphLink, Region, Sentence
 from apps.files.storage import get_storage
 from evil_flowers_catalog.celery import app
@@ -96,13 +97,28 @@ class RunStatsSerializer(Serializer):
     regions_embedded: int = 0
 
 
+class JobGroupSerializer(Serializer):
+    """The run's jobs of one kind (`figures:0001-0008`, `figures:0009-0016`, … → `figures`) (#150)."""
+
+    kind: str
+    total: int
+    done: int
+    pending: int
+    failed: int
+    #: `[first, last]` page of the pending batches (gaps included); None when none is pending or unbatched.
+    pending_pages: Optional[List[int]] = None
+
+
 class RunSerializer(Serializer):
     id: UUID
     pipeline_version: int
     status: str
     is_active: bool
     page_count: Optional[int]
+    #: Every job by name. With per-batch dispatch these are hundreds: list `job_groups` instead.
     jobs: Dict[str, str]
+    #: The jobs grouped by kind with counts per status, sorted by kind (#150).
+    job_groups: List[JobGroupSerializer] = []
     provenance: dict
     error: Optional[str]
     storage_dir: str
@@ -336,6 +352,7 @@ class EntryExtractionView(SecuredView):
             serialized = []
             for run in runs:
                 item = RunSerializer.model_validate(run)
+                item.job_groups = [JobGroupSerializer(**group.as_dict()) for group in group_jobs(run.jobs)]
                 if run.started_at and run.finished_at:
                     item.duration = (run.finished_at - run.started_at).total_seconds()
                 # Counts are cheap enough for the few runs an acquisition keeps (the active one and

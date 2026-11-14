@@ -4,12 +4,11 @@ The run's truth is `ExtractionRun`: the definition observes it, and summarises i
 (`figures:0001-0008` → `figures`), because with per-batch dispatch a book has hundreds of them (#150).
 """
 
-from collections import Counter, defaultdict
-
 from django.conf import settings
 from django.utils.translation import gettext as _
 
 from apps.core.models import Acquisition
+from apps.extraction.batches import summarise_jobs
 from apps.tasks.contract import (
     Blocked,
     DispatchError,
@@ -23,14 +22,6 @@ from apps.tasks.contract import (
     registry,
     uuid_arg,
 )
-
-
-def summarise_jobs(jobs: dict | None) -> dict:
-    """`{"figures:0001-0008": "done", …}` → `{"figures": {"done": 115, "pending": 1}, …}` (#150)."""
-    grouped: dict[str, Counter] = defaultdict(Counter)
-    for name, status in (jobs or {}).items():
-        grouped[str(name).split(":", 1)[0]][str(status)] += 1
-    return {kind: dict(sorted(counts.items())) for kind, counts in sorted(grouped.items())}
 
 
 def _current_run(acquisition):
