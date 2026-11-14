@@ -13,29 +13,41 @@ from django.utils.html import strip_tags
 
 from apps.assistant import contexts, prompts
 from apps.assistant.models import Chat, ChatMessage
-from apps.assistant.tools import DISPLAY_BOOKS, FIND_SIMILAR, READ_PAGE, SEARCH_PASSAGES
+from apps.assistant.tools import (
+    DISPLAY_BOOKS,
+    FIND_SIMILAR,
+    FOLLOW,
+    LIBRARY_OVERVIEW,
+    READ_PAGE,
+    SEARCH_PASSAGES,
+    STUDY,
+)
 
 logger = logging.getLogger(__name__)
 
-#: IP-022. Sections in a fixed order: role, tool policy, grounding, language,
-#: limits, style. Nothing per request goes in here — it is the head of the
-#: cached prefix (IP-015 D3); the reader's language is pinned by the last
-#: message of every request instead (`language_instruction`). The text is
-#: `prompts/chat.md` (#116).
+#: IP-030 §7. Sections in a fixed order: role and capabilities, evidence and tools, grounding and citations,
+#: answer shape, limits. Nothing per request goes in here — it is the head of the cached prefix (IP-015 D3);
+#: the reader's language is pinned after each of their messages instead (`language_instruction`, Q9: the
+#: prompt has no language rule of its own). The text is `prompts/chat.md` (#116).
 SYSTEM_PROMPT = prompts.render(
     "chat",
     search_passages=SEARCH_PASSAGES,
     find_similar=FIND_SIMILAR,
     display_books=DISPLAY_BOOKS,
     read_page=READ_PAGE,
+    follow=FOLLOW,
+    study=STUDY,
+    library_overview=LIBRARY_OVERVIEW,
 )
 
 
 class QuotaExceeded(Exception):
-    def __init__(self, limit: int, used: int, reset_at):
+    def __init__(self, limit: int, used: int, reset_at, unit: str = "messages"):
         self.limit = limit
         self.used = used
         self.reset_at = reset_at
+        #: `messages` or `seconds`: which limit was reached.
+        self.unit = unit
         super().__init__("Daily assistant limit exceeded")
 
 
@@ -50,11 +62,17 @@ class Usage:
     messages: int
     tokens: int
     message_limit: int
-    token_limit: int
+    #: Model seconds today (IP-030 Q2) and the limit; `tokens` stays for telemetry only.
+    seconds: float = 0.0
+    seconds_limit: int = 0
 
     @property
     def exceeded(self) -> bool:
-        return self.messages >= self.message_limit or self.tokens >= self.token_limit
+        return self.messages >= self.message_limit or (self.seconds_limit > 0 and self.seconds >= self.seconds_limit)
+
+    @property
+    def unit(self) -> str:
+        return "messages" if self.messages >= self.message_limit else "seconds"
 
 
 def _policy(user):
@@ -90,7 +108,7 @@ def usage(user) -> Usage:
     policy = _policy(user)
 
     rows = ChatMessage.objects.filter(user=user, created_at__gte=day_start())
-    aggregate = rows.aggregate(tokens=Sum("tokens_used"))
+    aggregate = rows.aggregate(tokens=Sum("tokens_used"), seconds=Sum("model_seconds"))
 
     return Usage(
         messages=rows.filter(role=ChatMessage.Role.USER).count(),
@@ -100,10 +118,11 @@ def usage(user) -> Usage:
             if policy is not None and policy.daily_message_limit is not None
             else settings.EVILFLOWERS_ASSISTANT_DAILY_LIMIT_MESSAGES
         ),
-        token_limit=(
-            policy.daily_token_limit
-            if policy is not None and policy.daily_token_limit is not None
-            else settings.EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS
+        seconds=round(aggregate["seconds"] or 0.0, 1),
+        seconds_limit=(
+            policy.daily_seconds_limit
+            if policy is not None and policy.daily_seconds_limit is not None
+            else settings.EVILFLOWERS_ASSISTANT_DAILY_LIMIT_SECONDS
         ),
     )
 
@@ -111,12 +130,38 @@ def usage(user) -> Usage:
 def assert_within_quota(user) -> Usage:
     current = usage(user)
     if current.exceeded:
+        unit = current.unit
         raise QuotaExceeded(
-            limit=current.message_limit,
-            used=current.messages,
+            limit=current.message_limit if unit == "messages" else current.seconds_limit,
+            used=current.messages if unit == "messages" else int(current.seconds),
             reset_at=day_start() + timedelta(days=1),
+            unit=unit,
         )
     return current
+
+
+#: Cache key set while a chat turn runs, so off-peak model work (`tasks.describe_figures`) yields to readers.
+ACTIVE_KEY = "evilflowers:assistant:turn-active"
+#: Seconds the marker outlives the last round that refreshed it.
+ACTIVE_SECONDS = 120
+
+
+def mark_active() -> None:
+    from django.core.cache import cache
+
+    try:
+        cache.set(ACTIVE_KEY, True, ACTIVE_SECONDS)
+    except Exception:
+        logger.debug("Could not mark a chat turn active", exc_info=True)
+
+
+def chat_active() -> bool:
+    from django.core.cache import cache
+
+    try:
+        return bool(cache.get(ACTIVE_KEY))
+    except Exception:
+        return False
 
 
 def _history_queryset(chat: Chat):
@@ -151,6 +196,8 @@ def conversation(chat: Chat, document=None, language: Optional[str] = None) -> L
     rows = _history_queryset(chat)
     if chat.history_start is not None:
         rows = rows.filter(created_at__gte=chat.history_start)
+    # A failed turn's notice was never the model's answer (IP-030 §5): it is not replayed.
+    rows = rows.filter(error__isnull=True)
 
     instruction = language_instruction(language)
     for row in rows:
@@ -171,6 +218,7 @@ def start_turn(chat: Chat, was_cold: bool) -> None:
     stable prefix. `was_cold` is `is_cold(chat)` read before this turn's user
     message was stored.
     """
+    mark_active()
     if not was_cold:
         return
     keep = settings.EVILFLOWERS_ASSISTANT_TRIM_MESSAGES
@@ -278,19 +326,18 @@ def reader_notes(row: ChatMessage) -> str:
 LANGUAGE_NAMES = prompts.LANGUAGE_NAMES
 
 
-def language_instruction(language: Optional[str]) -> Optional[str]:
-    """Pins the answer to the reader's UI language.
+def language_instruction(language: Optional[str]) -> str:
+    """Pins the answer's language (IP-030 Q9): the reader's message, else their UI language.
 
-    Sent as the last message of every request, after the history, so it never
-    changes the cached prefix. Small models drift (Slovak into Czech, a DRM
-    notice into Russian), so the language is named and Czech is ruled out.
+    Follows every user message in the history, so it never changes the cached prefix (#138). An English
+    question in the Slovak UI is answered in English; "ok" in the Slovak UI, in Slovak. Small models drift
+    (Slovak into Czech, a DRM notice into Russian), so the fallback is named and Czech is always ruled out.
     """
     name = prompts.language_name(language)
-    if name is None:
-        return None
+    fallback = f"; if it is too short to tell, in {name}" if name else ""
     return (
-        f"Write your answer in {name}, whatever language the reader's message, the publication or a tool "
-        "result is in." + prompts.not_czech(language)
+        f"Answer in the language of the reader's last message{fallback}, whatever language the publication or a "
+        "tool result is in. Slovak must be Slovak, never Czech; a message in Czech is answered in Slovak."
     )
 
 
@@ -315,21 +362,20 @@ def start_agent_annotation(user_acquisition, prompt: str, language: Optional[str
 
 def reading_note(document) -> str:
     """Tells the model it can read the publication's PDF and how to cite it."""
+    # IP-030 Q1: one citation convention in every chat. `[[page:N]]` and `[[region:…]]` are no longer asked for.
     return (
         f"You can read this publication's PDF, numbered as the reader's viewer numbers it. It has "
         f"{document.page_count} pages. "
-        "Use `search_paragraphs` to find passages by meaning, `search_pdf` for an exact term (with "
-        "`regex: true` for a regular expression, e.g. every 'Table 2.x') and "
-        "`read_pdf_page` to read pages; `list_regions` lists every figure, table and equation, which you "
-        "cite as [[region:ID]]. When the reader asks you to mark, highlight or find passages for them, "
-        "call `create_highlights` with what to look for; the highlights appear in their viewer. Base "
-        "answers about the publication on what it says and never invent its content. Answer in your own "
-        "words and briefly: never paste the text of a page back to the reader, quote at most a sentence.\n"
-        "Cite the page of everything you take from the publication as [[page:N]] with the viewer's page "
-        "number, for example [[page:12]], right after the sentence it supports; the reader clicks it to "
-        "jump there. A figure, table or equation can be "
-        "cited as [[region:ID]] with its id. Never use page numbers printed in the book itself; they differ "
-        "from the viewer's."
+        "Use `search_paragraphs` to find passages by meaning and `read_pdf_page` to read pages; `list_regions` "
+        "lists every figure, table and equation, and `follow` goes from a passage to the next one, to the "
+        "figure it refers to or to the rest of its section. When the reader asks you to mark, highlight or find "
+        "passages for them, call `create_highlights` with what to look for; the highlights appear in their "
+        "viewer. Base answers about the publication on what it says and never invent its content. Answer in "
+        "your own words and briefly: never paste the text of a page back to the reader, quote at most a "
+        "sentence.\n"
+        "Results carry labels: E# for a passage or page, F# for a figure, table or equation. Cite them as [E3] "
+        "or [F2] right after the sentence they support; the reader clicks one to land on the paragraph or see "
+        "the figure. Never use page numbers printed in the book itself; they differ from the viewer's."
     )
 
 

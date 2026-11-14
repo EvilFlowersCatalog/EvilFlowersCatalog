@@ -71,7 +71,7 @@ class Document:
 class ExplainRetryTests(SimpleTestCase):
     def _explain(self, answers):
         client = ScriptedClient(answers)
-        with mock.patch.object(explain, "OllamaClient", return_value=client):
+        with mock.patch.object(explain, "make_client", return_value=client):
             result = explain.explain(Document(), text="entropy", page=1, title="Physics", authors="", language="sk")
         return result, client
 

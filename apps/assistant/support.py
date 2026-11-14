@@ -52,8 +52,8 @@ ABBREVIATIONS = {
 #: A candidate boundary: end punctuation, then optional closing quotes/brackets, then whitespace.
 _BOUNDARY = re.compile(r"([.!?…]+[\"'“”»)\]]*)(\s+)")
 _WORD_BEFORE = re.compile(r"([\w.]+)$", re.UNICODE)
-_ONLY_LABELS = re.compile(r"^(?:\[\s*E\d+(?:\s*[,;]\s*E\d+)*\s*\]\s*)+[.!?]?$", re.IGNORECASE)
-_LEADING_LABELS = re.compile(r"(?:\[\s*E\d+(?:\s*[,;]\s*E\d+)*\s*\]\s*)+", re.IGNORECASE)
+_ONLY_LABELS = re.compile(r"^(?:\[\s*[EF]\d+(?:\s*[,;]\s*[EF]\d+)*\s*\]\s*)+[.!?]?$", re.IGNORECASE)
+_LEADING_LABELS = re.compile(r"(?:\[\s*[EF]\d+(?:\s*[,;]\s*[EF]\d+)*\s*\]\s*)+", re.IGNORECASE)
 
 
 def split_sentences(text: str) -> List[str]:
@@ -174,9 +174,9 @@ def check_pair(client, pair: Pair) -> Tuple[str, Optional[int], str, int]:
 def verify(text: str, ledger: Ledger, client=None) -> List[Verdict]:
     """A verdict for every citation of `text` whose passage is known."""
     if client is None:
-        from apps.assistant.llm import OllamaClient
+        from apps.assistant.llm import client as make_client
 
-        client = OllamaClient()
+        client = make_client()
     verdicts = []
     for pair in pairs(text, ledger):
         verdict, score, reason, _tokens = check_pair(client, pair)

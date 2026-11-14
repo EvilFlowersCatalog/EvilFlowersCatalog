@@ -15,7 +15,7 @@ def visible_q() -> models.Q:
     return models.Q(role="user") | (
         models.Q(role="assistant")
         & models.Q(tool_calls__isnull=True)
-        & (~models.Q(text="") | models.Q(displayed_entries__isnull=False))
+        & (~models.Q(text="") | models.Q(displayed_entries__isnull=False) | models.Q(study__isnull=False))
     )
 
 
@@ -104,10 +104,24 @@ class ChatMessage(BaseModel):
     #: in `text` as written; clients turn the known ones into links.
     citations = models.JSONField(null=True, blank=True)
 
+    #: A study artefact the turn produced (IP-030 §6): `{"mode": "quiz" | "walkthrough" | "key_concepts" |
+    #: "summary", "data": {...}}`, on the answer that closes the turn, as the `study` frame carried it.
+    study = models.JSONField(null=True, blank=True)
+
+    #: Set on the answer row of a turn that failed (IP-030 §5): `unavailable` (the model backend) or `failed`.
+    #: Its `text` is the notice the reader saw; the row is never replayed to the model.
+    error = models.CharField(max_length=20, null=True, blank=True)
+
+    #: The reader's rating of an answer (IP-030 Q13): `{"rating": 1 | -1, "reason": "...", "at": "..."}`.
+    feedback = models.JSONField(null=True, blank=True)
+
     #: Hash of the system prompt and tool list the model was given for this assistant message (#116), so a
     #: change in behaviour can be traced to a change in prompt. Empty for user and tool rows.
     prompt_fingerprint = models.CharField(max_length=12, blank=True, default="")
     tokens_used = models.IntegerField(default=0)
+    #: Model time this row cost: prompt evaluation + generation, as the backend reported it (IP-030 Q2). The
+    #: daily quota counts these.
+    model_seconds = models.FloatField(default=0)
 
     objects = ChatMessageQuerySet.as_manager()
 
@@ -117,7 +131,9 @@ class ChatMessage(BaseModel):
         if self.role == self.Role.USER:
             return True
         if self.role == self.Role.ASSISTANT:
-            return self.tool_calls is None and (bool(self.text) or self.displayed_entries is not None)
+            return self.tool_calls is None and (
+                bool(self.text) or self.displayed_entries is not None or self.study is not None
+            )
         return False
 
     def save(self, *args, **kwargs):

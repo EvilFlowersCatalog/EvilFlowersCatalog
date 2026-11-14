@@ -1,16 +1,16 @@
 from django.contrib import admin
 
-from apps.assistant.models import AssistantUserPolicy, ChapterSummary, Chat, ChatMessage
+from apps.assistant.models import AssistantUserPolicy, Chat, ChatMessage, SectionSummary
 
 
-@admin.register(ChapterSummary)
-class ChapterSummaryAdmin(admin.ModelAdmin):
-    """Generated chapter summaries (#119), for reading them against their chapters."""
+@admin.register(SectionSummary)
+class SectionSummaryAdmin(admin.ModelAdmin):
+    """Generated section summaries (IP-030 §4), for reading them against their sections."""
 
-    list_display = ("entry", "page", "end_page", "title", "model", "updated_at")
-    search_fields = ("title", "entry__title", "summary")
-    raw_id_fields = ("entry",)
-    readonly_fields = ("digest", "model", "tokens_used")
+    list_display = ("entry", "first_page", "last_page", "section", "model", "updated_at")
+    search_fields = ("section", "entry__title", "summary")
+    raw_id_fields = ("entry", "run")
+    readonly_fields = ("digest", "model", "tokens_used", "concepts")
 
 
 @admin.register(Chat)
@@ -23,14 +23,14 @@ class ChatAdmin(admin.ModelAdmin):
 
 @admin.register(ChatMessage)
 class ChatMessageAdmin(admin.ModelAdmin):
-    list_display = ("id", "chat", "role", "tokens_used", "prompt_fingerprint", "created_at")
-    list_filter = ("role", "prompt_fingerprint")
+    list_display = ("id", "chat", "role", "tokens_used", "model_seconds", "error", "prompt_fingerprint", "created_at")
+    list_filter = ("role", "error", "prompt_fingerprint")
     raw_id_fields = ("chat", "user")
 
 
 @admin.register(AssistantUserPolicy)
 class AssistantUserPolicyAdmin(admin.ModelAdmin):
-    list_display = ("user", "is_blocked", "blocked_until", "daily_message_limit", "daily_token_limit")
+    list_display = ("user", "is_blocked", "blocked_until", "daily_message_limit", "daily_seconds_limit")
     list_filter = ("is_blocked",)
     search_fields = ("user__username",)
     raw_id_fields = ("user",)

@@ -38,7 +38,7 @@ class SemanticFindTests(SimpleTestCase):
     def _find(self, answer):
         with (
             mock.patch("apps.extraction.reader.ReaderExtraction.for_document", return_value=self.extraction),
-            mock.patch.object(semantic, "OllamaClient"),
+            mock.patch.object(semantic, "make_client"),
             mock.patch.object(semantic, "_complete", return_value=(answer, [], 10)) as complete,
         ):
             return semantic.find(object(), prompt="what is entropy", language="en"), complete

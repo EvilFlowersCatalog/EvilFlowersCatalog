@@ -23,7 +23,7 @@ class PromptPrefixTests(TurnTestCase):
         client = ScriptedClient(rounds)
         request = RequestFactory().post("/assistant/v1/chats")
         request.user = self.reader
-        with mock.patch.object(turn, "OllamaClient", return_value=client):
+        with mock.patch.object(turn, "make_client", return_value=client):
             list(turn.run(request, chat, text, language=language))
         return client.requests
 

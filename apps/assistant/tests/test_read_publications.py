@@ -8,7 +8,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 
 from apps.assistant import evaluation, tools, turn
-from apps.assistant.models import Chat
+from apps.assistant.models import Chat, ChatMessage
 from apps.assistant.pdf import DocumentUnavailable, ReaderDocument
 from apps.assistant.tests.test_turn_tools import ScriptedClient, _call
 from apps.core.models import AuthSource, Catalog, Entry, User
@@ -51,7 +51,7 @@ class ReadPublicationTests(TestCase):
     def _turn(self, rounds, text="Čo píše kniha o Bernoulliho číslach?"):
         client = ScriptedClient(rounds)
         chat = Chat.objects.create(user=self.reader)
-        with mock.patch.object(turn, "OllamaClient", return_value=client):
+        with mock.patch.object(turn, "make_client", return_value=client):
             frames = list(turn.run(self._request(), chat, text, language="sk"))
         return chat, client, evaluation.parse_frames(frames)
 
@@ -129,14 +129,31 @@ class ReadPublicationTests(TestCase):
         self.assertEqual(seen["matches"][0]["page"], 2)
         self.assertIn("read_pdf_page", seen["note"])
 
-    def test_a_plain_chat_ends_with_an_answer_round_without_tools(self):
+    def test_a_plain_chat_ends_with_an_answer_round_that_keeps_the_prefix(self):
+        # IP-030 §5: the last round offers the same tools and extends the previous request; the instruction to
+        # answer came with the previous round's tool results, which are stored as sent.
         searches = [[_call("search_entries", query=f"engine {number}")] for number in range(turn.MAX_CHAT_ROUNDS - 1)]
         chat, client, events = self._turn(searches + ["Nič vhodné som nenašla."], text="Máte niečo o motoroch?")
         self.assertEqual(len(client.requests), turn.MAX_CHAT_ROUNDS)
-        self.assertIsNone(client.requests[-1]["tools"])
-        self.assertEqual(client.requests[-1]["messages"][-1]["content"], turn.ANSWER_NOW)
+        last, before = client.requests[-1], client.requests[-2]
+        self.assertEqual(last["tools"], before["tools"])
+        self.assertEqual(last["messages"][: len(before["messages"])], before["messages"])
+        self.assertEqual(json.loads(last["messages"][-1]["content"])["instruction"], turn.ANSWER_NOW)
         self.assertEqual(dict(events)["message"]["text"], "Nič vhodné som nenašla.")
         self.assertEqual(chat.messages.order_by("-created_at").first().text, "Nič vhodné som nenašla.")
+
+    def test_a_tool_call_in_the_last_round_is_refused_and_stored(self):
+        searches = [[_call("search_entries", query=f"engine {number}")] for number in range(turn.MAX_CHAT_ROUNDS)]
+        chat, client, _events = self._turn(searches, text="Máte niečo o motoroch?")
+        self.assertEqual(len(client.requests), turn.MAX_CHAT_ROUNDS)
+        last_tool = chat.messages.filter(role=ChatMessage.Role.TOOL).order_by("-created_at").first()
+        self.assertEqual(last_tool.text, turn.REFUSED)
+        # The next turn extends this one's last request: nothing sent was left out of the history.
+        followup = ScriptedClient(["Áno."])
+        with mock.patch.object(turn, "make_client", return_value=followup):
+            list(turn.run(self._request(), chat, "A teraz?", language="sk"))
+        replay = followup.requests[0]["messages"]
+        self.assertEqual(replay[: len(client.requests[-1]["messages"])], client.requests[-1]["messages"])
 
     def test_a_silent_final_round_still_answers(self):
         searches = [[_call("search_entries", query=f"engine {number}")] for number in range(turn.MAX_CHAT_ROUNDS - 1)]
@@ -154,7 +171,7 @@ class ReadPublicationTests(TestCase):
             "question": "Čo počíta stroj?",
             "expect": {"grounded": True, "reads_pages": True},
         }
-        with mock.patch.object(turn, "OllamaClient", return_value=client), _open():
+        with mock.patch.object(turn, "make_client", return_value=client), _open():
             outcome = evaluation.run_case(self.reader, case)
         self.assertTrue(outcome.passed, outcome.failures)
         self.assertEqual(outcome.pages_read, 1)

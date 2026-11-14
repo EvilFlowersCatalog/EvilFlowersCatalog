@@ -81,6 +81,7 @@ INSTALLED_APPS = [
     "apps.mcp",
     "apps.assistant",
     "apps.extraction",
+    "apps.graph",
 ]
 
 MIDDLEWARE = [
@@ -454,11 +455,52 @@ EVILFLOWERS_ASSISTANT_PARAGRAPH_MIN_SCORE = float(os.getenv("EVILFLOWERS_ASSISTA
 EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES = int(os.getenv("EVILFLOWERS_ASSISTANT_PARAGRAPH_CANDIDATES", 40))
 
 # Daily per-user quota. Overridable per user via `AssistantUserPolicy`.
-# Tokens are booked per model round (prompt + output), and a turn takes 2-4 rounds of a
-# ~1.5-2.5K-token prompt, so 50K ran out after ~8 questions (IP-022 Q1). Self-hosted, the
-# scarce resource is CPU time; the message limit is the real brake.
+# IP-030 Q2: the scarce resource is model time, not tokens (input tokens include the cached prefix, so a
+# long chat booked 25K "tokens" for 3 s of work). The quota counts model seconds (prompt evaluation +
+# generation, as the backend reports them) per reader and day, plus the message limit. 0 = no seconds
+# limit (the default): a turn takes 160-390 s on CPU today, so any number set before the Phase 0 baseline
+# (the p90 of a reader's day) would cut readers off after a handful of questions. Seconds are recorded either way.
 EVILFLOWERS_ASSISTANT_DAILY_LIMIT_MESSAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_DAILY_LIMIT_MESSAGES", 100))
-EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS = int(os.getenv("EVILFLOWERS_ASSISTANT_DAILY_LIMIT_TOKENS", 200000))
+EVILFLOWERS_ASSISTANT_DAILY_LIMIT_SECONDS = int(os.getenv("EVILFLOWERS_ASSISTANT_DAILY_LIMIT_SECONDS", 0))
+
+# Inference backend for the assistant model (IP-030 §5): `ollama` (`/api/chat`, the settings above) or
+# `llama-server` (llama.cpp's OpenAI-compatible `/v1/chat/completions`, with per-chat slot save/restore).
+EVILFLOWERS_ASSISTANT_BACKEND = os.getenv("EVILFLOWERS_ASSISTANT_BACKEND", "ollama")
+# llama-server base URL (without /v1), e.g. http://llm.elvira.internal; model name as served (`--alias`).
+EVILFLOWERS_ASSISTANT_LLAMA_ENDPOINT = os.getenv("EVILFLOWERS_ASSISTANT_LLAMA_ENDPOINT", "")
+EVILFLOWERS_ASSISTANT_LLAMA_MODEL = os.getenv("EVILFLOWERS_ASSISTANT_LLAMA_MODEL", "elvira-assistant")
+EVILFLOWERS_ASSISTANT_LLAMA_HOST = os.getenv("EVILFLOWERS_ASSISTANT_LLAMA_HOST", "")
+# Slots the server runs (`--parallel`); each chat turn leases one for all its rounds.
+EVILFLOWERS_ASSISTANT_LLAMA_SLOTS = int(os.getenv("EVILFLOWERS_ASSISTANT_LLAMA_SLOTS", 2))
+# Save and restore a chat's slot to `--slot-save-path` between turns (1) or not (0).
+EVILFLOWERS_ASSISTANT_LLAMA_SLOT_FILES = _bool_env("EVILFLOWERS_ASSISTANT_LLAMA_SLOT_FILES", default=True)
+# Seconds a request waits for a free slot before the turn fails as unavailable.
+EVILFLOWERS_ASSISTANT_LLAMA_SLOT_WAIT = float(os.getenv("EVILFLOWERS_ASSISTANT_LLAMA_SLOT_WAIT", 120))
+# Sampling (empty = the server's default); Qwen's non-thinking recommendation is 0.7 / 0.8 / 20.
+EVILFLOWERS_ASSISTANT_LLAMA_TOP_P = os.getenv("EVILFLOWERS_ASSISTANT_LLAMA_TOP_P", "")
+EVILFLOWERS_ASSISTANT_LLAMA_TOP_K = os.getenv("EVILFLOWERS_ASSISTANT_LLAMA_TOP_K", "")
+
+# Hard stop for a runaway answer (IP-030 §5), in generated tokens; study artefacts get the second value.
+# Slovak takes ~2 tokens a word, so these sit well above the prompt's 250-word answer limit. 0 = not sent.
+EVILFLOWERS_ASSISTANT_NUM_PREDICT = int(os.getenv("EVILFLOWERS_ASSISTANT_NUM_PREDICT", 600))
+EVILFLOWERS_ASSISTANT_STUDY_NUM_PREDICT = int(os.getenv("EVILFLOWERS_ASSISTANT_STUDY_NUM_PREDICT", 900))
+
+# Evidence first (IP-030 §1): a pack of catalog hits, passages and figures gathered before the first
+# model round. Off until `assistant_eval` shows fewer rounds and an earlier first token.
+EVILFLOWERS_ASSISTANT_PREFETCH = _bool_env("EVILFLOWERS_ASSISTANT_PREFETCH", default=False)
+EVILFLOWERS_ASSISTANT_PACK_ENTRIES = int(os.getenv("EVILFLOWERS_ASSISTANT_PACK_ENTRIES", 5))
+EVILFLOWERS_ASSISTANT_PACK_PASSAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_PACK_PASSAGES", 5))
+EVILFLOWERS_ASSISTANT_PACK_FIGURES = int(os.getenv("EVILFLOWERS_ASSISTANT_PACK_FIGURES", 3))
+# Relevance floor (cosine) of a passage or figure in the pack; tuned on the gold set.
+EVILFLOWERS_ASSISTANT_PACK_MIN_SCORE = float(os.getenv("EVILFLOWERS_ASSISTANT_PACK_MIN_SCORE", 0.80))
+# Pages a study tool (walkthrough, quiz, key concepts, section summary) may read per turn (Q8).
+EVILFLOWERS_ASSISTANT_STUDY_MAX_PAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_STUDY_MAX_PAGES", 6))
+# Send a figure's crop to the model when the reader asks what it shows (Q4). Only with a model and server that
+# accept images (Qwen3.6 with its vision projector; llama-server needs `--mmproj`); otherwise the caption and the
+# referring paragraph answer.
+EVILFLOWERS_ASSISTANT_VISION = _bool_env("EVILFLOWERS_ASSISTANT_VISION", default=False)
+# Figures (and tables) found by search_regions must reach this cosine similarity.
+EVILFLOWERS_SEARCH_REGION_MIN_SCORE = float(os.getenv("EVILFLOWERS_SEARCH_REGION_MIN_SCORE", 0.78))
 
 # Context policy (IP-015 D3). While a conversation is warm the full history is
 # replayed unchanged so the prompt prefix stays byte-identical and Ollama can

@@ -29,7 +29,7 @@ from apps.assistant.explain import (
     run_document_tool,
 )
 from apps.assistant import prompts, structured
-from apps.assistant.llm import OllamaClient
+from apps.assistant.llm import client as make_client
 from apps.assistant.pdf import ReaderDocument
 from apps.assistant.quotes import collapse, quote_in_text
 
@@ -91,7 +91,7 @@ def highlight(
     authors: str,
     language: Optional[str] = None,
 ) -> Highlights:
-    client = OllamaClient()
+    client = make_client()
     pages_read: List[int] = []
 
     messages = [

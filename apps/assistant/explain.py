@@ -21,7 +21,7 @@ from typing import List, Optional
 from django.conf import settings
 
 from apps.assistant import prompts, structured
-from apps.assistant.llm import OllamaClient
+from apps.assistant.llm import client as make_client
 from apps.assistant.pdf import ReaderDocument
 
 logger = logging.getLogger(__name__)
@@ -196,7 +196,7 @@ def explain(
     authors: str,
     language: Optional[str] = None,
 ) -> Explanation:
-    client = OllamaClient()
+    client = make_client()
     pages_read: List[int] = []
 
     messages = [
@@ -292,7 +292,7 @@ ANSWER_SCHEMA = {
 }
 
 
-def _complete(client: OllamaClient, messages: List[dict], specifications: Optional[List[dict]], response_format=None):
+def _complete(client, messages: List[dict], specifications: Optional[List[dict]], response_format=None):
     content = ""
     tool_calls: List[dict] = []
     tokens = 0

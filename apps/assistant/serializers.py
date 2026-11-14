@@ -23,8 +23,15 @@ class ChatMessageSerializer:
         displayed_entries: Optional[list]
         #: Agent annotation ids created by the assistant in this turn.
         annotations: Optional[List[str]] = None
-        #: Evidence labels cited in `text` (`[E3]`), resolved to publication and page (IP-024).
+        #: Evidence labels cited in `text` (`[E3]`, `[F2]`), resolved to publication, page, paragraph (box, best
+        #: sentence's quads, quote) or figure (caption, crop) as the `citation` frames carried them (IP-030 §2).
         citations: Optional[List[dict]] = None
+        #: A study artefact the turn produced: `{"mode", "data"}` as the `study` frame carried it (IP-030 §6).
+        study: Optional[dict] = None
+        #: `unavailable` or `failed` on the notice of a turn that did not answer; the portal offers a retry.
+        error: Optional[str] = None
+        #: The reader's rating of this answer: `{"rating": 1 | -1, "reason", "at"}`.
+        feedback: Optional[dict] = None
         #: The tool calls of the turn this answer closes, as the live `activity` frames carried them.
         activity: Optional[List[dict]] = None
         tokens_used: int

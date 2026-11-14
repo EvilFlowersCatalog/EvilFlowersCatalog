@@ -1,10 +1,16 @@
-"""Ollama client for the assistant.
+"""Model clients for the assistant: Ollama, and llama.cpp's llama-server (IP-030 §5).
 
-IP-015 D9: `/api/chat` with native tool calling, rather than the reference
-implementation's `/api/generate` plus a `<tool_calls>` block hand-parsed out of
-the token stream. Native calls arrive structured, which is what the message
-model stores, and a message array maps one-to-one onto `assistant_messages`
-rows.
+IP-015 D9: native tool calling, rather than the reference implementation's
+`/api/generate` plus a `<tool_calls>` block hand-parsed out of the token stream.
+Native calls arrive structured, which is what the message model stores, and a
+message array maps one-to-one onto `assistant_messages` rows.
+
+Both clients take the same messages (Ollama's shape, which is what the rows
+store) and yield the same `Delta`s; `client()` picks one by
+`EVILFLOWERS_ASSISTANT_BACKEND`. llama-server adds what Ollama lacks for this
+hybrid model: a chat's slot is saved to disk after its turn and restored before
+the next one (`apps.assistant.slots`), so a follow-up after a pause, after
+another chat or after a pod restart evaluates only the new tokens.
 
 Streaming is a plain blocking read. The project serves requests with gevent
 workers (`conf/gunicorn.conf.py`), so a socket read yields the greenlet instead
@@ -31,6 +37,9 @@ logger = logging.getLogger(__name__)
 # attributes — never prompt, completion or document text.
 PROVIDER_NAME = "ollama"
 OPERATION_NAME = "chat"
+
+OLLAMA = "ollama"
+LLAMA_SERVER = "llama-server"
 
 _tracer = telemetry.get_tracer("apps.assistant")
 _meter = telemetry.get_meter("apps.assistant")
@@ -87,7 +96,7 @@ class Delta:
     """One event from a streamed completion.
 
     Exactly one of `content` or `tool_calls` is meaningful on any given delta;
-    `done` marks the final event, which also carries the token accounting.
+    `done` marks the final event, which also carries the token and time accounting.
     """
 
     content: str = ""
@@ -95,10 +104,19 @@ class Delta:
     done: bool = False
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    #: Model time of the request (IP-030 Q2): prompt evaluation and generation, as the backend measured them.
+    prompt_seconds: float = 0.0
+    generation_seconds: float = 0.0
+    #: Prompt tokens reused from the cache (llama-server's `timings.cache_n`); None when the backend does not say.
+    cached_tokens: Optional[int] = None
 
     @property
     def total_tokens(self) -> int:
         return self.prompt_tokens + self.completion_tokens
+
+    @property
+    def model_seconds(self) -> float:
+        return round(self.prompt_seconds + self.generation_seconds, 3)
 
 
 def _optional_bool(value) -> Optional[bool]:
@@ -117,7 +135,20 @@ def _optional_float(value) -> Optional[float]:
     return float(value)
 
 
+def backend() -> str:
+    return (getattr(settings, "EVILFLOWERS_ASSISTANT_BACKEND", OLLAMA) or OLLAMA).strip().lower()
+
+
+def client():
+    """The configured model client (IP-030 §5)."""
+    if backend() == LLAMA_SERVER:
+        return LlamaServerClient()
+    return OllamaClient()
+
+
 class OllamaClient:
+    provider = PROVIDER_NAME
+
     def __init__(self):
         self.endpoint = settings.EVILFLOWERS_ASSISTANT_OLLAMA_ENDPOINT
         self.model = settings.EVILFLOWERS_ASSISTANT_OLLAMA_MODEL
@@ -134,6 +165,13 @@ class OllamaClient:
     def configured(self) -> bool:
         return bool(self.endpoint and self.model)
 
+    # A chat turn brackets its rounds with these (`turn.run`); Ollama keeps no state the catalog can manage.
+    def begin_turn(self, key: str) -> None:
+        pass
+
+    def end_turn(self) -> None:
+        pass
+
     def _headers(self) -> dict:
         headers = {"Content-Type": "application/json"}
         # Cloud Ollama authenticates with a bearer token; a local instance needs
@@ -147,13 +185,20 @@ class OllamaClient:
             headers["Host"] = self.host
         return headers
 
-    def payload(self, messages: List[dict], tools: Optional[List[dict]] = None, response_format=None) -> dict:
+    def payload(
+        self,
+        messages: List[dict],
+        tools: Optional[List[dict]] = None,
+        response_format=None,
+        max_tokens: Optional[int] = None,
+    ) -> dict:
         """The `/api/chat` request body.
 
         Everything here is per deployment, never per request, so two requests
         with the same messages render the same prompt and hit the same cache.
         `response_format` is Ollama's `format`: "json" or a JSON Schema the
         answer is constrained to (only for callers that offer no tools).
+        `max_tokens` is `num_predict`, a runaway cap that is not part of the prompt.
         """
         payload = {
             "model": self.model,
@@ -178,9 +223,17 @@ class OllamaClient:
             options["num_ctx"] = self.num_ctx
         if self.temperature is not None:
             options["temperature"] = self.temperature
+        if max_tokens:
+            options["num_predict"] = int(max_tokens)
         if options:
             payload["options"] = options
         return payload
+
+    def _url(self) -> str:
+        return self.endpoint
+
+    def _request_payload(self, messages, tools, response_format, max_tokens) -> dict:
+        return self.payload(messages, tools, response_format, max_tokens)
 
     def chat(
         self,
@@ -188,6 +241,7 @@ class OllamaClient:
         tools: Optional[List[dict]] = None,
         response_format=None,
         span_attributes: Optional[dict] = None,
+        max_tokens: Optional[int] = None,
     ) -> Iterator[Delta]:
         """Stream a completion, yielding a `Delta` per event.
 
@@ -196,9 +250,9 @@ class OllamaClient:
         backend reuse its KV cache (IP-015 D3).
         """
         if not self.configured:
-            raise LLMUnavailable(_("The assistant is not configured: set the Ollama endpoint and model."))
+            raise LLMUnavailable(_("The assistant is not configured: set the model endpoint and model."))
 
-        payload = self.payload(messages, tools, response_format)
+        payload = self._request_payload(messages, tools, response_format, max_tokens)
 
         # One CLIENT span for the model call (IP-019). It is not made current
         # across the `yield`s below — a generator resumes in its consumer's
@@ -213,13 +267,12 @@ class OllamaClient:
         )
         stopwatch = telemetry.Stopwatch()
         error_type = None
-        thinking_chunks = 0
 
         try:
             try:
                 with trace.use_span(span, end_on_exit=False), telemetry.suppress_http_spans():
                     response = requests.post(
-                        self.endpoint,
+                        self._url(),
                         json=payload,
                         headers=self._headers(),
                         stream=True,
@@ -230,52 +283,25 @@ class OllamaClient:
                     response.raise_for_status()
             except requests.RequestException as error:
                 error_type = self._request_error_type(error)
-                logger.exception("Ollama request failed")
+                logger.exception("Model request failed (%s)", self.provider)
                 raise LLMUnavailable(str(error)) from error
 
             try:
-                for line in response.iter_lines(decode_unicode=True):
-                    if not line:
-                        continue
-
-                    try:
-                        event = json.loads(line)
-                    except json.JSONDecodeError:
-                        # A malformed line is not worth killing a live conversation
-                        # over; skip it and keep reading the stream.
-                        logger.warning("Skipping malformed line from Ollama: %r", line[:200])
-                        continue
-
-                    if event.get("error"):
-                        error_type = "ollama_error"
-                        raise LLMUnavailable(str(event["error"]))
-
-                    message = event.get("message") or {}
-                    if message.get("thinking"):
-                        # Reasoning is never shown or stored; it only costs time. Counted,
-                        # so a model that thinks despite `think: false` shows in traces.
-                        thinking_chunks += 1
-                    delta = Delta(
-                        content=message.get("content") or "",
-                        tool_calls=message.get("tool_calls") or [],
-                        done=bool(event.get("done")),
-                        prompt_tokens=event.get("prompt_eval_count") or 0,
-                        completion_tokens=event.get("eval_count") or 0,
-                    )
-                    if delta.done:
-                        self._record_usage(span, attributes, event, delta)
-                        if thinking_chunks:
-                            span.set_attribute("evilflowers.assistant.thinking_chunks", thinking_chunks)
-                        self._record_timings(span, event)
-
+                for delta in self._deltas(response, span, attributes):
                     yield delta
+            except LLMUnavailable:
+                error_type = error_type or f"{self.provider}_error"
+                raise
             except requests.RequestException as error:
                 error_type = self._request_error_type(error)
                 raise
             finally:
+                # Closing the response closes the connection: the backend stops generating for a reader
+                # who left (a client disconnect closes this generator, IP-030 §5).
                 response.close()
         except GeneratorExit:
             # The consumer stopped reading (client disconnected); not a failure.
+            span.set_attribute("evilflowers.assistant.cancelled", True)
             raise
         except Exception as error:
             error_type = error_type or type(error).__qualname__
@@ -288,13 +314,52 @@ class OllamaClient:
             span.end()
             _operation_duration.record(stopwatch.elapsed, attributes)
 
+    def _deltas(self, response, span, attributes) -> Iterator[Delta]:
+        thinking_chunks = 0
+        for line in response.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                # A malformed line is not worth killing a live conversation
+                # over; skip it and keep reading the stream.
+                logger.warning("Skipping malformed line from Ollama: %r", line[:200])
+                continue
+
+            if event.get("error"):
+                raise LLMUnavailable(str(event["error"]))
+
+            message = event.get("message") or {}
+            if message.get("thinking"):
+                # Reasoning is never shown or stored; it only costs time. Counted,
+                # so a model that thinks despite `think: false` shows in traces.
+                thinking_chunks += 1
+            delta = Delta(
+                content=message.get("content") or "",
+                tool_calls=message.get("tool_calls") or [],
+                done=bool(event.get("done")),
+                prompt_tokens=event.get("prompt_eval_count") or 0,
+                completion_tokens=event.get("eval_count") or 0,
+                prompt_seconds=(event.get("prompt_eval_duration") or 0) / 1e9,
+                generation_seconds=(event.get("eval_duration") or 0) / 1e9,
+            )
+            if delta.done:
+                self._record_usage(span, attributes, event.get("model"), delta)
+                if thinking_chunks:
+                    span.set_attribute("evilflowers.assistant.thinking_chunks", thinking_chunks)
+                self._record_timings(span, event)
+
+            yield delta
+
     def _telemetry_attributes(self) -> dict:
         attributes = {
             "gen_ai.operation.name": OPERATION_NAME,
-            "gen_ai.provider.name": PROVIDER_NAME,
+            "gen_ai.provider.name": self.provider,
             "gen_ai.request.model": self.model,
         }
-        address = urlsplit(self.endpoint)
+        address = urlsplit(self._url() or "")
         if address.hostname:
             attributes["server.address"] = address.hostname
             attributes["server.port"] = address.port or (443 if address.scheme == "https" else 80)
@@ -317,10 +382,273 @@ class OllamaClient:
                 span.set_attribute(f"evilflowers.ollama.{key}_s", round(value / 1e9, 3))
 
     @staticmethod
-    def _record_usage(span, attributes: dict, event: dict, delta: Delta) -> None:
-        if event.get("model"):
-            span.set_attribute("gen_ai.response.model", event["model"])
+    def _record_usage(span, attributes: dict, model: Optional[str], delta: Delta) -> None:
+        if model:
+            span.set_attribute("gen_ai.response.model", model)
         span.set_attribute("gen_ai.usage.input_tokens", delta.prompt_tokens)
         span.set_attribute("gen_ai.usage.output_tokens", delta.completion_tokens)
+        span.set_attribute("evilflowers.assistant.model_seconds", delta.model_seconds)
+        if delta.cached_tokens is not None:
+            span.set_attribute("evilflowers.assistant.cached_tokens", delta.cached_tokens)
         _token_usage.record(delta.prompt_tokens, {**attributes, "gen_ai.token.type": "input"})
         _token_usage.record(delta.completion_tokens, {**attributes, "gen_ai.token.type": "output"})
+
+
+def to_openai(messages: List[dict]) -> List[dict]:
+    """Stored (Ollama-shaped) messages in the OpenAI chat format llama-server takes.
+
+    Deterministic, so a replayed conversation renders the same prompt every time: a tool call's id is its
+    position (`call_<message>_<call>`), its arguments are a JSON string in the order they were stored, and each
+    tool result answers the oldest unanswered call before it. Images (`images`: base64) become image parts.
+    """
+    converted: List[dict] = []
+    pending: List[str] = []
+    for index, message in enumerate(messages):
+        role = message.get("role")
+        if role == "assistant" and message.get("tool_calls"):
+            calls = []
+            for number, call in enumerate(message["tool_calls"]):
+                function = call.get("function") or {}
+                arguments = function.get("arguments")
+                if not isinstance(arguments, str):
+                    arguments = json.dumps(arguments or {}, ensure_ascii=False)
+                call_id = f"call_{index}_{number}"
+                pending.append(call_id)
+                calls.append(
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": function.get("name"), "arguments": arguments},
+                    }
+                )
+            converted.append({"role": "assistant", "content": message.get("content") or "", "tool_calls": calls})
+        elif role == "tool":
+            converted.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": pending.pop(0) if pending else f"call_{index}_0",
+                    "content": message.get("content") or "",
+                }
+            )
+        elif message.get("images"):
+            parts = [{"type": "text", "text": message.get("content") or ""}]
+            for image in message["images"]:
+                parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image}"}})
+            converted.append({"role": role, "content": parts})
+        else:
+            converted.append({"role": role, "content": message.get("content") or ""})
+    return converted
+
+
+class LlamaServerClient(OllamaClient):
+    """llama.cpp's llama-server over its OpenAI-compatible API (IP-030 §5, Q11).
+
+    The same GGUF as Ollama's `elvira-assistant`, started with `--jinja` (tool calls through the model's chat
+    template), context checkpoints and `--slot-save-path`. Every request runs on a slot the catalog leases
+    (`apps.assistant.slots`): a chat turn leases one for all its rounds and restores the chat's saved state
+    first; any other caller (explain, highlight, summaries) leases one for its request, so it never lands on a
+    slot a chat turn holds between two rounds.
+    """
+
+    provider = LLAMA_SERVER
+
+    def __init__(self):
+        super().__init__()
+        self.base = (getattr(settings, "EVILFLOWERS_ASSISTANT_LLAMA_ENDPOINT", "") or "").rstrip("/")
+        self.endpoint = f"{self.base}/v1/chat/completions" if self.base else ""
+        self.model = getattr(settings, "EVILFLOWERS_ASSISTANT_LLAMA_MODEL", "") or self.model
+        self.host = getattr(settings, "EVILFLOWERS_ASSISTANT_LLAMA_HOST", "") or ""
+        self.api_key = None
+        self.top_p = _optional_float(getattr(settings, "EVILFLOWERS_ASSISTANT_LLAMA_TOP_P", ""))
+        top_k = _optional_float(getattr(settings, "EVILFLOWERS_ASSISTANT_LLAMA_TOP_K", ""))
+        self.top_k = int(top_k) if top_k is not None else None
+        #: The slot of the current chat turn (`begin_turn`), else None.
+        self.lease = None
+        self._turn_key: Optional[str] = None
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.base and self.model)
+
+    # ----------------------------------------------------------- slots
+
+    def begin_turn(self, key: str) -> None:
+        """Lease a slot for this chat's turn and restore the chat's saved state into it."""
+        from apps.assistant import slots
+
+        if not self.configured:
+            return
+        self.lease = slots.acquire()
+        self._turn_key = key
+        slots.restore(self, self.lease.slot, key)
+
+    def end_turn(self) -> None:
+        """Save the chat's state from its slot and give the slot back. Never raises."""
+        from apps.assistant import slots
+
+        lease, key = self.lease, self._turn_key
+        self.lease, self._turn_key = None, None
+        if lease is None:
+            return
+        try:
+            if key and lease.owned():
+                slots.save(self, lease.slot, key)
+            elif key:
+                logger.warning("Slot %s lease expired during the turn of chat %s; not saved", lease.slot, key)
+        finally:
+            lease.release()
+
+    def slot_action(self, slot: int, action: str, filename: str) -> Optional[dict]:
+        """`POST /slots/{id}?action=save|restore`; None when the server refused (no such file, say)."""
+        try:
+            response = requests.post(
+                f"{self.base}/slots/{slot}",
+                params={"action": action},
+                json={"filename": filename},
+                headers=self._headers(),
+                timeout=(self.connect_timeout, self.timeout),
+            )
+        except requests.RequestException as error:
+            logger.warning("llama-server slot %s %s failed: %s", action, slot, error)
+            return None
+        if response.status_code >= 400:
+            return None
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
+    # ----------------------------------------------------------- requests
+
+    def payload(
+        self,
+        messages: List[dict],
+        tools: Optional[List[dict]] = None,
+        response_format=None,
+        max_tokens: Optional[int] = None,
+        slot: Optional[int] = None,
+    ) -> dict:
+        payload = {
+            "model": self.model,
+            "messages": to_openai(messages),
+            "stream": True,
+            # Reuse the slot's KV cache (and its checkpoints) for the common prefix.
+            "cache_prompt": True,
+        }
+        if tools:
+            payload["tools"] = tools
+        if response_format is not None:
+            if isinstance(response_format, dict):
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {"name": "answer", "schema": response_format},
+                }
+            else:
+                payload["response_format"] = {"type": "json_object"}
+        if self.think is not None:
+            # Qwen's chat template switch; `think: false` in Ollama.
+            payload["chat_template_kwargs"] = {"enable_thinking": bool(self.think)}
+        if self.temperature is not None:
+            payload["temperature"] = self.temperature
+        if self.top_p is not None:
+            payload["top_p"] = self.top_p
+        if self.top_k is not None:
+            payload["top_k"] = self.top_k
+        if max_tokens:
+            payload["max_tokens"] = int(max_tokens)
+        if slot is not None:
+            payload["id_slot"] = slot
+        return payload
+
+    def chat(
+        self,
+        messages: List[dict],
+        tools: Optional[List[dict]] = None,
+        response_format=None,
+        span_attributes: Optional[dict] = None,
+        max_tokens: Optional[int] = None,
+    ) -> Iterator[Delta]:
+        from apps.assistant import slots
+
+        if self.lease is not None:
+            self.lease.refresh()
+            yield from self._chat_on(self.lease.slot, messages, tools, response_format, span_attributes, max_tokens)
+            return
+        if not self.configured:
+            raise LLMUnavailable(_("The assistant is not configured: set the model endpoint and model."))
+        lease = slots.acquire()
+        try:
+            yield from self._chat_on(lease.slot, messages, tools, response_format, span_attributes, max_tokens)
+        finally:
+            lease.release()
+
+    def _chat_on(self, slot, messages, tools, response_format, span_attributes, max_tokens):
+        self._slot = slot
+        attributes = {**(span_attributes or {}), "evilflowers.assistant.slot": slot}
+        yield from super().chat(messages, tools, response_format, attributes, max_tokens)
+
+    def _request_payload(self, messages, tools, response_format, max_tokens):
+        return self.payload(messages, tools, response_format, max_tokens, getattr(self, "_slot", None))
+
+    def _deltas(self, response, span, attributes) -> Iterator[Delta]:
+        calls: dict = {}
+        usage: dict = {}
+        timings: dict = {}
+        model = None
+        for line in response.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data:"):
+                continue
+            data = line[len("data:") :].strip()
+            if data == "[DONE]":
+                break
+            try:
+                event = json.loads(data)
+            except json.JSONDecodeError:
+                logger.warning("Skipping malformed line from llama-server: %r", line[:200])
+                continue
+            if event.get("error"):
+                raise LLMUnavailable(
+                    str(event["error"].get("message") if isinstance(event["error"], dict) else event["error"])
+                )
+            model = event.get("model") or model
+            usage = event.get("usage") or usage
+            timings = event.get("timings") or timings
+            for choice in event.get("choices") or []:
+                delta = choice.get("delta") or {}
+                for call in delta.get("tool_calls") or []:
+                    slot = calls.setdefault(call.get("index", len(calls)), {"name": "", "arguments": ""})
+                    function = call.get("function") or {}
+                    slot["name"] += function.get("name") or ""
+                    slot["arguments"] += function.get("arguments") or ""
+                if delta.get("content"):
+                    yield Delta(content=delta["content"])
+
+        if calls:
+            yield Delta(tool_calls=[_ollama_call(calls[index]) for index in sorted(calls)])
+        done = Delta(
+            done=True,
+            # The whole prompt, reused tokens included, as Ollama counts it; `cached_tokens` says how many.
+            prompt_tokens=(
+                int(timings.get("prompt_n") or 0) + int(timings.get("cache_n") or 0)
+                if timings
+                else int(usage.get("prompt_tokens") or 0)
+            ),
+            completion_tokens=int(usage.get("completion_tokens") or timings.get("predicted_n") or 0),
+            prompt_seconds=float(timings.get("prompt_ms") or 0) / 1000,
+            generation_seconds=float(timings.get("predicted_ms") or 0) / 1000,
+            cached_tokens=int(timings["cache_n"]) if timings.get("cache_n") is not None else None,
+        )
+        self._record_usage(span, attributes, model, done)
+        for key in ("prompt_ms", "predicted_ms"):
+            if timings.get(key):
+                span.set_attribute(f"evilflowers.llama.{key[:-3]}_s", round(float(timings[key]) / 1000, 3))
+        yield done
+
+
+def _ollama_call(call: dict) -> dict:
+    """A streamed OpenAI tool call in the shape rows store (Ollama's: arguments as an object)."""
+    try:
+        arguments = json.loads(call["arguments"]) if call["arguments"] else {}
+    except json.JSONDecodeError:
+        arguments = call["arguments"]
+    return {"function": {"name": call["name"], "arguments": arguments}}

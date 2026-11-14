@@ -319,6 +319,10 @@ def _finish(run: ExtractionRun) -> None:
     run.status = ExtractionRun.Status.DONE
     run.is_active = True
     transaction.on_commit(lambda: update_embedding(run.pk))
+    # IP-030: cross-references, figure vectors and the graph, off the ingestion request.
+    from apps.extraction.tasks import queue_post_process
+
+    transaction.on_commit(lambda: queue_post_process(run.pk))
     for old in previous:
         folder = old.storage_dir
         old.delete()

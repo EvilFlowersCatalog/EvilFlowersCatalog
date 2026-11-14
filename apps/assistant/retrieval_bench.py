@@ -55,6 +55,8 @@ class CaseResult:
     id: str
     question: str
     degraded: bool = False
+    #: Generated from a paragraph (IP-030 §6, Q10): for comparing runs only, never against the bars.
+    synthetic: bool = False
     #: The case names gold pages; page-level metrics average over these cases only.
     has_pages: bool = False
     entries: List[str] = field(default_factory=list)
@@ -108,9 +110,13 @@ def run_case(request, case: dict) -> CaseResult:
     result = search_passages(request, case["question"], limit=LIMIT, per_entry=PER_ENTRY)
     # Without query embeddings only word matches remain: not the retriever being measured.
     if result.degraded:
-        return CaseResult(id=str(case.get("id")), question=case["question"], degraded=True)
+        return CaseResult(
+            id=str(case.get("id")), question=case["question"], degraded=True, synthetic=bool(case.get("synthetic"))
+        )
     entries, passages = rankings(result)
-    return score_case(case, entries, passages)
+    scored = score_case(case, entries, passages)
+    scored.synthetic = bool(case.get("synthetic"))
+    return scored
 
 
 def summary(results: Iterable[CaseResult]) -> dict:
@@ -135,15 +141,87 @@ def summary(results: Iterable[CaseResult]) -> dict:
 
 
 def report(results: List[CaseResult], thresholds: Optional[dict] = None) -> dict:
-    """The summary, each case, and — with pre-registered `thresholds` — which bars were met."""
-    summary_ = summary(results)
+    """The summary, each case, and — with pre-registered `thresholds` — which bars were met.
+
+    IP-030 Q10: synthetic questions are summarised apart and never held against the bars, which apply to the
+    librarian's questions only (`thresholds` is None-valued while there are none).
+    """
+    librarian = [result for result in results if not result.synthetic]
+    synthetic = [result for result in results if result.synthetic]
+    summary_ = summary(librarian)
     out = {"summary": summary_, "cases": [asdict(result) for result in results]}
+    if synthetic:
+        out["synthetic"] = summary(synthetic)
     if thresholds:
         out["thresholds"] = {
-            metric: {"bar": bar, "value": summary_.get(metric), "met": (summary_.get(metric) or 0) >= bar}
+            metric: {
+                "bar": bar,
+                "value": summary_.get(metric),
+                "met": (summary_.get(metric) or 0) >= bar if librarian else None,
+            }
             for metric, bar in thresholds.items()
         }
     return out
+
+
+def synthetic_cases(count: int, client=None, seed: Optional[int] = None) -> List[dict]:
+    """Gold questions generated from random paragraphs (IP-030 §6): "a question only a reader could answer".
+
+    Open-access publications only (their text is what the generator reads), one paragraph each, long enough to
+    hold a fact. Each case is marked `synthetic` and names its paragraph's page. They favour the retriever (the
+    question reuses the paragraph's subject), so they compare changes and never certify recall (Q10).
+    """
+    import random
+
+    from apps.assistant import prompts, structured
+    from apps.core.models import Entry
+    from apps.extraction.models import Paragraph
+
+    rng = random.Random(seed)
+    system = prompts.render("gold_question")
+    if client is None:
+        from apps.assistant.llm import client as make_client
+
+        client = make_client()
+    candidates = list(
+        Paragraph.objects.filter(run__is_active=True, embedding__isnull=False)
+        .extra(where=["length(text) > 400"])
+        .values_list("pk", flat=True)[:20000]
+    )
+    rng.shuffle(candidates)
+    cases: List[dict] = []
+    for paragraph_id in candidates:
+        if len(cases) >= count:
+            break
+        paragraph = Paragraph.objects.select_related("run__acquisition__entry").get(pk=paragraph_id)
+        entry: Entry = paragraph.run.acquisition.entry
+        if entry.read_config("readium_enabled"):
+            continue
+        content = ""
+        for delta in client.chat(
+            [{"role": "system", "content": system}, {"role": "user", "content": paragraph.text[:2000]}],
+            response_format={
+                "type": "object",
+                "properties": {"question": {"type": "string"}},
+                "required": ["question"],
+            },
+        ):
+            content += delta.content
+        data = structured.parse_object(content, lambda value: isinstance(value.get("question"), str))
+        question = " ".join((data or {}).get("question", "").split())
+        if len(question) < 10:
+            continue
+        cases.append(
+            {
+                "id": f"synthetic-{str(paragraph.pk)[:8]}",
+                "language": entry.language.alpha2 if entry.language_id else None,
+                "question": question,
+                "gold": [{"entry_id": str(entry.pk), "pages": [paragraph.page]}],
+                "synthetic": True,
+                "paragraph_id": str(paragraph.pk),
+            }
+        )
+    return cases
 
 
 def as_eval_cases(gold: List[dict]) -> List[dict]:

@@ -31,7 +31,8 @@ class AssistantUserPolicy(BaseModel):
 
     #: NULL means "use the configured default".
     daily_message_limit = models.IntegerField(null=True, blank=True)
-    daily_token_limit = models.IntegerField(null=True, blank=True)
+    #: Model seconds a day (IP-030 Q2; replaced the token limit).
+    daily_seconds_limit = models.IntegerField(null=True, blank=True)
 
     @property
     def blocked(self) -> bool:

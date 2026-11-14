@@ -88,6 +88,12 @@ class RunStatsSerializer(Serializer):
     characters: int = 0
     #: The publication vector exists (recommendations, "similar publications").
     has_embedding: bool = False
+    #: Cross-references found in the text (IP-030 §4), resolved to a figure, table, equation or section, and
+    #: not resolved (the pattern list grows from these).
+    references_resolved: int = 0
+    references_unresolved: int = 0
+    #: Figures and tables searchable by meaning (IP-030 §3).
+    regions_embedded: int = 0
 
 
 class RunSerializer(Serializer):
@@ -207,6 +213,11 @@ def run_stats(run: ExtractionRun) -> RunStatsSerializer:
         with_printed_caption=Count("id", filter=Q(printed_caption__isnull=False) & ~Q(printed_caption="")),
         with_description=Count("id", filter=Q(description__isnull=False) & ~Q(description="")),
         pages_with_regions=Count("page", distinct=True),
+        regions_embedded=Count("id", filter=Q(embedding__isnull=False)),
+    )
+    references = run.references.aggregate(
+        references_resolved=Count("id", filter=Q(region__isnull=False) | Q(target_paragraph__isnull=False)),
+        references_unresolved=Count("id", filter=Q(region__isnull=True) & Q(target_paragraph__isnull=True)),
     )
     paragraphs = run.paragraphs.aggregate(
         paragraphs=Count("id"),
@@ -220,6 +231,7 @@ def run_stats(run: ExtractionRun) -> RunStatsSerializer:
     characters = run.paragraphs.aggregate(total=Sum(Length("text")))["total"] or 0
     return RunStatsSerializer(
         **regions,
+        **references,
         **paragraphs,
         **links,
         sentences=Sentence.objects.filter(paragraph__run=run).count(),

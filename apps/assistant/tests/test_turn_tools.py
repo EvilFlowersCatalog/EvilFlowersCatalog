@@ -19,8 +19,10 @@ class ScriptedClient:
         self.rounds = list(rounds)
         self.requests = []
 
-    def chat(self, messages, tools=None, response_format=None, span_attributes=None):
-        self.requests.append({"messages": messages, "tools": tools, "span_attributes": span_attributes})
+    def chat(self, messages, tools=None, response_format=None, span_attributes=None, max_tokens=None):
+        self.requests.append(
+            {"messages": messages, "tools": tools, "span_attributes": span_attributes, "max_tokens": max_tokens}
+        )
         step = self.rounds.pop(0)
         if isinstance(step, str):
             yield Delta(content=step)
@@ -55,7 +57,7 @@ class TurnTestCase(TestCase):
     def _turn(self, rounds, text="Máte niečo o Analytical Engine?"):
         client = ScriptedClient(rounds)
         chat = Chat.objects.create(user=self.reader)
-        with mock.patch.object(turn, "OllamaClient", return_value=client):
+        with mock.patch.object(turn, "make_client", return_value=client):
             frames = list(turn.run(self._request(), chat, text, language="sk"))
         return chat, client, evaluation.parse_frames(frames)
 
@@ -122,7 +124,7 @@ class TurnTestCase(TestCase):
             "question": "Máte niečo o Analytical Engine?",
             "expect": {"tools_any": ["search_entries"], "displays": True},
         }
-        with mock.patch.object(turn, "OllamaClient", return_value=client):
+        with mock.patch.object(turn, "make_client", return_value=client):
             outcome = evaluation.run_case(self.reader, case)
         self.assertTrue(outcome.passed, outcome.failures)
         self.assertEqual(outcome.tools, ["search_entries", "displayBooks"])

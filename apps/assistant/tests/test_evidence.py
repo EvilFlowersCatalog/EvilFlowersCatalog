@@ -78,7 +78,7 @@ class CitationTurnTests(TestCase):
 
     def _turn(self, rounds, chat=None):
         chat = chat or Chat.objects.create(user=self.reader)
-        with mock.patch.object(turn, "OllamaClient", return_value=ScriptedClient(rounds)):
+        with mock.patch.object(turn, "make_client", return_value=ScriptedClient(rounds)):
             frames = list(turn.run(self._request(), chat, "Máte niečo o Bernoulliho číslach?", language="sk"))
         return chat, evaluation.parse_frames(frames)
 

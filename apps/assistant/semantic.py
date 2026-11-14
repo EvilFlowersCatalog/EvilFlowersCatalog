@@ -21,7 +21,7 @@ from django.conf import settings
 from apps.assistant import prompts, structured
 from apps.assistant.explain import _complete
 from apps.assistant.highlight import MAX_QUOTES
-from apps.assistant.llm import OllamaClient
+from apps.assistant.llm import client as make_client
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ def find(document, *, prompt: str, language: Optional[str] = None) -> Optional[S
     if not numbered:
         return result
 
-    client = OllamaClient()
+    client = make_client()
     kept = {}
     summaries = []
     for batch in _batches(numbered):

@@ -71,6 +71,13 @@ class ExplainForm(Form):
         return self.cleaned_data
 
 
+class FeedbackForm(Form):
+    #: 1 (helpful) or -1 (not helpful).
+    rating = forms.TypedChoiceField(choices=[(1, "1"), (-1, "-1")], coerce=int)
+    #: Why, in the reader's words (IP-030 Q13: exported for a person to anonymise, never sent anywhere).
+    reason = forms.CharField(max_length=2000, strip=True, required=False)
+
+
 class HighlightForm(Form):
     #: The reader's copy of the publication, as the viewer opened it.
     user_acquisition_id = forms.ModelChoiceField(queryset=_user_acquisitions())

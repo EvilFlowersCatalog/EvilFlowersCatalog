@@ -98,4 +98,8 @@ class ReplayTests(SimpleTestCase):
     def test_reading_note_mentions_citations(self):
         note = services.reading_note(SimpleNamespace(page_count=42))
         self.assertIn("42 pages", note)
-        self.assertIn("[[page:N]]", note)
+        # IP-030 Q1: one convention, evidence labels; the old markers are no longer asked for.
+        self.assertIn("[E3]", note)
+        self.assertIn("[F2]", note)
+        self.assertNotIn("[[page:", note)
+        self.assertNotIn("search_pdf", note)

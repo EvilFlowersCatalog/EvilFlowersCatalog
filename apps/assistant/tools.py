@@ -58,7 +58,15 @@ SEARCH_PASSAGES = "search_library_text"
 # Same name as the bound chat's tool over the reader's copy (`explain.READ_PDF_PAGE`): one verb, one name.
 # A bound chat offers that one instead (`specifications(bound=True)`), so the two never appear together.
 READ_PAGE = "read_pdf_page"
-LOCAL_TOOLS = (FIND_SIMILAR, SEARCH_PASSAGES, READ_PAGE)
+# IP-030: links, study mode, the library as a whole, and the evidence pack as a tool.
+FOLLOW = "follow"
+STUDY = "study"
+LIBRARY_OVERVIEW = "library_overview"
+GATHER_EVIDENCE = "gather_evidence"
+LOCAL_TOOLS = (FIND_SIMILAR, SEARCH_PASSAGES, READ_PAGE, FOLLOW, STUDY, LIBRARY_OVERVIEW, GATHER_EVIDENCE)
+
+#: Tools whose result the turn closes on: the reader sees it as cards, the model does not restate it.
+CLOSING_TOOLS = (STUDY,)
 
 #: Local tools a chat bound to a reader's copy does not get: it has its own over that copy.
 UNBOUND_ONLY = (READ_PAGE,)
@@ -153,14 +161,15 @@ SPECIFICATIONS: Dict[str, tuple] = {
         },
     ),
     SEARCH_PASSAGES: (
-        "Search inside publications' text for passages about a question: publication, page, passage. "
-        "With `entry_id`, inside that one publication.",
+        "Search inside publications' text for passages (E#) about a question; with `entry_id` inside one "
+        "publication, with `figures` also figures and tables (F#).",
         {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "The question or topic, in a sentence."},
                 "entry_id": {"type": "string", "description": "Only this publication."},
                 "category_term": {"type": "string", "description": "Only this subject."},
+                "figures": {"type": "boolean", "description": "Also figures and tables."},
             },
             "required": ["query"],
         },
@@ -178,6 +187,15 @@ SPECIFICATIONS: Dict[str, tuple] = {
         },
     ),
 }
+
+
+def _local_specifications() -> None:
+    from apps.assistant import follow, overview, pack, study
+
+    SPECIFICATIONS[FOLLOW] = follow.SPECIFICATION
+    SPECIFICATIONS[STUDY] = study.SPECIFICATION
+    SPECIFICATIONS[LIBRARY_OVERVIEW] = overview.SPECIFICATION
+    SPECIFICATIONS[GATHER_EVIDENCE] = pack.SPECIFICATION
 
 
 class UnknownTool(Exception):
@@ -217,7 +235,14 @@ def _offered(authenticated: bool, bound: bool = False) -> List[str]:
         if tool.access is ToolAccess.USER and not authenticated:
             continue
         names.append(tool.name)
-    names.extend(name for name in LOCAL_TOOLS if not (bound and name in UNBOUND_ONLY))
+    for name in LOCAL_TOOLS:
+        if bound and name in UNBOUND_ONLY:
+            continue
+        # The pack is a tool only when it is also gathered before round 1 (the deployment's choice, fixed per
+        # process, so the tool list stays part of the stable prefix).
+        if name == GATHER_EVIDENCE and not settings.EVILFLOWERS_ASSISTANT_PREFETCH:
+            continue
+        names.append(name)
     return names
 
 
@@ -274,17 +299,30 @@ class Reading:
         return max(settings.EVILFLOWERS_ASSISTANT_MAX_PAGES_READ - others, 0)
 
 
-def call(request, name: str, arguments: dict, reading: Optional[Reading] = None) -> dict:
+def call(request, name: str, arguments: dict, reading: Optional[Reading] = None, context=None) -> dict:
     """Run a tool and return its full JSON-serialisable payload.
 
     `displayBooks` never reaches here — it is a UI directive with no catalog
     work behind it, and the view records it on the message instead.
     Raises `ToolError` (from `apps.mcp`) with a message meant for the model.
+    `context` (`library.ToolContext`) carries the chat, ledger and copy for the IP-030 tools.
     """
+    from apps.assistant.library import ToolContext
+
     arguments = clean_arguments(arguments)
+    if context is None:
+        context = ToolContext(request=request, reading=reading)
+    if context.reading is None:
+        context.reading = reading if reading is not None else Reading()
 
     if name == READ_PAGE:
-        return _read_page(request, arguments, reading if reading is not None else Reading())
+        return _read_page(request, arguments, context.reading)
+    if name in _CONTEXT_TOOLS:
+        if context.ledger is None:
+            from apps.assistant.evidence import Ledger
+
+            context.ledger = Ledger()
+        return _CONTEXT_TOOLS[name](context, arguments)
     if name in LOCAL_TOOLS:
         return _LOCAL[name](request, arguments)
 
@@ -340,15 +378,19 @@ def _every_page(tool: Tool, request, arguments: dict) -> dict:
     return {"items": items, "metadata": {"total": total, "limit": len(items), "has_next_page": len(items) < total}}
 
 
-def run(request, name: str, arguments: dict, ledger=None, reading: Optional[Reading] = None) -> tuple:
+def run(request, name: str, arguments: dict, ledger=None, reading: Optional[Reading] = None, context=None) -> tuple:
     """Run a tool for the chat: `(payload or None, text the model sees)`.
 
     `ledger` is the chat's evidence ledger (IP-024): passages of `search_library_text` and pages of
-    `read_pdf_page` get labels from it that the model cites in its answer. Without one, they are unlabelled.
+    `read_pdf_page` get labels from it that the model cites in its answer, as do everything `follow`, `study`
+    and `gather_evidence` return. Without one, search results are unlabelled.
     `reading` is the turn's page budget (#127).
     """
+    if context is not None:
+        context.ledger = context.ledger if context.ledger is not None else ledger
+        context.reading = context.reading if context.reading is not None else reading
     try:
-        payload = call(request, name, arguments, reading)
+        payload = call(request, name, arguments, reading, context)
     except (UnknownTool, ToolNotPermitted) as error:
         # Hand the refusal to the model verbatim so it can correct itself
         # instead of failing the whole turn.
@@ -358,13 +400,26 @@ def run(request, name: str, arguments: dict, ledger=None, reading: Optional[Read
         # argument(s): …. Accepted arguments: …"), so they are the best hint it can get.
         return None, json.dumps({"error": str(error)})
     if ledger is not None and isinstance(payload, dict):
-        from apps.assistant.evidence import label_pages, label_passages
+        from apps.assistant.evidence import label_figures, label_pages, label_passages
 
         if name == SEARCH_PASSAGES:
             label_passages(payload, ledger)
+            label_figures(payload, ledger)
         elif name == READ_PAGE:
             label_pages(payload, ledger)
+    if name == "get_entry" and isinstance(payload, dict):
+        # Section headings and summaries are the publication's text: never outside its IP ranges.
+        seen = slim(name, {**payload, "_readable_outline": _readable(request, (payload.get("entry") or {}).get("id"))})
+        return payload, json.dumps(seen, ensure_ascii=False, default=str)
     return payload, json.dumps(slim(name, payload), ensure_ascii=False, default=str)
+
+
+def _readable(request, entry_id) -> bool:
+    from apps.core.models import Entry
+    from apps.extraction.discovery import _may_read_text
+
+    entry = Entry.objects.filter(pk=entry_id).first() if _uuid(entry_id) else None
+    return bool(entry is not None and _may_read_text(request, entry))
 
 
 # ----------------------------------------------------------------- local tools
@@ -490,17 +545,48 @@ def _search_passages(request, arguments: dict) -> dict:
     if arguments.get("category_term"):
         scope["category_term"] = str(arguments["category_term"])
     if arguments.get("entry_id"):
-        return _search_publication(request, query, _publication(request, arguments["entry_id"]))
+        entry = _publication(request, arguments["entry_id"])
+        payload = _search_publication(request, query, entry)
+        if arguments.get("figures") is True:
+            payload["figures"] = _figures(request, query, {"id": str(entry.pk)})
+        return payload
 
     result = search_passages(request, query, limit=5, per_entry=2, scope=scope)
-    if result.degraded and not result.items:
+    figures = _figures(request, query, scope) if arguments.get("figures") is True else []
+    if result.degraded and not result.items and not figures:
         # Search by meaning is down and no passage has the query's words (#113).
         return {"items": [], "note": "Passage search is unavailable right now; use search_entries."}
 
     payload = {"items": _passage_items(request, result), "searched_publications": result.indexed}
-    if not payload["items"]:
+    if figures:
+        payload["figures"] = figures
+    if not payload["items"] and not figures:
         payload["note"] = "No passage matched. Try search_entries, or other words."
     return payload
+
+
+#: Figures `search_library_text` returns with `figures: true`.
+FIGURES_PER_SEARCH = 3
+
+
+def _figures(request, query: str, scope: dict) -> List[dict]:
+    """Figures and tables about `query` (IP-030 §3), only of publications the reader may read here."""
+    from apps.core.models import Entry
+    from apps.extraction.regions import search_regions
+
+    hits = search_regions(request, query, limit=FIGURES_PER_SEARCH, scope=scope or None)
+    titles = dict(Entry.objects.filter(pk__in=[hit.entry_id for hit in hits]).values_list("pk", "title"))
+    return [
+        {
+            "kind": hit.kind,
+            "entry_id": hit.entry_id,
+            "title": titles.get(UUID(hit.entry_id)),
+            "page": hit.page,
+            "region_id": hit.region_id,
+            "caption": (hit.caption or "")[:300] or None,
+        }
+        for hit in hits
+    ]
 
 
 def _search_publication(request, query: str, entry) -> dict:
@@ -564,6 +650,42 @@ def _passage_items(request, result) -> List[dict]:
 _LOCAL: Dict[str, Callable] = {FIND_SIMILAR: _find_similar, SEARCH_PASSAGES: _search_passages}
 
 
+def _follow(context, arguments: dict) -> dict:
+    from apps.assistant.follow import follow
+
+    return follow(context, arguments)
+
+
+def _study(context, arguments: dict) -> dict:
+    from apps.assistant.study import study
+
+    return study(context, arguments)
+
+
+def _overview(context, arguments: dict) -> dict:
+    from apps.assistant.overview import overview
+
+    return overview(context, arguments)
+
+
+def _gather(context, arguments: dict) -> dict:
+    from apps.assistant.pack import gather
+
+    query = str(arguments.get("query") or "").strip()
+    if not query:
+        raise ToolError("`query` is required.")
+    return gather(context, query)
+
+
+#: Local tools that need the chat's context (`library.ToolContext`): they label into its ledger.
+_CONTEXT_TOOLS: Dict[str, Callable] = {
+    FOLLOW: _follow,
+    STUDY: _study,
+    LIBRARY_OVERVIEW: _overview,
+    GATHER_EVIDENCE: _gather,
+}
+
+
 # ----------------------------------------------------------------- slim results
 
 #: Keys of an entry summary the model reasons with; the rest is for API clients.
@@ -619,14 +741,17 @@ _ENTRY_DETAIL_DROP = (
 
 
 def _slim_entry_detail(payload: dict) -> dict:
-    from apps.assistant.chapters import outline_for_model
+    from apps.assistant.sections import outline_for_model
 
     entry = {key: value for key, value in (payload.get("entry") or {}).items() if key not in _ENTRY_DETAIL_DROP}
     if entry.get("availability"):
         entry["availability"] = _pick(entry["availability"], _AVAILABILITY_KEYS)
     if entry.get("id"):
-        # Chapter summaries, when the publication has them, replace the bare outline (#119).
-        entry.update(outline_for_model(entry["id"], entry.pop("table_of_contents", None)))
+        # Without a table of contents, the sections of its processed text, with summaries where made (IP-030 §4);
+        # only where the reader may read the text here (`_readable_outline`, set by `run`).
+        entry.update(
+            outline_for_model(entry["id"], entry.pop("table_of_contents", None), payload.get("_readable_outline"))
+        )
     return {"entry": entry}
 
 
@@ -648,9 +773,9 @@ def _slim_categories(payload: dict) -> dict:
 
 def _slim_passages(payload: dict) -> dict:
     """Passages without the bookkeeping: the evidence map and paragraph ids are for resolving citations."""
-    from apps.assistant.evidence import EVIDENCE_KEY
+    from apps.assistant.evidence import EVIDENCE_KEY, strip
 
-    slim_payload = {key: value for key, value in payload.items() if key != EVIDENCE_KEY}
+    slim_payload = {key: value for key, value in payload.items() if key not in (EVIDENCE_KEY, "figures")}
     slim_payload["items"] = [
         {
             **item,
@@ -661,7 +786,29 @@ def _slim_passages(payload: dict) -> dict:
         }
         for item in payload.get("items") or []
     ]
+    if payload.get("figures"):
+        slim_payload["figures"] = strip(
+            {"figures": payload["figures"]}, private=("region_id", "source_page", "entry_id")
+        )["figures"]
     return slim_payload
+
+
+def _slim_labelled(payload: dict) -> dict:
+    from apps.assistant.evidence import strip
+
+    return strip(payload)
+
+
+def _slim_study(payload: dict) -> dict:
+    from apps.assistant.study import model_view
+
+    return model_view(payload)
+
+
+def _slim_pack(payload: dict) -> dict:
+    from apps.assistant.pack import slim as slim_pack
+
+    return slim_pack(payload)
 
 
 def _slim_pages(payload: dict) -> dict:
@@ -680,6 +827,10 @@ _SLIMMERS: Dict[str, Callable[[dict], dict]] = {
     "get_my_shelf": _slim_shelf,
     "list_my_loans": _slim_loans,
     "list_categories": _slim_categories,
+    FOLLOW: _slim_labelled,
+    STUDY: _slim_study,
+    LIBRARY_OVERVIEW: _slim_labelled,
+    GATHER_EVIDENCE: _slim_pack,
 }
 
 
@@ -689,3 +840,6 @@ def slim(name: str, payload) -> dict:
     if slimmer is None or not isinstance(payload, dict):
         return payload
     return slimmer(payload)
+
+
+_local_specifications()

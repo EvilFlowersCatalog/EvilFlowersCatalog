@@ -94,13 +94,37 @@ def highlight_annotation(annotation_id: str, language: Optional[str] = None) -> 
 
 
 @shared_task
-def summarise_chapters(entry_id: str, force: bool = False) -> dict:
-    """Generate the chapter summaries of one publication that are missing or stale (#119)."""
-    from apps.assistant.chapters import summarise_entry
+def summarise_sections(entry_id: str, force: bool = False) -> dict:
+    """Generate the section summaries of one publication that are missing or stale (IP-030 §4)."""
+    from apps.assistant.sections import summarise_entry
 
     report = summarise_entry(entry_id, force=force)
-    logger.info("Chapter summaries of entry %s: %s", entry_id, report)
+    logger.info("Section summaries of entry %s: %s", entry_id, report)
     return report
+
+
+#: Seconds `describe_figures` waits while a chat turn is running.
+DESCRIBE_BACKOFF = 60
+
+
+@shared_task(bind=True, max_retries=None)
+def describe_figures(self, limit: int = 50) -> dict:
+    """Describe figures without a printed caption, off-peak (IP-030 §3, Q5).
+
+    One figure at a time on `elvira-assistant`, never while a chat turn is running (`services.chat_active`): the
+    task backs off and resumes. Each description is stored on the region and re-indexes its search document.
+    Re-queues itself until `limit` figures are done or none is left.
+    """
+    from apps.assistant import figures, services
+
+    done = 0
+    while done < limit:
+        if services.chat_active():
+            raise self.retry(countdown=DESCRIBE_BACKOFF, kwargs={"limit": limit - done})
+        if not figures.describe_next():
+            break
+        done += 1
+    return {"described": done}
 
 
 def _store_semantic(annotation, found) -> None:

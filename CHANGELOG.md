@@ -2,6 +2,8 @@
 
 This changelog suppose to follow rules defined in the [changelog.md](https://changelog.md)
 
+## 0.16.0 : TBD
+
 ## 0.15.0 : 2026-11-12 (The Library Reads Back)
 
 The catalog has learned to read its own books. It searches inside them, explains them and cites the page.

@@ -88,7 +88,10 @@ class Region(BaseModel):
         db_table = "extraction_region"
         default_permissions = ()
         ordering = ["page", "seq"]
-        indexes = [models.Index(fields=["run", "page"])]
+        indexes = [
+            models.Index(fields=["run", "page"]),
+            HnswIndex(name="extraction_region_embedding", fields=["embedding"], opclasses=["halfvec_cosine_ops"]),
+        ]
         verbose_name = _("Region")
         verbose_name_plural = _("Regions")
 
@@ -116,6 +119,12 @@ class Region(BaseModel):
     markdown = models.TextField(null=True)
     latex = models.TextField(null=True)
     provenance = models.JSONField(default=dict)
+    #: What is embedded and searched (IP-030 §3): the printed caption, the first paragraph that refers to the
+    #: region, and the description once there is one (`apps.extraction.regions.document_text`).
+    embedding_text = models.TextField(null=True)
+    embedding = HalfVectorField(dimensions=EMBEDDING_DIMENSIONS, null=True)
+    #: `model@revision` of `embedding`: vectors of two models are never compared.
+    embedding_model = models.CharField(max_length=200, null=True)
 
 
 class Paragraph(BaseModel):
@@ -194,3 +203,36 @@ class ParagraphLink(BaseModel):
     kind = models.CharField(max_length=10, choices=Kind.choices)
     #: Cosine similarity, for `similar`.
     score = models.FloatField(null=True)
+
+
+class Reference(BaseModel):
+    """A paragraph's cross-reference to a figure, table, equation or section of the same run (IP-030 §4).
+
+    Found by `apps.extraction.references` in the paragraph text ("Obr. 2.1", "Table 4", "Eq. (5)",
+    "Section 2.3"). A reference whose target could not be found is kept with no target, so the patterns can be
+    improved from the counts. Belongs to the run: a new run replaces its references with its paragraphs.
+    """
+
+    class Meta:
+        app_label = "extraction"
+        db_table = "extraction_reference"
+        default_permissions = ()
+        indexes = [models.Index(fields=["run", "kind"])]
+        verbose_name = _("Reference")
+        verbose_name_plural = _("References")
+
+    class Kind(models.TextChoices):
+        FIGURE = "figure", _("figure")
+        TABLE = "table", _("table")
+        EQUATION = "equation", _("equation")
+        SECTION = "section", _("section")
+
+    run = models.ForeignKey(ExtractionRun, on_delete=models.CASCADE, related_name="references")
+    paragraph = models.ForeignKey(Paragraph, on_delete=models.CASCADE, related_name="references")
+    region = models.ForeignKey(Region, on_delete=models.CASCADE, null=True, related_name="references")
+    target_paragraph = models.ForeignKey(Paragraph, on_delete=models.CASCADE, null=True, related_name="+")
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    #: The text as written ("Obr. 2.1").
+    anchor = models.CharField(max_length=100)
+    #: The number referred to, normalised ("2.1").
+    number = models.CharField(max_length=30)

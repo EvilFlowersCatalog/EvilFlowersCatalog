@@ -56,6 +56,17 @@ def describe(name: str, arguments: dict) -> dict:
         page = _int(arguments.get("page"))
         if page is not None:
             detail["pages"] = [page]
+    elif name == "follow":
+        # "Followed E3 · next"
+        for key in ("label", "relation"):
+            value = _text(arguments.get(key))
+            if value:
+                detail[key] = value
+    elif name == "study":
+        for key in ("mode", "section"):
+            value = _text(arguments.get(key))
+            if value:
+                detail[key] = value
     return detail
 
 
@@ -157,6 +168,23 @@ def summarize(
         result = None
     if isinstance(result, dict) and result.get("error"):
         summary["error"] = True
+        return summary
+
+    if name == "read_pdf_page" and isinstance(payload, dict) and "pages" in payload:
+        # Pages read: the log shows the pages, from the result text, in both kinds of chat.
+        payload = None
+    if isinstance(payload, dict) and ("passages" in payload or "figures" in payload or "paragraphs" in payload):
+        # IP-030 tools (gather_evidence, follow, study, the bound chat's searches): labelled passages and figures.
+        units = (payload.get("passages") or []) + (payload.get("paragraphs") or []) + (payload.get("figures") or [])
+        summary["count"] = len(units)
+        records = [_entry(item.get("id"), item.get("title")) for item in payload.get("publications") or []]
+        records += [_entry(unit.get("entry_id"), unit.get("title")) for unit in units]
+        entries = _entries(records)
+        if entries:
+            summary["entries"] = entries[:MAX_ENTRIES]
+        labels = [unit["label"] for unit in units if unit.get("label")]
+        if labels:
+            summary["labels"] = labels
         return summary
 
     if isinstance(payload, dict):

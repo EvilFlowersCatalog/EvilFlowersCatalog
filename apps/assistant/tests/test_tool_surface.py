@@ -48,10 +48,11 @@ class OfferedToolsTests(SimpleTestCase):
     CHARS_PER_TOKEN = 3.4
 
     #: #114/#130: the first round of a plain chat, in real tokens. On control prompt evaluation runs at
-    #: ~50 tok/s and the prompt cache never hits (#130 A), so every token here is paid on every round: ~1 s per
-    #: 50 tokens. Held at the measured size; a tool or prompt section that does not fit has to replace
-    #: something, or ride on an existing result (chapter summaries on `get_entry`, #119).
-    PREFIX_TOKEN_BUDGET = 1750
+    #: ~50-75 tok/s: ~1 s per 50 tokens. IP-030 §7 re-calibrated it (2026-11-13): the cache now hits inside a
+    #: turn (#138), so the cost is round 1 of a new chat; the capability list and `follow`, `study` and
+    #: `library_overview` added ~210 tokens (~3-4 s) against the 4-6 generated retrieval rounds they replace.
+    #: The estimate is 1,959 signed out and 2,076 signed in; held there, so anything new has to replace something.
+    PREFIX_TOKEN_BUDGET = 2100
 
     def test_first_round_prefix_stays_within_the_cpu_budget(self):
         for authenticated in (False, True):

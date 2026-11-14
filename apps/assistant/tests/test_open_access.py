@@ -57,11 +57,13 @@ class OpenAccessDocumentTests(SimpleTestCase):
 
 
 class LanguageAndReadableTests(SimpleTestCase):
-    def test_the_answer_is_pinned_to_the_ui_language(self):
-        self.assertIn("Slovak, never Czech", services.language_instruction("sk"))
-        self.assertIn("English", services.language_instruction("en-GB"))
-        self.assertIsNone(services.language_instruction(None))
-        self.assertIsNone(services.language_instruction("ru"))
+    def test_the_answer_follows_the_message_then_the_ui_language(self):
+        # IP-030 Q9: the reader's message decides; the UI language only when it is too short to tell.
+        self.assertIn("language of the reader's last message", services.language_instruction("sk"))
+        self.assertIn("too short to tell, in Slovak", services.language_instruction("sk"))
+        self.assertIn("in English", services.language_instruction("en-GB"))
+        self.assertIn("never Czech", services.language_instruction(None))
+        self.assertNotIn("too short", services.language_instruction("ru"))
 
     def test_the_chat_entry_says_whether_it_is_lent_through_readium(self):
         from apps.assistant.serializers import ChatEntrySerializer

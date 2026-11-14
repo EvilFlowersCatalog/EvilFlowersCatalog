@@ -14,6 +14,14 @@
     # check every citation of every answer against its passage (IP-024 §4, #117)
     python manage.py assistant_eval run --username reader@stuba.sk --verify
 
+    # A/B of the evidence pack (IP-030 Phase 2): the same cases with and without it
+    python manage.py assistant_eval run --username reader@stuba.sk --prefetch 0 --output off.json
+    python manage.py assistant_eval run --username reader@stuba.sk --prefetch 1 --output on.json
+
+    # synthetic gold questions from random paragraphs (IP-030 §6), then rated answers to anonymise (Q13)
+    python manage.py assistant_eval gold --synthetic 50 --seed 1
+    python manage.py assistant_eval export --feedback --limit 100 > feedback.json
+
     # gold questions (#118): retrieval only, no model; then as full turns that must cite a gold publication
     python manage.py assistant_eval retrieval --username reader@stuba.sk --gold gold.json --output r.json
     python manage.py assistant_eval run --username reader@stuba.sk --gold gold.json
@@ -65,12 +73,22 @@ class Command(TracedCommandMixin, BaseCommand):
         run.add_argument("--endpoint", help="Override EVILFLOWERS_ASSISTANT_OLLAMA_ENDPOINT.")
         run.add_argument("--api-key", help="Override EVILFLOWERS_ASSISTANT_OLLAMA_API_KEY ('' for none).")
         run.add_argument("--think", help="Override EVILFLOWERS_ASSISTANT_OLLAMA_THINK (0, 1 or '').")
+        run.add_argument("--backend", help="Override EVILFLOWERS_ASSISTANT_BACKEND (ollama, llama-server).")
+        run.add_argument("--prefetch", help="Override EVILFLOWERS_ASSISTANT_PREFETCH (0 or 1).")
         run.add_argument("--output", help="Write the full JSON report here.")
         run.add_argument("--verify", action="store_true", help="Check each citation against its passage (#117).")
         run.add_argument("--gold", help="Run these gold questions (#118) instead of --cases.")
 
         export = sub.add_parser("export", help="Print recent real questions as case skeletons.")
         export.add_argument("--limit", type=int, default=50)
+        export.add_argument(
+            "--feedback", action="store_true", help="Rated answers instead (IP-030 Q13): anonymise before use."
+        )
+
+        gold = sub.add_parser("gold", help="Generate synthetic gold questions from random paragraphs (IP-030 §6).")
+        gold.add_argument("--synthetic", type=int, required=True, help="How many questions.")
+        gold.add_argument("--output", default=str(DEFAULT_GOLD), help="Gold file to add them to.")
+        gold.add_argument("--seed", type=int, help="Random seed, for a repeatable set.")
 
         retrieval = sub.add_parser("retrieval", help="Score passage retrieval on gold questions; no model.")
         retrieval.add_argument("--username", required=True, help="User the searches run as (scopes the catalog).")
@@ -100,7 +118,11 @@ class Command(TracedCommandMixin, BaseCommand):
     def handle(self, *args, **options):
         action = options["action"]
         if action == "export":
+            if options.get("feedback"):
+                return self._print(evaluation.export_feedback(options["limit"]))
             return self._print(evaluation.export_questions(options["limit"]))
+        if action == "gold":
+            return self._gold(options)
         if action == "pairs":
             return self._print(evaluation.export_pairs(options["limit"]))
         if action == "retrieval":
@@ -113,14 +135,29 @@ class Command(TracedCommandMixin, BaseCommand):
                 ("endpoint", "EVILFLOWERS_ASSISTANT_OLLAMA_ENDPOINT"),
                 ("api_key", "EVILFLOWERS_ASSISTANT_OLLAMA_API_KEY"),
                 ("think", "EVILFLOWERS_ASSISTANT_OLLAMA_THINK"),
+                ("backend", "EVILFLOWERS_ASSISTANT_BACKEND"),
             )
             if options.get(key) is not None
         }
+        if options.get("prefetch") is not None:
+            overrides["EVILFLOWERS_ASSISTANT_PREFETCH"] = options["prefetch"] in ("1", "true", "yes", "on")
         with override_settings(**overrides):
             if action == "calibrate":
                 result = evaluation.calibrate(_read_json(options["labels"], "labels"), options.get("threshold"))
                 return self._print(result)
             self._run(options)
+
+    def _gold(self, options):
+        path = Path(options["output"])
+        existing = _read_json(str(path), "gold questions") if path.exists() else []
+        known = {case.get("paragraph_id") for case in existing if case.get("paragraph_id")}
+        generated = [
+            case
+            for case in retrieval_bench.synthetic_cases(options["synthetic"], seed=options.get("seed"))
+            if case["paragraph_id"] not in known
+        ]
+        path.write_text(json.dumps(existing + generated, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        self.stderr.write(f"{len(generated)} synthetic questions added to {path} (marked synthetic: A/B only, Q10)")
 
     def _retrieval(self, options):
         gold = _read_json(options["gold"], "gold questions")
@@ -159,10 +196,14 @@ class Command(TracedCommandMixin, BaseCommand):
             cases = [case for case in cases if case.get("id") in set(options["only"])]
 
         snapshot = {
+            "backend": settings.EVILFLOWERS_ASSISTANT_BACKEND,
             "model": settings.EVILFLOWERS_ASSISTANT_OLLAMA_MODEL,
             "endpoint": settings.EVILFLOWERS_ASSISTANT_OLLAMA_ENDPOINT,
+            "llama_endpoint": settings.EVILFLOWERS_ASSISTANT_LLAMA_ENDPOINT,
             "think": settings.EVILFLOWERS_ASSISTANT_OLLAMA_THINK,
             "num_ctx": settings.EVILFLOWERS_ASSISTANT_OLLAMA_NUM_CTX,
+            "num_predict": settings.EVILFLOWERS_ASSISTANT_NUM_PREDICT,
+            "prefetch": settings.EVILFLOWERS_ASSISTANT_PREFETCH,
             "prompts_dir": settings.EVILFLOWERS_ASSISTANT_PROMPTS_DIR or "bundled",
         }
         self.stderr.write(f"{len(cases)} cases against {snapshot['model']} at {snapshot['endpoint']}")

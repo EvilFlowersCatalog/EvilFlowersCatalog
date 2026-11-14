@@ -20,11 +20,16 @@ from object_checker.base_object_checker import has_object_permission
 from apps import openapi
 from apps.api.response import Ordering, PaginationResponse, SingleResponse
 from apps.assistant import explain, services, turn
-from apps.assistant.forms import ChatForm, ExplainForm, HighlightForm, MessageForm
+from apps.assistant.forms import ChatForm, ExplainForm, FeedbackForm, HighlightForm, MessageForm
 from apps.assistant.llm import LLMUnavailable
-from apps.assistant.models import Chat
+from apps.assistant.models import Chat, ChatMessage
 from apps.assistant.pdf import DocumentUnavailable, ReaderDocument, open_access_document
-from apps.assistant.serializers import AgentAnnotationSerializer, ChatSerializer, ExplanationSerializer
+from apps.assistant.serializers import (
+    AgentAnnotationSerializer,
+    ChatMessageSerializer,
+    ChatSerializer,
+    ExplanationSerializer,
+)
 from apps.core.errors import AuthorizationException, ProblemDetailException, UnauthorizedException, ValidationException
 from apps.core.models import Annotation, UserAcquisition
 from apps.core.views import SecuredView
@@ -98,6 +103,23 @@ class AssistantView(SecuredView):
             _("Assistant access is blocked"),
             status=HTTPStatus.FORBIDDEN,
             detail=error.reason or None,
+        )
+
+    @staticmethod
+    def _quota(error: services.QuotaExceeded) -> ProblemDetailException:
+        retry_after = max(int((error.reset_at - timezone.localtime()).total_seconds()), 1)
+        if error.unit == "seconds":
+            detail = _("Used %(used)d of %(limit)d seconds of assistant time today.") % {
+                "used": error.used,
+                "limit": error.limit,
+            }
+        else:
+            detail = _("Used %(used)d of %(limit)d messages today.") % {"used": error.used, "limit": error.limit}
+        return ProblemDetailException(
+            _("Daily assistant limit exceeded"),
+            status=HTTPStatus.TOO_MANY_REQUESTS,
+            detail=detail,
+            extra_headers=(("Retry-After", str(retry_after)),),
         )
 
 
@@ -222,13 +244,16 @@ class ChatMessages(AssistantView):
     @openapi.metadata(
         description=(
             "Send a message and receive the assistant's answer as a Server-Sent Events stream "
-            "(`text/event-stream`). Event names are `chunk` (a fragment of the answer as it is "
-            "generated), `message` (a completed answer), `entries` (publication ids the assistant "
-            "wants rendered as cards), `pages` (viewer pages the answer was drawn from), `error`, and "
-            "`done`. Pass `contexts` (what the reader attached in the viewer), `page` (the viewer page "
-            "they are on) and `user_acquisition_id` (their copy, which lets the assistant read it and "
-            "cite pages as `[[page:N]]`); all are stored on the message and returned with the chat. Responds 429 when the caller's daily "
-            "allowance is spent and 403 when their assistant access is blocked."
+            "(`text/event-stream`). Events: `status`, `activity`, `evidence` (sources gathered before the "
+            "first round), `chunk` (a fragment of the answer), `citation` (a label such as `[E3]` or `[F2]` "
+            "when it first appears, resolved to page, paragraph box and sentence quads, or figure crop), "
+            "`message`, `citations` (all cited and unknown labels), `entries` (publication cards), `study` "
+            "(a walkthrough, quiz or key-concepts card), `pages`, `suggestions`, `error` (with `message_id` "
+            "and `retryable`; the failed turn is stored) and `done`. Pass `contexts` (what the reader attached "
+            "in the viewer), `page` (the viewer page they are on) and `user_acquisition_id` (their copy, which "
+            "lets the assistant read it); all are stored on the message and returned with the chat. Responds "
+            "429 when the caller's daily allowance (messages or model seconds) is spent and 403 when their "
+            "assistant access is blocked."
         ),
         tags=["Assistant"],
         summary="Send a message",
@@ -265,13 +290,7 @@ class ChatMessages(AssistantView):
         try:
             services.assert_within_quota(user)
         except services.QuotaExceeded as error:
-            retry_after = max(int((error.reset_at - timezone.localtime()).total_seconds()), 1)
-            raise ProblemDetailException(
-                _("Daily assistant limit exceeded"),
-                status=HTTPStatus.TOO_MANY_REQUESTS,
-                detail=_("Used %(used)d of %(limit)d messages today.") % {"used": error.used, "limit": error.limit},
-                extra_headers=(("Retry-After", str(retry_after)),),
-            ) from error
+            raise self._quota(error) from error
 
         # The turn runs while the body streams, after the request span has
         # ended; bind it to the request's trace so the model call, its tools
@@ -295,6 +314,70 @@ class ChatMessages(AssistantView):
         # Stops nginx buffering the stream into a single delivery at the end.
         response["X-Accel-Buffering"] = "no"
         return response
+
+
+class MessageFeedback(AssistantView):
+    @openapi.metadata(
+        description=(
+            "Rate one of the assistant's answers in the caller's chat (IP-030 Q13): `rating` 1 or -1 and an "
+            "optional `reason`. A new rating replaces the previous one. Ratings are exported for evaluation by "
+            "`assistant_eval export --feedback`, to standard output only, for a person to anonymise."
+        ),
+        tags=["Assistant"],
+        summary="Rate an answer",
+    )
+    @openapi.response(HTTPStatus.OK, "The rated message", ChatMessageSerializer.Base)
+    def post(self, request, chat_id: UUID, message_id: UUID):
+        self._require_user(request)
+        chat = self._chat(request, chat_id)
+        message = chat.messages.filter(pk=message_id, role=ChatMessage.Role.ASSISTANT).first()
+        if message is None or not message.is_visible:
+            raise ProblemDetailException(_("Message not found"), status=HTTPStatus.NOT_FOUND)
+        form = FeedbackForm.create_from_request(request)
+        if not form.is_valid():
+            raise ValidationException(form)
+        message.feedback = {
+            "rating": form.cleaned_data["rating"],
+            "reason": form.cleaned_data.get("reason") or "",
+            "at": timezone.now().isoformat(),
+        }
+        message.save(update_fields=["feedback", "updated_at"])
+        return SingleResponse(request, data=ChatMessageSerializer.Base.model_validate(message))
+
+
+class Capabilities(AssistantView):
+    @openapi.metadata(
+        description=(
+            "What the assistant can do in this session, with an example message for each and up to three "
+            "starter prompts, in `language` (`sk`, `en`). No model is involved. With `entry_id` the card "
+            "includes the study tools when that publication is processed and readable here; `bound=1` adds "
+            "highlighting in the viewer; signed-in sessions get loans and shelf."
+        ),
+        tags=["Assistant"],
+        summary="Assistant capabilities",
+    )
+    def get(self, request):
+        from apps.assistant.capabilities import card
+        from apps.core.models import Entry
+        from apps.extraction.discovery import _entry_run, _may_read_text, _visible
+
+        readable = False
+        entry_id = request.GET.get("entry_id")
+        if entry_id:
+            try:
+                entry_uuid = UUID(entry_id)
+            except ValueError:
+                entry_uuid = None
+            if entry_uuid is not None and entry_uuid in _visible(request, [entry_uuid]):
+                entry = Entry.objects.get(pk=entry_uuid)
+                readable = _may_read_text(request, entry) and _entry_run(entry.pk) is not None
+        data = card(
+            request.GET.get("language") or getattr(request, "LANGUAGE_CODE", None),
+            authenticated=request.user.is_authenticated,
+            about_readable=readable,
+            bound=request.GET.get("bound") in ("1", "true"),
+        )
+        return SingleResponse(request, data=data)
 
 
 class Explain(AssistantView):
@@ -326,13 +409,7 @@ class Explain(AssistantView):
         try:
             services.assert_within_quota(user)
         except services.QuotaExceeded as error:
-            retry_after = max(int((error.reset_at - timezone.localtime()).total_seconds()), 1)
-            raise ProblemDetailException(
-                _("Daily assistant limit exceeded"),
-                status=HTTPStatus.TOO_MANY_REQUESTS,
-                detail=_("Used %(used)d of %(limit)d messages today.") % {"used": error.used, "limit": error.limit},
-                extra_headers=(("Retry-After", str(retry_after)),),
-            ) from error
+            raise self._quota(error) from error
 
         user_acquisition = self._reader_copy(request, form.cleaned_data["user_acquisition_id"])
         entry = user_acquisition.acquisition.entry
@@ -416,13 +493,7 @@ class Highlights(AssistantView):
         try:
             services.assert_within_quota(user)
         except services.QuotaExceeded as error:
-            retry_after = max(int((error.reset_at - timezone.localtime()).total_seconds()), 1)
-            raise ProblemDetailException(
-                _("Daily assistant limit exceeded"),
-                status=HTTPStatus.TOO_MANY_REQUESTS,
-                detail=_("Used %(used)d of %(limit)d messages today.") % {"used": error.used, "limit": error.limit},
-                extra_headers=(("Retry-After", str(retry_after)),),
-            ) from error
+            raise self._quota(error) from error
 
         user_acquisition = self._reader_copy(request, form.cleaned_data["user_acquisition_id"])
         if user_acquisition.user_id != user.pk:

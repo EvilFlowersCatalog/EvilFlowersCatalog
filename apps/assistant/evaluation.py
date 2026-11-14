@@ -59,7 +59,17 @@ _CZECH_ONLY = re.compile(
 )
 
 #: Tools that read the text of a publication; a `grounded` case must call one.
-TEXT_TOOLS = ("search_library_text", "read_pdf_page", "search_pdf", "search_paragraphs", "list_regions")
+TEXT_TOOLS = (
+    "search_library_text",
+    "read_pdf_page",
+    "search_pdf",
+    "search_paragraphs",
+    "list_regions",
+    # IP-030: the evidence pack, links and study read publications' text too.
+    "gather_evidence",
+    "follow",
+    "study",
+)
 
 #: Model rounds a library question should need (search, maybe refine, display, answer).
 #: More is scored as a loop; on CPU each round costs seconds of prompt evaluation.
@@ -111,6 +121,13 @@ class Outcome:
     czech_words: List[str] = field(default_factory=list)
     #: Pages of the chat's publication the answer drew on (bound cases).
     pages_read: int = 0
+    #: IP-030: model time of the turn, the study artefact's mode, figures cited with a crop, the evidence pack.
+    model_seconds: float = 0.0
+    study: Optional[str] = None
+    figures_shown: int = 0
+    evidence: int = 0
+    #: The turn failed and stored its notice (`ChatMessage.error`).
+    failed_row: bool = False
 
 
 def parse_frames(frames: Iterable[str]) -> List[tuple]:
@@ -169,6 +186,16 @@ def score(case: dict, outcome: Outcome) -> Outcome:
     acceptable = expect.get("cites_any_entry") or []
     if acceptable and not set(acceptable) & set(outcome.cited_entries):
         failures.append("no gold publication cited")
+    # IP-030 cases.
+    if expect.get("shows_figure") and not outcome.figures_shown:
+        failures.append("no figure shown")
+    if expect.get("study") and outcome.study != expect["study"]:
+        failures.append(f"no {expect['study']} card" + (f" ({outcome.study})" if outcome.study else ""))
+    if expect.get("max_rounds") and outcome.rounds > expect["max_rounds"]:
+        failures.append(f"{outcome.rounds} rounds, wanted at most {expect['max_rounds']}")
+    for phrase in expect.get("refuses_not") or []:
+        if phrase.lower() in (outcome.answer or "").lower():
+            failures.append(f"said {phrase!r}")
 
     outcome.failures = failures
     outcome.passed = not failures
@@ -226,12 +253,19 @@ def run_case(user, case: dict, verify: bool = False) -> Outcome:
                 outcome.citations = len(citations)
                 outcome.cited_entries = list(dict.fromkeys(str(c.get("entry_id")) for c in citations))
                 outcome.unknown_labels = list(data.get("unknown") or [])
+                outcome.figures_shown = sum(1 for c in citations if c.get("image_url"))
             elif event == "pages":
                 outcome.pages_read = len(data.get("pages") or [])
+            elif event == "study":
+                outcome.study = data.get("mode")
+            elif event == "evidence":
+                outcome.evidence = len(data.get("sources") or [])
             elif event == "error":
                 outcome.error = data.get("error")
+                outcome.failed_row = bool(data.get("message_id"))
         outcome.total_s = round(time.monotonic() - started, 2)
         outcome.tokens = _tokens(chat)
+        outcome.model_seconds = _model_seconds(chat)
         outcome.prompt_fingerprint = (
             chat.messages.exclude(prompt_fingerprint="")
             .order_by("-created_at")
@@ -297,6 +331,12 @@ def _tokens(chat) -> int:
     return chat.messages.aggregate(tokens=Sum("tokens_used"))["tokens"] or 0
 
 
+def _model_seconds(chat) -> float:
+    from django.db.models import Sum
+
+    return round(chat.messages.aggregate(seconds=Sum("model_seconds"))["seconds"] or 0.0, 2)
+
+
 def summary(outcomes: List[Outcome]) -> dict:
     passed = [outcome for outcome in outcomes if outcome.passed]
     first = sorted(outcome.first_token_s for outcome in outcomes if outcome.first_token_s is not None)
@@ -326,6 +366,13 @@ def summary(outcomes: List[Outcome]) -> dict:
         "total_s_p50": percentile(total, 0.5),
         "total_s_p95": percentile(total, 0.95),
         "tokens": sum(outcome.tokens for outcome in outcomes),
+        # IP-030 success criteria: rounds per question, model time, citations, failed turns stored.
+        "rounds_p50": percentile(sorted(outcome.rounds for outcome in outcomes), 0.5),
+        "model_seconds": round(sum(outcome.model_seconds for outcome in outcomes), 1),
+        "model_seconds_p50": percentile(sorted(outcome.model_seconds for outcome in outcomes), 0.5),
+        "citation_rate": round(sum(1 for o in outcomes if o.citations) / len(outcomes), 3) if outcomes else None,
+        "figures_shown": sum(outcome.figures_shown for outcome in outcomes),
+        "errors_without_row": sum(1 for outcome in outcomes if outcome.error and not outcome.failed_row),
         # One per tool list (signed in or not); two runs compare only when these match.
         "prompt_fingerprints": sorted({outcome.prompt_fingerprint for outcome in outcomes} - {""}),
     }
@@ -388,9 +435,9 @@ def calibrate(labelled: List[dict], threshold: Optional[int] = None, client=None
     from apps.assistant import support
 
     if client is None:
-        from apps.assistant.llm import OllamaClient
+        from apps.assistant.llm import client as make_client
 
-        client = OllamaClient()
+        client = make_client()
 
     tuning, testing, skipped = [], [], 0
     for item in labelled:
@@ -432,3 +479,38 @@ def export_questions(limit: int) -> List[dict]:
         if len(cases) >= limit:
             break
     return cases
+
+
+def export_feedback(limit: int) -> List[dict]:
+    """Rated answers with the question before them (IP-030 Q13), for a person to anonymise into cases.
+
+    Printed to standard output only: the reason is a reader's free text and may hold personal data.
+    """
+    from apps.assistant.models import ChatMessage
+
+    rated = (
+        ChatMessage.objects.filter(role=ChatMessage.Role.ASSISTANT, feedback__isnull=False)
+        .exclude(chat__title__startswith="[evaluation]")
+        .order_by("-created_at")[:limit]
+    )
+    items = []
+    for answer in rated:
+        question = (
+            ChatMessage.objects.filter(
+                chat_id=answer.chat_id, role=ChatMessage.Role.USER, created_at__lt=answer.created_at
+            )
+            .order_by("-created_at")
+            .values_list("text", flat=True)
+            .first()
+        )
+        items.append(
+            {
+                "question": question or "",
+                "answer": answer.text,
+                "rating": (answer.feedback or {}).get("rating"),
+                "reason": (answer.feedback or {}).get("reason") or "",
+                "citations": [c.get("label") for c in answer.citations or []],
+                "prompt_fingerprint": answer.prompt_fingerprint,
+            }
+        )
+    return items
