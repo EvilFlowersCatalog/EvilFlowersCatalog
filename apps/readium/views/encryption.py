@@ -19,9 +19,10 @@ from apps.core.views import SecuredView
 from apps.readium.forms import EncryptionTriggerForm
 from apps.readium.models import EncryptedContent
 from apps.readium.services import ContentEncryptionService
-from apps.readium.services.encryption_jobs import encryption_job
-from apps.tasks.kinds import JobRefused, registry
-from apps.tasks.services import JobService, is_stale
+from apps.readium.serializers import EncryptionJobSerializer
+from apps.tasks.application.facade import facade
+from apps.tasks.contract import DispatchError
+from apps.tasks.models import Job
 
 logger = logging.getLogger(__name__)
 
@@ -39,18 +40,18 @@ def _entry(entry_id: UUID) -> Entry:
         )
 
 
-def _refused(error: JobRefused) -> ProblemDetailException:
+def _refused(error: DispatchError) -> ProblemDetailException:
     # A helper, not inline: `apps.openapi` reads `status=HTTPStatus.<NAME>` literally from view code.
     return ProblemDetailException(error.message, status=error.status, previous=error)
 
 
-def _encryption(acquisition: Acquisition):
+def _encryption(acquisition: Acquisition, job_ids):
     try:
         encrypted_content = acquisition.encrypted_content
     except EncryptedContent.DoesNotExist:
         return None
     return {
-        **encryption_job(encrypted_content),
+        **EncryptionJobSerializer.Job.view(encrypted_content, job_ids.get(acquisition.pk)),
         # Kept from the original response shape.
         "lcp_content_id": encrypted_content.lcp_content_id,
         "ready_for_licensing": ContentEncryptionService.is_ready_for_licensing(acquisition),
@@ -62,60 +63,62 @@ class EntryEncryptionView(SecuredView):
 
     @openapi.metadata(
         description=(
+            "**Deprecated** (IP-031 Q11): `GET /api/v1/jobs?kind=readium.encrypt&entry_id=…` lists the same jobs. "
             "Encryption status of the entry's PDF/EPUB files. `acquisitions` lists every file with its encryption "
-            "job (task id, trace id, attempts, report, stale — #148); `encryption` is the first file's, as before."
+            "job (task id, trace id, attempts, report, stale, stuck, job_id of /api/v1/jobs); `encryption` is the "
+            "first file's, as before. Existing jobs are listed even when LCP is switched off for the entry."
         ),
         tags=["Readium", "Encryption"],
         summary="Get encryption status",
     )
     def get(self, request, entry_id: UUID):
         entry = _entry(entry_id)
+        readium_enabled = bool(entry.read_config("readium_enabled"))
 
-        if not entry.read_config("readium_enabled"):
-            return SingleResponse(
-                request,
-                data={
-                    "readium_enabled": False,
-                    "message": "Readium is not enabled for this entry",
-                },
+        acquisitions = list(
+            entry.acquisitions.filter(mime__in=ENCRYPTABLE).select_related("encrypted_content").order_by("created_at")
+        )
+        # The `readium.encrypt` job of each file in /api/v1/jobs.
+        job_ids = dict(
+            Job.objects.filter(kind="readium.encrypt", subject_id__in=[a.pk for a in acquisitions]).values_list(
+                "subject_id", "pk"
             )
-
-        acquisitions = list(entry.acquisitions.filter(mime__in=ENCRYPTABLE).order_by("created_at"))
-        if not acquisitions:
-            return SingleResponse(
-                request,
-                data={
-                    "readium_enabled": True,
-                    "has_acquisition": False,
-                    "acquisitions": [],
-                    "message": "No suitable acquisition found",
-                },
-            )
-
+        )
         files = [
-            {"acquisition_id": str(acquisition.pk), "mime": acquisition.mime, "encryption": _encryption(acquisition)}
+            {
+                "acquisition_id": str(acquisition.pk),
+                "mime": acquisition.mime,
+                "encryption": _encryption(acquisition, job_ids),
+            }
             for acquisition in acquisitions
         ]
         data = {
-            "readium_enabled": True,
-            "has_acquisition": True,
-            "encryption": files[0]["encryption"],
+            "readium_enabled": readium_enabled,
+            "has_acquisition": bool(files),
+            "encryption": files[0]["encryption"] if files else None,
             "acquisitions": files,
         }
-        if files[0]["encryption"] is None:
+        if not readium_enabled:
+            data["message"] = "Readium is not enabled for this entry"
+        elif not files:
+            data["message"] = "No suitable acquisition found"
+        elif files[0]["encryption"] is None:
             data["message"] = "Encryption not started"
-        return SingleResponse(request, data=data)
+        return SingleResponse(request, data=EncryptionJobSerializer.EntryStatus.model_validate(data))
 
     @openapi.metadata(
         description="""
         Trigger encryption of the entry's PDF/EPUB files (`acquisition_id`: one of them).
 
-        - Not encrypted yet, `pending` (stuck) or `failed`: (re)sent under the same content id.
-        - `completed` / `registered`: 409, unless `force`, which re-encrypts in place (same content id). With
-          active loans that answers 409 with their count: re-encrypting would break them. Use the job action
-          `reencrypt` with `force` (`POST /api/v1/jobs/{id}/actions/reencrypt`) to override.
+        **Deprecated** (IP-031 Q11): declare `readium.encrypt` jobs with `POST /api/v1/jobs` instead.
 
-        Each trigger is a job (`readium.encrypt`) in `/api/v1/jobs`. Requires admin permissions.
+        - Not encrypted yet, `pending` (stale) or `failed`: (re)sent under the same content id; a job still on
+          its way is left alone.
+        - `completed` / `registered`: 409, unless `force`, which re-encrypts in place (same content id). With
+          active loans that answers 409 with their count. To re-encrypt anyway, apply
+          `{kind: readium.encrypt, subject_id, spec: {reencrypt: true, force: true}}` to `/api/v1/jobs`.
+
+        Requires admin permissions.
         """,
         tags=["Readium", "Encryption"],
         summary="Trigger encryption",
@@ -154,7 +157,7 @@ class EntryEncryptionView(SecuredView):
                 detail_type=DetailType.VALIDATION_ERROR,
             )
 
-        # Check every file before sending any, so a refusal never leaves half the entry re-queued.
+        # Check every file before declaring any, so a refusal never leaves half the entry re-queued.
         plans = []
         for acquisition in acquisitions:
             encrypted_content = getattr(acquisition, "encrypted_content", None)
@@ -178,26 +181,15 @@ class EntryEncryptionView(SecuredView):
                         detail_type=DetailType.CONFLICT,
                         additional_data={"active_loans": loans, "acquisition_id": str(acquisition.pk)},
                     )
-            # A job still on its way (queued, running, not stale) is not sent a second time: two lcpencrypt
-            # runs would write one package. A stale or failed one is re-sent.
-            active = JobService.active(registry.get("readium.encrypt"), acquisition).first()
-            if active is not None and not is_stale(active):
-                raise ProblemDetailException(
-                    _("An encryption job for this file is already %(status)s.") % {"status": active.status},
-                    status=HTTPStatus.CONFLICT,
-                    detail_type=DetailType.CONFLICT,
-                    additional_data={"job_id": str(active.pk), "acquisition_id": str(acquisition.pk)},
-                )
             plans.append((acquisition, {"reencrypt": True} if done else {}))
 
+        # Declared, not sent: an unchanged spec on a job still on its way changes nothing (no second
+        # lcpencrypt run on one package); a stale or failed one gets a new run.
         jobs = []
-        for acquisition, options in plans:
+        for acquisition, spec in plans:
             try:
-                # The checks above stand in for the exclusivity check; `force` lets a stale job be replaced.
-                job = JobService.start(
-                    "readium.encrypt", acquisition.pk, options=options, user=request.user, force=True
-                )
-            except JobRefused as error:
+                job = facade.apply("readium.encrypt", acquisition.pk, spec=spec, user=request.user)
+            except DispatchError as error:
                 raise _refused(error)
             acquisition.refresh_from_db()
             encrypted_content = acquisition.encrypted_content
@@ -205,19 +197,21 @@ class EntryEncryptionView(SecuredView):
                 {
                     "acquisition_id": str(acquisition.pk),
                     "job_id": str(job.pk),
+                    "state": job.state,
                     "lcp_content_id": encrypted_content.lcp_content_id,
                     "status": encrypted_content.status,
                 }
             )
 
+        triggered = {
+            "message": "Encryption triggered successfully",
+            # Kept from the original response shape: the first file.
+            "lcp_content_id": jobs[0]["lcp_content_id"],
+            "status": jobs[0]["status"],
+            "jobs": jobs,
+        }
         return SingleResponse(
             request,
-            data={
-                "message": "Encryption triggered successfully",
-                # Kept from the original response shape: the first file.
-                "lcp_content_id": jobs[0]["lcp_content_id"],
-                "status": jobs[0]["status"],
-                "jobs": jobs,
-            },
+            data=EncryptionJobSerializer.EntryTriggered.model_validate(triggered),
             status=HTTPStatus.ACCEPTED,
         )

@@ -48,6 +48,7 @@ READ_TOOLS = {
 
 WRITE_TOOLS = {
     "add_entries_to_feed",
+    "apply_job",
     "classify_entries",
     "create_api_key",
     "create_catalog",
@@ -65,11 +66,7 @@ WRITE_TOOLS = {
     "reencrypt_publication",
     "remove_entries_from_feed",
     "requeue_encryption",
-    "retry_job",
     "revoke_api_key",
-    "revoke_job",
-    "run_job_action",
-    "start_job",
     "send_test_notification",
     "sync_ldap_profiles",
     "update_catalog",

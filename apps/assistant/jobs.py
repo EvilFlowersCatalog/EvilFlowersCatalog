@@ -1,72 +1,67 @@
 """Assistant job kinds (IP-031): annotation highlights, section summaries, figure descriptions."""
 
 from apps.core.models import Annotation, Entry
-from apps.tasks.kinds import JobKind, SystemKind, entry_scope, first_arg, registry
+from apps.tasks.contract import Dispatch, JobDefinition, Scope, Spec, entry_scope, registry, uuid_arg
+
+
+class HighlightSpec(Spec):
+    language: str | None = None
 
 
 @registry.register
-class HighlightAnnotationKind(JobKind):
-    name = "assistant.highlight_annotation"
+class HighlightAnnotationDefinition(JobDefinition[Annotation, HighlightSpec]):
+    kind = "assistant.highlight_annotation"
     title = "Annotation highlights"
     description = "Run the highlight agent for a pending agent annotation and store its highlights."
     task = "apps.assistant.tasks.highlight_annotation"
     subject_model = Annotation
-    options_schema = {
-        "type": "object",
-        "properties": {"language": {"type": ["string", "null"]}},
-        "additionalProperties": False,
-    }
+    spec_model = HighlightSpec
 
-    def subject_from_call(self, args, kwargs):
-        return first_arg(args, kwargs, "annotation_id")
-
-    def scope(self, annotation):
-        user_acquisition = getattr(annotation, "user_acquisition", None)
-        acquisition = getattr(user_acquisition, "acquisition", None)
+    def scope(self, annotation) -> Scope:
+        acquisition = getattr(getattr(annotation, "user_acquisition", None), "acquisition", None)
         return entry_scope(getattr(acquisition, "entry", None))
 
-    def args(self, job, annotation, options):
-        return [str(annotation.pk), options.get("language")]
+    def subject_from_call(self, args, kwargs):
+        return uuid_arg(args, kwargs, "annotation_id")
 
-    def retry_options(self, job):
-        args = job.job_args or []
-        return {"language": args[1] if len(args) > 1 else (job.job_kwargs or {}).get("language")}
+    def args(self, dispatch: Dispatch[Annotation, HighlightSpec]) -> list:
+        return [str(dispatch.subject.pk), dispatch.spec.language]
+
+
+class SummariseSpec(Spec):
+    force: bool = False
 
 
 @registry.register
-class SummariseSectionsKind(JobKind):
-    name = "assistant.summarise_sections"
+class SummariseSectionsDefinition(JobDefinition[Entry, SummariseSpec]):
+    kind = "assistant.summarise_sections"
     title = "Section summaries"
     description = "Generate the section summaries of one publication that are missing or stale (IP-030)."
     task = "apps.assistant.tasks.summarise_sections"
     subject_model = Entry
-    options_schema = {
-        "type": "object",
-        "properties": {"force": {"type": "boolean", "description": "Regenerate every summary."}},
-        "additionalProperties": False,
-    }
-
-    def subject_from_call(self, args, kwargs):
-        return first_arg(args, kwargs, "entry_id")
+    spec_model = SummariseSpec
 
     def scope(self, entry):
         return entry_scope(entry)
 
-    def args(self, job, entry, options):
-        return [str(entry.pk), bool(options.get("force"))]
+    def subject_from_call(self, args, kwargs):
+        return uuid_arg(args, kwargs, "entry_id")
+
+    def args(self, dispatch: Dispatch[Entry, SummariseSpec]) -> list:
+        return [str(dispatch.subject.pk), dispatch.spec.force]
+
+
+class DescribeFiguresSpec(Spec):
+    limit: int = 50
 
 
 @registry.register
-class DescribeFiguresKind(SystemKind):
-    name = "assistant.describe_figures"
+class DescribeFiguresDefinition(JobDefinition[None, DescribeFiguresSpec]):
+    kind = "assistant.describe_figures"
     title = "Figure descriptions"
     description = "Describe figures without a printed caption, off-peak, a batch at a time (IP-030)."
     task = "apps.assistant.tasks.describe_figures"
-    options_schema = {
-        "type": "object",
-        "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 1000}},
-        "additionalProperties": False,
-    }
+    spec_model = DescribeFiguresSpec
 
-    def kwargs(self, job, subject, options):
-        return {"limit": int(options.get("limit") or 50)}
+    def kwargs(self, dispatch: Dispatch[None, DescribeFiguresSpec]) -> dict:
+        return {"limit": dispatch.spec.limit}

@@ -459,8 +459,23 @@ time, never the source of truth):
 | `Author`, `Subject` | `authors`, `categories` | — |
 | `Section` | `outline(entry)` (distinct `Paragraph.section`, first and last page) | `NEXT → Section`, `SHOWS → Figure`, `DEFINES / DISCUSSES → Concept` |
 | `Figure` | `extraction_region` (figures, tables) | `REFERRED_FROM ← Section` (from `extraction_reference`) |
-| `Concept` | normalised term (lower-cased, accent-folded, lemma where available) | `RELATED_TO → Concept` (co-occurrence weight) |
-| — | section-level aggregation of `similar` paragraph links (≥ 3 links between two sections) | `Section SIMILAR_TO Section` (weight) |
+| `Concept {key, term, subject}` | normalised term (lower-cased, accent-folded) **scoped by the UDC main class** of the entry (`self-regulation@6`, `self-regulation@3`; #153) | `RELATED_TO → Concept` (co-occurrence weight) |
+| — | `extraction_section_similarity` (#151): section centroids of the paragraph embeddings, mean of the book's language subtracted, centred cosine ≥ 0.55, front/back matter left out | `Section SIMILAR_TO Section` (weight = that cosine) |
+
+*Updated 2026-11-14 (#151).* The original row aggregated `similar` paragraph links between sections. text-service
+creates those links only inside one run, so 0 of 1.64 M crossed two books and `SIMILAR_TO` was never drawn.
+Cross-book similarity is now computed by the catalog (`apps.extraction.similarity`) into a relational table
+that the projection reads. Raw centroid cosine is 0.91–0.94 for nearly any pair, so a mean is subtracted first,
+and it is the mean of the book's language. With one corpus mean, the 14 German books on dev kept their shared
+language component: every section of the *Alterssurvey* had pairs (up to 263 per section). Centred per language,
+it has 104 pairs over 33 of 176 sections. The 0.55 threshold was calibrated on dev: *Elements of Robotics* gets
+37 pairs over 21 of its 151 topical sections, and the top pairs are PID control ↔ PID control (0.71), state
+machines (0.64) and Bayes' rule (0.62). A threshold rather than top-k keeps a pair independent of which run
+arrived first. The library map (#152) centres publication vectors per language the same way.
+
+*Updated 2026-11-14 (#153).* A bare term merged homonyms across fields: tobacco-industry "self-regulation" and a
+learner's "self-regulation" became one node. Concepts are now one term in one field. Genuine cross-field
+concepts split as a consequence, which is accepted; `top_concepts` reports each one with its `field`.
 
 About 435 entries, ~13.6 K sections and 12.9 K figures and tables: a graph of tens of thousands of nodes. The 225 K
 paragraphs stay out of it.
@@ -483,6 +498,13 @@ returned):
   ranked by shared concepts and weight. Labelled into the ledger like any passage.
 - `library_overview`: concepts that span the most subjects, for "what is the library about".
 - Study walkthrough: "before this section" means sections that `DEFINES` the concepts this one `DISCUSSES`.
+  Within one book only earlier sections qualify. A later one goes to `defined_later` ("defined later in this
+  book") and is never offered as something to read first (#153).
+- Portal, read-only REST (#152): `GET /api/v1/sections/{key}/related`, `/sections/{key}/prerequisites`,
+  `/concepts?q=`, `/concepts/{key}`, `/graph/overview`. Off the graph: `/entries/map` (mutual 4-NN of centred
+  publication vectors over the caller's visible books) and `/entries/{id}/chapters` (outline plus intra-book
+  `similar` link counts per section pair). A section or concept reached only through hidden books is 404, and
+  counts include visible books only.
 
 **Sync.** A Celery task `graph.project_run(run_id)` runs after an extraction run becomes active (sections, figures,
 references, similar). `graph.project_concepts(section_summary_id)` runs after each summary. `graph.rebuild` drops and
@@ -692,6 +714,14 @@ within a turn, the cost that matters is round 1 of a new chat: ~200 extra tokens
 - [x] Section summary schema gains `concepts`; `key_concepts` writes `DEFINES` (as `MENTIONS {role: defines}`)
 - [x] `follow(label, "related")`, concepts in `library_overview`, "before this section" in walkthrough
 - [x] Tests: projection idempotence, ACL (a hidden entry never surfaces through the graph), rebuild equals incremental
+- [x] Cross-book `SIMILAR_TO` from section centroids (#151): `extraction_section_similarity` (migration
+  `extraction/0008`), `link_extraction --steps similarity`, run before `graph` in `post_process_run`;
+  `graph_rebuild --counts` reports edges
+- [x] Concepts scoped by UDC main class; prerequisites never point forward in the same book unlabelled (#153)
+- [x] Read-only REST for the portal (#152): related, prerequisites, concepts, overview, library map, chapter map
+- [ ] Dev: `migrate`, `link_extraction --steps similarity`, then `graph_rebuild` (concept keys changed); check
+  `graph_rebuild --counts` for `SIMILAR_TO` > 0, the total pairs and the most per section, and
+  `related_sections` for *Elements of Robotics*
 
 ### Phase 4: Structure, corpus, study
 
@@ -1418,4 +1448,5 @@ As in § API: ChatMessage.feedback; `assistant_eval export --feedback` prints to
 | 2026-11-14 | jdubec | Dev evaluation runs filed: EvilFlowersCatalog/knowledge#46 (backfill, Phase 0 baseline, pack A/B, cache gaps, disconnect, synthetic retrieval, quota from use) |
 | 2026-11-14 | jdubec | Review fixes: seconds quota off by default (a turn is 160–390 s today) and tools' own model requests booked; bound-chat tests with offset viewer pages; IP-block check on section headings in `get_entry`; a busy model during study is a tool error; slot saved only while the lease is still ours; softer empty-pack note; chapter-summary migration checked on data; phase checkboxes, Phase 3b AGE wording and the Configuration block brought in line with the code; status Accepted |
 | 2026-11-14 | jdubec | #145: `done` carries the stored answer's `message_id`; a study turn resolves the labels on its card's items into `citations` (frame and row) |
+| 2026-11-14 | jdubec | #151: cross-book `SIMILAR_TO` from section centroids centred per language (`extraction_section_similarity`, threshold 0.55 calibrated on dev, English and German); section headings in the REST routes follow the outline's rule (null for LCP and outside IP ranges); #153: concepts scoped by UDC main class, walkthrough `defined_later` instead of forward prerequisites; #152: read-only graph REST for the portal (related, prerequisites, concepts, overview, library map, chapter map) |
 | 2026-11-13 | jdubec | Second read-back: cache misses tied to capped turns or pauses, not to every follow-up turn (span-to-chat mapping); capped-round prefix fix moved to Phase 0; provenance markers on the research table; exam-prep share and the bound-chat figure behaviour stated exactly; unverified numbers marked |

@@ -6,11 +6,15 @@
 | `Author {id, name}`, `Subject {id, term}` | authors, categories | — |
 | `Section {key, entry_id, run_id, title, first_page, last_page, seq}` | `outline(run)` | `NEXT → Section`, `SHOWS → Figure`, `MENTIONS {role} → Concept`, `SIMILAR_TO {weight} → Section` |
 | `Figure {id, entry_id, kind, page, caption}` | referenced figures and tables | — |
-| `Concept {key, term}` | section summaries, `key_concepts` | — |
+| `Concept {key, term, subject}` | section summaries, `key_concepts` | — |
+
+A `Concept` is one term in one field: its key is the folded term scoped by the UDC main class of the entry
+(`concept_subject`), so a homonym in another field is another node (#153).
 
 `MENTIONS` carries `role: defines | discusses` (the proposal's DEFINES / DISCUSSES), so one edge label serves
-both and a query can ask for either. `SIMILAR_TO` aggregates `similar` paragraph links between two sections of
-different publications (at least `MIN_SIMILAR_LINKS`). The 225 K paragraphs stay out of the graph.
+both and a query can ask for either. `SIMILAR_TO {weight}` joins two sections of different publications whose
+centred centroids are close (`SectionSimilarity`, #151; weight is that cosine, 0.55-1). The 270 K paragraphs
+stay out of the graph.
 
 Every projection is idempotent: `project_run` deletes the entry's sections and figures before creating them,
 `project_concepts` replaces a section's concept edges. `rebuild` drops the graph and projects everything again,
@@ -20,16 +24,13 @@ and equals the incremental result.
 import hashlib
 import logging
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-from django.db import connection
+from django.db.models import Q
 
 from apps.graph import age
 
 logger = logging.getLogger(__name__)
-
-#: `similar` paragraph links between two sections before they are `SIMILAR_TO`.
-MIN_SIMILAR_LINKS = 3
 
 #: Characters of a figure caption kept on its node.
 CAPTION_CHARS = 200
@@ -46,10 +47,34 @@ def section_key(run_id, section: str) -> str:
     return hashlib.sha1(f"{run_id}\x00{section}".encode("utf-8")).hexdigest()[:20]
 
 
-def concept_key(term: str) -> str:
+def concept_key(term: str, subject: str = "") -> str:
+    """The folded term, scoped by `subject` so a homonym in another field is another node (#153).
+
+    "self-regulation" in tobacco policy (UDC 61) and in mathematics education (UDC 37) are two concepts:
+    `self-regulation@6` and `self-regulation@3`. An entry filed nowhere keeps the bare term.
+    """
     from apps.assistant.citations import fold
 
-    return " ".join(re.sub(r"[^\w\s-]", " ", fold(term)).split())[:120]
+    folded = " ".join(re.sub(r"[^\w\s-]", " ", fold(term)).split())[:120]
+    if not folded:
+        return ""
+    return f"{folded}@{subject}" if subject else folded
+
+
+def concept_subject(entry) -> str:
+    """The field an entry's concepts belong to: the UDC main class of its categories (first digit).
+
+    Category terms of the STU catalogs are UDC codes ("61", "519.8", "72:502/504"); a term of another scheme
+    scopes by itself. An entry filed under several fields takes the lowest, so the choice is stable; one filed
+    nowhere returns "" and its concepts stay unscoped.
+    """
+    fields = set()
+    for term in entry.categories.values_list("term", flat=True):
+        term = (term or "").strip()
+        if term:
+            fields.add(term[0] if term[0].isdigit() else concept_key(term))
+    fields.discard("")
+    return min(fields) if fields else ""
 
 
 def _batches(rows: List[dict]):
@@ -179,49 +204,48 @@ def project_run(run) -> Dict[str, int]:
     age.execute_many(statements)
 
     summaries = SectionSummary.objects.filter(run=run)
+    subject = concept_subject(entry)
     for summary in summaries:
-        project_concepts(summary)
+        project_concepts(summary, subject)
     return {"sections": len(rows), "figures": len(figures), "similar": len(similar), "summaries": len(summaries)}
 
 
 def _similar_sections(run) -> List[dict]:
-    """`[{a, b, weight}]`: sections of this run and of other active runs joined by enough `similar` links.
+    """`[{a, b, weight}]`: sections of this run and of other active runs that are similar (#151).
 
-    Links in both directions: the run's sections were just re-created, so edges from sections projected
-    earlier have to be drawn again too. An edge to a section not projected yet is drawn when that run is.
+    From `SectionSimilarity` (`apps.extraction.similarity`), never computed here, so a rebuild equals the
+    incremental projection. Pairs in both directions: the run's sections were just re-created, so edges from
+    sections projected earlier have to be drawn again too. An edge to a section not projected yet is drawn when
+    that run is.
     """
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT s.run_id, s.section, t.run_id, t.section, COUNT(*) FROM extraction_paragraph_link l "
-            "JOIN extraction_paragraph s ON s.id = l.source_id "
-            "JOIN extraction_paragraph t ON t.id = l.target_id "
-            "JOIN extraction_run rs ON rs.id = s.run_id "
-            "JOIN extraction_run rt ON rt.id = t.run_id "
-            "WHERE l.kind = 'similar' AND (s.run_id = %s OR t.run_id = %s) AND s.run_id <> t.run_id "
-            "AND rs.is_active AND rt.is_active AND s.section IS NOT NULL AND t.section IS NOT NULL "
-            "GROUP BY s.run_id, s.section, t.run_id, t.section HAVING COUNT(*) >= %s",
-            [run.pk, run.pk, MIN_SIMILAR_LINKS],
-        )
-        rows = cursor.fetchall()
+    from apps.extraction.models import SectionSimilarity
+
+    rows = (
+        SectionSimilarity.objects.filter(Q(source=run) | Q(target=run), source__is_active=True, target__is_active=True)
+        .values_list("source_id", "source_section", "target_id", "target_section", "score")
+        .order_by("source_id", "source_section", "target_id", "target_section")
+    )
     return [
-        {"a": section_key(source_run, source), "b": section_key(target_run, target), "weight": count}
-        for source_run, source, target_run, target, count in rows
+        {"a": section_key(source_run, source), "b": section_key(target_run, target), "weight": score}
+        for source_run, source, target_run, target, score in rows
     ]
 
 
-def project_concepts(summary) -> int:
+def project_concepts(summary, subject: Optional[str] = None) -> int:
     """Replace a section's `MENTIONS` edges with the concepts of its summary. Returns how many."""
+    if subject is None:
+        subject = concept_subject(summary.entry)
     concepts = []
     seen = set()
     for item in summary.concepts or []:
         if not isinstance(item, dict) or not item.get("term"):
             continue
-        key = concept_key(str(item["term"]))
+        key = concept_key(str(item["term"]), subject)
         if not key or key in seen:
             continue
         seen.add(key)
         role = "defines" if item.get("role") == "defines" else "discusses"
-        concepts.append({"key": key, "term": str(item["term"])[:120], "role": role})
+        concepts.append({"key": key, "term": str(item["term"])[:120], "subject": subject, "role": role})
     return replace_concepts(section_key(summary.run_id, summary.section), concepts)
 
 
@@ -238,25 +262,28 @@ def replace_concepts(section: str, concepts: List[dict], roles=("defines", "disc
         statements.append(
             (
                 "MATCH (s:Section {key: $key}) UNWIND $rows AS row "
-                "MERGE (c:Concept {key: row.key}) SET c.term = row.term "
+                "MERGE (c:Concept {key: row.key}) SET c.term = row.term, c.subject = row.subject "
                 "CREATE (s)-[:MENTIONS {role: row.role}]->(c)",
-                {"key": section, "rows": concepts},
+                {"key": section, "rows": [{"subject": "", **concept} for concept in concepts]},
             )
         )
     age.execute_many(statements)
     return len(concepts)
 
 
-def add_definitions(run_id, section: str, terms: List[str]) -> int:
+def add_definitions(run_id, section: str, terms: List[str], entry) -> int:
     """`key_concepts` (study mode) records the terms a section defines, next to its summary's concepts."""
+    subject = concept_subject(entry)
     concepts = [
-        {"key": concept_key(term), "term": term[:120], "role": "defines"} for term in terms if concept_key(term)
+        {"key": concept_key(term, subject), "term": term[:120], "subject": subject, "role": "defines"}
+        for term in terms
+        if concept_key(term)
     ]
     if not available() or not concepts:
         return 0
     age.cypher(
         "MATCH (s:Section {key: $key}) UNWIND $rows AS row "
-        "MERGE (c:Concept {key: row.key}) SET c.term = row.term "
+        "MERGE (c:Concept {key: row.key}) SET c.term = row.term, c.subject = row.subject "
         "MERGE (s)-[:MENTIONS {role: row.role}]->(c)",
         {"key": section_key(run_id, section), "rows": concepts},
     )
@@ -291,12 +318,19 @@ def rebuild() -> Dict[str, int]:
     return totals
 
 
+#: Edge labels `counts` reports.
+EDGE_LABELS = ("HAS_SECTION", "NEXT", "SHOWS", "MENTIONS", "SIMILAR_TO", "WRITTEN_BY", "FILED_UNDER")
+
+
 def counts() -> Dict[str, int]:
-    """Nodes per label, to compare with the relational tables (drift check)."""
+    """Nodes per label, then edges per label, to compare with the relational tables (drift check)."""
     if not available():
         return {}
     result = {}
     for label in ("Entry", "Author", "Subject", "Section", "Figure", "Concept"):
         rows = age.cypher(f"MATCH (n:{label}) RETURN count(n)")
+        result[label] = rows[0][0] if rows else 0
+    for label in EDGE_LABELS:
+        rows = age.cypher(f"MATCH ()-[r:{label}]->() RETURN count(r)")
         result[label] = rows[0][0] if rows else 0
     return result

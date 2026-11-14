@@ -1,76 +1,73 @@
 @startuml sequence-ocr-job-lifecycle
 !include elvira.iuml
 ' =============================================================================
-' What: an OCR job (#146, first IP-031 kind) has two independent sources of
-'       truth that the ledger joins by task id: Celery events say where the task
-'       is (queued, received, started, succeeded, failed, revoked), the worker's
-'       report says what it produced; only the report changes the acquisition,
-'       and the changed file re-queues LCP encryption and extraction as child jobs.
-' Kind: UML sequence diagram, proposal (IP-031). Scope: start, run, report,
-'       follow-up jobs, failure + retry, revoke. Omitted: authentication details,
-'       telemetry spans, the sweeper (a job with no event past its time limit
-'       becomes lost), how LCP and extraction themselves run.
-' Source: apps/tasks/management/commands/celery_event_handler.py;
-'         apps/core/models/acquisition.py background_tasks; evilflowers-ocr-worker
-'         ef4311d evilflowers_ocr_worker/__init__.py; apps/readium/views/hooks.py
-'         (report pattern, #99); EvilFlowersCatalog#146 (2026-11-14).
+' What: a client only declares (apply a spec, set desired = cancelled); the
+'       facade's reconciler takes the transitions the job state machine allows,
+'       runs report facts, and a provider's report or domain change is turned
+'       into further declarations (follow-up jobs) — nothing calls retry/revoke.
+' Kind: UML sequence diagram, proposal (IP-031 rev. 2). Scope: one OCR job
+'       (#146) applied, run, reported; a blocked LCP follow-up that proceeds on
+'       its own; cancel; a domain change observed. Omitted: auth, telemetry.
+' Source: EvilFlowersCatalog IP-031 rev. 2; diagrams state-job, state-job-run
+'         (2026-11-14).
 ' =============================================================================
 
-title OCR job lifecycle: start, events, report, follow-ups, retry and revoke (proposal, 2026-11-14)
+title One OCR job, declaratively: apply, reconcile, facts, follow-ups, cancel (proposal rev. 2, 2026-11-14)
 
 actor "Admin\nelvira-portal" as admin
-participant "catalog API\n/api/v1/jobs" as api
-participant "JobService\n+ OcrKind" as svc
-database "Ledger\npostgresql18" as ledger
+participant "REST\n/api/v1/jobs" as api
+participant "JobFacade\n+ Reconciler" as facade
+participant "Definition\n(provider)" as definition
+database "Ledger\nJob · JobRun" as ledger
 queue "Redis db 7" as redis
 participant "ocr worker" as worker
-participant "Event listener\nevilflowers-beat" as listener
 
-== start ==
-admin -[$accent_msg()]> api : <b>POST /api/v1/jobs</b>\n{kind: files.ocr, subject: acquisition}
-api -> svc : start(kind, subject, user)
-svc -> svc : permission · eligible?\n(PDF, language, no active job)
-svc -[$accent_msg()]> ledger : <b>INSERT job (status queued)</b>
-svc -> redis : on commit: send_task(\n…ocr, task_id = job.id)
-api --> admin : 201 {job: queued}
+== apply (declare) ==
+admin -[$accent_msg()]> api : <b>POST /api/v1/jobs</b>\n{kind: files.ocr, subject_id, spec: {redo: false}}
+api -> facade : apply(kind, subject, spec, desired = completed)
+facade -> definition : spec model validates spec
+facade -> ledger : upsert Job(kind, subject):\nspec, generation + 1, state pending
+api --> admin : 201 {state: pending, generation: 1}
+facade -[$accent_msg()]> facade : <b>reconcile(job)</b> (on commit)
+facade -> definition : check(subject, spec) → ok
+facade -> ledger : JobRun(queued); Job: queued,\nobserved_generation = generation
+facade -> definition : dispatch(run)
+definition -> redis : send_task(task_id = run id)
 
-== run (Celery events) ==
+== facts ==
 redis -> worker : consume
 worker -> redis : task-received · task-started
-redis -> listener : events (celeryev)
-listener -> ledger : UPDATE status received → started\n(event timestamp, worker, attempt)
-worker -> worker : ocrmypdf(skip_text)\n→ catalogs/…/ocr/{job}.pdf
+redis -> facade : events (via celery_event_handler)
+facade -> ledger : run: started → Job: running
 
-== report (domain outcome) ==
-worker -[$accent_msg()]> api : <b>POST /api/v1/jobs/{id}/report</b>\n{output, pages, pages_ocred}
-api -> svc : report(job, payload)
-svc -> ledger : UPDATE report, reported_at;\nacquisition gets the new file + checksum
-svc -> ledger : INSERT child jobs (parent = job):\nreadium.encrypt · extraction.run
-svc -> redis : send_task(child tasks)
-api --> worker : 200
-worker -> redis : task-succeeded (runtime, result)
-redis -> listener : event
-listener -> ledger : UPDATE status succeeded
+== report → follow-ups are declared too ==
+worker -[$accent_msg()]> api : <b>PUT /api/v1/jobs/runs/{run}/report</b>\n{status: done, output, pages}
+api -> facade : report(run, payload)
+facade -> definition : on_report(subject, payload)\n→ file replaced, checksum cleared
+definition -> facade : apply(readium.encrypt, subject,\n{reencrypt: true}, cause = job)
+facade -> definition : check(…) → refused: 2 active loans
+facade -> ledger : child Job: blocked (reason: active loans)
+worker -> redis : task-succeeded
+redis -> facade : event (via celery_event_handler)
+facade -> ledger : run: succeeded → Job: succeeded
 
-== failure and retry ==
-worker -> redis : task-failed (exception, traceback)
-redis -> listener : event
-listener -> ledger : UPDATE status failed, error, traceback
-admin -> api : POST /api/v1/jobs/{id}/retry
-api -> svc : retry(job)
-svc -> ledger : INSERT job (retry_of = id, queued)
-svc -> redis : send_task(new task_id)
+== later: the blocked job proceeds by itself ==
+facade -> facade : reconcile tick (beat)
+facade -> definition : check(…) → ok (loans ended)
+facade -> ledger : child JobRun(queued); child Job: queued
+facade -> definition : dispatch(run) → lcpencrypt
 
-== revoke ==
-admin -> api : POST /api/v1/jobs/{id}/revoke\n{terminate}
-api -> svc : revoke(job)
-svc -> redis : control.revoke(task_id)\n(pidbox broadcast)
-svc -> ledger : UPDATE status revoked at once\n(queued/received), revoke_requested_at
-redis -> worker : revoke
-worker -> redis : task-revoked (on receipt)
-redis -> listener : event
-listener -> ledger : revoked stays final;\na late report gets 409
+== cancel (declare) ==
+admin -> api : PATCH /api/v1/jobs/{id}\n{desired_state: cancelled}
+api -> facade : patch(job, desired = cancelled)
+facade -> facade : reconcile: queued → revoke\n(running → cancelling until the run ends)
+facade -> redis : control.revoke(run id)
+facade -> ledger : run: revoked · Job: cancelled
 
-caption Celery events and the worker's report are separate: events drive the status, the report drives the change\nto the acquisition. A report without task-succeeded (or the reverse) is visible in the ledger instead of lost.\nEvery start, retry and follow-up writes its ledger row before the task is sent, so nothing runs unrecorded.
+== domain change observed ==
+definition -> facade : observe(subject) on EncryptedContent\nsaved (webhook: registered)
+facade -> ledger : Job: succeeded (observed),\nlisted even if nobody applied it
+
+caption The only client inputs are POST (apply a spec) and PATCH (change spec or desired state); retry = apply again (generation + 1).\nThe reconciler decides: dispatch, block (re-checked later), revoke. Runs and domain changes are facts that move the state machine.\nA provider's consequences (re-encrypt after OCR) are declarations through the same facade, never direct task sends.
 footer ELVIRA · FIIT STU · EvilFlowersCatalog · docs/diagrams/sequence-ocr-job-lifecycle.puml
 @enduml

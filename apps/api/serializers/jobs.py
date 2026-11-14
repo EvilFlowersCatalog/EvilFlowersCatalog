@@ -1,42 +1,31 @@
+"""`/api/v1/jobs` (IP-031 rev. 2): jobs (declared and observed state), their runs, kinds, plans."""
+
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import AliasChoices, Field
 
 from apps.api.serializers import Serializer
 
+_RECENT_RUNS = 20
+_RECENT_EVENTS = 100
 
-class JobSerializer:
-    class Brief(Serializer):
-        id: UUID
-        kind: Optional[str]
-        name: str
-        status: str
-        created_at: datetime
-        finished_at: Optional[datetime]
 
+class RunSerializer:
     class Base(Serializer):
-        """A job in a list: what it is, where it is, whether it needs attention."""
-
         id: UUID
-        kind: Optional[str] = Field(description="Job kind (`GET /api/v1/jobs/kinds`); null for tasks without one.")
+        job_id: Optional[UUID]
         name: str = Field(description="Celery task name.")
+        kind: Optional[str]
         status: str = Field(
-            description="queued, received, started, retrying, succeeded, failed, revoked, rejected or lost."
+            description="queued, received, started, retrying, succeeded, failed, revoked, rejected, lost."
         )
-        stale: bool = Field(description="Queued for longer than EVILFLOWERS_JOBS_STALE_MINUTES.")
+        parent_id: Optional[UUID]
         queue: Optional[str]
         worker: Optional[str]
-        subject_type: Optional[str] = Field(
-            validation_alias=AliasChoices("subject_label", "subject_type"), description="`app_label.model`."
-        )
-        subject_id: Optional[UUID]
-        catalog_id: Optional[UUID]
-        entry_id: Optional[UUID]
-        parent_id: Optional[UUID]
-        retry_of_id: Optional[UUID]
-        requested_by_id: Optional[UUID]
         attempts: int
         error: Optional[str]
         runtime: Optional[float]
@@ -47,7 +36,14 @@ class JobSerializer:
         started_at: Optional[datetime]
         finished_at: Optional[datetime]
         reported_at: Optional[datetime]
-        revoke_requested_at: Optional[datetime]
+
+    class Detail(Base):
+        job_args: Any
+        job_kwargs: Any
+        args_exact: bool
+        result: Any
+        traceback: Optional[str]
+        report: Any
 
     class Event(Serializer):
         type: str
@@ -55,66 +51,113 @@ class JobSerializer:
         hostname: Optional[str]
         data: dict
 
+
+class JobSerializer:
+    class Base(Serializer):
+        """A job: what was declared (spec, desired_state, generation) and what is observed (state)."""
+
+        id: UUID
+        kind: str
+        subject_type: Optional[str] = Field(
+            validation_alias=AliasChoices("subject_label", "subject_type"), description="`app_label.model`."
+        )
+        subject_id: Optional[UUID]
+        catalog_id: Optional[UUID]
+        entry_id: Optional[UUID]
+        spec: dict
+        desired_state: str = Field(description="completed or cancelled: what a client declared.")
+        state: str = Field(
+            description="pending, blocked, queued, running, cancelling, succeeded, failed, cancelled: what is observed."
+        )
+        stale: bool = Field(description="Queued for longer than EVILFLOWERS_JOBS_STALE_MINUTES.")
+        reason: Optional[str] = Field(description="Why the job is blocked or failed.")
+        generation: int = Field(description="Bumped by every apply that asks for a new run.")
+        observed_generation: int
+        attempts: int = Field(description="Runs of the current generation.")
+        detail: dict = Field(description="What the provider observed in the domain (e.g. `encryption`).")
+        current_run: Optional[RunSerializer.Base]
+        cause_id: Optional[UUID] = Field(description="The job whose outcome declared this one.")
+        requested_by_id: Optional[UUID]
+        created_at: datetime
+        updated_at: datetime
+        last_transition_at: Optional[datetime]
+
+    class RunCount(Serializer):
+        name: str
+        status: str
+        count: int
+
     class Detail(Base):
-        options: dict
-        job_args: Any
-        job_kwargs: Any
-        args_exact: bool
-        result: Any
-        traceback: Optional[str]
-        report: Any
-        events: List["JobSerializer.Event"] = []
-        children: List["JobSerializer.Brief"] = []
-        retries: List["JobSerializer.Brief"] = []
-        detail: dict = Field(default_factory=dict, description="Kind-specific fields, e.g. `encryption` (#148).")
+        runs: list[RunSerializer.Base] = Field(
+            description=f"The job's own runs, newest first (at most {_RECENT_RUNS})."
+        )
+        run_counts: list["JobSerializer.RunCount"] = Field(
+            description="Every run of the job (its follow-up tasks too) counted per task name and status (#150)."
+        )
+        events: list[RunSerializer.Event] = Field(description=f"Transitions, newest last (at most {_RECENT_EVENTS}).")
+        consequences: list["JobSerializer.Base"] = Field(description="Jobs this job's outcome declared.")
+
+        @classmethod
+        def from_job(cls, job) -> "JobSerializer.Detail":
+            # Views call this by name so `apps.openapi` types the response.
+            from django.db.models import Count
+
+            base = JobSerializer.Base.model_validate(job).model_dump()
+            own_runs = job.runs.filter(kind=job.kind).order_by("-created_at")
+            counts = job.runs.values("name", "status").annotate(count=Count("id")).order_by("name", "status")
+            events = list(job.events.order_by("-timestamp")[:_RECENT_EVENTS])[::-1]
+            return cls.model_validate(
+                {
+                    **base,
+                    "runs": [RunSerializer.Base.model_validate(run) for run in own_runs[:_RECENT_RUNS]],
+                    "run_counts": list(counts),
+                    "events": [RunSerializer.Event.model_validate(event) for event in events],
+                    "consequences": [JobSerializer.Base.model_validate(child) for child in job.consequences.all()],
+                }
+            )
+
+    class Plan(Serializer):
+        """`POST /api/v1/jobs?dry_run=true`: what the apply would do; nothing stored or sent."""
+
+        kind: str
+        subject_id: Optional[UUID]
+        spec: dict
+        outcome: str = Field(description="would-run, would-block or refused.")
+        reason: Optional[str]
+        preview: dict
+        job: Optional["JobSerializer.Base"] = Field(description="The job as it is now, if there is one.")
+
+        @classmethod
+        def from_plan(cls, plan) -> "JobSerializer.Plan":
+            return cls.model_validate(
+                {
+                    "kind": plan.kind,
+                    "subject_id": plan.subject_id,
+                    "spec": dict(plan.spec),
+                    "outcome": plan.outcome,
+                    "reason": plan.reason,
+                    "preview": dict(plan.preview),
+                    "job": JobSerializer.Base.model_validate(plan.job) if plan.job else None,
+                }
+            )
 
     class Kind(Serializer):
-        name: str
+        kind: str
         title: str
         description: str
         task: str
         subject_type: Optional[str]
-        startable: bool
-        exclusive: bool
+        keyed: bool = Field(description="False: run-only kind (recorded, never declared).")
         reports: bool
         terminate_safe: bool
-        options_schema: dict
-        actions: List[dict]
+        max_attempts: int
+        spec_schema: dict
 
     class Summary(Serializer):
-        kind: Optional[str]
-        statuses: dict
+        kind: str
+        states: dict
         stale: int
 
 
 JobSerializer.Detail.model_rebuild()
-
-
-def job_detail(job) -> "JobSerializer.Detail":
-    """The full job: events, children, retries and the kind's own fields."""
-    from apps.tasks.kinds import registry
-
-    base = JobSerializer.Base.model_validate(job).model_dump()
-    kind = registry.get(job.kind)
-    detail = {}
-    if kind is not None:
-        try:
-            detail = kind.detail(job, kind.get_subject(job.subject_id)) or {}
-        except Exception:  # noqa: BLE001 — a kind's extra fields must not hide the job itself
-            detail = {"error": "detail unavailable"}
-    return JobSerializer.Detail.model_validate(
-        {
-            **base,
-            "options": job.options or {},
-            "job_args": job.job_args,
-            "job_kwargs": job.job_kwargs,
-            "args_exact": job.args_exact,
-            "result": job.result,
-            "traceback": job.traceback,
-            "report": job.report,
-            "events": [JobSerializer.Event.model_validate(event) for event in job.events.order_by("timestamp")[:500]],
-            "children": [JobSerializer.Brief.model_validate(child) for child in job.children.order_by("created_at")],
-            "retries": [JobSerializer.Brief.model_validate(retry) for retry in job.retries.order_by("created_at")],
-            "detail": detail,
-        }
-    )
+JobSerializer.Plan.model_rebuild()

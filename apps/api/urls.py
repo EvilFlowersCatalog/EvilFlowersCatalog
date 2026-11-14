@@ -33,6 +33,7 @@ from apps.dataverse.views import PrepublishView as _DataversePrepublishView
 from apps.extraction import admin_views as extraction_admin
 from apps.extraction import discovery as extraction_discovery
 from apps.extraction import views as extraction_views
+from apps.graph import views as graph_views
 from apps.readium.views.statistics import StatisticsView
 
 urlpatterns = [
@@ -69,6 +70,14 @@ urlpatterns = [
     path("entries/facets", entries.EntryFacets.as_view()),
     path("entries/suggest", entries.EntrySuggest.as_view()),
     path("entries/passages", extraction_discovery.EntryPassages.as_view(), name="entry-passages"),
+    # The library graph and the vectors behind it, read-only for the portal (#152)
+    path("entries/map", graph_views.LibraryMap.as_view(), name="entry-map"),
+    path("entries/<uuid:entry_id>/chapters", graph_views.EntryChapters.as_view(), name="entry-chapters"),
+    path("sections/<str:key>/related", graph_views.SectionRelated.as_view(), name="section-related"),
+    path("sections/<str:key>/prerequisites", graph_views.SectionPrerequisites.as_view(), name="section-prerequisites"),
+    path("concepts", graph_views.ConceptList.as_view(), name="concept-list"),
+    path("concepts/<str:key>", graph_views.ConceptDetail.as_view(), name="concept-detail"),
+    path("graph/overview", graph_views.GraphOverview.as_view(), name="graph-overview"),
     # Recommendations and figures from the extraction index (IP-018 Phase 8)
     path("entries/<uuid:entry_id>/similar", extraction_discovery.EntrySimilar.as_view(), name="entry-similar"),
     # IP-023: ratings and reviews
@@ -193,14 +202,12 @@ urlpatterns = [
         name="notification-contact-detail",
     ),
     # Background jobs (IP-031)
-    path("jobs", jobs.JobManagement.as_view(), name="job-management"),
+    path("jobs", jobs.JobCollection.as_view(), name="job-collection"),
     path("jobs/kinds", jobs.JobKinds.as_view(), name="job-kinds"),
     path("jobs/summary", jobs.JobSummary.as_view(), name="job-summary"),
+    path("jobs/runs", jobs.RunCollection.as_view(), name="job-run-collection"),
+    path("jobs/runs/<uuid:run_id>/report", jobs.RunReport.as_view(), name="job-run-report"),
     path("jobs/<uuid:job_id>", jobs.JobDetail.as_view(), name="job-detail"),
-    path("jobs/<uuid:job_id>/retry", jobs.JobRetry.as_view(), name="job-retry"),
-    path("jobs/<uuid:job_id>/revoke", jobs.JobRevoke.as_view(), name="job-revoke"),
-    path("jobs/<uuid:job_id>/report", jobs.JobReport.as_view(), name="job-report"),
-    path("jobs/<uuid:job_id>/actions/<slug:action>", jobs.JobActionView.as_view(), name="job-action"),
     # Status
     path("status", status.StatusManagement.as_view(), name="status"),
     # GitHub #131: admin dashboard statistics

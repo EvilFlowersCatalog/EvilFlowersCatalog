@@ -1,7 +1,8 @@
 """Listen to Celery task events and write them to the job ledger (IP-031).
 
 Every `task-*` event of every worker (the catalog's and the services') goes through
-`apps.tasks.ledger.apply_event`, one transaction and one span per event.
+`apps.tasks.infrastructure.ledger.apply_event`, one transaction and one span per event; the facade
+moves each run's job (IP-031 rev. 2) once that transaction commits.
 
 Celery events are pub/sub: an event nobody stores is gone. So an event this process cannot store
 because the database is unreachable is kept in memory (bounded) and replayed before the next one;
@@ -19,7 +20,7 @@ from django.db import transaction
 from celery.events import EventReceiver
 from kombu import Connection
 
-from apps.tasks import ledger
+from apps.tasks.infrastructure import ledger
 from evil_flowers_catalog import profiling, telemetry
 from evil_flowers_catalog.celery import app
 

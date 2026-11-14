@@ -1,106 +1,98 @@
 @startuml component-background-jobs
 !include elvira.iuml
 ' =============================================================================
-' What: inside the catalog, one JobService owns every way a job starts, changes
-'       or is read: the REST API, the MCP tools and domain signals all go through
-'       it; it asks the JobKind registry what a kind needs (subject, permission,
-'       arguments, report handling) and writes one ledger (JobProtocol +
-'       JobEvent), which the Celery event listener also writes. OCR (#146) is the
-'       first kind; LCP encryption and extraction keep their own models and
-'       register as kinds that point at them.
-' Kind: UML component diagram, specification level, proposal (IP-031). Layers top
-'       to bottom: callers, interface adapters, job core, kinds, transport.
-'       Scope: the catalog's job components. Omitted: auth backends,
-'       serializers, telemetry, the extraction ingest API internals.
-' Source: apps/tasks (models.py, management/commands/celery_event_handler.py,
-'         tasks.py); evil_flowers_catalog/celery.py; apps/core/models/acquisition.py
-'         background_tasks; apps/readium (EncryptedContent, views/hooks.py);
-'         apps/extraction/services.py; apps/mcp/tools; EvilFlowersCatalog#146
-'         (2026-11-14).
+' What: one facade (JobFacade) is the only way in: the single REST resource
+'       /api/v1/jobs, the MCP tools and the domain triggers apply specs and read
+'       jobs through it; apps never get their own job endpoints, they plug in a
+'       JobDefinition (the contract) and the core drives every job through the
+'       same state machine. Dependencies point inwards: providers and adapters
+'       depend on the domain contract, the domain depends on nothing.
+' Kind: UML component diagram, specification level, proposal (IP-031 rev. 2).
+'       Layers (clean architecture): interface adapters, application, domain,
+'       infrastructure; providers live in their apps. Omitted: auth, telemetry.
+' Source: EvilFlowersCatalog IP-031 rev. 2; apps/tasks (2026-11-14).
 ' =============================================================================
 
-title Background jobs inside the catalog: one service, one registry, one ledger (proposal, 2026-11-14)
+title Background jobs: one facade, one contract, one state machine (proposal rev. 2, 2026-11-14)
 
 actor "Admin · elvira-portal" as admin
 component "MCP client" as mcpc
-component "ocr worker\nevilflowers-ocr-service" as worker <<proposed>>
+component "Service worker\n(ocr, lcpencrypt, …)" as worker
 
-package "evilflowers (catalog)" {
-
-  package "interface adapters" as adapters {
-    component "JobViews\n/api/v1/jobs …" as api <<proposed>>
-    component "JobReportView\n/api/v1/jobs/{id}/report" as report <<proposed>>
-    component "MCP job tools\napps.mcp" as mcp <<proposed>>
-    component "Domain triggers\nupload (on commit)" as signals
-  }
-
-  package "apps.tasks · job core" as core {
-    component "JobService\nstart · retry · revoke · report" as svc <<proposed>> <<focus>>
-    component "JobKind registry" as registry <<proposed>>
-    database "Ledger\nJobProtocol · JobEvent" as ledger
-    component "Event listener\ncelery_event_handler" as listener
-    component "Sweeper · prune\nbeat tasks" as sweeper <<proposed>>
-    component "Publish hook\nbefore_task_publish" as hook <<proposed>>
-  }
-
-  package "job kinds (implement JobKind)" as kinds {
-    component "files.ocr\nfirst kind (issue 146)" as ocr <<proposed>>
-    component "readium.encrypt\n→ EncryptedContent" as lcp <<proposed>>
-    component "extraction.run\n→ ExtractionRun" as ext <<proposed>>
-    component "in-process\napps.*.tasks" as local <<proposed>>
-  }
-
-  component "Celery app\nsend_task · control.revoke" as celery
+package "interface adapters" as adapters {
+  component "REST /api/v1/jobs\nGET · POST (apply) · PATCH\nPUT runs/{id}/report" as rest <<proposed>>
+  component "MCP job tools\nlist · get · apply" as mcp <<proposed>>
+  component "Celery event listener\ncelery_event_handler" as listener
+  component "Publish hook\nbefore_task_publish" as hook
 }
 
-queue "Redis db 7\ntasks · celeryev · pidbox" as redis
+package "application" as application {
+  component "JobFacade\napply · patch · get · list ·\nreport · observe" as facade <<proposed>> <<focus>>
+  component "Reconciler\nreconcile(job) per state machine" as reconciler <<proposed>>
+}
+
+package "domain (no Django, no Celery)" as domain {
+  component "Job state machine\ntransition(job, trigger)" as jobsm <<proposed>>
+  component "Run state machine\napply(run, event)" as runsm <<proposed>>
+  component "JobDefinition (Protocol)\nspec model · check · dispatch ·\nobserve · on_report · scope" as contract <<proposed>>
+  component "Registry\nname → definition" as registry <<proposed>>
+}
+
+package "infrastructure" as infra {
+  database "Job · JobRun · JobEvent\n(Django ORM repositories)" as repo <<proposed>>
+  component "CeleryDispatcher\nsend_task · control.revoke" as dispatcher <<proposed>>
+  component "Beat: reconcile tick ·\nsweep · prune" as beat <<proposed>>
+}
+
+component "Providers: apps/<app>/jobs.py ×23\nfiles.ocr · readium.encrypt · extraction.run\nmaintenance.* · core.* · assistant.* · notifications" as providers <<proposed>>
 
 ' ---- layout only ------------------------------------------------------------------
 admin -[hidden]right- mcpc
 mcpc -[hidden]right- worker
-api -[hidden]right- report
-report -[hidden]right- mcp
-mcp -[hidden]right- signals
-ocr -[hidden]right- lcp
-lcp -[hidden]right- ext
-ext -[hidden]right- local
-sweeper -[hidden]down- ocr
-celery -[hidden]down- lcp
+rest -[hidden]right- mcp
+mcp -[hidden]right- listener
+listener -[hidden]right- hook
+jobsm -[hidden]down- runsm
+registry -[hidden]down- contract
+repo -[hidden]down- dispatcher
+dispatcher -[hidden]down- beat
+contract -[hidden]down- providers
 
-' ---- callers into the adapters ----------------------------------------------------
-admin -down-> api : HTTPS · Jobs REST
+' ---- in -------------------------------------------------------------------------------
+admin -down-> rest : HTTPS
 mcpc -down-> mcp : MCP
-worker -down-> report : HTTP POST · report
+worker -down-> rest : report (service key)
+rest -[$accent()]down-> facade : <b>apply(spec, desired)</b>
+mcp -down-> facade : apply · get · list
+listener -down-> facade : run event
+hook -down-> facade : run published
 
-' ---- adapters into the core -------------------------------------------------------
-api -[$accent()]down-> svc : <b>start · retry · revoke</b>
-report -down-> svc : report(job, payload)
-mcp -down-> svc : start · retry · revoke
-signals -down-> svc : start(kind, subject)
+' ---- application uses the domain --------------------------------------------------------
+facade -[$accent()]down-> reconciler : <b>reconcile(job)</b>
+reconciler -down-> jobsm : transition
+facade -down-> runsm : apply event
+reconciler -down-> registry : definition(kind)
+registry -right-> contract : resolves
 
-' ---- the core ---------------------------------------------------------------------
-svc -right-> registry : kind(name)
-svc -[$accent()]down-> ledger : <b>row before send</b>
-listener -left-> ledger : upsert by task_id
-sweeper -up-> ledger : mark lost · prune
-registry -down-> kinds : JobKind\n(eligible · dispatch · on_report)
+' ---- providers implement the contract (dependency inversion) ----------------------------
+providers -up-> contract : implement
+providers ..> facade : observe(subject) on a domain\nchange (EncryptedContent saved)
 
-' ---- transport --------------------------------------------------------------------
-svc -[$accent()]-> celery : <b>send_task(task_id = row id)</b>
-celery -down-> redis : LPUSH · revoke
-celery -up-> hook : every catalog send\n(.delay, beat, JobService)
-hook -up-> ledger : row queued,\nkind + subject from args
-listener -down-> redis : SUBSCRIBE celeryev
+' ---- infrastructure behind ports --------------------------------------------------------
+reconciler -[$accent()]-> dispatcher : <b>dispatch(run)</b>
+facade -down-> repo : load · save
+beat -up-> facade : reconcile due jobs
 
 legend bottom left
   |= Notation |= Meaning |
   | solid box | exists in the catalog today |
-  | dashed box, «proposed» | new in IP-031 |
+  | dashed box, «proposed» | new or reshaped in IP-031 rev. 2 |
   | blue fill, «focus» | the component this figure is about |
-  | arrow | uses / calls, labelled with the operation |
-  | blue arrows | the path of one start: adapter → JobService → ledger row → Celery |
+  | solid arrow | uses / calls, labelled with the operation |
+  | dashed arrow | notification (signal), not a call into the core's internals |
+  | blue arrows | one apply: REST → facade → reconciler → dispatcher |
 endlegend
 
-caption Every start, retry and revoke goes through JobService: it checks the kind's permission and eligibility,\nwrites the ledger row first, then sends the task with that row's id as Celery task id, so a task is visible\nas queued before any worker sees it. Tasks sent elsewhere (.delay in a signal, beat) are recorded by the\npublish hook, which reads kind and subject from the call. The listener only updates rows; it never starts work.\nA kind is a small class: subject model, Celery task name, arguments, permission, report handler.\nWorkers consume from and publish events to the same Redis (deployment-background-jobs-dev).
+caption Apps contribute jobs only by implementing JobDefinition; there are no per-app job endpoints. A client declares a spec and a desired state;\nthe reconciler compares them with the observed state and takes the one transition the state machine allows (dispatch, block, cancel).\nRuns are facts from the publish hook and Celery events; providers that own domain state (LCP) report it through observe(), so the facade\nlists every domain job, also ones nobody started through it. The domain package imports neither Django nor Celery.
 footer ELVIRA · FIIT STU · EvilFlowersCatalog · docs/diagrams/component-background-jobs.puml
 @enduml

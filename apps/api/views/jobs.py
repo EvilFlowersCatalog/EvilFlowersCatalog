@@ -1,7 +1,8 @@
-"""Background jobs (IP-031): list, inspect, start, retry, revoke, act on and report jobs.
+"""`/api/v1/jobs` (IP-031 rev. 2): the one job resource, declarative.
 
-Administrators only (each kind's permission, `core.change_entry` by default), except the report
-endpoint, which a service worker calls with an API key holding `tasks.report_job`.
+Clients declare (`POST` applies a spec, `PATCH` changes spec or desired state) and read; the
+reconciler and the facts move the state. Retry = apply again; cancel = `desired_state: cancelled`.
+Administrators only, except the run report, which a service worker posts with `tasks.report_job`.
 """
 
 import json
@@ -11,186 +12,177 @@ from uuid import UUID
 from django.utils.translation import gettext as _
 
 from apps import openapi
-from apps.api.filters.jobs import JobFilter
-from apps.api.forms.jobs import JobActionForm, JobRetryForm, JobRevokeForm, JobStartForm
+from apps.api.filters.jobs import JobFilter, RunFilter
+from apps.api.forms.jobs import JobApplyForm, JobPatchForm
 from apps.api.response import Ordering, PaginationResponse, SingleResponse
-from apps.api.serializers.jobs import JobSerializer, job_detail
+from apps.api.serializers.jobs import JobSerializer, RunSerializer
 from apps.core.errors import ProblemDetailException, ValidationException
 from apps.core.views import SecuredView
-from apps.tasks.kinds import JobRefused, registry
-from apps.tasks.models import JobProtocol
-from apps.tasks.services import JobService
+from apps.tasks.application.facade import Plan, facade
+from apps.tasks.application.registry import registry
+from apps.tasks.contract import DispatchError
+from apps.tasks.models import JobRun
 
 
-def _refused(error: JobRefused) -> ProblemDetailException:
+def _refused(error: DispatchError) -> ProblemDetailException:
+    # A helper, not inline: `apps.openapi` reads `status=HTTPStatus.<NAME>` literally from view code.
     return ProblemDetailException(error.message, status=error.status, previous=error)
 
 
 def _require_admin(request):
     try:
-        JobService.require(request.user)
-    except JobRefused as error:
+        facade.require(request.user)
+    except DispatchError as error:
         raise _refused(error)
 
 
-def _job(job_id: UUID) -> JobProtocol:
-    try:
-        return JobProtocol.objects.get(pk=job_id)
-    except JobProtocol.DoesNotExist as error:
-        raise ProblemDetailException(_("Job not found"), status=HTTPStatus.NOT_FOUND, previous=error)
-
-
-def _form(form_class, request):
+def _form(form_class, request) -> dict:
     form = form_class.create_from_request(request)
     if not form.is_valid():
         raise ValidationException(form)
     return form.cleaned_data
 
 
-class JobManagement(SecuredView):
+def _ordering(request, default: str) -> Ordering:
+    return Ordering.create_from_request(request) if "order_by" in request.GET else Ordering([default])
+
+
+class JobCollection(SecuredView):
     @openapi.metadata(
         description=(
-            "List background jobs: every Celery task the catalog or a service worker ran, newest first. Filter "
-            "by `kind`, `status`, `stale`, `catalog_id`, `entry_id`, subject or title; `latest=true` keeps the "
-            "newest job per kind and subject (the subject's current state). Administrators only."
+            "Jobs of every kind, one per kind and subject: declared (`spec`, `desired_state`, `generation`) and "
+            "observed (`state`, `reason`, `detail`). Filter by `kind`, `state`, `stale`, `catalog_id`, `entry_id`, "
+            "subject, `cause_id` or title. Administrators only."
         ),
         tags=["Jobs"],
         summary="List jobs",
     )
     def get(self, request):
         _require_admin(request)
-        jobs = JobFilter(request.GET, queryset=JobProtocol.objects.all(), request=request).qs
-        ordering = Ordering.create_from_request(request) if "order_by" in request.GET else Ordering(["-created_at"])
-        return PaginationResponse(request, jobs, serializer=JobSerializer.Base, ordering=ordering)
+        jobs = JobFilter(request.GET, queryset=facade.jobs(), request=request).qs
+        return PaginationResponse(
+            request, jobs, serializer=JobSerializer.Base, ordering=_ordering(request, "-last_transition_at")
+        )
 
     @openapi.metadata(
         description=(
-            "Start a job of `kind` on `subject_id` (`GET /api/v1/jobs/kinds` lists kinds, their subject type and "
-            "options). The job is recorded as queued before the task is sent. 409 when a job of the kind is already "
-            "active for the subject (pass `force` to start anyway), 422 when the subject is not eligible."
+            "Declare a job: `{kind, subject_id, spec, desired_state}`. Creates the kind's job for the subject or "
+            "updates it; the reconciler then runs it (or blocks it, with `reason`, until it can). The same spec on "
+            "a job still on its way changes nothing; on a finished job it runs again (retry). "
+            "`desired_state: cancelled` stops it. `?dry_run=true` answers what would happen and stores nothing. "
+            "422 when the kind can never run on the subject. Administrators only."
         ),
         tags=["Jobs"],
-        summary="Start a job",
+        summary="Apply a job",
     )
     def post(self, request):
         _require_admin(request)
-        data = _form(JobStartForm, request)
+        data = _form(JobApplyForm, request)
+        dry_run = request.GET.get("dry_run", "").lower() == "true"
         try:
-            job = JobService.start(
+            result = facade.apply(
                 data["kind"],
                 data.get("subject_id"),
-                options=data.get("options") or {},
+                spec=data.get("spec"),
+                desired=data.get("desired_state") or "completed",
                 user=request.user,
-                force=bool(data.get("force")),
+                dry_run=dry_run,
             )
-        except JobRefused as error:
+        except DispatchError as error:
             raise _refused(error)
-        return SingleResponse(request, data=job_detail(job), status=HTTPStatus.CREATED)
-
-
-class JobKinds(SecuredView):
-    @openapi.metadata(
-        description="The registered job kinds: subject type, whether they can be started, options and actions.",
-        tags=["Jobs"],
-        summary="List job kinds",
-    )
-    def get(self, request):
-        _require_admin(request)
-        kinds = [JobSerializer.Kind.model_validate(kind.describe()) for kind in registry.all()]
-        return SingleResponse(request, data=kinds)
-
-
-class JobSummary(SecuredView):
-    @openapi.metadata(
-        description=(
-            "Job counts per kind and status, plus stale queued jobs, for dashboard badges. Takes the list's "
-            "filters (e.g. `catalog_id`, `created_after`)."
-        ),
-        tags=["Jobs"],
-        summary="Job summary",
-    )
-    def get(self, request):
-        _require_admin(request)
-        jobs = JobFilter(request.GET, queryset=JobProtocol.objects.all(), request=request).qs
-        rows = [JobSerializer.Summary.model_validate(row) for row in JobService.summary(jobs)]
-        return SingleResponse(request, data=rows)
+        if isinstance(result, Plan):
+            return SingleResponse(request, data=JobSerializer.Plan.from_plan(result))
+        return SingleResponse(request, data=JobSerializer.Detail.from_job(result), status=HTTPStatus.CREATED)
 
 
 class JobDetail(SecuredView):
     @openapi.metadata(
-        description="One job with its events, children (follow-up tasks), retries and the kind's own fields.",
+        description="One job with its runs, run counts per task, transitions and the jobs it declared.",
         tags=["Jobs"],
         summary="Get a job",
     )
     def get(self, request, job_id: UUID):
         _require_admin(request)
-        return SingleResponse(request, data=job_detail(_job(job_id)))
-
-
-class JobRetry(SecuredView):
-    @openapi.metadata(
-        description=(
-            "Run a finished job again as a new job (`retry_of`). Kinds start again with the same options; a task "
-            "without a kind is re-sent with its recorded arguments when they were recorded exactly."
-        ),
-        tags=["Jobs"],
-        summary="Retry a job",
-    )
-    def post(self, request, job_id: UUID):
-        data = _form(JobRetryForm, request)
         try:
-            job = JobService.retry(_job(job_id), user=request.user, options=data.get("options") or {})
-        except JobRefused as error:
+            job = facade.get(job_id)
+        except DispatchError as error:
             raise _refused(error)
-        return SingleResponse(request, data=job_detail(job), status=HTTPStatus.CREATED)
+        return SingleResponse(request, data=JobSerializer.Detail.from_job(job))
 
-
-class JobRevoke(SecuredView):
     @openapi.metadata(
         description=(
-            "Stop a job that has not started: it is marked revoked at once and no worker runs it. A started job "
-            "is stopped only with `terminate`, and only for kinds that can be terminated safely."
+            "Change a job's `spec` or `desired_state` (`cancelled` stops it; `completed` resumes it). Same rules "
+            "as applying. Administrators only."
         ),
         tags=["Jobs"],
-        summary="Revoke a job",
+        summary="Change a job",
     )
-    def post(self, request, job_id: UUID):
-        data = _form(JobRevokeForm, request)
+    def patch(self, request, job_id: UUID):
+        _require_admin(request)
+        data = _form(JobPatchForm, request)
         try:
-            job = JobService.revoke(_job(job_id), user=request.user, terminate=bool(data.get("terminate")))
-        except JobRefused as error:
+            job = facade.patch(
+                job_id, spec=data.get("spec"), desired=data.get("desired_state") or None, user=request.user
+            )
+        except DispatchError as error:
             raise _refused(error)
-        return SingleResponse(request, data=job_detail(job), status=HTTPStatus.ACCEPTED)
+        return SingleResponse(request, data=JobSerializer.Detail.from_job(job))
 
 
-class JobActionView(SecuredView):
+class JobKinds(SecuredView):
+    @openapi.metadata(
+        description="The job kinds apps contribute: subject type, spec schema, whether they report or are run-only.",
+        tags=["Jobs"],
+        summary="List job kinds",
+    )
+    def get(self, request):
+        _require_admin(request)
+        return SingleResponse(
+            request, data=[JobSerializer.Kind.model_validate(definition.describe()) for definition in registry.all()]
+        )
+
+
+class JobSummary(SecuredView):
+    @openapi.metadata(
+        description="Job counts per kind and state, plus stale, for dashboard badges. Takes the list's filters.",
+        tags=["Jobs"],
+        summary="Job summary",
+    )
+    def get(self, request):
+        _require_admin(request)
+        jobs = JobFilter(request.GET, queryset=facade.jobs(), request=request).qs
+        return SingleResponse(
+            request, data=[JobSerializer.Summary.model_validate(row) for row in facade.summary(jobs)]
+        )
+
+
+class RunCollection(SecuredView):
     @openapi.metadata(
         description=(
-            "Run a kind-specific action on a job, e.g. `requeue` or `reencrypt` (with `dry_run`, `force`) for "
-            "`readium.encrypt` (#148). Actions are listed per kind in `GET /api/v1/jobs/kinds`."
+            "Runs: every Celery task execution the catalog recorded, with or without a job (`without_job=true`: "
+            "run-only kinds and services' tasks). Filter by `job_id`, `kind`, `status`, `name`. Administrators only."
         ),
         tags=["Jobs"],
-        summary="Run a job action",
+        summary="List job runs",
     )
-    def post(self, request, job_id: UUID, action: str):
-        data = _form(JobActionForm, request)
-        try:
-            result = JobService.run_action(_job(job_id), action, user=request.user, options=data.get("options") or {})
-        except JobRefused as error:
-            raise _refused(error)
-        return SingleResponse(request, data=result)
+    def get(self, request):
+        _require_admin(request)
+        runs = RunFilter(request.GET, queryset=JobRun.objects.all(), request=request).qs
+        return PaginationResponse(
+            request, runs, serializer=RunSerializer.Base, ordering=_ordering(request, "-created_at")
+        )
 
 
-class JobReport(SecuredView):
+class RunReport(SecuredView):
     @openapi.metadata(
         description=(
-            "A service worker reports the outcome of its job; the kind applies it (e.g. OCR replaces the file). "
-            "Needs an API key with `tasks.report_job`. Idempotent; 409 for a revoked job."
+            "A service worker reports the outcome of a run (the `report_url` its task carries); the job's kind "
+            "applies it. Needs an API key with `tasks.report_job`. Idempotent; 409 when the job was cancelled."
         ),
         tags=["Jobs"],
-        summary="Report a job's outcome",
+        summary="Report a run's outcome",
     )
-    def post(self, request, job_id: UUID):
+    def post(self, request, run_id: UUID):
         try:
             payload = json.loads(request.body or b"{}")
         except ValueError as error:
@@ -198,7 +190,7 @@ class JobReport(SecuredView):
         if not isinstance(payload, dict):
             raise ProblemDetailException(_("The report must be a JSON object."), status=HTTPStatus.BAD_REQUEST)
         try:
-            job = JobService.report(_job(job_id), payload, user=request.user)
-        except JobRefused as error:
+            run = facade.report(run_id, payload, user=request.user)
+        except DispatchError as error:
             raise _refused(error)
-        return SingleResponse(request, data={"id": str(job.pk), "report": job.report, "reported_at": job.reported_at})
+        return SingleResponse(request, data=RunSerializer.Detail.model_validate(run))

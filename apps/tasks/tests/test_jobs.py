@@ -1,4 +1,4 @@
-"""IP-031: the job ledger, the job service and the housekeeping."""
+"""IP-031 rev. 2: the job facade (declare, reconcile, facts, observe, report) and the run ledger."""
 
 import time
 import uuid
@@ -10,18 +10,30 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from apps.core.models import Acquisition, AuthSource, Catalog, Entry, Language, User
-from apps.readium.models import EncryptedContent
-from apps.tasks import ledger
-from apps.tasks.kinds import JobRefused, registry
-from apps.tasks.maintenance import prune_jobs, sweep_lost_jobs
-from apps.tasks.models import JobEvent, JobProtocol
-from apps.tasks.services import JobService
+from apps.readium.models import EncryptedContent, License
+from apps.tasks.application.facade import facade
+from apps.tasks.application.registry import registry
+from apps.tasks.contract import DispatchError
+from apps.tasks.domain.values import DesiredState, JobState, RunStatus
+from apps.tasks.infrastructure import ledger
+from apps.tasks.infrastructure.maintenance import prune_runs, sweep_lost_runs
+from apps.tasks.models import Job, JobEvent, JobRun
 
-Status = JobProtocol.JobStatus
-SEND = "evil_flowers_catalog.celery.app.send_task"
-REVOKE = "evil_flowers_catalog.celery.app.control.revoke"
 BROKER = "apps.readium.services.content_encryption_service.get_event_broker"
 PREPARE_SOURCE = "apps.readium.services.content_encryption_service.ContentEncryptionService._prepare_source"
+
+
+class FakeDispatcher:
+    def __init__(self, fail=None):
+        self.sent, self.revoked, self.fail = [], [], fail
+
+    def send(self, task, *, task_id, args=None, kwargs=None, queue=None):
+        if self.fail:
+            raise self.fail
+        self.sent.append({"task": task, "task_id": task_id, "args": args, "kwargs": kwargs, "queue": queue})
+
+    def revoke(self, task_id, *, terminate=False):
+        self.revoked.append((task_id, terminate))
 
 
 def event(type_, task_id, ts=None, **fields):
@@ -40,449 +52,348 @@ class Fixtures(TestCase):
         cls.catalog = Catalog.objects.create(creator=cls.admin, title="Catalog", url_name="catalog")
         cls.entry = Entry.objects.create(creator=cls.admin, catalog=cls.catalog, title="Kniha", language=language)
 
+    def setUp(self):
+        self.dispatcher = FakeDispatcher()
+        patcher = patch.object(facade, "dispatcher", self.dispatcher)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def acquisition(self, mime=Acquisition.AcquisitionMIME.PDF):
         return Acquisition.objects.create(entry=self.entry, mime=mime, content=f"catalogs/catalog/{uuid.uuid4()}.pdf")
 
     def enable_readium(self):
-        """Switch LCP on without `Entry.post_save`, which would encrypt the entry's files by itself."""
+        """LCP on without `Entry.post_save` (which would encrypt the entry's files by itself)."""
         Entry.objects.filter(pk=self.entry.pk).update(config={**self.entry.config, "readium_enabled": True})
 
 
-class LedgerEventTests(Fixtures):
-    def test_full_lifecycle_from_events(self):
-        task_id = uuid.uuid4()
-        now = time.time()
-        ledger.apply_event(event("task-received", task_id, now, name="apps.core.tasks.store_table_of_contents"))
-        ledger.apply_event(event("task-started", task_id, now + 1, hostname="catalog@dev.pod"))
-        ledger.apply_event(event("task-succeeded", task_id, now + 5, result="{'pages': 3}", runtime=4.2))
-        job = JobProtocol.objects.get(pk=task_id)
-        self.assertEqual(job.status, Status.SUCCEEDED)
-        self.assertEqual(job.result, {"pages": 3})
-        self.assertEqual(job.runtime, 4.2)
-        self.assertEqual(job.attempts, 1)
-        self.assertEqual(job.worker, "catalog@dev.pod")
-        self.assertEqual(job.kind, "core.table_of_contents")
+class DeclareTests(Fixtures):
+    def test_apply_writes_the_job_and_dispatches_one_run_under_its_id(self):
+        job = facade.apply("maintenance.prune_jobs", user=self.admin)
+        self.assertEqual(
+            (job.state, job.generation, job.observed_generation, job.attempts), (JobState.QUEUED, 1, 1, 1)
+        )
+        (sent,) = self.dispatcher.sent
+        self.assertEqual(sent["task"], "apps.tasks.tasks.prune_jobs")
+        self.assertEqual(sent["task_id"], str(job.current_run_id))
+        run = JobRun.objects.get(pk=job.current_run_id)
+        self.assertEqual((run.job_id, run.status), (job.pk, RunStatus.QUEUED))
+        self.assertTrue(JobEvent.objects.filter(job_ref=job, type="job:applied").exists())
 
-    def test_failure_keeps_exception_and_traceback(self):
-        task_id = uuid.uuid4()
-        ledger.apply_event(event("task-received", task_id, name="apps.tasks.tasks.backup"))
-        ledger.apply_event(event("task-failed", task_id, exception="OSError('disk full')", traceback="Traceback…"))
-        job = JobProtocol.objects.get(pk=task_id)
-        self.assertEqual(job.status, Status.FAILED)
-        self.assertEqual(job.error, "OSError('disk full')")
-        self.assertEqual(job.traceback, "Traceback…")
-        self.assertTrue(JobEvent.objects.filter(job=job, type="task-failed").exists())
+    def test_apply_is_idempotent_while_the_job_is_on_its_way(self):
+        first = facade.apply("maintenance.prune_jobs", user=self.admin)
+        second = facade.apply("maintenance.prune_jobs", user=self.admin)
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(second.generation, 1)
+        self.assertEqual(len(self.dispatcher.sent), 1)
 
-    def test_older_event_does_not_overwrite_newer_state(self):
-        task_id = uuid.uuid4()
-        now = time.time()
-        ledger.apply_event(event("task-succeeded", task_id, now))
-        ledger.apply_event(event("task-started", task_id, now - 10))
-        self.assertEqual(JobProtocol.objects.get(pk=task_id).status, Status.SUCCEEDED)
+    def test_apply_on_a_settled_job_is_the_retry(self):
+        job = facade.apply("maintenance.prune_jobs", user=self.admin)
+        Job.objects.filter(pk=job.pk).update(state=JobState.FAILED)
+        again = facade.apply("maintenance.prune_jobs", user=self.admin)
+        self.assertEqual((again.generation, again.state), (2, JobState.QUEUED))
+        self.assertEqual(len(self.dispatcher.sent), 2)
 
-    def test_revoked_is_final(self):
-        task_id = uuid.uuid4()
-        now = time.time()
-        ledger.apply_event(event("task-revoked", task_id, now))
-        ledger.apply_event(event("task-received", task_id, now + 5))
-        self.assertEqual(JobProtocol.objects.get(pk=task_id).status, Status.REVOKED)
+    def test_stale_job_gets_a_new_run(self):
+        job = facade.apply("maintenance.prune_jobs", user=self.admin)
+        Job.objects.filter(pk=job.pk).update(last_transition_at=timezone.now() - timedelta(days=1))
+        facade.apply("maintenance.prune_jobs", user=self.admin)
+        self.assertEqual(len(self.dispatcher.sent), 2)
 
-    def test_redelivery_reopens_a_finished_job_and_counts_attempts(self):
-        task_id = uuid.uuid4()
-        now = time.time()
-        ledger.apply_event(event("task-started", task_id, now))
-        ledger.apply_event(event("task-failed", task_id, now + 1, exception="WorkerLostError"))
-        ledger.apply_event(event("task-started", task_id, now + 2))
-        job = JobProtocol.objects.get(pk=task_id)
-        self.assertEqual(job.status, Status.STARTED)
-        self.assertEqual(job.attempts, 2)
-        self.assertIsNone(job.error)
+    def test_non_admin_unknown_kind_run_only_kind_and_bad_spec(self):
+        cases = [
+            (dict(kind="maintenance.prune_jobs", user=self.reader), 403),
+            (dict(kind="nope", user=self.admin), 404),
+            (dict(kind="notifications.send", user=self.admin), 409),
+            (dict(kind="maintenance.prune_jobs", user=self.admin, spec={"bogus": 1}), 422),
+        ]
+        for arguments, status in cases:
+            kind = arguments.pop("kind")
+            with self.subTest(kind=kind), self.assertRaises(DispatchError) as refused:
+                facade.apply(kind, **arguments)
+            self.assertEqual(refused.exception.status, status)
 
-    def test_retry_and_revocation_statuses(self):
-        task_id = uuid.uuid4()
-        now = time.time()
-        ledger.apply_event(event("task-started", task_id, now))
-        ledger.apply_event(event("task-retried", task_id, now + 1, exception="Timeout"))
-        self.assertEqual(JobProtocol.objects.get(pk=task_id).status, Status.RETRYING)
-        ledger.apply_event(event("task-rejected", task_id, now + 2))
-        self.assertEqual(JobProtocol.objects.get(pk=task_id).status, Status.REJECTED)
+    def test_permanent_refusal_is_422_without_a_job(self):
+        acquisition = self.acquisition(mime=Acquisition.AcquisitionMIME.EPUB)
+        with self.assertRaises(DispatchError) as refused, override_settings(EVILFLOWERS_OCR_ENABLED=True):
+            facade.apply("files.ocr", acquisition.pk, user=self.admin)
+        self.assertEqual(refused.exception.status, 422)
+        self.assertFalse(Job.objects.filter(kind="files.ocr").exists())
 
-    def test_sent_after_received_does_not_go_back_to_queued(self):
-        task_id = uuid.uuid4()
-        now = time.time()
-        ledger.apply_event(event("task-received", task_id, now))
-        ledger.apply_event(event("task-sent", task_id, now + 1, queue="celery"))
-        job = JobProtocol.objects.get(pk=task_id)
-        self.assertEqual(job.status, Status.RECEIVED)
-        self.assertEqual(job.queue, "celery")
-
-    def test_child_without_parent_row_is_kept(self):
-        child = uuid.uuid4()
-        ledger.apply_event(event("task-received", child, parent_id=str(uuid.uuid4()), name="x.y"))
-        self.assertTrue(JobProtocol.objects.filter(pk=child).exists())
-
-    def test_child_inherits_the_parents_subject(self):
+    def test_transient_refusal_blocks_and_the_reconciler_proceeds_later(self):
         acquisition = self.acquisition()
-        parent = uuid.uuid4()
-        ledger.apply_event(
-            event(
-                "task-received",
-                parent,
-                name="evilflowers_analyzer.extract",
-                kwargs=repr({"acquisition_id": str(acquisition.pk)}),
-            )
-        )
-        child = uuid.uuid4()
-        ledger.apply_event(
-            event("task-received", child, name="evilflowers_text_worker.paragraphs", parent_id=str(parent))
-        )
-        job = JobProtocol.objects.get(pk=child)
-        self.assertEqual(job.subject_id, acquisition.pk)
-        self.assertEqual(job.entry_id, self.entry.pk)
-        self.assertIsNone(job.kind)
-
-    def test_secrets_are_redacted(self):
-        task_id = uuid.uuid4()
-        ledger.apply_event(
-            event(
-                "task-received",
-                task_id,
-                name="apps.dataverse.tasks.resume_workflow",
-                kwargs=repr({"dataverse_token": "abc", "invocation_id": "1"}),
-            )
-        )
-        job = JobProtocol.objects.get(pk=task_id)
-        self.assertEqual(job.job_kwargs["dataverse_token"], ledger.REDACTED)
-        self.assertEqual(job.job_kwargs["invocation_id"], "1")
-
-    def test_ignored_tasks_are_not_recorded(self):
-        task_id = uuid.uuid4()
-        with override_settings(EVILFLOWERS_JOBS_IGNORE_TASKS=frozenset({"noisy.task"})):
-            ledger.apply_event(event("task-received", task_id, name="noisy.task"))
-        self.assertFalse(JobProtocol.objects.filter(pk=task_id).exists())
-
-
-class RecordPublishTests(Fixtures):
-    def test_publish_records_exact_arguments_and_subject(self):
-        task_id = str(uuid.uuid4())
-        headers = {"id": task_id, "task": "apps.core.tasks.store_table_of_contents"}
-        ledger.record_publish(headers, ([str(self.entry.pk)], {}, {}), routing_key="celery")
-        job = JobProtocol.objects.get(pk=task_id)
-        self.assertEqual(job.status, Status.QUEUED)
-        self.assertTrue(job.args_exact)
-        self.assertEqual(job.job_args, [str(self.entry.pk)])
-        self.assertEqual(job.kind, "core.table_of_contents")
-        self.assertEqual(job.subject_id, self.entry.pk)
-        self.assertEqual(job.subject_type, ContentType.objects.get_for_model(Entry))
-        self.assertEqual(job.catalog_id, self.catalog.pk)
-
-    def test_publish_with_a_secret_is_not_resendable(self):
-        task_id = str(uuid.uuid4())
-        headers = {"id": task_id, "task": "apps.dataverse.tasks.resume_workflow"}
-        ledger.record_publish(headers, ([], {"dataverse_token": "t"}, {}))
-        job = JobProtocol.objects.get(pk=task_id)
-        self.assertFalse(job.args_exact)
-        self.assertEqual(job.job_kwargs["dataverse_token"], ledger.REDACTED)
-
-    def test_publish_of_a_finished_stable_id_starts_it_over(self):
-        task_id = str(uuid.uuid4())
-        JobProtocol.objects.create(id=task_id, name="evilflowers_analyzer.extract", status=Status.SUCCEEDED)
-        ledger.record_publish({"id": task_id, "task": "evilflowers_analyzer.extract"}, ([], {}, {}))
-        self.assertEqual(JobProtocol.objects.get(pk=task_id).status, Status.QUEUED)
-
-    def test_publish_never_raises(self):
-        ledger.record_publish({"id": "not-a-uuid", "task": "x"}, None)
-
-
-class JobServiceTests(Fixtures):
-    def test_start_writes_the_row_before_sending_under_its_id(self):
-        with patch(SEND) as send:
-            job = JobService.start("maintenance.prune_jobs", user=self.admin)
-        self.assertEqual(job.status, Status.QUEUED)
-        self.assertEqual(job.requested_by, self.admin)
-        self.assertEqual(send.call_args.kwargs["task_id"], str(job.pk))
-        self.assertEqual(send.call_args.args[0], "apps.tasks.tasks.prune_jobs")
-        self.assertTrue(JobEvent.objects.filter(job=job, type="queued").exists())
-
-    def test_non_admin_is_refused(self):
-        with self.assertRaises(JobRefused) as refused:
-            JobService.start("maintenance.prune_jobs", user=self.reader)
-        self.assertEqual(refused.exception.status, 403)
-
-    def test_second_active_job_is_refused_unless_forced(self):
-        with patch(SEND):
-            JobService.start("maintenance.prune_jobs", user=self.admin)
-            with self.assertRaises(JobRefused) as refused:
-                JobService.start("maintenance.prune_jobs", user=self.admin)
-            self.assertEqual(refused.exception.status, 409)
-            JobService.start("maintenance.prune_jobs", user=self.admin, force=True)
-
-    def test_unknown_options_are_refused(self):
-        with self.assertRaises(JobRefused) as refused:
-            JobService.start("maintenance.prune_jobs", user=self.admin, options={"bogus": 1})
-        self.assertEqual(refused.exception.status, 422)
-
-    def test_dispatch_failure_marks_the_job_failed(self):
-        with patch(SEND, side_effect=ConnectionError("broker down")):
-            with self.assertRaises(JobRefused) as refused:
-                JobService.start("maintenance.prune_jobs", user=self.admin)
-        self.assertEqual(refused.exception.status, 502)
-        job = JobProtocol.objects.get(kind="maintenance.prune_jobs")
-        self.assertEqual(job.status, Status.FAILED)
-        self.assertIn("broker down", job.error)
-
-    def test_retry_of_a_kind_starts_a_new_job(self):
-        with patch(SEND):
-            job = JobService.start("maintenance.prune_jobs", user=self.admin)
-            JobProtocol.objects.filter(pk=job.pk).update(status=Status.FAILED)
-            job.refresh_from_db()
-            retry = JobService.retry(job, user=self.admin)
-        self.assertNotEqual(retry.pk, job.pk)
-        self.assertEqual(retry.retry_of_id, job.pk)
-
-    def test_retry_of_an_active_job_is_refused(self):
-        with patch(SEND):
-            job = JobService.start("maintenance.prune_jobs", user=self.admin)
-        with self.assertRaises(JobRefused):
-            JobService.retry(job, user=self.admin)
-
-    def test_retry_resends_a_recorded_call_without_a_startable_kind(self):
-        job = JobProtocol.objects.create(
-            id=uuid.uuid4(),
-            name="apps.notifications.tasks.send_notification",
-            kind="notifications.send",
-            status=Status.FAILED,
-            job_args=["loan_ready", str(self.reader.pk), {}],
-            args_exact=True,
-        )
-        with patch(SEND) as send:
-            retry = JobService.retry(job, user=self.admin)
-        self.assertEqual(send.call_args.args[0], "apps.notifications.tasks.send_notification")
-        self.assertEqual(send.call_args.kwargs["args"], job.job_args)
-        self.assertEqual(send.call_args.kwargs["task_id"], str(retry.pk))
-
-    def test_retry_refuses_redacted_calls(self):
-        job = JobProtocol.objects.create(
-            id=uuid.uuid4(),
-            name="apps.dataverse.tasks.resume_workflow",
-            kind="dataverse.resume_workflow",
-            status=Status.FAILED,
-            args_exact=False,
-        )
-        with self.assertRaises(JobRefused):
-            JobService.retry(job, user=self.admin)
-
-    def test_revoke_of_a_queued_job_is_immediate(self):
-        with patch(SEND):
-            job = JobService.start("maintenance.prune_jobs", user=self.admin)
-        with patch(REVOKE) as revoke:
-            job = JobService.revoke(job, user=self.admin)
-        revoke.assert_called_once_with(str(job.pk), terminate=False)
-        self.assertEqual(job.status, Status.REVOKED)
-        self.assertIsNotNone(job.revoke_requested_at)
-
-    def test_running_job_needs_terminate_and_a_safe_kind(self):
-        with patch(SEND):
-            job = JobService.start("maintenance.prune_jobs", user=self.admin)
-        JobProtocol.objects.filter(pk=job.pk).update(status=Status.STARTED)
+        job = facade.apply("files.ocr", acquisition.pk, user=self.admin)  # OCR switched off: blocked
+        self.assertEqual(job.state, JobState.BLOCKED)
+        self.assertIn("EVILFLOWERS_OCR_ENABLED", job.reason)
+        self.assertEqual(self.dispatcher.sent, [])
+        with override_settings(EVILFLOWERS_OCR_ENABLED=True):
+            self.assertEqual(facade.reconcile_due(), 1)
         job.refresh_from_db()
-        with self.assertRaises(JobRefused):
-            JobService.revoke(job, user=self.admin)
-        with self.assertRaises(JobRefused) as refused:
-            JobService.revoke(job, user=self.admin, terminate=True)
-        self.assertEqual(refused.exception.status, 422)
+        self.assertEqual(job.state, JobState.QUEUED)
+        self.assertEqual(self.dispatcher.sent[0]["task"], "evilflowers_ocr_worker.ocr")
 
-    def test_summary_counts_per_kind_and_status(self):
-        with patch(SEND):
-            JobService.start("maintenance.prune_jobs", user=self.admin)
-        rows = JobService.summary(JobProtocol.objects.all())
-        self.assertEqual(rows, [{"kind": "maintenance.prune_jobs", "statuses": {"queued": 1}, "stale": 0}])
+    def test_dry_run_stores_nothing(self):
+        acquisition = self.acquisition()
+        plan = facade.apply("files.ocr", acquisition.pk, user=self.admin, dry_run=True)
+        self.assertEqual(plan.outcome, "would-block")
+        self.assertFalse(Job.objects.exists())
+
+    def test_dispatch_failure_fails_the_job(self):
+        self.dispatcher.fail = ConnectionError("broker down")
+        with self.assertLogs("apps.tasks.audit", "ERROR"):
+            job = facade.apply("maintenance.prune_jobs", user=self.admin)
+        job.refresh_from_db()
+        self.assertEqual(job.state, JobState.FAILED)
+        self.assertIn("broker down", job.reason)
+
+
+class CancelTests(Fixtures):
+    def test_cancel_a_queued_job_revokes_its_run(self):
+        job = facade.apply("maintenance.prune_jobs", user=self.admin)
+        job = facade.patch(job.pk, desired=DesiredState.CANCELLED, user=self.admin)
+        self.assertEqual(job.state, JobState.CANCELLED)
+        self.assertEqual(self.dispatcher.revoked, [(str(job.current_run_id), False)])
+        self.assertEqual(JobRun.objects.get(pk=job.current_run_id).status, RunStatus.REVOKED)
+
+    def test_cancel_a_running_job_waits_for_its_run(self):
+        job = facade.apply("maintenance.prune_jobs", user=self.admin)
+        run = job.current_run
+        with self.captureOnCommitCallbacks(execute=True):
+            ledger.apply_event(event("task-started", run.pk))
+        job = facade.patch(job.pk, desired=DesiredState.CANCELLED, user=self.admin)
+        self.assertEqual(job.state, JobState.CANCELLING)
+        self.assertEqual(self.dispatcher.revoked, [])  # maintenance runs are not terminate_safe
+        with self.captureOnCommitCallbacks(execute=True):
+            ledger.apply_event(event("task-succeeded", run.pk, time.time() + 1))
+        job.refresh_from_db()
+        self.assertEqual(job.state, JobState.CANCELLED)
+
+    def test_cancelled_job_resumes_with_a_new_generation(self):
+        job = facade.apply("maintenance.prune_jobs", user=self.admin)
+        facade.patch(job.pk, desired=DesiredState.CANCELLED, user=self.admin)
+        job = facade.patch(job.pk, desired=DesiredState.COMPLETED, user=self.admin)
+        self.assertEqual((job.state, job.generation), (JobState.QUEUED, 2))
+
+
+class RunFactsTests(Fixtures):
+    def test_events_move_the_run_and_its_job(self):
+        job = facade.apply("maintenance.prune_jobs", user=self.admin)
+        run_id, now = job.current_run_id, time.time()
+        with self.captureOnCommitCallbacks(execute=True):
+            ledger.apply_event(event("task-started", run_id, now, hostname="catalog@dev"))
+        job.refresh_from_db()
+        self.assertEqual(job.state, JobState.RUNNING)
+        with self.captureOnCommitCallbacks(execute=True):
+            ledger.apply_event(event("task-succeeded", run_id, now + 1, result="{'deleted': 3}", runtime=0.5))
+        job.refresh_from_db()
+        run = JobRun.objects.get(pk=run_id)
+        self.assertEqual(
+            (job.state, run.status, run.result), (JobState.SUCCEEDED, RunStatus.SUCCEEDED, {"deleted": 3})
+        )
+
+    def test_failure_keeps_the_error_and_settles_the_job(self):
+        job = facade.apply("maintenance.prune_jobs", user=self.admin)
+        with self.captureOnCommitCallbacks(execute=True):
+            ledger.apply_event(
+                event("task-failed", job.current_run_id, exception="OSError('disk full')", traceback="Tb")
+            )
+        job.refresh_from_db()
+        self.assertEqual((job.state, job.reason), (JobState.FAILED, "OSError('disk full')"))
+        self.assertEqual(JobRun.objects.get(pk=job.current_run_id).traceback, "Tb")
+
+    def test_run_sent_outside_the_facade_gets_its_kinds_job_without_intent(self):
+        task_id = str(uuid.uuid4())
+        with self.captureOnCommitCallbacks(execute=True):
+            ledger.record_publish(
+                {"id": task_id, "task": "apps.core.tasks.store_table_of_contents"}, ([str(self.entry.pk)], {}, {})
+            )
+        run = JobRun.objects.get(pk=task_id)
+        job = Job.objects.get(kind="core.table_of_contents", subject_id=self.entry.pk)
+        self.assertEqual((run.job_id, run.args_exact, run.job_args), (job.pk, True, [str(self.entry.pk)]))
+        self.assertEqual((job.generation, job.observed_generation), (0, 0))  # no intent: never dispatches
+        self.assertEqual(job.subject_type, ContentType.objects.get_for_model(Entry))
+        with self.captureOnCommitCallbacks(execute=True):
+            ledger.apply_event(event("task-succeeded", task_id))
+        job.refresh_from_db()
+        self.assertEqual(job.state, JobState.SUCCEEDED)
+
+    def test_beat_runs_attach_to_one_job_per_kind(self):
+        for _ in range(2):
+            with self.captureOnCommitCallbacks(execute=True):
+                ledger.record_publish(
+                    {"id": str(uuid.uuid4()), "task": "apps.readium.tasks.expire_lapsed_licenses"}, ([], {}, {})
+                )
+        self.assertEqual(Job.objects.filter(kind="readium.expire_lapsed_licenses").count(), 1)
+        self.assertEqual(JobRun.objects.filter(kind="readium.expire_lapsed_licenses").count(), 2)
+
+    def test_run_only_kinds_record_runs_without_jobs(self):
+        task_id = str(uuid.uuid4())
+        with self.captureOnCommitCallbacks(execute=True):
+            ledger.record_publish(
+                {"id": task_id, "task": "apps.notifications.tasks.send_notification"},
+                (["loan_ready", str(self.reader.pk), {}], {}, {}),
+            )
+        run = JobRun.objects.get(pk=task_id)
+        self.assertIsNone(run.job_id)
+        self.assertEqual(run.subject_id, self.reader.pk)
+
+    def test_follow_up_tasks_belong_to_their_parents_job_but_do_not_move_it(self):
+        job = facade.apply("maintenance.prune_jobs", user=self.admin)
+        child = uuid.uuid4()
+        with self.captureOnCommitCallbacks(execute=True):
+            ledger.apply_event(event("task-failed", child, name="x.follow_up", parent_id=str(job.current_run_id)))
+        self.assertEqual(JobRun.objects.get(pk=child).job_id, job.pk)
+        job.refresh_from_db()
+        self.assertEqual(job.state, JobState.QUEUED)
+
+    def test_secrets_are_redacted_and_never_resendable(self):
+        task_id = str(uuid.uuid4())
+        ledger.record_publish(
+            {"id": task_id, "task": "apps.dataverse.tasks.resume_workflow"},
+            ([], {"dataverse_token": "t", "invocation_id": "1"}, {}),
+        )
+        run = JobRun.objects.get(pk=task_id)
+        self.assertEqual(run.job_kwargs["dataverse_token"], ledger.REDACTED)
+        self.assertFalse(run.args_exact)
+
+    def test_precedence_older_events_are_history(self):
+        task_id, now = uuid.uuid4(), time.time()
+        ledger.apply_event(event("task-succeeded", task_id, now, name="x.y"))
+        ledger.apply_event(event("task-started", task_id, now - 10))
+        self.assertEqual(JobRun.objects.get(pk=task_id).status, RunStatus.SUCCEEDED)
 
 
 @patch(PREPARE_SOURCE, side_effect=lambda ec: ec.acquisition.content.name)
-class EncryptKindTests(Fixtures):
-    def test_start_encrypts_under_the_job_id(self, _prepare):
+class EncryptObservationTests(Fixtures):
+    def test_apply_encrypts_under_the_run_id(self, _prepare):
         acquisition = self.acquisition()
         self.enable_readium()
         with patch(BROKER) as broker:
-            job = JobService.start("readium.encrypt", acquisition.pk, user=self.admin)
+            job = facade.apply("readium.encrypt", acquisition.pk, user=self.admin)
         _event, payload = broker.return_value.execute.call_args.args
-        self.assertEqual(payload["task_id"], str(job.pk))
-        encrypted = EncryptedContent.objects.get(acquisition=acquisition)
-        self.assertEqual(encrypted.task_id, str(job.pk))
-        self.assertEqual(job.entry_id, self.entry.pk)
+        self.assertEqual(payload["task_id"], str(job.current_run_id))
+        self.assertEqual(EncryptedContent.objects.get(acquisition=acquisition).task_id, str(job.current_run_id))
 
-    def test_registered_content_needs_the_reencrypt_action(self, _prepare):
+    def test_lcp_off_blocks_but_a_pending_package_is_still_resent(self, _prepare):
+        acquisition = self.acquisition()
+        job = facade.apply("readium.encrypt", acquisition.pk, user=self.admin)
+        self.assertEqual(job.state, JobState.BLOCKED)
+        EncryptedContent.objects.create(acquisition=acquisition, lcp_content_id=str(uuid.uuid4()), encrypted_path="x")
+        with patch(BROKER):
+            job = facade.reconcile(job.pk)
+        self.assertEqual(job.state, JobState.QUEUED)
+
+    def test_reencrypt_waits_for_active_loans(self, _prepare):
         acquisition = self.acquisition()
         self.enable_readium()
-        with patch(BROKER):
-            job = JobService.start("readium.encrypt", acquisition.pk, user=self.admin)
-        EncryptedContent.objects.filter(acquisition=acquisition).update(
-            status=EncryptedContent.EncryptionStatus.REGISTERED, encrypted_at=timezone.now()
+        content = EncryptedContent.objects.create(
+            acquisition=acquisition,
+            lcp_content_id=str(uuid.uuid4()),
+            encrypted_path="x",
+            status=EncryptedContent.EncryptionStatus.REGISTERED,
+            encrypted_at=timezone.now(),
         )
-        JobProtocol.objects.filter(pk=job.pk).update(status=Status.SUCCEEDED)
-        job.refresh_from_db()
-        with self.assertRaises(JobRefused) as refused:
-            JobService.retry(job, user=self.admin)
-        self.assertEqual(refused.exception.status, 422)
-
-        dry = JobService.run_action(job, "reencrypt", user=self.admin, options={"dry_run": True})
-        self.assertTrue(dry["dry_run"])
-        with patch(BROKER):
-            result = JobService.run_action(job, "reencrypt", user=self.admin)
-        new = JobProtocol.objects.get(pk=result["job_id"])
-        self.assertEqual(new.retry_of_id, job.pk)
-        self.assertEqual(EncryptedContent.objects.get(acquisition=acquisition).task_id, str(new.pk))
-
-    def test_entry_trigger_does_not_send_a_healthy_pending_job_twice(self, _prepare):
-        acquisition = self.acquisition()
-        self.enable_readium()
-        headers = self.client_headers(self.admin)
-        with patch(BROKER):
-            first = self.trigger(headers)
-            second = self.trigger(headers)
-        self.assertEqual(first.status_code, 202, first.content)
-        self.assertEqual(second.status_code, 409)
-        self.assertEqual(JobProtocol.objects.filter(kind="readium.encrypt", subject_id=acquisition.pk).count(), 1)
-
-        # Stale: re-sent under the same content id.
-        JobProtocol.objects.filter(kind="readium.encrypt").update(created_at=timezone.now() - timedelta(days=1))
-        with patch(BROKER):
-            third = self.trigger(headers)
-        self.assertEqual(third.status_code, 202, third.content)
-
-    def trigger(self, headers):
-        return self.client.post(
-            f"/readium/v1/entries/{self.entry.pk}/encryption",
-            data="{}",
-            content_type="application/json",
-            headers=headers,
+        now = timezone.now()
+        License.objects.create(
+            entry=self.entry,
+            user=self.reader,
+            encrypted_content=content,
+            state=License.LicenseState.ACTIVE,
+            starts_at=now,
+            expires_at=now + timedelta(days=1),
         )
+        with self.assertRaises(DispatchError):  # registered without reencrypt: refused, no job
+            facade.apply("readium.encrypt", acquisition.pk, user=self.admin)
+        job = facade.apply("readium.encrypt", acquisition.pk, spec={"reencrypt": True}, user=self.admin)
+        self.assertEqual(job.state, JobState.BLOCKED)
+        self.assertIn("1 active loan", job.reason)
+        with patch(BROKER):
+            forced = facade.apply(
+                "readium.encrypt", acquisition.pk, spec={"reencrypt": True, "force": True}, user=self.admin
+            )
+        self.assertEqual(forced.state, JobState.QUEUED)
 
-    def client_headers(self, user):
-        from apps.core.auth import JWTFactory
-        from apps.core.models import ApiKey
-
-        key = ApiKey.objects.create(user=user, name="test")
-        return {"Authorization": f"Bearer {JWTFactory(user.pk).api_key(str(key.pk))}"}
-
-    def test_publish_of_an_encryption_task_is_attributed(self, _prepare):
+    def test_domain_state_is_observed_and_discovered(self, _prepare):
         acquisition = self.acquisition()
         content = EncryptedContent.objects.create(
-            acquisition=acquisition, lcp_content_id=str(uuid.uuid4()), encrypted_path="x"
+            acquisition=acquisition,
+            lcp_content_id=str(uuid.uuid4()),
+            encrypted_path="x",
+            status=EncryptedContent.EncryptionStatus.FAILED,
+            error_message="lcpencrypt exited 1",
         )
-        task_id = str(uuid.uuid4())
-        ledger.record_publish(
-            {"id": task_id, "task": "evilflowers_lcpencrypt_worker.lcpencrypt"},
-            ([], {"contentid": content.lcp_content_id}, {}),
-        )
-        job = JobProtocol.objects.get(pk=task_id)
-        self.assertEqual(job.kind, "readium.encrypt")
-        self.assertEqual(job.subject_id, acquisition.pk)
+        self.assertEqual(facade.discover("readium.encrypt"), 1)
+        job = Job.objects.get(kind="readium.encrypt", subject_id=acquisition.pk)
+        self.assertEqual((job.state, job.reason, job.generation), (JobState.FAILED, "lcpencrypt exited 1", 0))
+        self.assertEqual(job.detail["encryption"]["content_id"], content.lcp_content_id)
+        # A webhook registering the package is observed through post_save.
+        with self.captureOnCommitCallbacks(execute=True):
+            content.status = EncryptedContent.EncryptionStatus.REGISTERED
+            content.save()
+        job.refresh_from_db()
+        self.assertEqual(job.state, JobState.SUCCEEDED)
+        self.assertEqual(facade.reconcile_due(), 0)  # observed jobs carry no intent
 
-    def test_encryption_started_by_the_entry_signal_is_in_the_ledger(self, _prepare):
-        # The pre-IP-031 path (Entry.post_save → encrypt_acquisition → event broker) is not changed;
-        # the publish hook records it, with its kind and subject.
-        entry = Entry.objects.create(
-            creator=self.admin, catalog=self.catalog, title="Auto", config={"readium_enabled": True}
-        )
-        with patch("kombu.messaging.Producer.publish"):
-            acquisition = Acquisition.objects.create(
-                entry=entry, mime=Acquisition.AcquisitionMIME.PDF, content=f"catalogs/catalog/{uuid.uuid4()}.pdf"
-            )
-        encrypted = EncryptedContent.objects.get(acquisition=acquisition)
-        job = JobProtocol.objects.get(pk=encrypted.task_id)
-        self.assertEqual(job.kind, "readium.encrypt")
-        self.assertEqual(job.subject_id, acquisition.pk)
-        self.assertEqual(job.status, Status.QUEUED)
+    def test_succeeded_run_with_a_pending_package_is_not_a_succeeded_job(self, _prepare):
+        acquisition = self.acquisition()
+        self.enable_readium()
+        with patch(BROKER):
+            job = facade.apply("readium.encrypt", acquisition.pk, user=self.admin)
+        with self.captureOnCommitCallbacks(execute=True):
+            ledger.apply_event(event("task-succeeded", job.current_run_id))
+        job.refresh_from_db()
+        self.assertEqual(job.state, JobState.QUEUED)  # EncryptedContent still pending: the domain wins
 
 
 @override_settings(EVILFLOWERS_EXTRACTION_ENABLED=True)
-class ExtractionKindTests(Fixtures):
-    def test_stable_task_id_reuses_the_row(self):
+class StableTaskIdTests(Fixtures):
+    def test_every_run_reuses_the_run_row(self):
         from apps.extraction.services import task_id
 
         acquisition = self.acquisition()
         with patch("apps.extraction.services.queue", return_value=object()):
-            first = JobService.start("extraction.run", acquisition.pk, user=self.admin)
-            self.assertEqual(str(first.pk), task_id(acquisition.pk, 2))
-            JobProtocol.objects.filter(pk=first.pk).update(status=Status.FAILED, error="boom")
-            first.refresh_from_db()
-            again = JobService.retry(first, user=self.admin)
-        self.assertEqual(again.pk, first.pk)
-        self.assertEqual(again.status, Status.QUEUED)
-        self.assertIsNone(again.error)
-        self.assertIsNone(again.retry_of_id)
+            job = facade.apply("extraction.run", acquisition.pk, user=self.admin)
+            self.assertEqual(str(job.current_run_id), task_id(acquisition.pk, 2))
+            self.assertEqual(str(job.current_run_id), str(job.current_run.pk))
+            with self.captureOnCommitCallbacks(execute=True):
+                ledger.apply_event(event("task-failed", job.current_run_id, exception="boom"))
+            again = facade.apply("extraction.run", acquisition.pk, user=self.admin)
+        self.assertEqual(str(again.current_run_id), str(job.current_run_id))
+        self.assertEqual((again.generation, again.state), (2, JobState.QUEUED))
+        self.assertEqual(JobRun.objects.get(pk=job.current_run_id).status, RunStatus.QUEUED)
 
-        # Workers remember revoked ids; a re-run under the same id would be discarded too.
-        with self.assertRaises(JobRefused) as refused:
-            JobService.revoke(again, user=self.admin)
-        self.assertEqual(refused.exception.status, 422)
+    def test_cancelling_never_revokes_a_stable_id(self):
+        acquisition = self.acquisition()
+        with patch("apps.extraction.services.queue", return_value=object()):
+            job = facade.apply("extraction.run", acquisition.pk, user=self.admin)
+        facade.patch(job.pk, desired=DesiredState.CANCELLED, user=self.admin)
+        self.assertEqual(self.dispatcher.revoked, [])
 
 
 class HousekeepingTests(Fixtures):
-    def test_sweeper_marks_silent_started_jobs_lost(self):
+    def test_sweeper_loses_silent_runs_and_fails_their_job(self):
+        job = facade.apply("maintenance.backup", user=self.admin)
         old = timezone.now() - timedelta(days=1)
-        job = JobProtocol.objects.create(
-            name="apps.tasks.tasks.backup", status=Status.STARTED, last_event_at=old, started_at=old
-        )
-        fresh = JobProtocol.objects.create(
-            name="apps.tasks.tasks.backup", status=Status.STARTED, last_event_at=timezone.now()
-        )
-        self.assertEqual(sweep_lost_jobs(), 1)
+        JobRun.objects.filter(pk=job.current_run_id).update(status=RunStatus.STARTED, last_event_at=old)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(sweep_lost_runs(), 1)
         job.refresh_from_db()
-        fresh.refresh_from_db()
-        self.assertEqual(job.status, Status.LOST)
-        self.assertEqual(fresh.status, Status.STARTED)
+        self.assertEqual(job.state, JobState.FAILED)
 
-    def test_queued_without_any_event_becomes_lost_after_the_queued_limit(self):
-        old = timezone.now() - timedelta(days=3)
-        missed = JobProtocol.objects.create(name="apps.tasks.tasks.backup", status=Status.QUEUED)
-        waiting = JobProtocol.objects.create(name="apps.tasks.tasks.backup", status=Status.QUEUED)
-        JobProtocol.objects.filter(pk=missed.pk).update(created_at=old)
-        self.assertEqual(sweep_lost_jobs(), 1)
-        missed.refresh_from_db()
-        waiting.refresh_from_db()
-        self.assertEqual(missed.status, Status.LOST)
-        self.assertEqual(waiting.status, Status.QUEUED)
-
-    def test_beat_runs_keep_no_event_history_unless_they_fail(self):
-        task_id = uuid.uuid4()
-        now = time.time()
-        ledger.apply_event(event("task-received", task_id, now, name="apps.readium.tasks.expire_lapsed_licenses"))
-        ledger.apply_event(event("task-succeeded", task_id, now + 1))
-        self.assertFalse(JobEvent.objects.filter(job_id=task_id).exists())
-
-    def test_service_tasks_get_the_longer_limit(self):
-        three_hours = timezone.now() - timedelta(hours=3)
-        job = JobProtocol.objects.create(
-            name="evilflowers_equation.equations", status=Status.STARTED, last_event_at=three_hours
+    def test_prune_keeps_every_jobs_current_run(self):
+        job = facade.apply("maintenance.backup", user=self.admin)
+        old_run = JobRun.objects.create(name="apps.tasks.tasks.backup", job=job, status=RunStatus.SUCCEEDED)
+        noise = JobRun.objects.create(name="beat", status=RunStatus.SUCCEEDED)
+        JobRun.objects.filter(pk__in=[old_run.pk, noise.pk, job.current_run_id]).update(
+            created_at=timezone.now() - timedelta(days=400)
         )
-        sweep_lost_jobs()
-        job.refresh_from_db()
-        self.assertEqual(job.status, Status.STARTED)
-
-    def test_prune_keeps_the_latest_job_per_subject(self):
-        acquisition = self.acquisition()
-        content_type = ContentType.objects.get_for_model(Acquisition)
-        old = timezone.now() - timedelta(days=400)
-        older = JobProtocol.objects.create(
-            name="t", kind="files.ocr", subject_type=content_type, subject_id=acquisition.pk, status=Status.SUCCEEDED
-        )
-        latest = JobProtocol.objects.create(
-            name="t", kind="files.ocr", subject_type=content_type, subject_id=acquisition.pk, status=Status.SUCCEEDED
-        )
-        noise = JobProtocol.objects.create(name="beat", status=Status.SUCCEEDED)
-        JobProtocol.objects.filter(pk__in=[older.pk, noise.pk]).update(created_at=old)
-        JobProtocol.objects.filter(pk=latest.pk).update(created_at=old + timedelta(days=1))
-        self.assertEqual(prune_jobs(), 2)
-        self.assertTrue(JobProtocol.objects.filter(pk=latest.pk).exists())
+        JobRun.objects.filter(pk=job.current_run_id).update(status=RunStatus.SUCCEEDED)
+        self.assertEqual(prune_runs(), 2)
+        self.assertTrue(JobRun.objects.filter(pk=job.current_run_id).exists())
 
 
 class RegistryTests(TestCase):
-    def test_every_catalog_task_has_a_kind(self):
+    def test_every_catalog_task_has_a_definition(self):
         from evil_flowers_catalog.celery import app
 
-        own = {name for name in app.tasks if name.startswith("apps.")}
-        missing = sorted(name for name in own if registry.for_task(name) is None)
-        self.assertEqual(missing, [])
+        own = {name for name in app.tasks if name.startswith("apps.")} - ledger.ALWAYS_IGNORED
+        self.assertEqual(sorted(name for name in own if registry.for_task(name) is None), [])

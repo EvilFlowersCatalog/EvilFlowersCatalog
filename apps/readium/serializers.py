@@ -205,3 +205,73 @@ class ReservationSerializer:
         UI can render title/author/thumbnail without an N+1 fetch per row."""
 
         entry: EntrySerializer.Base
+
+
+class EncryptionJobSerializer:
+    """LCP encryption jobs (#148): the MCP `ENCRYPTION_JOB_SCHEMA`, plus the ledger link and `stuck`."""
+
+    class Job(Serializer):
+        content_id: str = Field(description="LCP content id; pass it to requeue / reencrypt.")
+        status: str = Field(description="pending, completed, failed or registered.")
+        entry_id: UUID
+        entry_title: str
+        catalog: str = Field(description="Catalog `url_name`.")
+        mime: str
+        input_path: str
+        encrypted_path: str
+        error_message: Optional[str]
+        created_at: datetime
+        updated_at: datetime
+        encrypted_at: Optional[datetime]
+        task_id: Optional[str] = Field(description="Celery task id of the last dispatch.")
+        trace_id: Optional[str]
+        attempts: int
+        last_dispatched_at: Optional[datetime]
+        reported_at: Optional[datetime]
+        report: Optional[dict]
+        stale: bool = Field(description="pending, no report, past EVILFLOWERS_READIUM_ENCRYPTION_STALE_MINUTES.")
+        stuck: bool = Field(description="pending for over an hour: the dashboard's `attention.encryption_stuck`.")
+        readium_enabled: bool = Field(description="LCP is still switched on for the entry.")
+        job_id: Optional[UUID] = Field(description="The file's `readium.encrypt` job in /api/v1/jobs.")
+
+        @staticmethod
+        def view(encrypted_content, job_id=None) -> dict:
+            from apps.readium.services.encryption_jobs import encryption_job, is_stuck
+
+            view = encryption_job(encrypted_content)
+            view["stuck"] = is_stuck(encrypted_content)
+            view["readium_enabled"] = bool(encrypted_content.acquisition.entry.read_config("readium_enabled"))
+            view["job_id"] = job_id
+            return view
+
+    class EntryJob(Job):
+        """The job plus the two fields the entry endpoint has always returned."""
+
+        lcp_content_id: str
+        ready_for_licensing: bool
+
+    class EntryFile(Serializer):
+        acquisition_id: UUID
+        mime: str
+        encryption: Optional["EncryptionJobSerializer.EntryJob"]
+
+    class EntryStatus(Serializer):
+        """`GET /readium/v1/entries/{id}/encryption`."""
+
+        readium_enabled: bool
+        has_acquisition: Optional[bool] = None
+        encryption: Optional["EncryptionJobSerializer.EntryJob"] = Field(default=None, description="The first file's.")
+        acquisitions: list["EncryptionJobSerializer.EntryFile"] = []
+        message: Optional[str] = None
+
+    class EntryTriggered(Serializer):
+        """`POST /readium/v1/entries/{id}/encryption`."""
+
+        message: str
+        lcp_content_id: str = Field(description="The first file's.")
+        status: str
+        jobs: list[dict]
+
+
+EncryptionJobSerializer.EntryFile.model_rebuild()
+EncryptionJobSerializer.EntryStatus.model_rebuild()

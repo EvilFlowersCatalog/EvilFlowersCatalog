@@ -36,6 +36,7 @@ from apps.mcp.schemas import UUID_SCHEMA, list_output
 from apps.mcp.tools.common import assert_within_bulk_limit
 from apps.readium.models import EncryptedContent
 from apps.readium.services.content_encryption_service import ContentEncryptionService
+from apps.readium.services import encryption_jobs
 from apps.readium.services.encryption_jobs import encryption_job
 
 logger = logging.getLogger("apps.mcp.audit")
@@ -144,13 +145,12 @@ def list_encryption_jobs(request, raw_arguments: dict) -> dict:
     catalog_id = arguments.uuid("catalog_id")
     entry_ids = arguments.uuid_sequence("entry_ids")
 
-    queryset = _jobs_queryset().filter(
-        status__in=statuses.split(",") if statuses else ContentEncryptionService.REQUEUEABLE_STATUSES
+    queryset = encryption_jobs.filter_jobs(
+        _jobs_queryset(),
+        statuses=statuses.split(",") if statuses else None,
+        catalog_id=catalog_id,
+        entry_ids=entry_ids,
     )
-    if catalog_id:
-        queryset = queryset.filter(acquisition__entry__catalog_id=catalog_id)
-    if entry_ids:
-        queryset = queryset.filter(acquisition__entry_id__in=entry_ids)
 
     page = paginate(queryset.order_by("created_at"), requested)
     return {"items": [_job(ec) for ec in page.items], "metadata": page.metadata()}
@@ -221,22 +221,8 @@ def requeue_encryption(request, raw_arguments: dict) -> dict:
     if missing:
         raise ToolNotFound("Encryption job", ", ".join(missing[:10]))
 
-    results = []
-    for content_id in content_ids:
-        encrypted_content = jobs[content_id]
-        result = {"content_id": content_id, "entry_title": encrypted_content.acquisition.entry.title}
-        try:
-            ContentEncryptionService.requeue(encrypted_content)
-        except ValueError as error:
-            result.update(requeued=False, status=encrypted_content.status, reason=str(error))
-        else:
-            result.update(
-                requeued=True,
-                status=encrypted_content.status,
-                task_id=encrypted_content.task_id,
-                trace_id=encrypted_content.trace_id,
-            )
-        results.append(result)
+    # Each re-send is a `readium.encrypt` job in the ledger (IP-031), recorded with who asked.
+    results = [encryption_jobs.requeue(jobs[content_id], request.user) for content_id in content_ids]
 
     requeued = sum(1 for result in results if result["requeued"])
     logger.info(
@@ -363,59 +349,11 @@ def reencrypt_publication(request, raw_arguments: dict) -> dict:
         # An entry can hold several packages (one per PDF/EPUB acquisition).
         assert_within_bulk_limit("entry_ids", jobs)
 
-    results = []
-    for encrypted_content in jobs:
-        entry = encrypted_content.acquisition.entry
-        active_loans = ContentEncryptionService.active_licenses(encrypted_content).count()
-        result = {
-            "content_id": encrypted_content.lcp_content_id,
-            "entry_id": str(entry.pk),
-            "entry_title": entry.title,
-            "previous_status": encrypted_content.status,
-            "active_loans": active_loans,
-        }
-
-        reason = None
-        if not entry.read_config("readium_enabled"):
-            reason = _("Readium LCP is switched off for this publication.")
-        elif not encrypted_content.acquisition.content:
-            reason = _("The publication has no file to encrypt.")
-        elif active_loans and not force:
-            reason = _(
-                "%(count)d active loan(s) would break; their readers lose access. Pass `force` to "
-                "re-encrypt anyway."
-            ) % {"count": active_loans}
-
-        if reason:
-            result.update(requeued=False, status=encrypted_content.status, reason=reason)
-        elif dry_run:
-            result.update(
-                requeued=True,
-                status=encrypted_content.status,
-                metadata=ContentEncryptionService.publication_metadata(entry),
-            )
-        else:
-            try:
-                ContentEncryptionService.reencrypt(encrypted_content, force=force)
-            except ValueError as error:
-                # A loan granted since `active_loans` was counted.
-                result.update(requeued=False, status=encrypted_content.status, reason=str(error))
-                results.append(result)
-                continue
-            result.update(
-                requeued=True,
-                status=encrypted_content.status,
-                task_id=encrypted_content.task_id,
-                trace_id=encrypted_content.trace_id,
-            )
-            # `_queue_encryption_task` turns the job `failed` when it cannot
-            # prepare the source (license page); nothing reached the worker,
-            # so the row's task id is still the previous dispatch's.
-            if encrypted_content.status == EncryptedContent.EncryptionStatus.FAILED:
-                result.update(
-                    requeued=False, task_id=None, trace_id=None, reason=encrypted_content.error_message or ""
-                )
-        results.append(result)
+    # Each re-encryption is a `readium.encrypt` job in the ledger (IP-031), recorded with who asked.
+    results = [
+        encryption_jobs.reencrypt(encrypted_content, request.user, force=force, dry_run=dry_run)
+        for encrypted_content in jobs
+    ]
 
     requeued = sum(1 for result in results if result["requeued"])
     if not dry_run:

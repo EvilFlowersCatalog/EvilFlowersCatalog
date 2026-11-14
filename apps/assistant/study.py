@@ -182,7 +182,11 @@ def study(context: ToolContext, arguments: dict, client=None) -> dict:
             if has_more
             else ({"section": upcoming.title, "part": 1} if upcoming else None)
         )
-        artefact["prerequisites"] = _prerequisites(context, text, section)
+        # "Read first" holds earlier sections and other books only; a section further on in the same book that
+        # defines the term goes to `defined_later`, never presented as something to read before (#153).
+        hints = _prerequisites(context, text, section)
+        artefact["prerequisites"] = [{k: v for k, v in h.items() if k != "later"} for h in hints if not h["later"]]
+        artefact["defined_later"] = [{k: v for k, v in h.items() if k != "later"} for h in hints if h["later"]]
     if mode == "key_concepts":
         _record_definitions(text, section, data)
 
@@ -347,14 +351,19 @@ def _prerequisites(context: ToolContext, text: Text, section) -> List[dict]:
     except Exception:
         logger.exception("Prerequisites of section %r failed", section.title[:60])
         return []
-    return [{"entry_id": item["entry_id"], "section": item["title"], "page": item["first_page"]} for item in found]
+    return [
+        {"entry_id": item["entry_id"], "section": item["title"], "page": item["first_page"], "later": item["later"]}
+        for item in found
+    ]
 
 
 def _record_definitions(text: Text, section, data: dict) -> None:
     try:
         from apps.graph import projection
 
-        projection.add_definitions(text.run.pk, section.title, [item["term"] for item in data.get("concepts") or []])
+        projection.add_definitions(
+            text.run.pk, section.title, [item["term"] for item in data.get("concepts") or []], text.entry
+        )
     except Exception:
         logger.exception("Could not record the concepts of section %r", section.title[:60])
 

@@ -6,7 +6,8 @@ from django.test import SimpleTestCase, TestCase
 
 from apps.extraction import services
 from apps.tasks.management.commands.celery_event_handler import Command
-from apps.tasks.models import JobProtocol
+from apps.tasks.domain.values import RunStatus
+from apps.tasks.models import JobRun as JobProtocol
 
 LEGACY_EXTRACT_ID = "extract:f89dbe0d-36c2-45ee-b3b4-931598f26634:v2"
 
@@ -26,7 +27,7 @@ class EventHandlerTests(TestCase):
 
         task_id = str(uuid.uuid4())
         self.command.handle_event(event(uuid=task_id))
-        self.assertEqual(JobProtocol.objects.get(pk=task_id).status, JobProtocol.JobStatus.RECEIVED)
+        self.assertEqual(JobProtocol.objects.get(pk=task_id).status, RunStatus.RECEIVED)
 
     def test_non_uuid_parent_id_is_skipped_and_listener_keeps_going(self):
         child = str(uuid.uuid4())
@@ -59,7 +60,7 @@ class EventHandlerTests(TestCase):
         protocol = JobProtocol.objects.get(pk=task_id)
         self.assertEqual(protocol.name, "evilflowers_analyzer.extract")
         self.assertEqual(protocol.parent_id, uuid.UUID(parent))
-        self.assertEqual(protocol.status, JobProtocol.JobStatus.RECEIVED)
+        self.assertEqual(protocol.status, RunStatus.RECEIVED)
         self.assertEqual(protocol.job_args, ["..."])
         self.assertEqual(
             protocol.job_kwargs,

@@ -1,25 +1,29 @@
-"""Cross-references, figure vectors and the AGE graph for active extraction runs (IP-030 backfill).
+"""Cross-references, figure vectors, section similarity and the AGE graph for active runs (IP-030 backfill).
 
 New runs get these after they become active (`apps.extraction.tasks.post_process_run`); this fills in the runs
 that were active before, or repeats a step. Every step is idempotent per run.
 
 Examples:
     python manage.py link_extraction                    # every active run, all steps
+    python manage.py link_extraction --steps similarity --steps graph   # cross-book SIMILAR_TO (#151)
     python manage.py link_extraction --steps references --steps regions
     python manage.py link_extraction --entry <uuid> --no-embed
 """
 
 from django.core.management.base import BaseCommand
 
-from apps.extraction import references, regions
+from apps.extraction import references, regions, similarity
 from apps.extraction.models import ExtractionRun
 from evil_flowers_catalog import tracing
 
-STEPS = ("references", "regions", "graph")
+STEPS = ("references", "regions", "similarity", "graph")
 
 
 class Command(tracing.TracedCommandMixin, BaseCommand):
-    help = "Cross-references, figure documents and vectors, and the graph projection of active extraction runs."
+    help = (
+        "Cross-references, figure documents and vectors, cross-book section similarity and the graph projection "
+        "of active extraction runs."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument("--entry", dest="entry_id", help="Only this publication.")
@@ -36,6 +40,11 @@ class Command(tracing.TracedCommandMixin, BaseCommand):
             runs = runs[: options["limit"]]
 
         totals: dict = {}
+        # Similarity compares a run with every other one: for the whole library it is computed once, with one
+        # corpus mean, before the graph projects it; for one publication, per run in the loop.
+        per_run_similarity = "similarity" in steps and bool(options["entry_id"] or options["limit"])
+        if "similarity" in steps and not per_run_similarity:
+            self.stdout.write(f"section similarity: {similarity.rebuild()} pairs")
         for run in runs.iterator():
             line = [f"run {run.pk}"]
             if "references" in steps:
@@ -45,6 +54,8 @@ class Command(tracing.TracedCommandMixin, BaseCommand):
             if "regions" in steps:
                 counts = regions.index_run(run, embed=not options["no_embed"])
                 line.append(f"figures {counts['documents']} documents, {counts['embedded']} embedded")
+            if per_run_similarity:
+                line.append(f"similar sections {similarity.compute_run(run)}")
             if "graph" in steps:
                 from apps.graph import projection
 

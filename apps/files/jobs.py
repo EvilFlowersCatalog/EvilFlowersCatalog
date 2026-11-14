@@ -1,19 +1,18 @@
 """OCR job kind (#146, IP-031): make a scanned PDF searchable.
 
-The worker (`evilflowers-ocr-worker`) reads the acquisition's file from shared storage, runs
-`ocrmypdf(skip_text=True)` into `<entry dir>/ocr/<job id>.pdf` and reports to
-`POST /api/v1/jobs/<job id>/report`. It never writes the original. The report decides (Q3):
+The worker (`evilflowers-ocr-service`) reads the acquisition's file from shared storage, runs
+`ocrmypdf(skip_text=True)` into `<entry dir>/ocr/<run id>.pdf` and reports to the `report_url` the task
+carries (`POST /api/v1/jobs/runs/<run id>/report`). It never writes the original. The report decides (Q3):
 
 - `evilflowers_ocr_rewrite` on: the acquisition's file becomes the OCR output, its checksum is cleared,
-  and LCP encryption (re-encrypt, same content id) and extraction run again as child jobs. The
-  original stays where it was (named in the report) until the next successful OCR of the same file.
-- off: the output becomes a new, derived acquisition of the entry; the original is untouched.
+  and LCP re-encryption and extraction are declared as follow-up jobs. The original stays where it was
+  (named in the report) until the next successful OCR of the same file.
+- off: the output becomes a new, derived acquisition; the original is untouched.
 
 A `skipped` report (the PDF already had text) changes nothing.
 """
 
 import logging
-import os
 from datetime import timedelta
 
 from django.conf import settings
@@ -21,36 +20,47 @@ from django.db import transaction
 from django.utils.translation import gettext as _
 
 from apps.core.models import Acquisition
-from apps.tasks.kinds import JobKind, JobRefused, entry_scope, first_arg, registry
+from apps.tasks.contract import (
+    Blocked,
+    Dispatch,
+    DispatchError,
+    JobDefinition,
+    Ready,
+    Refused,
+    Report,
+    Spec,
+    declare,
+    entry_scope,
+    registry,
+    uuid_arg,
+)
 
 logger = logging.getLogger(__name__)
 
 REPORT_STATUSES = ("done", "skipped", "failed")
 
 
-def _destination(acquisition, job) -> str:
-    return f"{acquisition.upload_base_path()}/ocr/{job.pk}.pdf"
+class OcrSpec(Spec):
+    #: Redo OCR on pages that already have text (ocrmypdf `redo_ocr`).
+    redo: bool = False
+
+
+def _destination(acquisition, run_id) -> str:
+    return f"{acquisition.upload_base_path()}/ocr/{run_id}.pdf"
 
 
 @registry.register
-class OcrKind(JobKind):
-    name = "files.ocr"
+class OcrDefinition(JobDefinition[Acquisition, OcrSpec]):
+    kind = "files.ocr"
     title = "OCR"
     description = (
-        "Add a text layer to a scanned PDF with ocrmypdf (pages that already have text are skipped). "
-        "The entry's `evilflowers_ocr_rewrite` decides whether the result replaces the file or is added "
-        "as a new acquisition."
+        "Add a text layer to a scanned PDF with ocrmypdf (pages that already have text are skipped). The entry's "
+        "`evilflowers_ocr_rewrite` decides whether the result replaces the file or is added as a new acquisition."
     )
     task = "evilflowers_ocr_worker.ocr"
     subject_model = Acquisition
+    spec_model = OcrSpec
     reports = True
-    options_schema = {
-        "type": "object",
-        "properties": {
-            "redo": {"type": "boolean", "description": "Redo OCR on pages that already have text (redo_ocr)."}
-        },
-        "additionalProperties": False,
-    }
 
     @property
     def queue(self):
@@ -60,74 +70,77 @@ class OcrKind(JobKind):
     def time_limit(self):
         return timedelta(seconds=settings.EVILFLOWERS_OCR_TIME_LIMIT)
 
-    def subject_from_call(self, args, kwargs):
-        return first_arg([], kwargs, "acquisition_id")
-
     def scope(self, acquisition):
         return entry_scope(acquisition.entry)
 
-    def eligible(self, acquisition, options):
-        if not settings.EVILFLOWERS_OCR_ENABLED:
-            return _("OCR is switched off: no OCR worker is deployed (EVILFLOWERS_OCR_ENABLED).")
+    def subject_from_call(self, args, kwargs):
+        return uuid_arg([], kwargs, "acquisition_id")
+
+    def check(self, acquisition, spec):
         if acquisition.mime != Acquisition.AcquisitionMIME.PDF:
-            return _("Only PDF files are OCR'd.")
+            return Refused(_("Only PDF files are OCR'd."))
         if acquisition.storage_backend != Acquisition.StorageBackend.LOCAL or not acquisition.content:
-            return _("The acquisition has no stored file.")
+            return Refused(_("The acquisition has no stored file."))
+        if not settings.EVILFLOWERS_OCR_ENABLED:
+            return Blocked(_("OCR is switched off: no OCR worker is deployed (EVILFLOWERS_OCR_ENABLED)."))
         language = acquisition.entry.language
         if language is None or not getattr(language, "alpha3", None):
-            return _("Set the entry's language first; OCR needs it.")
-        return None
+            return Blocked(_("Set the entry's language first; OCR needs it."))
+        return Ready()
 
-    def kwargs(self, job, acquisition, options):
+    def kwargs(self, dispatch: Dispatch[Acquisition, OcrSpec]) -> dict:
+        acquisition = dispatch.subject
         base = settings.EVILFLOWERS_JOBS_REPORT_BASE_URL.rstrip("/")
         return {
-            "job_id": str(job.pk),
+            "job_id": dispatch.job_id,
+            "run_id": dispatch.run_id,
             "acquisition_id": str(acquisition.pk),
             "source": acquisition.content.name,
-            "destination": _destination(acquisition, job),
+            "destination": _destination(acquisition, dispatch.run_id),
             "language": acquisition.entry.language.alpha3,
-            "redo": bool(options.get("redo")),
-            "report_url": f"{base}/api/v1/jobs/{job.pk}/report",
+            "redo": dispatch.spec.redo,
+            "report_url": f"{base}/api/v1/jobs/runs/{dispatch.run_id}/report",
         }
 
-    def on_report(self, job, acquisition, payload):
+    def on_report(self, report: Report[Acquisition]):
         from apps.files.storage import get_storage
 
-        status = (payload or {}).get("status")
+        payload, acquisition = report.payload, report.subject
+        status = payload.get("status")
         if status not in REPORT_STATUSES:
-            raise JobRefused(
+            raise DispatchError(
                 _("`status` must be one of: %(statuses)s.") % {"statuses": ", ".join(REPORT_STATUSES)}, status=400
             )
-        report = {
-            key: payload.get(key)
+        stored = {
+            key: payload[key]
             for key in ("status", "pages", "pages_ocred", "skipped_reason", "error", "warnings")
             if payload.get(key) is not None
         }
         if status != "done":
-            return report
+            return stored
 
-        destination = (job.job_kwargs or {}).get("destination") or _destination(acquisition, job)
+        destination = report.run_kwargs.get("destination") or _destination(acquisition, report.run_id)
         if payload.get("output") and payload["output"] != destination:
-            raise JobRefused(_("The report names an output other than the job's destination."), status=400)
+            raise DispatchError(_("The report names an output other than the run's destination."), status=400)
         if not get_storage().exists(destination):
-            raise JobRefused(_("The OCR output %(path)s does not exist.") % {"path": destination}, status=400)
+            raise DispatchError(_("The OCR output %(path)s does not exist.") % {"path": destination}, status=400)
 
-        report["output"] = destination
+        stored["output"] = destination
         if acquisition.entry.read_config("evilflowers_ocr_rewrite"):
-            report.update(self._replace(job, acquisition, destination))
+            stored.update(self._replace(report, acquisition, destination))
         else:
-            report.update(self._derive(acquisition, destination))
-        return report
+            stored.update(self._derive(acquisition, destination))
+        return stored
 
-    def _replace(self, job, acquisition, destination) -> dict:
+    def _replace(self, report: Report, acquisition, destination) -> dict:
         from apps.files.storage import get_storage
-        from apps.tasks.models import JobProtocol
+        from apps.tasks.models import JobRun
 
         original = acquisition.content.name
         # The original kept by the previous successful OCR of this file goes now (Q3).
         previous = (
-            JobProtocol.objects.filter(kind=self.name, subject_id=acquisition.pk, reported_at__isnull=False)
-            .exclude(pk=job.pk)
+            JobRun.objects.filter(kind=self.kind, subject_id=acquisition.pk, reported_at__isnull=False)
+            .exclude(pk=report.run_id)
             .order_by("-reported_at")
             .values_list("report", flat=True)
             .first()
@@ -144,78 +157,56 @@ class OcrKind(JobKind):
         acquisition.content.name = destination
         acquisition.checksum_cached = None
         acquisition.save(update_fields=["content", "checksum_cached", "updated_at"])
-        transaction.on_commit(lambda: _follow_up(job.pk, acquisition.pk))
+        # The new file is declared, not sent: LCP re-encryption and extraction become jobs of their own.
+        transaction.on_commit(lambda: _follow_up(acquisition.pk, report.job_id))
         return {"applied": "replaced", "original": original}
 
-    def _derive(self, acquisition, destination) -> dict:
+    @staticmethod
+    def _derive(acquisition, destination) -> dict:
         derived = Acquisition(
-            entry=acquisition.entry,
-            relation=acquisition.relation,
-            mime=Acquisition.AcquisitionMIME.PDF,
+            entry=acquisition.entry, relation=acquisition.relation, mime=Acquisition.AcquisitionMIME.PDF
         )
         derived.content.name = destination
         derived.save()
         return {"applied": "derived", "derived_acquisition_id": str(derived.pk)}
 
-    def detail(self, job, acquisition):
-        return {"output": (job.job_kwargs or {}).get("destination")}
 
-
-def _follow_up(job_id, acquisition_id) -> None:
-    """After a replaced file: LCP re-encryption and extraction of the new file, as child jobs."""
-    from apps.tasks.models import JobProtocol
-    from apps.tasks.services import JobService
-
-    parent = JobProtocol.objects.filter(pk=job_id).first()
+def _follow_up(acquisition_id, cause_id) -> None:
     acquisition = Acquisition.objects.filter(pk=acquisition_id).select_related("entry").first()
-    if parent is None or acquisition is None:
+    if acquisition is None:
         return
-
-    started = {}
+    declarations = []
     if acquisition.entry.read_config("readium_enabled"):
-        has_package = Acquisition.objects.filter(pk=acquisition.pk, encrypted_content__isnull=False).exists()
-        started["readium.encrypt"] = {"reencrypt": True, "force": False} if has_package else {}
+        has_package = Acquisition.objects.filter(pk=acquisition_id, encrypted_content__isnull=False).exists()
+        declarations.append(("readium.encrypt", {"reencrypt": True} if has_package else {}))
     if settings.EVILFLOWERS_EXTRACTION_ENABLED:
-        started["extraction.run"] = {}
-
-    results = {}
-    for kind, options in started.items():
+        declarations.append(("extraction.run", {}))
+    for kind, spec in declarations:
         try:
-            child = JobService.start(
-                kind, acquisition.pk, options=options, force=True, parent=parent, check_permission=False
+            declare(kind, acquisition_id, spec=spec, cause_id=cause_id)
+        except DispatchError as error:
+            logger.warning(
+                "ocr.follow_up_refused kind=%s acquisition=%s reason=%s", kind, acquisition_id, error.message
             )
-            results[kind] = str(child.pk)
-        except JobRefused as error:
-            # E.g. active loans block the re-encryption: the operator decides (reencrypt action, force).
-            results[kind] = f"refused: {error.message}"
-            logger.warning("ocr.follow_up_refused job=%s kind=%s reason=%s", job_id, kind, error.message)
-    if results:
-        report = dict(parent.report or {})
-        report["follow_ups"] = results
-        JobProtocol.objects.filter(pk=job_id).update(report=report)
 
 
 def queue_ocr(acquisition: Acquisition) -> None:
-    """Start OCR for a new upload when the entry asks for it (`evilflowers_ocr_enabled`), after commit.
+    """Declare OCR for a new upload when the entry asks for it (`evilflowers_ocr_enabled`), after commit.
 
     Never raises: OCR is best-effort and must not fail an upload.
     """
     if not settings.EVILFLOWERS_OCR_ENABLED or not acquisition.entry.read_config("evilflowers_ocr_enabled"):
         return
-    if OcrKind().eligible(acquisition, {}):
-        return
 
-    def _start(acquisition_id=acquisition.pk):
-        from apps.tasks.services import JobService
-
+    def _declare(acquisition_id=acquisition.pk):
         try:
-            JobService.start(OcrKind.name, acquisition_id, check_permission=False)
-        except JobRefused as error:
-            logger.info("ocr.not_started acquisition=%s reason=%s", acquisition_id, error.message)
+            declare(OcrDefinition.kind, acquisition_id)
+        except DispatchError as error:
+            logger.info("ocr.not_declared acquisition=%s reason=%s", acquisition_id, error.message)
         except Exception:
-            logger.exception("ocr.not_started acquisition=%s", acquisition_id)
+            logger.exception("ocr.not_declared acquisition=%s", acquisition_id)
 
-    transaction.on_commit(_start)
+    transaction.on_commit(_declare)
 
 
-__all__ = ["OcrKind", "queue_ocr"]
+__all__ = ["OcrDefinition", "queue_ocr"]

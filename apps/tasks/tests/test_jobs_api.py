@@ -1,4 +1,5 @@
-"""IP-031: `/api/v1/jobs`, the OCR kind (#146) and the listener's outage buffer."""
+"""IP-031 rev. 2: `/api/v1/jobs` (one declarative resource), OCR reports (#146), the dashboard's LCP
+counts (#148) and the listener's outage buffer."""
 
 import json
 import shutil
@@ -10,17 +11,19 @@ from django import db
 from django.contrib.auth.models import Permission
 from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from apps.core.auth import JWTFactory
 from apps.core.models import Acquisition, ApiKey, AuthSource, Catalog, Entry, Language, User
 from apps.files.jobs import queue_ocr
 from apps.files.storage import get_storage
+from apps.readium.models import EncryptedContent
+from apps.readium.services.statistics import ENCRYPTION_STUCK_AFTER
+from apps.tasks.application.facade import facade
+from apps.tasks.domain.values import JobState, RunStatus
 from apps.tasks.management.commands.celery_event_handler import Command
-from apps.tasks.models import JobProtocol
-from apps.tasks.services import JobService
-
-Status = JobProtocol.JobStatus
-SEND = "evil_flowers_catalog.celery.app.send_task"
+from apps.tasks.models import Job, JobRun
+from apps.tasks.tests.test_jobs import FakeDispatcher
 
 
 class ApiFixtures(TestCase):
@@ -39,6 +42,12 @@ class ApiFixtures(TestCase):
         cls.catalog = Catalog.objects.create(creator=cls.admin, title="Catalog", url_name="catalog")
         cls.entry = Entry.objects.create(creator=cls.admin, catalog=cls.catalog, title="Sken", language=language)
 
+    def setUp(self):
+        self.dispatcher = FakeDispatcher()
+        patcher = patch.object(facade, "dispatcher", self.dispatcher)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def tearDown(self):
         # Uploads and OCR outputs land in the real storage root; drop this entry's folder.
         shutil.rmtree(get_storage().path(f"catalogs/{self.catalog.url_name}/{self.entry.pk}"), ignore_errors=True)
@@ -48,8 +57,8 @@ class ApiFixtures(TestCase):
         key = ApiKey.objects.create(user=user, name="test")
         return {"Authorization": f"Bearer {JWTFactory(user.pk).api_key(str(key.pk))}"}
 
-    def post(self, path, payload, user):
-        return self.client.post(
+    def send(self, method, path, payload, user):
+        return getattr(self.client, method)(
             path, data=json.dumps(payload), content_type="application/json", headers=self.headers(user)
         )
 
@@ -60,167 +69,179 @@ class ApiFixtures(TestCase):
         return acquisition
 
 
-class JobApiTests(ApiFixtures):
-    def test_jobs_are_for_administrators_only(self):
-        response = self.client.get("/api/v1/jobs", headers=self.headers(self.reader))
-        self.assertEqual(response.status_code, 403)
+class JobResourceTests(ApiFixtures):
+    def test_administrators_only(self):
+        self.assertEqual(self.client.get("/api/v1/jobs", headers=self.headers(self.reader)).status_code, 403)
+        self.assertEqual(
+            self.send("post", "/api/v1/jobs", {"kind": "maintenance.backup"}, self.reader).status_code, 403
+        )
 
-    def test_start_list_detail_and_revoke(self):
-        with patch(SEND):
-            response = self.post("/api/v1/jobs", {"kind": "maintenance.prune_jobs"}, self.admin)
+    def test_apply_list_detail_and_cancel(self):
+        response = self.send("post", "/api/v1/jobs", {"kind": "maintenance.prune_jobs"}, self.admin)
         self.assertEqual(response.status_code, 201, response.content)
         job = response.json()["response"]
-        self.assertEqual(job["status"], "queued")
-        self.assertEqual(job["kind"], "maintenance.prune_jobs")
+        self.assertEqual((job["state"], job["desired_state"], job["generation"]), ("queued", "completed", 1))
+        self.assertEqual(job["runs"][0]["status"], "queued")
 
         listed = self.client.get(
-            "/api/v1/jobs?kind=maintenance.prune_jobs&status=queued", headers=self.headers(self.admin)
+            "/api/v1/jobs?kind=maintenance.prune_jobs&state=queued", headers=self.headers(self.admin)
         )
         self.assertEqual(listed.json()["metadata"]["total"], 1)
 
-        detail = self.client.get(f"/api/v1/jobs/{job['id']}", headers=self.headers(self.admin)).json()["response"]
-        self.assertEqual([event["type"] for event in detail["events"]], ["queued"])
+        cancelled = self.send("patch", f"/api/v1/jobs/{job['id']}", {"desired_state": "cancelled"}, self.admin)
+        self.assertEqual(cancelled.json()["response"]["state"], "cancelled")
 
-        with patch("evil_flowers_catalog.celery.app.control.revoke"):
-            revoked = self.post(f"/api/v1/jobs/{job['id']}/revoke", {}, self.admin)
-        self.assertEqual(revoked.status_code, 202)
-        self.assertEqual(revoked.json()["response"]["status"], "revoked")
+    def test_dry_run_and_refusals(self):
+        plan = self.send("post", "/api/v1/jobs?dry_run=true", {"kind": "maintenance.backup"}, self.admin)
+        self.assertEqual(plan.json()["response"]["outcome"], "would-run")
+        self.assertFalse(Job.objects.exists())
+        self.assertEqual(self.send("post", "/api/v1/jobs", {"kind": "nope"}, self.admin).status_code, 404)
+        bad = self.send("post", "/api/v1/jobs", {"kind": "maintenance.backup", "spec": {"x": 1}}, self.admin)
+        self.assertEqual(bad.status_code, 422)
 
-    def test_conflicts_and_unknown_kinds(self):
-        with patch(SEND):
-            self.post("/api/v1/jobs", {"kind": "maintenance.prune_jobs"}, self.admin)
-            again = self.post("/api/v1/jobs", {"kind": "maintenance.prune_jobs"}, self.admin)
-        self.assertEqual(again.status_code, 409)
-        self.assertEqual(self.post("/api/v1/jobs", {"kind": "nope"}, self.admin).status_code, 404)
-
-    def test_kinds_and_summary(self):
+    def test_kinds_summary_and_runs(self):
         kinds = self.client.get("/api/v1/jobs/kinds", headers=self.headers(self.admin)).json()["response"]
-        names = {kind["name"] for kind in kinds}
-        self.assertTrue({"files.ocr", "readium.encrypt", "extraction.run"} <= names)
-        encrypt = next(kind for kind in kinds if kind["name"] == "readium.encrypt")
-        self.assertEqual({action["name"] for action in encrypt["actions"]}, {"requeue", "reencrypt"})
-
-        JobProtocol.objects.create(name="x", kind="files.ocr", status=Status.FAILED)
+        self.assertTrue({"files.ocr", "readium.encrypt", "extraction.run"} <= {kind["kind"] for kind in kinds})
+        self.send("post", "/api/v1/jobs", {"kind": "maintenance.backup"}, self.admin)
         summary = self.client.get("/api/v1/jobs/summary", headers=self.headers(self.admin)).json()["response"]
-        self.assertIn({"kind": "files.ocr", "statuses": {"failed": 1}, "stale": 0}, summary)
+        self.assertIn({"kind": "maintenance.backup", "states": {"queued": 1}, "stale": 0}, summary)
+        runs = self.client.get("/api/v1/jobs/runs?kind=maintenance.backup", headers=self.headers(self.admin)).json()
+        self.assertEqual(runs["metadata"]["total"], 1)
 
-    def test_latest_keeps_one_job_per_subject(self):
-        acquisition = self.acquisition()
-        older = JobProtocol.objects.create(
-            name="t", kind="files.ocr", subject_id=acquisition.pk, entry=self.entry, status=Status.FAILED
+
+class DashboardParityTests(ApiFixtures):
+    """#148: the jobs the dashboard counts can be listed through the one resource."""
+
+    def test_failed_and_stuck_packages_match_the_statistics(self):
+        off = Entry.objects.create(creator=self.admin, catalog=self.catalog, title="LCP off")
+        failed = Acquisition.objects.create(
+            entry=off, mime=Acquisition.AcquisitionMIME.PDF, content="catalogs/x/a.pdf"
         )
-        newer = JobProtocol.objects.create(
-            name="t", kind="files.ocr", subject_id=acquisition.pk, entry=self.entry, status=Status.SUCCEEDED
+        EncryptedContent.objects.create(
+            acquisition=failed,
+            lcp_content_id=str(uuid.uuid4()),
+            encrypted_path="x",
+            status=EncryptedContent.EncryptionStatus.FAILED,
+            error_message="exit 1",
         )
-        ids = [
-            item["id"]
-            for item in self.client.get(
-                f"/api/v1/jobs?entry_id={self.entry.pk}&latest=true", headers=self.headers(self.admin)
-            ).json()["items"]
-        ]
-        self.assertEqual(ids, [str(newer.pk)])
-        self.assertNotIn(str(older.pk), ids)
+        stuck = Acquisition.objects.create(entry=off, mime=Acquisition.AcquisitionMIME.PDF, content="catalogs/x/b.pdf")
+        EncryptedContent.objects.create(
+            acquisition=stuck,
+            lcp_content_id=str(uuid.uuid4()),
+            encrypted_path="y",
+            last_dispatched_at=timezone.now() - ENCRYPTION_STUCK_AFTER * 2,
+        )
+        facade.discover("readium.encrypt")  # the deploy-time sync: rows nobody declared get their job
+
+        def total(query):
+            response = self.client.get(f"/api/v1/jobs?kind=readium.encrypt&{query}", headers=self.headers(self.admin))
+            return response.json()["metadata"]["total"]
+
+        today = timezone.localdate().isoformat()
+        stats = self.client.get(
+            f"/api/v1/statistics?catalog_id={self.catalog.pk}&from={today}&to={today}",
+            headers=self.headers(self.admin),
+        )
+        attention = stats.json()["response"]["attention"]
+        self.assertEqual(attention["encryption_failed"], total("state=failed"))
+        self.assertEqual(attention["encryption_stuck"], total("state=queued&stale=true"))
 
 
 @override_settings(EVILFLOWERS_OCR_ENABLED=True, EVILFLOWERS_JOBS_REPORT_BASE_URL="http://catalog:8000")
-class OcrKindTests(ApiFixtures):
-    def start(self, acquisition):
-        with patch(SEND) as send:
-            job = JobService.start("files.ocr", acquisition.pk, user=self.admin)
-        return job, send.call_args.kwargs
+class OcrTests(ApiFixtures):
+    def apply(self, acquisition):
+        job = facade.apply("files.ocr", acquisition.pk, user=self.admin)
+        return job, self.dispatcher.sent[-1]
 
     def test_dispatch_contract(self):
         acquisition = self.acquisition()
-        job, call = self.start(acquisition)
-        kwargs = call["kwargs"]
-        self.assertEqual(call["task_id"], str(job.pk))
-        self.assertEqual(call["queue"], "evilflowers_ocr_worker")
-        self.assertEqual(kwargs["source"], acquisition.content.name)
-        self.assertEqual(kwargs["destination"], f"{acquisition.upload_base_path()}/ocr/{job.pk}.pdf")
+        job, sent = self.apply(acquisition)
+        run_id = str(job.current_run_id)
+        self.assertEqual((sent["task_id"], sent["queue"]), (run_id, "evilflowers_ocr_worker"))
+        kwargs = sent["kwargs"]
+        self.assertEqual(kwargs["destination"], f"{acquisition.upload_base_path()}/ocr/{run_id}.pdf")
         self.assertEqual(kwargs["language"], "slk")
-        self.assertEqual(kwargs["report_url"], f"http://catalog:8000/api/v1/jobs/{job.pk}/report")
+        self.assertEqual(kwargs["report_url"], f"http://catalog:8000/api/v1/jobs/runs/{run_id}/report")
+        self.assertEqual(kwargs["job_id"], str(job.pk))
 
-    @override_settings(EVILFLOWERS_OCR_ENABLED=False)
-    def test_off_without_a_worker(self):
-        response = self.post(
-            "/api/v1/jobs", {"kind": "files.ocr", "subject_id": str(self.acquisition().pk)}, self.admin
-        )
-        self.assertEqual(response.status_code, 422)
+    def report(self, run_id, payload, user=None):
+        return self.send("post", f"/api/v1/jobs/runs/{run_id}/report", payload, user or self.service)
 
-    def test_report_needs_the_report_permission(self):
-        job, _ = self.start(self.acquisition())
-        response = self.post(f"/api/v1/jobs/{job.pk}/report", {"status": "skipped"}, self.admin)
-        self.assertEqual(response.status_code, 200)  # superusers hold every permission
-        job2, _ = self.start(self.acquisition())
-        self.assertEqual(
-            self.post(f"/api/v1/jobs/{job2.pk}/report", {"status": "skipped"}, self.reader).status_code, 403
-        )
+    def test_report_permission_and_cancelled_jobs(self):
+        job, _ = self.apply(self.acquisition())
+        self.assertEqual(self.report(job.current_run_id, {"status": "skipped"}, self.reader).status_code, 403)
+        facade.patch(job.pk, desired="cancelled", user=self.admin)
+        self.assertEqual(self.report(job.current_run_id, {"status": "skipped"}).status_code, 409)
 
-    def test_done_report_replaces_the_file_when_rewrite_is_on(self):
+    def test_report_from_a_superseded_run_is_refused(self):
         acquisition = self.acquisition()
-        # After the upload: saving an acquisition saves its (cached) entry again.
-        Entry.objects.filter(pk=self.entry.pk).update(config={**self.entry.config, "evilflowers_ocr_rewrite": True})
+        job, _ = self.apply(acquisition)
+        old_run = job.current_run_id
+        # the first run is lost (e.g. the sweeper gave up on it); a newer generation sends a new run
+        JobRun.objects.filter(pk=old_run).update(status="lost")
+        facade.run_changed(JobRun.objects.get(pk=old_run))
+        job = facade.apply("files.ocr", acquisition.pk, spec={"redo": True}, user=self.admin)
+        self.assertNotEqual(job.current_run_id, old_run)
+        self.assertEqual(self.report(old_run, {"status": "skipped"}).status_code, 409)
+        self.assertEqual(self.report(job.current_run_id, {"status": "skipped"}).status_code, 200)
+
+    def test_done_report_replaces_the_file_and_declares_follow_ups(self):
+        acquisition = self.acquisition()
+        Entry.objects.filter(pk=self.entry.pk).update(
+            config={**self.entry.config, "evilflowers_ocr_rewrite": True, "readium_enabled": True}
+        )
         acquisition = Acquisition.objects.get(pk=acquisition.pk)
         original = acquisition.content.name
-        Acquisition.objects.filter(pk=acquisition.pk).update(checksum_cached="old")
-        job, call = self.start(acquisition)
-        destination = call["kwargs"]["destination"]
+        job, sent = self.apply(acquisition)
+        destination = sent["kwargs"]["destination"]
         get_storage().save(destination, ContentFile(b"%PDF-1.4 ocr"))
 
-        response = self.post(
-            f"/api/v1/jobs/{job.pk}/report",
-            {"status": "done", "output": destination, "pages": 3, "pages_ocred": 3},
-            self.service,
-        )
+        with (
+            self.captureOnCommitCallbacks(execute=True),
+            patch("apps.readium.services.content_encryption_service.get_event_broker"),
+            patch(
+                "apps.readium.services.content_encryption_service.ContentEncryptionService._prepare_source",
+                side_effect=lambda ec: ec.acquisition.content.name,
+            ),
+        ):
+            response = self.report(job.current_run_id, {"status": "done", "output": destination, "pages": 3})
         self.assertEqual(response.status_code, 200, response.content)
         acquisition.refresh_from_db()
-        self.assertEqual(acquisition.content.name, destination)
-        self.assertIsNone(acquisition.checksum_cached)
-        report = response.json()["response"]["report"]
-        self.assertEqual(report["applied"], "replaced")
-        self.assertEqual(report["original"], original)
+        self.assertEqual((acquisition.content.name, acquisition.checksum_cached), (destination, None))
+        self.assertEqual(response.json()["response"]["report"]["original"], original)
+        follow_up = Job.objects.get(kind="readium.encrypt", subject_id=acquisition.pk)
+        self.assertEqual(follow_up.cause_id, job.pk)
 
-        again = self.post(f"/api/v1/jobs/{job.pk}/report", {"status": "failed"}, self.service)
+        again = self.report(job.current_run_id, {"status": "failed"})
         self.assertEqual(again.json()["response"]["report"]["applied"], "replaced")  # idempotent
 
-    def test_done_report_adds_a_derived_acquisition_when_rewrite_is_off(self):
+    def test_done_report_adds_a_derived_acquisition_without_rewrite(self):
         acquisition = self.acquisition()
-        job, call = self.start(acquisition)
-        destination = call["kwargs"]["destination"]
+        job, sent = self.apply(acquisition)
+        destination = sent["kwargs"]["destination"]
         get_storage().save(destination, ContentFile(b"%PDF-1.4 ocr"))
-        response = self.post(f"/api/v1/jobs/{job.pk}/report", {"status": "done", "output": destination}, self.service)
-        report = response.json()["response"]["report"]
+        report = self.report(job.current_run_id, {"status": "done", "output": destination}).json()["response"][
+            "report"
+        ]
         self.assertEqual(report["applied"], "derived")
-        acquisition.refresh_from_db()
-        self.assertNotEqual(acquisition.content.name, destination)
         self.assertEqual(Acquisition.objects.get(pk=report["derived_acquisition_id"]).content.name, destination)
 
     def test_report_naming_another_file_is_refused(self):
-        job, _ = self.start(self.acquisition())
-        response = self.post(
-            f"/api/v1/jobs/{job.pk}/report", {"status": "done", "output": "catalogs/other/secret.pdf"}, self.service
-        )
+        job, _ = self.apply(self.acquisition())
+        response = self.report(job.current_run_id, {"status": "done", "output": "catalogs/other/secret.pdf"})
         self.assertEqual(response.status_code, 400)
 
-    def test_report_for_a_revoked_job_is_refused(self):
-        job, _ = self.start(self.acquisition())
-        with patch("evil_flowers_catalog.celery.app.control.revoke"):
-            JobService.revoke(job, user=self.admin)
-        response = self.post(f"/api/v1/jobs/{job.pk}/report", {"status": "skipped"}, self.service)
-        self.assertEqual(response.status_code, 409)
-
-    def test_upload_starts_ocr_only_when_the_entry_asks(self):
+    def test_upload_declares_ocr_only_when_the_entry_asks(self):
         acquisition = self.acquisition()
-        with patch(SEND), self.captureOnCommitCallbacks(execute=True):
+        with self.captureOnCommitCallbacks(execute=True):
             queue_ocr(acquisition)
-        self.assertFalse(JobProtocol.objects.filter(kind="files.ocr").exists())
-
+        self.assertFalse(Job.objects.filter(kind="files.ocr").exists())
         Entry.objects.filter(pk=self.entry.pk).update(config={**self.entry.config, "evilflowers_ocr_enabled": True})
-        acquisition = Acquisition.objects.get(pk=acquisition.pk)
-        with patch(SEND), self.captureOnCommitCallbacks(execute=True):
-            queue_ocr(acquisition)
-        job = JobProtocol.objects.get(kind="files.ocr")
+        with self.captureOnCommitCallbacks(execute=True):
+            queue_ocr(Acquisition.objects.get(pk=acquisition.pk))
+        job = Job.objects.get(kind="files.ocr")
         self.assertIsNone(job.requested_by)
+        self.assertEqual(job.state, JobState.QUEUED)
 
 
 class ListenerBufferTests(TestCase):
@@ -229,16 +250,13 @@ class ListenerBufferTests(TestCase):
         task_id = str(uuid.uuid4())
         received = {"type": "task-received", "uuid": task_id, "timestamp": time.time(), "name": "x.y"}
         succeeded = {"type": "task-succeeded", "uuid": task_id, "timestamp": time.time() + 1}
-
         with (
-            patch("apps.tasks.ledger.apply_event", side_effect=db.OperationalError("server login has been failing")),
+            patch("apps.tasks.infrastructure.ledger.apply_event", side_effect=db.OperationalError("login failing")),
             patch.object(Command, "_reset_connections"),
         ):
             command.handle_event(received)
         self.assertEqual(len(command.buffer), 1)
-        self.assertFalse(JobProtocol.objects.filter(pk=task_id).exists())
-
         command._next_retry = 0
         command.handle_event(succeeded)
         self.assertEqual(len(command.buffer), 0)
-        self.assertEqual(JobProtocol.objects.get(pk=task_id).status, Status.SUCCEEDED)
+        self.assertEqual(JobRun.objects.get(pk=task_id).status, RunStatus.SUCCEEDED)

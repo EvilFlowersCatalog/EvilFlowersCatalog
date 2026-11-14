@@ -208,6 +208,34 @@ class ParagraphLink(BaseModel):
     score = models.FloatField(null=True)
 
 
+class SectionSimilarity(BaseModel):
+    """Two sections of different publications that discuss the same thing (#151).
+
+    text-service links `similar` paragraphs only inside one run, so cross-book similarity is computed here, by
+    `apps.extraction.similarity`, from the section centroids of the paragraph embeddings. One row per unordered
+    pair; the graph projects them as `SIMILAR_TO` and is rebuilt from this table, never recomputed.
+    """
+
+    class Meta:
+        app_label = "extraction"
+        db_table = "extraction_section_similarity"
+        default_permissions = ()
+        indexes = [
+            models.Index(fields=["source"], name="extraction_section_sim_source"),
+            models.Index(fields=["target"], name="extraction_section_sim_target"),
+        ]
+        verbose_name = _("Section similarity")
+        verbose_name_plural = _("Section similarities")
+
+    source = models.ForeignKey(ExtractionRun, on_delete=models.CASCADE, related_name="section_similarities")
+    #: `Paragraph.section` of the source run: the heading, as the outline names the section.
+    source_section = models.TextField()
+    target = models.ForeignKey(ExtractionRun, on_delete=models.CASCADE, related_name="+")
+    target_section = models.TextField()
+    #: Cosine similarity of the two section centroids after the corpus mean is subtracted, 0-1.
+    score = models.FloatField()
+
+
 class Reference(BaseModel):
     """A paragraph's cross-reference to a figure, table, equation or section of the same run (IP-030 §4).
 

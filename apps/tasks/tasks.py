@@ -85,16 +85,32 @@ def prune_user_activity() -> int:
 
 
 @shared_task
-def sweep_jobs() -> dict:
-    """IP-031: mark started jobs `lost` when no event arrived for their time limit plus the grace."""
-    from apps.tasks.maintenance import sweep_lost_jobs
+def reconcile_jobs() -> dict:
+    """IP-031: the reconciler's tick — every job with something to do (blocked, retry due, cancel) moves on."""
+    from apps.tasks.application.facade import facade
 
-    return {"lost": sweep_lost_jobs()}
+    return {"reconciled": facade.reconcile_due()}
+
+
+@shared_task
+def sweep_jobs() -> dict:
+    """IP-031: mark runs `lost` when no event arrived for their time limit plus the grace."""
+    from apps.tasks.infrastructure.maintenance import sweep_lost_runs
+
+    return {"lost": sweep_lost_runs()}
 
 
 @shared_task
 def prune_jobs() -> dict:
-    """IP-031: delete finished jobs past their retention; the newest job per kind and subject stays."""
-    from apps.tasks.maintenance import prune_jobs as prune
+    """IP-031: delete finished runs past their retention; a job's current run stays, jobs stay."""
+    from apps.tasks.infrastructure.maintenance import prune_runs
 
-    return {"deleted": prune()}
+    return {"deleted": prune_runs()}
+
+
+@shared_task
+def sync_jobs() -> dict:
+    """IP-031: create or refresh the jobs of every subject providers know (`JobDefinition.discover`)."""
+    from apps.tasks.application.facade import facade
+
+    return {"observed": facade.discover()}

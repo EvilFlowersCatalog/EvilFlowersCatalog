@@ -15,7 +15,7 @@ tags:
   - observability
 ---
 
-# IP-031: Background Jobs — One Ledger, One Registry, One API
+# IP-031: Background Jobs — One Facade, Declarative Jobs, State Machines
 
 Every background task the catalog runs or sends to a service worker becomes a **job**: one row in one
 ledger, started, retried and revoked through one service, and read through one REST and MCP API. A
@@ -32,7 +32,71 @@ and how its report changes the subject). OCR (#146) is the first kind built on i
 **Implementation**: Catalog complete and tested locally (uncommitted); OCR service tracked in
 evilflowers-ocr-service#1–#4; dev deployment open
 
-### Implementation notes (2026-11-14)
+### Revision 2 (2026-11-14): one facade, declarative jobs, state machines
+
+Revision 1 exposed imperative actions (`retry`, `revoke`, `actions/{action}`) and grew per-feature
+job endpoints (`/readium/v1/encryption-jobs`). Revision 2 replaces both:
+
+- **One resource, one facade.** `/api/v1/jobs` is the only job endpoint; `JobFacade` is the only way
+  into the core. Apps contribute jobs by implementing one contract, `JobDefinition`
+  (`apps/<app>/jobs.py`), never by adding endpoints.
+- **Declarative.** A client applies a spec and a desired state (`POST /api/v1/jobs` to apply,
+  `PATCH /api/v1/jobs/{id}` to change). A reconciler compares desired and observed state and takes
+  the one transition the job state machine allows: dispatch, block, revoke, settle.
+  Retry = apply the spec again (new generation); revoke = `desired_state: cancelled`;
+  re-encrypt = apply `{reencrypt: true}`; dry run = `POST …?dry_run=true`.
+- **Job vs run.** A **Job** (one per kind and subject; one per kind for subjectless maintenance kinds)
+  holds spec, desired state, observed state, generation. A **JobRun** is one Celery task execution
+  (the former `JobProtocol` row): facts from the publish hook, Celery events and the sweeper.
+  Run-only kinds (`notifications.send`, `core.embed_entries`, `dataverse.resume_workflow`) record runs
+  but have no Job: many runs per subject, nothing to declare.
+- **Domain state is a fact too.** A definition may `observe(subject)`: for `readium.encrypt` the
+  `EncryptedContent` status decides the job's settled state, and `discover()` creates jobs for rows
+  nobody applied (no intent: they never dispatch). The job list therefore matches the dashboard.
+- **Refusals.** `check()` answers `Ready`, `Blocked(reason)` (transient: LCP off, active loans →
+  state `blocked`, re-checked by the reconciler) or `Refused(reason)` (permanent: wrong MIME, no
+  file → 422, no job).
+- **Idempotent apply.** The same spec on an active, non-stale job changes nothing; a new generation
+  starts when the spec differs or the job is settled or stale.
+- **Clean architecture.** `apps/tasks/domain` (state machines, contract, values) imports neither
+  Django nor Celery; `apps/tasks/application` (facade, reconciler) depends on ports;
+  `apps/tasks/infrastructure` (ORM, Celery dispatcher, listener, publish hook) implements them.
+
+![Job state machine](../../diagrams/state-job.svg)
+
+![Job run state machine](../../diagrams/state-job-run.svg)
+
+Compatibility: `GET/POST /readium/v1/entries/{id}/encryption` and the MCP tools
+`list_encryption_jobs`, `requeue_encryption`, `reencrypt_publication` predate IP-031; they stay as thin
+adapters over the facade until Q11 decides their removal. The worker report stays a `POST` to the
+`report_url` the task carries (`/api/v1/jobs/runs/{run_id}/report`).
+
+### Implementation notes (2026-11-14, revision 2)
+
+Built on develop (uncommitted) and tested locally; the full suite passes except the two Dataverse
+modules that need `pytest`. Not run against a real broker.
+
+- `apps/tasks/domain`: values, `machine` (both state machines as pure functions, one test per arrow),
+  `contract` (`JobDefinition`, `Spec`, `Dispatch`, `Report`, ports). A test proves it imports
+  neither Django nor Celery.
+- `apps/tasks/application`: `JobFacade` (apply, patch, reconcile, run facts, observe, discover,
+  report, summary) and the definition registry. `apps/tasks/contract.py` is what apps import.
+- `apps/tasks/infrastructure`: `CeleryDispatcher`, the run ledger (publish hook, events) and
+  housekeeping (sweep, prune).
+- Migration `tasks.0003_jobs_aggregate`: `Job` table; `JobProtocol` becomes `JobRun` (same table) with
+  a `job` FK; one job per kind and subject is created from the recorded runs, without intent. After the
+  deploy, `manage.py sync_jobs` creates jobs for domain rows nobody declared (LCP packages, extraction
+  runs).
+- Removed from revision 1: `/readium/v1/encryption-jobs*`; the retry, revoke, actions and report routes
+  of `/api/v1/jobs/{id}`; the MCP tools `start_job`, `retry_job`, `revoke_job`, `run_job_action`
+  (replaced by `apply_job`); `JobService`; `JobKind`.
+- The worker report moved to `POST /api/v1/jobs/runs/{run_id}/report`. The task id is the **run** id;
+  OCR kwargs carry `job_id` and `run_id`.
+- #150: the job detail counts runs per task name and status, and `extraction.run` observes its run
+  with `jobs` grouped per kind. #150's own items (grouped provenance, a short stale reason, the admin
+  list) are not done.
+
+### Implementation notes (2026-11-14, revision 1)
 
 What was built, and where it differs from the text below:
 
@@ -52,10 +116,17 @@ What was built, and where it differs from the text below:
   subject for LCP and extraction rows and the beat tasks and redacts stored `dataverse_token`s.
 - **Secrets are redacted** from arguments and results (`token`, `password`, `secret`, `api_key`, …
   keys); a redacted call is never re-sent.
-- **The MCP encryption tools** (`list_encryption_jobs`, `requeue_encryption`,
-  `reencrypt_publication`) still call `ContentEncryptionService` directly; their dispatches are
-  recorded by the publish hook with kind and subject, without `requested_by`. The job response's
-  `detail.encryption` is the same `ENCRYPTION_JOB_SCHEMA` (`apps/readium/services/encryption_jobs.py`).
+- *(Superseded by revision 2, which removed these paths again and lists every package through
+  `observe`/`discover` on the one resource.)* **#148 got its own LCP paths after all (Q5 → B).** The generic list cannot show what the
+  dashboard counts: `attention.encryption_failed` / `encryption_stuck` count `EncryptedContent` rows,
+  including rows older than the ledger and rows of entries whose LCP was switched off (dev had a
+  `failed` row with no ledger job). So `GET /readium/v1/encryption-jobs` (`status`, `stale`, `stuck`,
+  `catalog_id`, `entry_id`, `query`, paging), `GET …/{content_id}`, `POST …/requeue` and
+  `POST …/reencrypt` read `EncryptedContent` directly; requeue and reencrypt start `readium.encrypt`
+  jobs through JobService and return each `job_id`. The MCP encryption tools use the same operations
+  (`apps/readium/services/encryption_jobs.py`), so they no longer bypass JobService.
+  `GET /readium/v1/entries/{id}/encryption` lists existing jobs even with LCP off, and both its
+  responses and every job endpoint now have typed OpenAPI schemas.
 - **`EntryEncryptionView` (#148)** now covers every PDF/EPUB of the entry (`acquisitions`,
   optional `acquisition_id`), returns the full job shape, starts through JobService, and answers
   `force` on a registered package with a re-encryption in place or 409 with the active-loan count;
@@ -73,8 +144,7 @@ What was built, and where it differs from the text below:
 Open:
 - the OCR worker (evilflowers-ocr-service#1–#4);
 - the dev deployment (knowledge#50);
-- hand-off comments for the portal on #146 and #148;
-- moving the MCP encryption tools onto JobService;
+- the portal hand-off on #146 (#148 is closed with its endpoint mapping);
 - an end-to-end run against a real broker (every test mocks the broker).
 
 ## Problem Statement
@@ -799,6 +869,51 @@ to IP-016's activity history (with its own retention) and IP-029 Q1 (no reading 
 
 ---
 
+### Q11: Remove the pre-IP-031 LCP job surfaces? ⚠️ Medium
+
+**Issue**: Revision 2 makes `/api/v1/jobs` the only job endpoint. `GET/POST /readium/v1/entries/{id}/encryption`
+(used by the portal) and the MCP tools `list_encryption_jobs`, `requeue_encryption`,
+`reencrypt_publication` (used by operators' agents) are older, released surfaces.
+
+**Question**: Remove them, or keep them as adapters over the facade?
+
+**Options**:
+- [ ] **A**: Keep as thin adapters, deprecated in their descriptions; remove after the portal and the MCP instructions moved to `/api/v1/jobs` (recommended)
+- [ ] **B**: Remove now
+- [ ] **C**: Keep permanently
+
+**Answer**:
+```
+```
+
+**Resolution**:
+```
+```
+
+---
+
+### Q12: When does applying the same spec start a new run? ⚠️ Medium
+
+**Issue**: Declaratively, re-applying an unchanged spec means "make sure it is done", not "run again".
+Revision 2 starts a new generation only when the spec differs or the job is settled or stale.
+
+**Question**: Is "apply on a settled job = run again" the right retry gesture?
+
+**Options**:
+- [ ] **A**: Yes: on a settled job (succeeded, failed, cancelled) an apply starts a new generation; on an active, non-stale one it is a no-op (recommended)
+- [ ] **B**: Only a changed spec starts a new generation; retry needs a spec field such as `revision`
+- [ ] **C**: Every apply starts a new generation
+
+**Answer**:
+```
+```
+
+**Resolution**:
+```
+```
+
+---
+
 **Instructions for completing Review Questions**:
 
 1. For each question, check the box next to your chosen option
@@ -820,3 +935,6 @@ to IP-016's activity history (with its own retention) and IP-029 Q1 (no reading 
 | 2026-11-14 | jdubec | Review pass: one precedence rule, per-kind sweeper limit (service tasks run for hours), result backend is configured by the deployment, evidence rows 5/8/9 reworded to what was measured, Discussion section |
 | 2026-11-14 | jdubec | Implemented in the catalog with option A of every review question: ledger + JobEvent (migration with backfill and status rename), publish hook, 23 kinds, JobService, listener with outage buffer, sweeper/prune, `/api/v1/jobs`, MCP job tools, OCR kind, #148 fixes; Implementation notes added; OCR service issues evilflowers-ocr-service#1–#4 |
 | 2026-11-14 | jdubec | Review fixes (queued→lost, beat event history, entry trigger 409, no revoke for stable ids, OpenAPI generation); deployment knowledge#50; Q10 (notification records) added |
+| 2026-11-14 | jdubec | Revision 2 implemented: domain/application/infrastructure layers, Job aggregate + JobRun (migration 0003), declarative `/api/v1/jobs` (apply/patch/dry run, runs, report), `apply_job` MCP tool, all definitions ported, #148 paths removed again (Q5 back to A), `sync_jobs`; implementation notes added |
+| 2026-11-14 | jdubec | Revision 2: one facade and one resource (`/api/v1/jobs`), declarative spec + desired state driven by a job state machine, Job vs JobRun, provider contract `JobDefinition` with observe/discover, clean-architecture layers; state diagrams `state-job`, `state-job-run`; component and sequence diagrams redrawn; Q11 (old LCP surfaces), Q12 (apply semantics) added |
+| 2026-11-14 | jdubec | #148 resolved: `/readium/v1/encryption-jobs` (list/detail/requeue/reencrypt over EncryptedContent, dispatch via JobService), MCP encryption tools on the same operations, entry endpoint lists jobs with LCP off, typed OpenAPI responses; Q5 effectively B for LCP |

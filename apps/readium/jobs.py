@@ -1,11 +1,37 @@
-"""Readium job kinds (IP-031): LCP encryption (#148) and the license/reservation beat tasks."""
+"""Readium job kinds (IP-031): LCP encryption (#148) and the license/reservation beat tasks.
+
+`readium.encrypt` keeps its truth in `EncryptedContent`: the definition observes it, so the job of
+every package (also ones nobody declared, LCP switched off since, rows older than the ledger) is
+listed in `/api/v1/jobs` with the state the dashboard counts.
+"""
 
 from django.utils.translation import gettext as _
 
 from apps.core.models import Acquisition
-from apps.tasks.kinds import JobAction, JobKind, JobRefused, SystemKind, entry_scope, registry
+from apps.tasks.contract import (
+    Blocked,
+    Dispatch,
+    DispatchError,
+    JobDefinition,
+    JobState,
+    Observation,
+    Ready,
+    Refused,
+    Spec,
+    entry_scope,
+    maintenance,
+    registry,
+)
 
 ENCRYPTABLE_MIMES = (Acquisition.AcquisitionMIME.PDF, Acquisition.AcquisitionMIME.EPUB)
+
+
+class EncryptSpec(Spec):
+    """`{}` encrypts (or re-sends a pending/failed package); `reencrypt` replaces a registered one."""
+
+    reencrypt: bool = False
+    #: With `reencrypt`: even if active loans break (their readers lose access).
+    force: bool = False
 
 
 def _encrypted_content(acquisition):
@@ -17,88 +43,31 @@ def _encrypted_content(acquisition):
         return None
 
 
-def _requeue(job, acquisition, options, user):
-    """Send a stuck (`pending`) or `failed` job again: same content id, new task (MCP `requeue_encryption`)."""
-    from apps.tasks.services import JobService
-
-    new = JobService.start(EncryptKind.name, acquisition.pk, user=user, force=True, retry_of=job)
-    return {"job_id": str(new.pk), "status": new.status}
-
-
-def _reencrypt(job, acquisition, options, user):
-    """Replace a registered package (MCP `reencrypt_publication`); `dry_run` reports and sends nothing."""
-    from apps.readium.services.content_encryption_service import ContentEncryptionService
-    from apps.tasks.services import JobService
-
-    encrypted_content = _encrypted_content(acquisition)
-    if encrypted_content is None:
-        raise JobRefused(_("This publication was never encrypted; start an encryption job instead."), status=422)
-    force = bool(options.get("force"))
-    active_loans = ContentEncryptionService.active_licenses(encrypted_content).count()
-    if options.get("dry_run"):
-        return {
-            "dry_run": True,
-            "active_loans": active_loans,
-            "would_requeue": force or not active_loans,
-            "metadata": ContentEncryptionService.publication_metadata(acquisition.entry),
-        }
-    if active_loans and not force:
-        raise JobRefused(
-            _("%(count)d active loan(s) would break; their readers lose access. Pass force to re-encrypt anyway.")
-            % {"count": active_loans}
-        )
-    new = JobService.start(
-        EncryptKind.name,
-        acquisition.pk,
-        user=user,
-        force=True,
-        retry_of=job,
-        options={"reencrypt": True, "force": force},
-    )
-    return {"job_id": str(new.pk), "status": new.status, "active_loans": active_loans}
-
-
 @registry.register
-class EncryptKind(JobKind):
-    name = "readium.encrypt"
+class EncryptDefinition(JobDefinition[Acquisition, EncryptSpec]):
+    kind = "readium.encrypt"
     title = "LCP encryption"
     description = (
-        "Encrypt a PDF/EPUB acquisition with lcpencrypt and register it with the LCP server. "
-        "The publication cannot be lent until the job's EncryptedContent is `registered`."
+        "Encrypt a PDF/EPUB acquisition with lcpencrypt and register it with the LCP server. Apply `{}` to "
+        "encrypt or re-send, `{reencrypt: true}` to replace a registered package (blocked by active loans "
+        "unless `force`)."
     )
     task = "evilflowers_lcpencrypt_worker.lcpencrypt"
     queue = "evilflowers_lcpencrypt_worker"
     subject_model = Acquisition
-    options_schema = {
-        "type": "object",
-        "properties": {
-            "reencrypt": {"type": "boolean", "description": "Replace an already registered package."},
-            "force": {"type": "boolean", "description": "With reencrypt: even with active loans."},
-        },
-        "additionalProperties": False,
-    }
-    actions = {
-        "requeue": JobAction(
-            name="requeue",
-            title="Re-queue",
-            description="Send a stuck or failed encryption again under the same content id.",
-            handler=_requeue,
-        ),
-        "reencrypt": JobAction(
-            name="reencrypt",
-            title="Re-encrypt",
-            description=(
-                "Encrypt a registered publication again (same content id). Loans issued before it stop "
-                "opening once refreshed; refused with active loans unless force. dry_run reports first."
-            ),
-            handler=_reencrypt,
-            options_schema={
-                "type": "object",
-                "properties": {"force": {"type": "boolean"}, "dry_run": {"type": "boolean"}},
-                "additionalProperties": False,
-            },
-        ),
-    }
+    spec_model = EncryptSpec
+
+    @property
+    def observes(self):
+        from apps.readium.models import EncryptedContent
+
+        return (EncryptedContent,)
+
+    def scope(self, acquisition):
+        return entry_scope(acquisition.entry)
+
+    def subject_of(self, encrypted_content):
+        return encrypted_content.acquisition
 
     def subject_from_call(self, args, kwargs):
         from apps.readium.models import EncryptedContent
@@ -111,85 +80,111 @@ class EncryptKind(JobKind):
         )
         return str(acquisition_id) if acquisition_id else None
 
-    def scope(self, acquisition):
-        return entry_scope(acquisition.entry)
-
-    def eligible(self, acquisition, options):
-        from apps.readium.models import EncryptedContent
-
-        if not acquisition.entry.read_config("readium_enabled"):
-            return _("Readium LCP is not enabled for this publication.")
-        if acquisition.mime not in ENCRYPTABLE_MIMES:
-            return _("Only PDF and EPUB files are encrypted.")
-        if not acquisition.content:
-            return _("The acquisition has no stored file.")
-        encrypted_content = _encrypted_content(acquisition)
-        done = (EncryptedContent.EncryptionStatus.COMPLETED, EncryptedContent.EncryptionStatus.REGISTERED)
-        if encrypted_content is not None and encrypted_content.status in done and not options.get("reencrypt"):
-            return _("Already encrypted (%(status)s); use the reencrypt action.") % {
-                "status": encrypted_content.status
-            }
-        return None
-
-    def dispatch(self, job, acquisition, options):
+    def check(self, acquisition, spec: EncryptSpec):
         from apps.readium.models import EncryptedContent
         from apps.readium.services.content_encryption_service import ContentEncryptionService
 
+        if acquisition.mime not in ENCRYPTABLE_MIMES:
+            return Refused(_("Only PDF and EPUB files are encrypted."))
+        if not acquisition.content:
+            return Refused(_("The acquisition has no stored file."))
         encrypted_content = _encrypted_content(acquisition)
+        status = encrypted_content.status if encrypted_content is not None else None
+        resend = status in (EncryptedContent.EncryptionStatus.PENDING, EncryptedContent.EncryptionStatus.FAILED)
+        # Re-sending an existing pending/failed package keeps working with LCP switched off since (as
+        # `requeue_encryption` always did); a new or replaced package needs LCP on.
+        if not (resend and not spec.reencrypt) and not acquisition.entry.read_config("readium_enabled"):
+            return Blocked(_("Readium LCP is switched off for this publication."))
+        done = status in (EncryptedContent.EncryptionStatus.COMPLETED, EncryptedContent.EncryptionStatus.REGISTERED)
+        if done and not spec.reencrypt:
+            return Refused(
+                _("Already encrypted (%(status)s); apply {reencrypt: true} to replace it.") % {"status": status}
+            )
+        if spec.reencrypt and encrypted_content is not None and not spec.force:
+            loans = ContentEncryptionService.active_licenses(encrypted_content).count()
+            if loans:
+                return Blocked(
+                    _("%(count)d active loan(s) would break; waits for them to end (or apply with force).")
+                    % {"count": loans}
+                )
+        return Ready()
+
+    def preview(self, acquisition, spec):
+        from apps.readium.services.content_encryption_service import ContentEncryptionService
+
+        encrypted_content = _encrypted_content(acquisition)
+        loans = ContentEncryptionService.active_licenses(encrypted_content).count() if encrypted_content else 0
+        return {"active_loans": loans, "metadata": ContentEncryptionService.publication_metadata(acquisition.entry)}
+
+    def dispatch(self, dispatch: Dispatch[Acquisition, EncryptSpec]) -> None:
+        from apps.readium.models import EncryptedContent
+        from apps.readium.services.content_encryption_service import ContentEncryptionService
+
+        acquisition, spec = dispatch.subject, dispatch.spec
+        encrypted_content = _encrypted_content(acquisition)
+        # The service sends the task itself, under the run id (`current_run_id()`).
         try:
             if encrypted_content is None:
                 encrypted_content = ContentEncryptionService.encrypt_acquisition(acquisition)
-            elif options.get("reencrypt"):
-                ContentEncryptionService.reencrypt(encrypted_content, force=bool(options.get("force")))
+            elif spec.reencrypt:
+                ContentEncryptionService.reencrypt(encrypted_content, force=spec.force)
             else:
                 ContentEncryptionService.requeue(encrypted_content)
         except ValueError as error:
-            raise JobRefused(str(error), status=422)
+            raise DispatchError(str(error)) from error
         encrypted_content.refresh_from_db()
-        # `_queue_encryption_task` turns the row failed when it cannot prepare the source (license page);
-        # nothing was sent then.
         if encrypted_content.status == EncryptedContent.EncryptionStatus.FAILED:
-            raise JobRefused(encrypted_content.error_message or _("The source could not be prepared."), status=422)
+            raise DispatchError(encrypted_content.error_message or _("The source could not be prepared."))
 
-    def detail(self, job, acquisition):
-        from apps.readium.services.encryption_jobs import encryption_job
+    def observe(self, acquisition):
+        from apps.readium.models import EncryptedContent
+        from apps.readium.services.encryption_jobs import encryption_job, is_stuck
 
-        encrypted_content = _encrypted_content(acquisition) if acquisition is not None else None
+        encrypted_content = _encrypted_content(acquisition)
         if encrypted_content is None:
-            return {}
-        view = encryption_job(encrypted_content)
-        # The LCP row describes its last dispatch; say whether that is this job.
-        view["current"] = encrypted_content.task_id == str(job.pk)
-        return {"encryption": view}
+            return None
+        status = EncryptedContent.EncryptionStatus
+        state = {
+            status.REGISTERED: JobState.SUCCEEDED,
+            status.COMPLETED: JobState.RUNNING,  # waits for the LCP server's registration
+            status.FAILED: JobState.FAILED,
+            status.PENDING: JobState.QUEUED,
+        }[encrypted_content.status]
+        detail = {"encryption": {**encryption_job(encrypted_content), "stuck": is_stuck(encrypted_content)}}
+        reason = encrypted_content.error_message if state is JobState.FAILED else None
+        # `stale` then counts from the last dispatch, as the dashboard's `encryption_stuck` does.
+        since = (
+            encrypted_content.last_dispatched_at or encrypted_content.created_at
+            if state is JobState.QUEUED
+            else encrypted_content.updated_at
+        )
+        return Observation(state=state, reason=reason, detail=detail, since=since)
+
+    def discover(self):
+        return Acquisition.objects.filter(encrypted_content__isnull=False).select_related("entry", "encrypted_content")
 
 
-@registry.register
-class SweepUnclaimedReservationsKind(SystemKind):
-    name = "readium.sweep_unclaimed_reservations"
-    title = "Expire unclaimed reservations"
-    description = "Expire `available` reservations past their claim deadline and promote the next reader."
-    task = "apps.readium.tasks.sweep_unclaimed_reservations"
-
-
-@registry.register
-class NotifyExpiringLicensesKind(SystemKind):
-    name = "readium.notify_expiring_licenses"
-    title = "Notify expiring loans"
-    description = "Send `license_expiring_soon` for loans expiring within the reminder window."
-    task = "apps.readium.tasks.notify_expiring_licenses"
-
-
-@registry.register
-class ExpireLapsedLicensesKind(SystemKind):
-    name = "readium.expire_lapsed_licenses"
-    title = "Expire lapsed loans"
-    description = "Move naturally expired loans out of ready/active."
-    task = "apps.readium.tasks.expire_lapsed_licenses"
-
-
-@registry.register
-class ReservationClaimReminderKind(SystemKind):
-    name = "readium.reservation_claim_reminder_sweep"
-    title = "Remind unclaimed reservations"
-    description = "Remind readers whose claim window is about to close."
-    task = "apps.readium.tasks.reservation_claim_reminder_sweep"
+maintenance(
+    "readium.sweep_unclaimed_reservations",
+    "apps.readium.tasks.sweep_unclaimed_reservations",
+    "Expire unclaimed reservations",
+    "Expire `available` reservations past their claim deadline and promote the next reader.",
+)
+maintenance(
+    "readium.notify_expiring_licenses",
+    "apps.readium.tasks.notify_expiring_licenses",
+    "Notify expiring loans",
+    "Send `license_expiring_soon` for loans expiring within the reminder window.",
+)
+maintenance(
+    "readium.expire_lapsed_licenses",
+    "apps.readium.tasks.expire_lapsed_licenses",
+    "Expire lapsed loans",
+    "Move naturally expired loans out of ready/active.",
+)
+maintenance(
+    "readium.reservation_claim_reminder_sweep",
+    "apps.readium.tasks.reservation_claim_reminder_sweep",
+    "Remind unclaimed reservations",
+    "Remind readers whose claim window is about to close.",
+)

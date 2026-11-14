@@ -151,7 +151,16 @@ if settings.EVILFLOWERS_EXTRACTION_ENABLED and settings.EVILFLOWERS_EXTRACTION_S
         "task": "apps.tasks.tasks.fail_stale_extraction_runs",
         "schedule": crontab(minute=41),
     }
-# IP-031: started jobs without events become `lost`; finished jobs leave after their retention.
+# IP-031: the reconciler's tick (blocked jobs re-checked, retries, cancels); runs without events become
+# `lost`; finished runs leave after their retention; providers' domain state is re-read daily.
+app.conf.beat_schedule["jobs-reconcile"] = {
+    "task": "apps.tasks.tasks.reconcile_jobs",
+    "schedule": crontab(minute="*"),
+}
+app.conf.beat_schedule["jobs-sync"] = {
+    "task": "apps.tasks.tasks.sync_jobs",
+    "schedule": crontab(hour=4, minute=40),
+}
 app.conf.beat_schedule["jobs-sweep-lost"] = {
     "task": "apps.tasks.tasks.sweep_jobs",
     "schedule": crontab(minute="*/10"),

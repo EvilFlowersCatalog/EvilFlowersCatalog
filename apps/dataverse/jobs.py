@@ -1,18 +1,11 @@
-"""Dataverse job kind (IP-031): resuming a paused publication workflow.
+"""Dataverse job kind (IP-031): run-only. Its arguments carry the Dataverse API token, which the
+ledger redacts; such a run is listed but never re-sent from the ledger."""
 
-Its arguments carry the Dataverse API token, which the ledger redacts; such a job is listed and can be
-revoked, but never re-sent from the ledger (the token is not stored).
-"""
+from apps.tasks.contract import run_only
 
-from apps.tasks.kinds import JobKind, registry
-
-
-@registry.register
-class ResumeWorkflowKind(JobKind):
-    name = "dataverse.resume_workflow"
-    title = "Dataverse workflow resume"
-    description = "Resume a Dataverse workflow invocation after a prepublish webhook."
-    task = "apps.dataverse.tasks.resume_workflow"
-    startable = False
-    exclusive = False
-    terminate_safe = True
+run_only(
+    "dataverse.resume_workflow",
+    "apps.dataverse.tasks.resume_workflow",
+    "Dataverse workflow resume",
+    "Resume a Dataverse workflow invocation after a prepublish webhook.",
+)

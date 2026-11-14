@@ -1,4 +1,4 @@
-"""After a run becomes active (IP-030): its cross-references, figure documents and graph projection."""
+"""After a run becomes active (IP-030): its cross-references, figure documents, section similarity and graph."""
 
 import logging
 
@@ -9,7 +9,8 @@ logger = logging.getLogger(__name__)
 
 @shared_task
 def post_process_run(run_id: str) -> dict:
-    """References, then figure documents and vectors (they use the references), then the AGE graph."""
+    """References, figure documents and vectors (they use the references), cross-book section similarity, then
+    the AGE graph."""
     from apps.extraction import references, regions
     from apps.extraction.models import ExtractionRun
 
@@ -22,6 +23,13 @@ def post_process_run(run_id: str) -> dict:
     except Exception:
         # TEI down: the documents are set, the vectors follow with `link_extraction`.
         logger.exception("Region vectors of run %s failed", run_id)
+    try:
+        from apps.extraction import similarity
+
+        # Before the graph, which projects these pairs as SIMILAR_TO (#151).
+        report["similarity"] = similarity.compute_run(run)
+    except Exception:
+        logger.exception("Section similarity of run %s failed", run_id)
     try:
         from apps.graph import projection
 
