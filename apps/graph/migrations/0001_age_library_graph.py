@@ -2,8 +2,8 @@
 
 `CREATE EXTENSION age` needs a superuser (like `vector` and `pg_search` in the release notes) and the
 evilflowers-postgresql image with AGE (evilflowers-postgresql#3, knowledge#45). Where the extension is not
-installable — plain PostgreSQL in development — or the role may not create it, the migration says so and
-passes: the graph is optional, and `apps.graph.age.available()` turns its uses off. Run
+installable — plain PostgreSQL in development — or the role may not create it, load it or create the graph, the
+migration says so and passes: the graph is optional, and `apps.graph.age.available()` turns its uses off. Run
 `manage.py graph_rebuild` once the extension exists to create and fill the graph.
 """
 
@@ -28,7 +28,15 @@ def enable(apps, schema_editor):
     except Exception as error:
         logger.warning("Could not create the AGE extension (%s); the library graph is off.", error)
         return
-    age.create_graph()
+    try:
+        age.create_graph()
+    except Exception as error:
+        # A refused LOAD or create_graph must not block the rollout (#147); graph_rebuild creates it later.
+        logger.warning(
+            "Could not create the library graph (%s); it is off until `manage.py graph_rebuild`. %s",
+            error,
+            age.permission_hint(error) or "",
+        )
 
 
 class Migration(migrations.Migration):

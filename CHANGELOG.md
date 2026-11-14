@@ -6,9 +6,15 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 
 - **Added**: Extraction runs count attempts ([#140]). Every `/start` or reset starts a new `attempt`. Services send theirs as `?attempt=`, and results of an earlier one get 409 `superseded`. Long jobs poll `GET /extraction/v1/runs/<id>` and report `superseded` when they stop early. Both cases are counted in `evilflowers.extraction.jobs.superseded`. Migration `extraction.0007`
 - **Changed**: Search embeds the query while the lexical query runs (`EVILFLOWERS_SEARCH_EMBED_CONCURRENT`, [#141]). Feed parents/children load inside the feeds query. With `include=facets`, the page's LCP states reuse the availability facet's lookup. A page without LCP titles reads no licenses or reservations
+- **Fixed**: The library graph works under the app role without superuser rights ([#147]). AGE loads from `$libdir/plugins/age`, and `LOAD 'age'` remains only as a superuser fallback. The graph's existence is read from `pg_catalog`. `graph.0001` passes when the graph cannot be created. `graph_rebuild` names the missing piece
+
+### Upgrade notes (0.16.0)
+
+- ⚠️ Apache AGE needs evilflowers-postgresql with `$libdir/plugins/age.so` (evilflowers-postgresql#5). A superuser runs `CREATE EXTENSION age` before the catalog migrates and grants the app role `USAGE ON SCHEMA ag_catalog` and `CREATE ON DATABASE` (knowledge#45). Then run `manage.py graph_rebuild`
 
 [#140]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/140
 [#141]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/141
+[#147]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/147
 
 ## 0.15.0 : 2026-11-12 (The Library Reads Back)
 

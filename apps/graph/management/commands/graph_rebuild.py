@@ -19,7 +19,17 @@ class Command(BaseCommand):
         if options["counts"]:
             self.stdout.write(str(projection.counts()))
             return
-        if not age.create_graph():
-            raise CommandError("Apache AGE is not installed in this database (CREATE EXTENSION age as a superuser).")
-        totals = projection.rebuild()
+        try:
+            if not age.create_graph():
+                raise CommandError(
+                    "Apache AGE is not installed in this database (CREATE EXTENSION age as a superuser)."
+                )
+            totals = projection.rebuild()
+        except CommandError:
+            raise
+        except Exception as error:
+            hint = age.permission_hint(error)
+            if hint is None:
+                raise
+            raise CommandError(f"{hint} ({error})") from error
         self.stdout.write(self.style.SUCCESS(f"Projected {totals}; nodes {projection.counts()}"))
