@@ -64,12 +64,12 @@ svc -> redis : send_task(new task_id)
 == revoke ==
 admin -> api : POST /api/v1/jobs/{id}/revoke\n{terminate}
 api -> svc : revoke(job)
-svc -> ledger : UPDATE revoke_requested_at
 svc -> redis : control.revoke(task_id)\n(pidbox broadcast)
+svc -> ledger : UPDATE status revoked at once\n(queued/received), revoke_requested_at
 redis -> worker : revoke
-worker -> redis : task-revoked
+worker -> redis : task-revoked (on receipt)
 redis -> listener : event
-listener -> ledger : UPDATE status revoked
+listener -> ledger : revoked stays final;\na late report gets 409
 
 caption Celery events and the worker's report are separate: events drive the status, the report drives the change\nto the acquisition. A report without task-succeeded (or the reverse) is visible in the ledger instead of lost.\nEvery start, retry and follow-up writes its ledger row before the task is sent, so nothing runs unrecorded.
 footer ELVIRA · FIIT STU · EvilFlowersCatalog · docs/diagrams/sequence-ocr-job-lifecycle.puml

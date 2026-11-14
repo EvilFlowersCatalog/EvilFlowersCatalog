@@ -531,6 +531,35 @@ EVILFLOWERS_EXTRACTION_EMBED_TIMEOUT = int(os.getenv("EVILFLOWERS_EXTRACTION_EMB
 # (a lost task never reports). Counted from the last report, not the start; 0 turns the sweep off.
 EVILFLOWERS_EXTRACTION_STALE_HOURS = float(os.getenv("EVILFLOWERS_EXTRACTION_STALE_HOURS", 24))
 
+# Background jobs (IP-031)
+# A queued job older than this is flagged `stale`: almost certainly it never reached a worker.
+EVILFLOWERS_JOBS_STALE_MINUTES = int(os.getenv("EVILFLOWERS_JOBS_STALE_MINUTES", 60))
+# A started job with no event for its time limit plus this grace is marked `lost` by the sweeper.
+EVILFLOWERS_JOBS_LOST_GRACE_MINUTES = int(os.getenv("EVILFLOWERS_JOBS_LOST_GRACE_MINUTES", 15))
+# Time limit of a service task without a job kind: services hold tasks for hours (#120), so the
+# catalog's own CELERY_TASK_TIME_LIMIT would call them lost. Default: the broker visibility timeout.
+EVILFLOWERS_JOBS_SERVICE_TIME_LIMIT_HOURS = float(os.getenv("EVILFLOWERS_JOBS_SERVICE_TIME_LIMIT_HOURS", 12))
+# A queued job with no event at all after this long is marked `lost` (missed events, a task lost in the
+# broker). Long enough for a backfill's backlog to drain; until then it shows as `stale`.
+EVILFLOWERS_JOBS_QUEUED_LOST_HOURS = float(os.getenv("EVILFLOWERS_JOBS_QUEUED_LOST_HOURS", 48))
+# Retention: succeeded and revoked jobs, then failed, lost and rejected ones. The newest job per kind and
+# subject is always kept, so an entry's "current state" survives.
+EVILFLOWERS_JOBS_RETENTION_DAYS = int(os.getenv("EVILFLOWERS_JOBS_RETENTION_DAYS", 30))
+EVILFLOWERS_JOBS_RETENTION_FAILED_DAYS = int(os.getenv("EVILFLOWERS_JOBS_RETENTION_FAILED_DAYS", 90))
+# Task names never written to the ledger (csv).
+EVILFLOWERS_JOBS_IGNORE_TASKS = frozenset(
+    name.strip() for name in os.getenv("EVILFLOWERS_JOBS_IGNORE_TASKS", "").split(",") if name.strip()
+)
+# Base of the URL workers report to (`<base>/api/v1/jobs/<id>/report`); in a cluster the internal one.
+EVILFLOWERS_JOBS_REPORT_BASE_URL = os.getenv("EVILFLOWERS_JOBS_REPORT_BASE_URL") or os.getenv(
+    "EVILFLOWERS_BASE_URL", os.getenv("EVILFLOWERS_READIUM_BASE_URL", "http://localhost:8000")
+)
+# OCR (#146): off until an OCR worker consumes `evilflowers_ocr_worker`; otherwise every task would wait forever.
+EVILFLOWERS_OCR_ENABLED = _bool_env("EVILFLOWERS_OCR_ENABLED", default=False)
+EVILFLOWERS_OCR_QUEUE = os.getenv("EVILFLOWERS_OCR_QUEUE", "evilflowers_ocr_worker")
+# Seconds an OCR task may run before the sweeper calls it lost (large scans take long).
+EVILFLOWERS_OCR_TIME_LIMIT = int(os.getenv("EVILFLOWERS_OCR_TIME_LIMIT", 4 * 60 * 60))
+
 # Events
 EVILFLOWERS_EVENT_BROKER_EXECUTOR = os.getenv("EVILFLOWERS_EVENT_BROKER_EXECUTOR")
 EVILFLOWERS_EVENT_BROKER_TRANSFORMER = os.getenv("EVILFLOWERS_EVENT_BROKER_TRANSFORMER")
@@ -905,6 +934,10 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
 }
 CELERY_TIMEZONE = os.getenv("CELERY_TIMEZONE", TIME_ZONE)
 CELERY_TASK_TRACK_STARTED = True
+# IP-031: the job ledger is built from task events. The catalog worker sends them itself instead of
+# waiting for Flower to switch them on, and a task the catalog queues announces itself (`task-sent`).
+CELERY_WORKER_SEND_TASK_EVENTS = True
+CELERY_TASK_SEND_SENT_EVENT = True
 CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", 30 * 60))  # Default: 30min
 # Celery's default is os.cpu_count(), the *node's* core count, which ignores the
 # container's CPU limit (16 prefork children in a 4-CPU pod, #129). Unset or 0 keeps

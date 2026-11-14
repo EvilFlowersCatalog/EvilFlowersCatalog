@@ -20,6 +20,7 @@ from apps.api.forms.entries import EntryForm
 from apps.core.models import Catalog, User, Entry, Author, Category, Acquisition, Price, EntryAuthor
 from apps.core.models.entry import cover_bytes_hash
 from apps.core.tasks import store_table_of_contents
+from apps.files.jobs import queue_ocr
 
 
 def build_thumbnail(source_image: Image.Image, size: tuple[int, int]) -> tuple[BytesIO, str]:
@@ -266,6 +267,8 @@ def attach_acquisition(entry: Entry, uploaded_file, *, mime: str, relation: str 
         extraction.queue(acquisition)
         # The outline (chapters) and page count shown in the entry detail.
         transaction.on_commit(lambda: store_table_of_contents.delay(str(entry.pk)))
+        # #146: scanned PDFs, when the entry asks for OCR (`evilflowers_ocr_enabled`).
+        queue_ocr(acquisition)
 
     return acquisition
 
@@ -342,6 +345,7 @@ class EntryService:
                 extraction.queue(acquisition)
                 if acquisition.mime == Acquisition.AcquisitionMIME.PDF:
                     transaction.on_commit(lambda entry_id=str(entry.pk): store_table_of_contents.delay(entry_id))
+                    queue_ocr(acquisition)
 
             for price in record.get("prices", []):
                 Price.objects.create(

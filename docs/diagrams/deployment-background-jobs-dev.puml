@@ -86,7 +86,7 @@ celery_event_handler (ledger)
 ]
     node ocr <<container>> <<proposed>> [
 **ocr** · Celery worker -E
-evilflowers-ocr-worker
+evilflowers-ocr-service
 ----
 queue evilflowers_ocr_worker
 ocrmypdf skip_text

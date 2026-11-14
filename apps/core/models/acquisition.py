@@ -2,8 +2,6 @@ import base64
 import hashlib
 from typing import Optional
 
-from celery import signature, chain, group
-from django.conf import settings
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -14,8 +12,6 @@ from django.utils.translation import gettext_lazy as _
 from apps.core.models.entry import Entry
 from apps.core.models.base import BaseModel
 from apps.files.storage import get_storage
-
-from apps.events.services import get_event_broker
 
 
 class Acquisition(BaseModel):
@@ -145,35 +141,8 @@ def touch_entry(sender, instance: Acquisition, **kwargs):
     instance.entry.save()
 
 
-@receiver(post_save, sender=Acquisition)
-def background_tasks(sender, instance: Acquisition, created: bool, **kwargs):
-    """
-    Trigger background tasks (OCR, Readium encryption) after an acquisition is saved.
-
-    For Dataverse / external acquisitions where `content` is empty and only `file_url` is set,
-    we skip background processing because there is no local file to work with.
-    We also skip if the event broker is not configured (development setups).
-    """
-
-    # Skip when there is no stored file (e.g., Dataverse URL-only acquisitions)
-    if not instance.content:
-        return
-
-    # Skip when event broker executor is not configured
-    if not getattr(settings, "EVILFLOWERS_EVENT_BROKER_EXECUTOR", None):
-        return
-
-    dependent_tasks = []
-    event_broker = get_event_broker()
-
-    # OCR task for new acquisitions with language set
-    if created and instance.entry.language_id:
-        event_broker.execute(
-            "evilflowers_ocr_worker.ocr",
-            {
-                "args": [instance.content.name, instance.content.name, instance.entry.language.alpha3],
-            },
-        )
+# OCR is no longer started from here (#146): the `created=True` save of an upload has no file yet, so the
+# old signal never sent anything. Uploads call `apps.files.jobs.queue_ocr` once the content is stored.
 
 
 __all__ = ["Acquisition"]

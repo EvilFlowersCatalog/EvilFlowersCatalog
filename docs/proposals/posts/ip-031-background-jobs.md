@@ -27,9 +27,55 @@ and how its report changes the subject). OCR (#146) is the first kind built on i
 
 ## Status
 
-**Status**: Draft
+**Status**: Draft (implemented with the recommended answers; awaiting confirmation of the review answers)
 **Last Updated**: 2026-11-14
-**Implementation**: Not started
+**Implementation**: Catalog complete and tested locally (uncommitted); OCR service tracked in
+evilflowers-ocr-service#1–#4; dev deployment open
+
+### Implementation notes (2026-11-14)
+
+What was built, and where it differs from the text below:
+
+- **Every task is recorded at publish time.** `apps/tasks/apps.py` connects Celery's
+  `before_task_publish`, so any task the catalog sends (JobService, a `.delay()` in a signal, beat)
+  gets its ledger row, queued, with its exact arguments, before a worker can take it. Existing
+  dispatch sites did not have to change; each kind reads its subject back from the call
+  (`JobKind.subject_from_call`). A service's follow-up task inherits its parent's subject.
+- **All jobs are kinds (23).** `maintenance.*` (the `apps.tasks` beat tasks plus `sweep_jobs` and
+  `prune_jobs`), `readium.encrypt` + the four readium sweeps, `extraction.run`,
+  `extraction.post_process`, `core.table_of_contents`, `core.embed_entries`,
+  `assistant.highlight_annotation` / `summarise_sections` / `describe_figures`,
+  `notifications.send` (not startable; a failed one can be re-sent), `dataverse.resume_workflow`
+  (not re-sendable: its token is redacted) and `files.ocr`. A test fails when a catalog task has no kind.
+- **Status values were renamed in the database** (`created`→`queued`, `in-progress`→`started`,
+  `success`→`succeeded`) by migration `tasks.0002_jobs_ledger`, which also backfills kind and
+  subject for LCP and extraction rows and the beat tasks and redacts stored `dataverse_token`s.
+- **Secrets are redacted** from arguments and results (`token`, `password`, `secret`, `api_key`, …
+  keys); a redacted call is never re-sent.
+- **The MCP encryption tools** (`list_encryption_jobs`, `requeue_encryption`,
+  `reencrypt_publication`) still call `ContentEncryptionService` directly; their dispatches are
+  recorded by the publish hook with kind and subject, without `requested_by`. The job response's
+  `detail.encryption` is the same `ENCRYPTION_JOB_SCHEMA` (`apps/readium/services/encryption_jobs.py`).
+- **`EntryEncryptionView` (#148)** now covers every PDF/EPUB of the entry (`acquisitions`,
+  optional `acquisition_id`), returns the full job shape, starts through JobService, and answers
+  `force` on a registered package with a re-encryption in place or 409 with the active-loan count;
+  it never deletes `EncryptedContent` rows.
+- **OCR (#146)** starts after the upload's content is saved (`apps.files.jobs.queue_ocr`), only with
+  `EVILFLOWERS_OCR_ENABLED` and the entry's `evilflowers_ocr_enabled`; the dead `background_tasks`
+  signal is gone.
+- **Added during review:** queued jobs with no event at all become `lost` after
+  `EVILFLOWERS_JOBS_QUEUED_LOST_HOURS` (48 h); beat runs keep `job_events` only on trouble (Q6);
+  `POST /readium/v1/entries/{id}/encryption` answers 409 for a job still on its way and re-sends only
+  a stale or failed one; jobs of `stable_task_id` kinds cannot be revoked (workers remember revoked
+  ids, a re-run would be discarded).
+
+**Plan status.** Phases 1–3 and 6 are done in the catalog, plus the catalog parts of Phases 4–5.
+Open:
+- the OCR worker (evilflowers-ocr-service#1–#4);
+- the dev deployment (knowledge#50);
+- hand-off comments for the portal on #146 and #148;
+- moving the MCP encryption tools onto JobService;
+- an end-to-end run against a real broker (every test mocks the broker).
 
 ## Problem Statement
 
@@ -49,14 +95,14 @@ to Celery events and writes `JobProtocol` rows (`job_protocols`). Measured on de
 | 2 | The result is copied only when the row is created, which is always `task-received`. | 11 of 317 051 `success` rows have a result |
 | 3 | `task-failed` drops `exception` and `traceback`. | 133 `failed` rows, no reason recorded |
 | 4 | Times are `timezone.now()` at processing, not the event timestamp; `runtime` is ignored. | `celery_event_handler.py:103-110` |
-| 5 | No precedence: a later event of an earlier state overwrites; a redelivery overwrites `started_at` with no history. | `evilflowers_equation.equations` created 11-12, restarted twice on 11-14, only the last start kept |
+| 5 | No precedence: a later event of an earlier state overwrites; a redelivery overwrites `started_at` with no history. | two `evilflowers_equation.equations` rows, created 11-11 and 11-12, show `started_at` on 11-14 and are still `in-progress`: their earlier starts are gone |
 | 6 | The name comes only from `task-received`; a missed received leaves `unknown`. | 326 rows `unknown` |
 | 7 | Rows that never finish stay forever: no sweeper, `worker-offline` ignored. | 9 `in-progress` (one `backup` since March), 577 `created` |
-| 8 | An event that cannot be stored is dropped. Celery events are pub/sub, so it is lost. A child whose parent row is missing fails the deferred FK check and is dropped too. | 857 `Skipping Celery event` in 7 days: prod PgBouncer `server_login_retry` outages, dev Ellipsis (#122) |
-| 9 | Event emission is not configured in the repository. The catalog worker runs without `-E`; its events flow only because Flower enables them remotely. `task_send_sent_event` is off, so a task the catalog queued is invisible until a worker takes it. | `conf/supervisor.conf`, `settings/base.py`, knowledge `evilflowers.yaml.j2` |
+| 8 | An event that cannot be stored is dropped. Celery events are pub/sub, so it is lost. A child whose parent row is missing fails the deferred FK check and is dropped too. | 857 `Skipping Celery event` in 7 days: prod PgBouncer `server_login_retry` outages, dev Ellipsis (#122); 4 of them match foreign-key / `IntegrityError` text |
+| 9 | Event emission is not configured in the repository. The catalog worker runs without `-E` and no setting enables events; that its events arrive anyway is most likely Flower (running in prod and dev) enabling them remotely, which stops when Flower does. `task_send_sent_event` is off, so a task the catalog queued is invisible until a worker takes it. | `conf/supervisor.conf`, `settings/base.py`, knowledge `evilflowers.yaml.j2` |
 | 10 | `worker` is `max_length=50`; k8s node names (`equation@dev.equation-77868cf6dd-49w24`) are already 38. | `apps/tasks/models.py` |
 | 11 | No retention. 78 % of rows are the every-minute `sweep_unclaimed_reservations`. | 247 627 of 317 770 |
-| 12 | Nothing can act on a task: no revoke anywhere, no generic retry, no API or admin for `JobProtocol`. | `grep` for `control.revoke`, `AsyncResult`: none |
+| 12 | Nothing can act on a task: no revoke anywhere, no generic retry, no API or admin for `JobProtocol`. A result backend is configured only by the deployment (`CELERY_RESULT_BACKEND` = Redis db 7 in the k8s template), and no catalog code reads it. | `grep` for `control.revoke`, `AsyncResult`, `result_backend` in `apps/`: none |
 
 ### What the portal needs and cannot get
 
@@ -150,8 +196,10 @@ These are bugs; they ship before and independently of the rest.
 - [ ] Settings: `CELERY_WORKER_SEND_TASK_EVENTS = True`, `CELERY_TASK_SEND_SENT_EVENT = True`
 - [ ] Handle `task-sent`, `-received`, `-started`, `-succeeded`, `-failed`, `-retried`,
       `-revoked`, `-rejected`; ignore other types
-- [ ] Apply an event only if its timestamp is not older than the row's `last_event_at`
-      (Celery timestamps; hosts are NTP-synced through chrony)
+- [ ] Precedence (one rule, see Status): apply an event only if its timestamp is not older than
+      the row's `last_event_at`; a `revoked` row takes no further status change; another
+      terminal row reopens only on a newer `task-received` / `task-started` (redelivery, Celery
+      retry, stable-id re-queue). Celery timestamps; hosts are NTP-synced through chrony
 - [ ] Store `result`, `exception`, `traceback`, `runtime`, `retries`, `queue`/`routing_key`,
       `hostname` from whichever event carries them; take the name from any event that has it
 - [ ] Event timestamps for `sent_at`, `received_at`, `started_at`, `finished_at`
@@ -171,8 +219,10 @@ These are bugs; they ship before and independently of the rest.
       single-active-job checks; row before send; send in `transaction.on_commit`
 - [ ] Revoke: `app.control.revoke(task_id, terminate=…)`; a queued job is also marked
       `revoked` at once (a worker that has not seen it discards it on receipt)
-- [ ] Sweeper beat task: `lost` for started jobs past `time_limit + grace`, `stale` flag for
-      queued jobs older than `EVILFLOWERS_JOBS_STALE_MINUTES`
+- [ ] Sweeper beat task: `lost` for started jobs with no event past their time limit + grace;
+      the limit is the kind's `time_limit`, else `CELERY_TASK_TIME_LIMIT` for tasks of the
+      catalog's own Celery app, else `EVILFLOWERS_JOBS_SERVICE_TIME_LIMIT_HOURS` (service tasks
+      run for hours, #120); `stale` flag for queued jobs older than `EVILFLOWERS_JOBS_STALE_MINUTES`
 - [ ] Retention beat task (see Configuration)
 - [ ] Backfill: set `kind`/subject on existing rows whose id matches `EncryptedContent.task_id`
       or an extraction task id
@@ -236,8 +286,9 @@ These are bugs; they ship before and independently of the rest.
   transport every worker uses; no new infrastructure.
 - Celery remote control (`app.control.revoke`, pidbox on the same Redis) for revoke.
 - Django ORM, `ContentType` for the generic subject.
-- No result backend: the ledger is the result store; a backend would duplicate it and add a
-  second retention problem.
+- The result backend is not used: the deployment sets `CELERY_RESULT_BACKEND` (Redis db 7) but
+  no catalog code reads it, and the ledger becomes the result store. Nothing here depends on the
+  backend; removing it from the deployment is a separate decision.
 
 ### Data Model Changes
 
@@ -256,7 +307,7 @@ These are bugs; they ship before and independently of the rest.
 | `parent_id` | existing, now `db_constraint=False` | Celery parent / follow-up parent |
 | `queue` | varchar(100) null | routing key from `task-sent`/`received` |
 | `worker` | varchar(255) null | was 50 |
-| `status` | existing + `retrying`, `rejected`, `lost` | stored values `created` (= queued), `received`, `in-progress`, `success`, `failed`, `revoked` stay |
+| `status` | queued, received, started, retrying, succeeded, failed, revoked, rejected, lost | old values renamed by the migration |
 | `attempts` | int default 0 | `task-started` count |
 | `sent_at`, `received_at` | timestamptz null | event timestamps |
 | `started_at`, `finished_at` | existing, now from events | |
@@ -297,6 +348,8 @@ class JobKind:
     permission: str = "core.change_entry"
     exclusive: bool = True         # one active job per subject
     stable_task_id: bool = False   # True: the kind owns a deterministic task id (extraction)
+    time_limit: timedelta | None = None  # sweeper limit; None: see Phase 2
+    terminate_safe: bool = False   # revoke(terminate=True) allowed (Q7)
     options_schema: dict = {}      # JSON Schema of start options
 
     def scope(self, subject) -> tuple[UUID | None, UUID | None]: ...   # (catalog_id, entry_id)
@@ -322,20 +375,24 @@ own model and the ledger share the id:
 
 ### Status
 
-| Status (stored value) | Set by |
+| Status | Set by |
 |---|---|
-| queued (`created`) | JobService before send; `task-sent` for tasks not started by it |
+| queued (was `created`) | JobService before send; the publish hook for any other task the catalog sends; `task-sent` for a service's tasks |
 | received | `task-received` |
-| started (`in-progress`) | `task-started` (`attempts += 1`) |
+| started (was `in-progress`) | `task-started` (`attempts += 1`) |
 | retrying | `task-retried` (Celery `self.retry`, autoretry) |
-| succeeded (`success`) | `task-succeeded` |
+| succeeded (was `success`) | `task-succeeded` |
 | failed | `task-failed` |
 | revoked | `task-revoked`, or JobService for a still-queued job |
 | rejected | `task-rejected` |
-| lost | sweeper: started past `time_limit + grace` with no event, or queued and its worker reported offline |
+| lost | sweeper: started, and no event past the time limit + grace (Phase 2) |
 
-The API returns the readable names (`queued`, `started`, `succeeded`); the stored values stay so
-existing rows need no rewrite. `stale` is a computed flag (queued past
+Precedence: an event applies only if its timestamp is not older than `last_event_at`. `revoked`
+is final. Any other terminal status (`succeeded`, `failed`, `rejected`, `lost`) reopens only on a
+newer `task-received` or `task-started`: a broker redelivery, a Celery retry, or a re-queue of a
+`stable_task_id` kind (Q9). JobService's own writes (queued, revoked) follow the same rule.
+
+The stored values are these names; migration `tasks.0002_jobs_ledger` rewrote the old ones. `stale` is a computed flag (queued past
 `EVILFLOWERS_JOBS_STALE_MINUTES`), not a status.
 
 The worker's `report` is separate from the status: a job can be `succeeded` without a report
@@ -376,6 +433,7 @@ CELERY_TASK_SEND_SENT_EVENT=True
 # Jobs
 EVILFLOWERS_JOBS_STALE_MINUTES=60          # queued longer → stale
 EVILFLOWERS_JOBS_LOST_GRACE_MINUTES=15     # started longer than time limit + this → lost
+EVILFLOWERS_JOBS_SERVICE_TIME_LIMIT_HOURS=12  # limit for service tasks without a kind (= visibility timeout)
 EVILFLOWERS_JOBS_RETENTION_DAYS=30         # succeeded / revoked
 EVILFLOWERS_JOBS_RETENTION_FAILED_DAYS=90  # failed / lost / rejected
 EVILFLOWERS_JOBS_IGNORE_TASKS=             # csv of task names not recorded (Q6)
@@ -400,8 +458,8 @@ tracker; only the report handling differs, and that is what a kind is.
 
 ### Alternative 2: Celery result backend + Flower API
 
-**Description**: enable a Redis or database result backend, read state with `AsyncResult`, use
-Flower's REST API for revoke and inspection.
+**Description**: read state from the result backend the deployment already configures (Redis
+db 7) with `AsyncResult`, use Flower's REST API for revoke and inspection.
 **Pros**: off the shelf.
 **Cons**: no subject (which acquisition?), no permissions, results expire, Flower is VPN-only and
 not a product API; the portal would talk to two systems.
@@ -474,11 +532,22 @@ prefers REST). The MCP tools remain, on top of the same service.
 - Diagrams: `docs/diagrams/deployment-background-jobs-dev.puml`,
   `component-background-jobs.puml`, `sequence-ocr-job-lifecycle.puml`
 
+## Discussion
+
+- 2026-11-14: started from an audit of the Celery integration ("do we see the whole task
+  lifecycle and can we control it?"); #146 (OCR) and #148 (LCP jobs REST) were filed the same day
+  from the portal's "Background jobs" section and are the first consumers.
+
 ## Review Questions
 
 **Status**: ⏳ Awaiting Answers
 **Review Date**: 2026-11-14
 **Reviewer**: Claude AI
+
+> **Implemented with option A of every question** (the recommended one), on request (2026-11-14:
+> "execute implementation - migrate all jobs"). The answers below are still open: confirm A or
+> pick another option, and the implementation follows. Q2-A means the OCR worker is built in
+> evilflowers-ocr-service and deployed on dev first; `EVILFLOWERS_OCR_ENABLED` stays off until then.
 
 The following questions must be answered before implementation:
 
@@ -706,6 +775,30 @@ re-queue is newer, so the row would move back to received with its old `report` 
 
 ---
 
+### Q10: Notification jobs keep a per-reader record ⚠️ Medium
+
+**Issue**: `notifications.send` jobs store the exact call: notification type, recipient id and the
+template context (loan, title, dates). The subject is the reader, and retention keeps the newest
+job per kind and subject forever, so every reader keeps one notification record indefinitely, next
+to IP-016's activity history (with its own retention) and IP-029 Q1 (no reading log in traces).
+
+**Question**: How much of a notification job is kept?
+
+**Options**:
+- [ ] **A**: Keep the call (needed to re-send a failed e-mail), but leave `notifications.send` out of the "newest per subject is kept" rule, so it expires with normal retention (recommended)
+- [ ] **B**: Store only the type and recipient; a failed e-mail cannot be re-sent from the ledger
+- [ ] **C**: Keep as implemented
+
+**Answer**:
+```
+```
+
+**Resolution**:
+```
+```
+
+---
+
 **Instructions for completing Review Questions**:
 
 1. For each question, check the box next to your chosen option
@@ -723,3 +816,7 @@ re-queue is newer, so the row would move back to received with its old `report` 
 |------|--------|---------|
 | 2026-11-14 | jdubec | Initial draft from the Celery integration audit, #146 (OCR) and #148 (LCP jobs REST); deployment, component and sequence diagrams |
 | 2026-11-14 | jdubec | Added Review Questions section |
+| 2026-11-14 | jdubec | Code survey: OCR signal never fires on upload (content saved after the row), extraction reuses one task id (`stable_task_id`, Q9), `core.change_entry` is superuser-only in effect, report auth of the existing hooks |
+| 2026-11-14 | jdubec | Review pass: one precedence rule, per-kind sweeper limit (service tasks run for hours), result backend is configured by the deployment, evidence rows 5/8/9 reworded to what was measured, Discussion section |
+| 2026-11-14 | jdubec | Implemented in the catalog with option A of every review question: ledger + JobEvent (migration with backfill and status rename), publish hook, 23 kinds, JobService, listener with outage buffer, sweeper/prune, `/api/v1/jobs`, MCP job tools, OCR kind, #148 fixes; Implementation notes added; OCR service issues evilflowers-ocr-service#1–#4 |
+| 2026-11-14 | jdubec | Review fixes (queued→lost, beat event history, entry trigger 409, no revoke for stable ids, OpenAPI generation); deployment knowledge#50; Q10 (notification records) added |

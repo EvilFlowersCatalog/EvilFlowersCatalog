@@ -81,6 +81,11 @@ class WriteSurfaceSweepTests(ManagementTestCase):
             # The administrator check runs before any lookup, so no job need exist.
             "requeue_encryption": {"content_ids": [str(uuid.uuid4())]},
             "reencrypt_publication": {"content_ids": [str(uuid.uuid4())]},
+            # IP-031: background jobs, administrators only, checked before any lookup.
+            "start_job": {"kind": "maintenance.prune_jobs"},
+            "retry_job": {"job_id": str(uuid.uuid4())},
+            "revoke_job": {"job_id": str(uuid.uuid4())},
+            "run_job_action": {"job_id": str(uuid.uuid4()), "action": "requeue"},
             # Account tools: each case is something a reader may *not* do. Minting
             # or revoking their own key is allowed, so these aim at someone else.
             "create_user": {"username": "sweep", "name": "Sweep", "surname": "User"},

@@ -151,6 +151,15 @@ if settings.EVILFLOWERS_EXTRACTION_ENABLED and settings.EVILFLOWERS_EXTRACTION_S
         "task": "apps.tasks.tasks.fail_stale_extraction_runs",
         "schedule": crontab(minute=41),
     }
+# IP-031: started jobs without events become `lost`; finished jobs leave after their retention.
+app.conf.beat_schedule["jobs-sweep-lost"] = {
+    "task": "apps.tasks.tasks.sweep_jobs",
+    "schedule": crontab(minute="*/10"),
+}
+app.conf.beat_schedule["jobs-prune"] = {
+    "task": "apps.tasks.tasks.prune_jobs",
+    "schedule": crontab(hour=4, minute=10),
+}
 # IP-016: drop personal activity history older than the retention window.
 app.conf.beat_schedule["core-prune-user-activity"] = {
     "task": "apps.tasks.tasks.prune_user_activity",

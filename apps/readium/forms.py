@@ -61,6 +61,8 @@ class UpdateLicenseForm(Form):
 
 class EncryptionTriggerForm(Form):
     force = BooleanField(required=False)
+    # #148: one file of the entry; without it, every PDF/EPUB of the entry.
+    acquisition_id = forms.UUIDField(required=False)
 
 
 class CreateReservationForm(Form):

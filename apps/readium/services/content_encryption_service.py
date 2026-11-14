@@ -303,7 +303,10 @@ class ContentEncryptionService:
         before dispatch for the same reason. The dispatch span gets
         `lcp.content_id`, so `{span.lcp.content_id="…"}` finds this trace.
         """
-        task_id = str(uuid.uuid4())
+        # IP-031: when the job service started this dispatch it has written the ledger row already.
+        from apps.tasks.kinds import preassigned_task_id
+
+        task_id = preassigned_task_id() or str(uuid.uuid4())
         telemetry.set_span_attributes(lcp__content_id=encrypted_content.lcp_content_id, lcp__task_id=task_id)
         encrypted_content.task_id = task_id
         encrypted_content.trace_id, _span_id = current_trace_ids()

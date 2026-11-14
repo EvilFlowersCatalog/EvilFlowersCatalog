@@ -19,6 +19,7 @@ from apps.api.views import (
     languages,
     notification_contacts,
     reviews,
+    jobs,
 )
 
 # IP-008 Phase 4: the Dataverse integration moved to `apps.dataverse`.
@@ -191,6 +192,15 @@ urlpatterns = [
         notification_contacts.NotificationContactDetail.as_view(),
         name="notification-contact-detail",
     ),
+    # Background jobs (IP-031)
+    path("jobs", jobs.JobManagement.as_view(), name="job-management"),
+    path("jobs/kinds", jobs.JobKinds.as_view(), name="job-kinds"),
+    path("jobs/summary", jobs.JobSummary.as_view(), name="job-summary"),
+    path("jobs/<uuid:job_id>", jobs.JobDetail.as_view(), name="job-detail"),
+    path("jobs/<uuid:job_id>/retry", jobs.JobRetry.as_view(), name="job-retry"),
+    path("jobs/<uuid:job_id>/revoke", jobs.JobRevoke.as_view(), name="job-revoke"),
+    path("jobs/<uuid:job_id>/report", jobs.JobReport.as_view(), name="job-report"),
+    path("jobs/<uuid:job_id>/actions/<slug:action>", jobs.JobActionView.as_view(), name="job-action"),
     # Status
     path("status", status.StatusManagement.as_view(), name="status"),
     # GitHub #131: admin dashboard statistics

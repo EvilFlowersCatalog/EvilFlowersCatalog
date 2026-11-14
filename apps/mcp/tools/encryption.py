@@ -25,10 +25,7 @@ content id, active-loan guard unless `force`, `dry_run` to look first.
 """
 
 import logging
-from datetime import timedelta
 
-from django.conf import settings
-from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from apps.mcp.arguments import Arguments
@@ -39,6 +36,7 @@ from apps.mcp.schemas import UUID_SCHEMA, list_output
 from apps.mcp.tools.common import assert_within_bulk_limit
 from apps.readium.models import EncryptedContent
 from apps.readium.services.content_encryption_service import ContentEncryptionService
+from apps.readium.services.encryption_jobs import encryption_job
 
 logger = logging.getLogger("apps.mcp.audit")
 
@@ -86,19 +84,6 @@ ENCRYPTION_JOB_SCHEMA = {
 }
 
 
-def _isoformat(value):
-    return value.isoformat() if value else None
-
-
-def _is_stale(encrypted_content: EncryptedContent) -> bool:
-    if encrypted_content.status != EncryptedContent.EncryptionStatus.PENDING or encrypted_content.reported_at:
-        return False
-    # Rows dispatched before #99 have no `last_dispatched_at`.
-    dispatched_at = encrypted_content.last_dispatched_at or encrypted_content.updated_at
-    threshold = timedelta(minutes=settings.EVILFLOWERS_READIUM_ENCRYPTION_STALE_MINUTES)
-    return timezone.now() - dispatched_at > threshold
-
-
 def _require_administrator(request) -> None:
     if not request.user.has_perm("core.change_entry"):
         raise ToolError(
@@ -109,30 +94,7 @@ def _require_administrator(request) -> None:
         )
 
 
-def _job(encrypted_content: EncryptedContent) -> dict:
-    acquisition = encrypted_content.acquisition
-    entry = acquisition.entry
-    return {
-        "content_id": encrypted_content.lcp_content_id,
-        "status": encrypted_content.status,
-        "entry_id": str(entry.pk),
-        "entry_title": entry.title,
-        "catalog": entry.catalog.url_name,
-        "mime": acquisition.mime,
-        "input_path": acquisition.content.name if acquisition.content else "",
-        "encrypted_path": encrypted_content.encrypted_path,
-        "error_message": encrypted_content.error_message,
-        "created_at": encrypted_content.created_at.isoformat(),
-        "updated_at": encrypted_content.updated_at.isoformat(),
-        "encrypted_at": _isoformat(encrypted_content.encrypted_at),
-        "task_id": encrypted_content.task_id,
-        "trace_id": encrypted_content.trace_id,
-        "attempts": encrypted_content.attempts,
-        "last_dispatched_at": _isoformat(encrypted_content.last_dispatched_at),
-        "reported_at": _isoformat(encrypted_content.reported_at),
-        "report": encrypted_content.report,
-        "stale": _is_stale(encrypted_content),
-    }
+_job = encryption_job
 
 
 def _jobs_queryset():
