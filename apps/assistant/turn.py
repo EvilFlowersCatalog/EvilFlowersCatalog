@@ -98,12 +98,13 @@ def run(
     )
 
     cancelled = False
+    state = _Turn()
     try:
         services.start_turn(chat, was_cold)
         begin = getattr(client, "begin_turn", None)
         if begin is not None:
             begin(str(chat.pk))
-        for frame in _rounds(request, chat, client, text, entry, document, language):
+        for frame in _rounds(request, chat, client, text, entry, document, language, state):
             yield frame
     except GeneratorExit:
         # The reader closed the stream: the model request is closed with this generator; nothing more is sent.
@@ -112,7 +113,7 @@ def run(
         raise
     except LLMUnavailable as error:
         logger.warning("Assistant backend unavailable: %s", error)
-        frame = _failed(chat, "unavailable", _("The assistant is temporarily unavailable."))
+        frame = _failed(chat, "unavailable", _("The assistant is temporarily unavailable."), state)
         try:
             yield frame
         except GeneratorExit:
@@ -121,7 +122,7 @@ def run(
             raise
     except Exception:
         logger.exception("Assistant turn failed")
-        frame = _failed(chat, "failed", _("The assistant failed to answer."))
+        frame = _failed(chat, "failed", _("The assistant failed to answer."), state)
         try:
             yield frame
         except GeneratorExit:
@@ -135,14 +136,20 @@ def run(
             except Exception:
                 logger.exception("Ending the model turn failed (chat %s)", chat.pk)
         if not cancelled:
-            yield sse("done", {"chat_id": str(chat.pk)})
+            done = {"chat_id": str(chat.pk)}
+            if state.message_id is not None:
+                # The stored answer, for feedback without re-reading the chat (#145).
+                done["message_id"] = str(state.message_id)
+            yield sse("done", done)
 
 
-def _failed(chat: Chat, code: str, notice) -> str:
+def _failed(chat: Chat, code: str, notice, state: Optional["_Turn"] = None) -> str:
     """Store the failure as the turn's answer (never replayed to the model) and say so to the client."""
     row = ChatMessage.objects.create(
         chat=chat, user=chat.user, role=ChatMessage.Role.ASSISTANT, text=str(notice), error=code
     )
+    if state is not None:
+        state.message_id = row.pk
     return sse("error", {"error": str(notice), "message_id": str(row.pk), "retryable": True})
 
 
@@ -179,11 +186,15 @@ class _Turn:
         self.seen_calls: set = set()
         # Labels already sent as `citation` frames in this turn.
         self.cited: set = set()
+        # The stored answer that closed the turn; `done` carries it (#145).
+        self.message_id = None
 
 
-def _rounds(request, chat: Chat, client, text: str, entry=None, document=None, language=None) -> Iterator[str]:
+def _rounds(
+    request, chat: Chat, client, text: str, entry=None, document=None, language=None, state: Optional[_Turn] = None
+) -> Iterator[str]:
     specifications = _specifications(request, chat, document)
-    state = _Turn()
+    state = state if state is not None else _Turn()
     # One page budget for the turn, over the chat's own copy and any publication read by id (#127).
     reading = tools.Reading(state.pages_read)
     # Evidence labels issued in this chat so far; this turn's continue the numbering (IP-024).
@@ -420,12 +431,14 @@ def _close(
 
     The evidence labels in `text` are resolved against the chat's ledger (IP-024) and completed for the viewer
     (IP-030 §2). The text is stored as it was streamed: an unknown label is reported, not removed, so the stored
-    answer is the one the reader saw.
+    answer is the one the reader saw. A study card's items cite labels of their own; they are resolved too (#145).
     """
     found, unknown = ledger.cite(text, request)
+    if state.study is not None:
+        _study_citations(ledger, state.study, request, found, unknown)
     if unknown:
         logger.warning("Assistant answer cites unknown evidence labels %s (chat %s)", unknown, chat.pk)
-    ChatMessage.objects.create(
+    row = ChatMessage.objects.create(
         chat=chat,
         user=chat.user,
         role=ChatMessage.Role.ASSISTANT,
@@ -440,12 +453,49 @@ def _close(
         model_seconds=seconds,
         prompt_fingerprint=fingerprint,
     )
+    state.message_id = row.pk
     yield from _pages_frame(state.pages_read)
     if found or unknown:
         yield sse("citations", {"citations": found, "unknown": unknown})
     chips = suggestion_chips.build(found, state.study, language)
     if chips:
         yield sse("suggestions", {"suggestions": chips})
+
+
+#: The text of a study item a label belongs to, by mode: what `citations.complete` matches the sentence against.
+_STUDY_ITEM_TEXT = {
+    "walkthrough": ("points", ("text",)),
+    "quiz": ("questions", ("question", "explanation")),
+    "key_concepts": ("concepts", ("term", "definition")),
+}
+
+
+def _study_citations(ledger: "evidence.Ledger", study: dict, request, found: List[dict], unknown: List[str]) -> None:
+    """Add the labels on a study card's items to `found` / `unknown`, in place, each once, in item order (#145).
+
+    A study turn closes with empty text, so `ledger.cite` sees none of them; without this, a card's chips have no
+    page, paragraph or quote to open.
+    """
+    items_key, text_keys = _STUDY_ITEM_TEXT.get(str(study.get("mode") or ""), (None, ()))
+    data = study.get("data") or {}
+    items = data.get(items_key) if items_key else None
+    if not isinstance(items, list):
+        return
+    seen = {citation["label"] for citation in found} | set(unknown)
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        sentence = " ".join(str(item.get(key) or "") for key in text_keys).strip()
+        for label in item.get("labels") or []:
+            label = evidence.normalise(str(label))
+            if not label or label in seen:
+                continue
+            seen.add(label)
+            source = ledger.sources.get(label)
+            if source is None:
+                unknown.append(label)
+            else:
+                found.append(citations.complete(label, source, sentence, request))
 
 
 def _pages_frame(pages_read: List[int]) -> Iterator[str]:

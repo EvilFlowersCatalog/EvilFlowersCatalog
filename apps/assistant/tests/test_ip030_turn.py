@@ -56,6 +56,7 @@ class FailedTurnTests(TurnBase):
         self.assertTrue(error["retryable"])
         self.assertIn(row, list(chat.messages.visible()))
         self.assertEqual([event for event, _ in events][-1], "done")
+        self.assertEqual(dict(events)["done"]["message_id"], error["message_id"])
 
         retry = ScriptedClient(["Teraz áno."])
         self._turn(retry, chat=chat)
@@ -198,6 +199,14 @@ class StudyTurnTests(TurnBase):
             dict(events)["suggestions"]["suggestions"][0]["message"], "Pokračuj v prechádzaní: 2 Bernoulli"
         )
 
+        # #145: the labels on the card's items resolve to citations, streamed and stored.
+        sent = dict(events)["citations"]
+        self.assertEqual([citation["label"] for citation in sent["citations"]], ["E1", "E2"])
+        self.assertEqual(sent["unknown"], [])
+        self.assertTrue(all(citation.get("paragraph_id") for citation in sent["citations"]))
+        self.assertEqual([citation["label"] for citation in answer.citations], ["E1", "E2"])
+        self.assertEqual(dict(events)["done"]["message_id"], str(answer.pk))
+
 
 class QuotaTests(TurnBase):
     @override_settings(EVILFLOWERS_ASSISTANT_DAILY_LIMIT_SECONDS=5)
@@ -227,8 +236,10 @@ class EndpointTests(TurnBase):
         self.client.defaults["HTTP_AUTHORIZATION"] = f"Basic {token}"
 
     def test_feedback_on_an_answer(self):
-        chat, _events = self._turn(ScriptedClient(["Áno."]))
+        chat, events = self._turn(ScriptedClient(["Áno."]))
         answer = chat.messages.visible().get(role=ChatMessage.Role.ASSISTANT)
+        # #145: the stream names the stored answer, so the portal rates it without re-reading the chat.
+        self.assertEqual(dict(events)["done"], {"chat_id": str(chat.pk), "message_id": str(answer.pk)})
         url = reverse("assistant:chat-message-feedback", kwargs={"chat_id": chat.pk, "message_id": answer.pk})
         response = self.client.post(url, {"rating": -1, "reason": "wrong page"}, content_type="application/json")
         self.assertEqual(response.status_code, 200, response.content)
