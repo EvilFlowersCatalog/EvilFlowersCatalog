@@ -1,7 +1,7 @@
-"""Assistant job kinds (IP-031): annotation highlights, section summaries, figure descriptions."""
+"""Assistant job kinds (IP-031): annotation highlights, section summaries, figure descriptions, their sweeps."""
 
 from apps.core.models import Annotation, Entry
-from apps.tasks.contract import Dispatch, JobDefinition, Scope, Spec, entry_scope, registry, uuid_arg
+from apps.tasks.contract import Dispatch, JobDefinition, Scope, Spec, entry_scope, maintenance, registry, uuid_arg
 
 
 class HighlightSpec(Spec):
@@ -40,6 +40,8 @@ class SummariseSectionsDefinition(JobDefinition[Entry, SummariseSpec]):
     task = "apps.assistant.tasks.summarise_sections"
     subject_model = Entry
     spec_model = SummariseSpec
+    #: A run lost to a rollout or killed at the time limit is sent again; it skips the sections already stored.
+    max_attempts = 3
 
     def scope(self, entry):
         return entry_scope(entry)
@@ -65,3 +67,18 @@ class DescribeFiguresDefinition(JobDefinition[None, DescribeFiguresSpec]):
 
     def kwargs(self, dispatch: Dispatch[None, DescribeFiguresSpec]) -> dict:
         return {"limit": dispatch.spec.limit}
+
+
+# #154: the off-peak sweeps (beat, EVILFLOWERS_ASSISTANT_*_SCHEDULE) that declare the jobs above.
+maintenance(
+    "maintenance.assistant_summarise_sweep",
+    "apps.assistant.tasks.summarise_sweep",
+    "Section summary sweep",
+    "Declare section summaries for the next publications that lack them, most read first (#154).",
+)
+maintenance(
+    "maintenance.assistant_describe_figures_sweep",
+    "apps.assistant.tasks.describe_figures_sweep",
+    "Figure description sweep",
+    "Declare the next batch of figure descriptions, EVILFLOWERS_ASSISTANT_DESCRIBE_FIGURES_BATCH at a time (#154).",
+)

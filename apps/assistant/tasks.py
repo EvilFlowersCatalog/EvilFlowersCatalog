@@ -1,6 +1,7 @@
 """Background work of the assistant (IP-018 Q4)."""
 
 import logging
+import time
 from typing import Optional
 
 from celery import shared_task
@@ -93,18 +94,38 @@ def highlight_annotation(annotation_id: str, language: Optional[str] = None) -> 
         Annotation.objects.filter(pk=annotation_id).update(status=Annotation.Status.FAILED)
 
 
-@shared_task
-def summarise_sections(entry_id: str, force: bool = False) -> dict:
-    """Generate the section summaries of one publication that are missing or stale (IP-030 §4)."""
+#: Seconds model work waits while a chat turn is running.
+DESCRIBE_BACKOFF = 60
+
+#: Seconds one run of model work goes on before it hands over to a fresh run of itself, well inside
+#: CELERY_TASK_TIME_LIMIT (30 min): one model call on CPU takes about a minute.
+WORK_SLICE = 20 * 60
+
+
+@shared_task(bind=True, max_retries=None)
+def summarise_sections(self, entry_id: str, force: bool = False) -> dict:
+    """Generate the section summaries of one publication that are missing or stale (IP-030 §4).
+
+    Yields to chats (`services.chat_active`) and continues in a fresh run after `WORK_SLICE`: each summary is
+    stored as it is made, so the next run skips what is done. A forced run regenerates every section and
+    cannot resume, so it neither yields nor slices. Fails when a section could not be summarised (the model
+    was down, say), so the sweep tries the book again rather than calling it done.
+    """
+    from apps.assistant import services
     from apps.assistant.sections import summarise_entry
 
-    report = summarise_entry(entry_id, force=force)
+    pause = None
+    if not force:
+        deadline = time.monotonic() + WORK_SLICE
+        pause = lambda: services.chat_active() or time.monotonic() > deadline  # noqa: E731
+
+    report = summarise_entry(entry_id, force=force, pause=pause)
     logger.info("Section summaries of entry %s: %s", entry_id, report)
+    if report["paused"]:
+        raise self.retry(countdown=DESCRIBE_BACKOFF if services.chat_active() else 1)
+    if report["failed"]:
+        raise RuntimeError(f"{report['failed']} of {report['sections']} sections could not be summarised: {report}")
     return report
-
-
-#: Seconds `describe_figures` waits while a chat turn is running.
-DESCRIBE_BACKOFF = 60
 
 
 @shared_task(bind=True, max_retries=None)
@@ -113,18 +134,72 @@ def describe_figures(self, limit: int = 50) -> dict:
 
     One figure at a time on `elvira-assistant`, never while a chat turn is running (`services.chat_active`): the
     task backs off and resumes. Each description is stored on the region and re-indexes its search document.
-    Re-queues itself until `limit` figures are done or none is left.
+    Re-queues itself until `limit` figures are done or none is left, and after `WORK_SLICE`.
     """
     from apps.assistant import figures, services
 
+    deadline = time.monotonic() + WORK_SLICE
     done = 0
     while done < limit:
         if services.chat_active():
             raise self.retry(countdown=DESCRIBE_BACKOFF, kwargs={"limit": limit - done})
+        if time.monotonic() > deadline:
+            raise self.retry(countdown=1, kwargs={"limit": limit - done})
         if not figures.describe_next():
             break
         done += 1
     return {"described": done}
+
+
+@shared_task
+def summarise_sweep() -> dict:
+    """#154: declare section summaries for the next publications that lack them (beat, off-peak).
+
+    At most EVILFLOWERS_ASSISTANT_SUMMARISE_CONCURRENCY publications are on their way at once; a tick while
+    a chat turn runs declares nothing. Popular publications go first. A rollout loses at most the section
+    being summarised: the lost run is retried by the reconciler (`max_attempts`) and skips what is stored.
+    """
+    from django.conf import settings
+
+    from apps.assistant import services
+    from apps.assistant.sections import SUMMARISE_KIND, next_to_summarise
+    from apps.tasks.contract import DispatchError, declare
+    from apps.tasks.domain.values import JobState
+    from apps.tasks.models import Job
+
+    if services.chat_active():
+        return {"declared": 0, "reason": "chat"}
+    on_the_way = (
+        Job.objects.filter(kind=SUMMARISE_KIND)
+        .exclude(state__in=(JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELLED))
+        .count()
+    )
+    declared = []
+    for entry_id in next_to_summarise(
+        settings.EVILFLOWERS_ASSISTANT_SUMMARISE_CONCURRENCY - on_the_way,
+        settings.EVILFLOWERS_ASSISTANT_SUMMARISE_RETRY_HOURS,
+    ):
+        try:
+            declare(SUMMARISE_KIND, entry_id)
+        except DispatchError as error:
+            logger.warning("assistant.summarise_sweep entry=%s refused: %s", entry_id, error)
+            continue
+        declared.append(str(entry_id))
+    return {"declared": len(declared), "on_the_way": on_the_way, "entries": declared}
+
+
+@shared_task
+def describe_figures_sweep() -> dict:
+    """#154: declare the next batch of figure descriptions (beat, off-peak).
+
+    Declaring is idempotent while the previous batch is on its way, so ticks never stack runs on the model.
+    """
+    from django.conf import settings
+
+    from apps.tasks.contract import declare
+
+    job = declare("assistant.describe_figures", spec={"limit": settings.EVILFLOWERS_ASSISTANT_DESCRIBE_FIGURES_BATCH})
+    return {"job": str(job.pk), "state": job.state}
 
 
 def _store_semantic(annotation, found) -> None:

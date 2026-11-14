@@ -2,7 +2,8 @@
 
 A section is a distinct `Paragraph.section` heading of the active extraction run (`extraction.outline`). Its
 80-120 word summary and 3-8 concepts are generated the first time a reader asks for it (`study(summary)`), or
-ahead of time for popular books (`manage.py summarise_sections`), and kept while the section's text and the
+ahead of time: by the off-peak beat sweep (`next_to_summarise`, #154) or by hand (`manage.py summarise_sections`),
+and kept while the section's text and the
 prompt stay the same (`SectionSummary.digest`). "Summarise this chapter" took 3 minutes on 2026-11-12; the next
 reader of that section gets it at once. The concepts feed the AGE graph (`graph.projection.project_concepts`).
 
@@ -13,7 +14,7 @@ summary would carry it to every reader who can see the record.
 
 import hashlib
 import logging
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from django.conf import settings
 
@@ -149,14 +150,24 @@ def summary_for(run, entry, section, client=None, force: bool = False, book=None
     return row
 
 
-def summarise_entry(entry_id, client=None, force: bool = False, limit: Optional[int] = None) -> Dict[str, int]:
-    """Summarise the sections of one publication that have no current summary (the warm-up batch)."""
+def summarise_entry(
+    entry_id,
+    client=None,
+    force: bool = False,
+    limit: Optional[int] = None,
+    pause: Optional[Callable[[], bool]] = None,
+) -> Dict[str, int]:
+    """Summarise the sections of one publication that have no current summary (the warm-up batch).
+
+    `pause()` is asked before each section; when it says so the batch stops with `paused: 1` in the report.
+    Every summary is stored as it is made, so the next call carries on where this one stopped.
+    """
     from apps.assistant.models import SectionSummary
     from apps.core.models import Entry
     from apps.extraction.discovery import _entry_run
     from apps.extraction.outline import outline
 
-    report = {"sections": 0, "summarised": 0, "kept": 0, "skipped": 0, "failed": 0}
+    report = {"sections": 0, "summarised": 0, "kept": 0, "skipped": 0, "failed": 0, "paused": 0}
     entry = Entry.objects.filter(pk=entry_id).first()
     if entry is None:
         return report
@@ -168,6 +179,9 @@ def summarise_entry(entry_id, client=None, force: bool = False, limit: Optional[
     sections = outline(run)
     report["sections"] = len(sections)
     for section in sections[:limit] if limit else sections:
+        if pause is not None and pause():
+            report["paused"] = 1
+            break
         before = SectionSummary.objects.filter(run=run, section=section.title).values_list("digest", flat=True).first()
         row = summary_for(run, entry, section, client=client, force=force)
         if row is None:
@@ -176,6 +190,58 @@ def summarise_entry(entry_id, client=None, force: bool = False, limit: Optional[
             continue
         report["kept" if before == row.digest and not force else "summarised"] += 1
     return report
+
+
+#: The job kind the sweep declares, one job per publication (`apps.assistant.jobs`).
+SUMMARISE_KIND = "assistant.summarise_sections"
+
+
+def next_to_summarise(limit: int, retry_after_hours: float) -> List:
+    """Up to `limit` publications the off-peak sweep should summarise next, most read first (#154).
+
+    A publication qualifies when it has an active extraction run, is not lent through Readium LCP, and its
+    `assistant.summarise_sections` job is none of:
+
+    - on its way (pending, blocked, queued, running, cancelling): the sweep never stacks a second run;
+    - cancelled by someone: the sweep does not overrule a person;
+    - succeeded since its active run finished: done for this text; a new extraction makes it due again;
+    - failed within the last `retry_after_hours`: a book the model keeps failing on waits a night, it does
+      not hold the queue (kept sections cost nothing on the retry).
+    """
+    from datetime import timedelta
+
+    from django.db.models import Exists, OuterRef, Q, Subquery
+    from django.db.models.functions import Coalesce
+    from django.utils import timezone
+
+    from apps.core.models import Entry
+    from apps.extraction.models import ExtractionRun
+    from apps.tasks.domain.values import DesiredState, JobState
+    from apps.tasks.models import Job
+
+    if limit <= 0:
+        return []
+    active_run = ExtractionRun.objects.filter(acquisition__entry_id=OuterRef("pk"), is_active=True).order_by(
+        "-finished_at"
+    )
+    jobs = Job.objects.filter(kind=SUMMARISE_KIND, entry_id=OuterRef("pk"))
+    settled = (JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELLED)
+    done = jobs.filter(
+        Q(desired_state=DesiredState.CANCELLED)
+        | ~Q(state__in=settled)
+        | Q(state=JobState.SUCCEEDED, last_transition_at__gte=OuterRef("run_finished_at"))
+        | Q(state=JobState.FAILED, last_transition_at__gte=timezone.now() - timedelta(hours=retry_after_hours))
+    )
+    return list(
+        Entry.objects.annotate(
+            run_finished_at=Subquery(active_run.annotate(at=Coalesce("finished_at", "created_at")).values("at")[:1])
+        )
+        .filter(run_finished_at__isnull=False)
+        .exclude(config__readium_enabled=True)
+        .exclude(Exists(done))
+        .order_by("-popularity", "-run_finished_at")
+        .values_list("pk", flat=True)[:limit]
+    )
 
 
 def outline_for_model(entry_id, table_of_contents: Optional[List[dict]], readable: bool = False) -> dict:

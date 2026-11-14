@@ -9,8 +9,10 @@ The model is `intfloat/multilingual-e5-large-instruct` (1024 dimensions, 512 tok
 3. The model id and revision (`GET /info`) travel with every stored vector: vectors of two models are
    never compared.
 4. A query waits at most its caller's budget: `EVILFLOWERS_EMBEDDING_QUERY_TIMEOUT` (0.3 s) for a catalog
-   search, 2 s for the assistant and passage search; 60 s for a batch, 3 retries with backoff on 429/503.
-   Batches also retry timeouts and connection errors; a reader's query does not, and after TEI failed
+   search, 2 s for the assistant and passage search; 3 retries with backoff on 429/503. Batches carry
+   `x-embed-lane: bulk` (`EVILFLOWERS_EMBEDDING_BATCH_LANE`): the gateway's bulk lane, 150 s timeout and
+   E-core pods, away from searches; they wait `EVILFLOWERS_EMBEDDING_BATCH_TIMEOUT` (150 s) and also retry
+   504, timeouts and connection errors. A reader's query does none of that, and after TEI failed
    (down, overloaded, or no answer in the full 2 s) queries skip TEI for `UNAVAILABLE_SECONDS`. A search
    that only ran out of its short budget degrades alone: TEI is busy, not down (#134).
 5. Type-ahead never calls TEI: it uses a query vector only when a search already cached it.
@@ -32,9 +34,14 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 32
 #: Budget of a query whose caller names none (assistant, passage search); catalog search uses `search_budget()`.
 QUERY_TIMEOUT = 2
-BATCH_TIMEOUT = 60
+#: Default client timeout of a batch: the gateway's bulk lane answers within 150 s, so the client waits as long.
+BATCH_TIMEOUT = 150
 RETRIES = 3
 RETRY_STATUSES = (429, 503)
+#: A batch also retries a gateway timeout (504); a reader's query never waits for one.
+BATCH_RETRY_STATUSES = RETRY_STATUSES + (504,)
+#: Header that routes a request to a gateway lane (`bulk`: long timeout, E-core pods, away from searches).
+LANE_HEADER = "x-embed-lane"
 #: After a reader's query could not be embedded, skip TEI for this long (search degrades to lexical).
 UNAVAILABLE_KEY = "evilflowers:embedding:unavailable"
 UNAVAILABLE_SECONDS = 30
@@ -76,8 +83,15 @@ def _url(path: str) -> str:
     return f"{settings.EVILFLOWERS_EMBEDDING_URL.rstrip('/')}{path}"
 
 
-def _headers() -> dict:
+def batch_timeout() -> float:
+    """Seconds one batch request waits (`EVILFLOWERS_EMBEDDING_BATCH_TIMEOUT`)."""
+    return float(getattr(settings, "EVILFLOWERS_EMBEDDING_BATCH_TIMEOUT", BATCH_TIMEOUT))
+
+
+def _headers(lane: str = "") -> dict:
     headers = {"Content-Type": "application/json"}
+    if lane:
+        headers[LANE_HEADER] = lane
     if getattr(settings, "EVILFLOWERS_EMBEDDING_API_KEY", ""):
         headers["Authorization"] = f"Bearer {settings.EVILFLOWERS_EMBEDDING_API_KEY}"
     # Compose containers reach tei-embed through the internal Envoy listener, routed by Host
@@ -87,18 +101,29 @@ def _headers() -> dict:
     return headers
 
 
-def _request(method: str, path: str, *, timeout: float, json=None, retry_errors: bool = True):
-    """Call TEI, retrying 429/503 with backoff.
+def _request(
+    method: str,
+    path: str,
+    *,
+    timeout: float,
+    json=None,
+    retry_errors: bool = True,
+    retry_statuses: Sequence[int] = RETRY_STATUSES,
+    lane: str = "",
+):
+    """Call TEI, retrying `retry_statuses` (429/503) with backoff.
 
     A timeout or connection error is retried only when `retry_errors` (batches). A reader's query
     is not: four 2 s timeouts plus backoff held `GET /api/v1/entries?query=` for ~9 s while TEI was slow.
+    `lane` is sent as `x-embed-lane` so the gateway routes the request to that lane.
     """
     if not enabled():
         raise EmbeddingError("EVILFLOWERS_EMBEDDING_URL is not set")
+    headers = _headers(lane)
     last_error = None
     for attempt in range(RETRIES + 1):
         try:
-            response = requests.request(method, _url(path), headers=_headers(), json=json, timeout=timeout)
+            response = requests.request(method, _url(path), headers=headers, json=json, timeout=timeout)
         except requests.RequestException as error:
             if not retry_errors:
                 if isinstance(error, requests.Timeout):
@@ -106,7 +131,7 @@ def _request(method: str, path: str, *, timeout: float, json=None, retry_errors:
                 raise EmbeddingUnavailable(str(error)) from error
             last_error = error
         else:
-            if response.status_code not in RETRY_STATUSES:
+            if response.status_code not in retry_statuses:
                 if response.status_code >= 400:
                     raise EmbeddingError(f"TEI {path} answered {response.status_code}: {response.text[:200]}")
                 return response.json()
@@ -159,7 +184,12 @@ def cached_query(text: str, task: str = "entries") -> Optional[List[float]]:
 
 
 def embed_documents(texts: Sequence[str]) -> List[List[float]]:
-    """Plain documents, in batches of at most 32, normalised."""
+    """
+    Plain documents, in batches of at most 32, normalised. Batches go to the gateway lane
+    `EVILFLOWERS_EMBEDDING_BATCH_LANE` (`bulk`), so they do not compete with readers' queries.
+    """
+    lane = getattr(settings, "EVILFLOWERS_EMBEDDING_BATCH_LANE", "bulk")
+    timeout = batch_timeout()
     vectors: List[List[float]] = []
     for start in range(0, len(texts), BATCH_SIZE):
         batch = [text or " " for text in texts[start : start + BATCH_SIZE]]
@@ -167,8 +197,10 @@ def embed_documents(texts: Sequence[str]) -> List[List[float]]:
             _request(
                 "POST",
                 "/embed",
-                timeout=BATCH_TIMEOUT,
+                timeout=timeout,
                 json={"inputs": batch, "normalize": True, "truncate": True},
+                retry_statuses=BATCH_RETRY_STATUSES,
+                lane=lane,
             )
         )
     return vectors

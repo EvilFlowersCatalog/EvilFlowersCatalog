@@ -169,6 +169,22 @@ app.conf.beat_schedule["jobs-prune"] = {
     "task": "apps.tasks.tasks.prune_jobs",
     "schedule": crontab(hour=4, minute=10),
 }
+# #154: off-peak model work (off unless scheduled) and the nightly graph rebuild.
+if settings.EVILFLOWERS_ASSISTANT_ENABLED and settings.EVILFLOWERS_ASSISTANT_SUMMARISE_SCHEDULE:
+    app.conf.beat_schedule["assistant-summarise-sweep"] = {
+        "task": "apps.assistant.tasks.summarise_sweep",
+        "schedule": _cron(settings.EVILFLOWERS_ASSISTANT_SUMMARISE_SCHEDULE),
+    }
+if settings.EVILFLOWERS_ASSISTANT_ENABLED and settings.EVILFLOWERS_ASSISTANT_DESCRIBE_FIGURES_SCHEDULE:
+    app.conf.beat_schedule["assistant-describe-figures"] = {
+        "task": "apps.assistant.tasks.describe_figures_sweep",
+        "schedule": _cron(settings.EVILFLOWERS_ASSISTANT_DESCRIBE_FIGURES_SCHEDULE),
+    }
+if settings.EVILFLOWERS_GRAPH_REBUILD_SCHEDULE:
+    app.conf.beat_schedule["graph-rebuild"] = {
+        "task": "apps.graph.tasks.rebuild_graph",
+        "schedule": _cron(settings.EVILFLOWERS_GRAPH_REBUILD_SCHEDULE),
+    }
 # IP-016: drop personal activity history older than the retention window.
 app.conf.beat_schedule["core-prune-user-activity"] = {
     "task": "apps.tasks.tasks.prune_user_activity",

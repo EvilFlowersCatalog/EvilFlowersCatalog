@@ -124,6 +124,42 @@ class EmbeddingClientTests(SimpleTestCase):
             embeddings.embed_documents(["x"])
         self.assertEqual(request.call_count, embeddings.RETRIES + 1)
 
+    @mock.patch("apps.core.search.embeddings.cache")
+    @mock.patch("apps.core.search.embeddings.requests.request")
+    def test_batches_go_to_the_bulk_lane_queries_do_not(self, request, cache):
+        cache.get.return_value = None
+        request.return_value = self.response(payload=[[0.0]])
+        with override_settings(EVILFLOWERS_EMBEDDING_MODEL=MODEL, EVILFLOWERS_EMBEDDING_BATCH_TIMEOUT=150):
+            embeddings.embed_documents(["x"])
+            self.assertEqual(request.call_args.kwargs["headers"]["x-embed-lane"], "bulk")
+            self.assertEqual(request.call_args.kwargs["timeout"], 150)
+            embeddings.embed_query("y")
+            self.assertNotIn("x-embed-lane", request.call_args.kwargs["headers"])
+
+    @override_settings(EVILFLOWERS_EMBEDDING_BATCH_LANE="")
+    @mock.patch("apps.core.search.embeddings.requests.request")
+    def test_an_empty_batch_lane_sends_no_header(self, request):
+        request.return_value = self.response(payload=[[0.0]])
+        embeddings.embed_documents(["x"])
+        self.assertNotIn("x-embed-lane", request.call_args.kwargs["headers"])
+
+    @mock.patch("apps.core.search.embeddings.time.sleep")
+    @mock.patch("apps.core.search.embeddings.requests.request")
+    def test_a_batch_retries_a_gateway_timeout(self, request, sleep):
+        request.side_effect = [self.response(status=504), self.response(payload=[[0.5]])]
+        self.assertEqual(embeddings.embed_documents(["x"]), [[0.5]])
+        self.assertEqual(request.call_count, 2)
+
+    @mock.patch("apps.core.search.embeddings.cache")
+    @mock.patch("apps.core.search.embeddings.requests.request")
+    def test_a_query_does_not_retry_a_gateway_timeout(self, request, cache):
+        cache.get.return_value = None
+        request.return_value = self.response(status=504)
+        with override_settings(EVILFLOWERS_EMBEDDING_MODEL=MODEL):
+            with self.assertRaises(embeddings.EmbeddingError):
+                embeddings.embed_query("y")
+        self.assertEqual(request.call_count, 1)
+
     @override_settings(EVILFLOWERS_EMBEDDING_HOST="embed.elvira.internal")
     @mock.patch("apps.core.search.embeddings.requests.request")
     def test_host_header_for_the_compose_gateway_path(self, request):

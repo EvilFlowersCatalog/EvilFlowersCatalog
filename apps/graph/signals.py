@@ -15,7 +15,8 @@ def _delete(entry_id) -> None:
     try:
         projection.delete_entry(entry_id)
     except Exception:
-        # The nightly rebuild drops it in any case; a graph never decides access.
+        # The nightly rebuild (`graph.tasks.rebuild_graph`, EVILFLOWERS_GRAPH_REBUILD_SCHEDULE) drops it in any
+        # case; a graph never decides access.
         logger.exception("Could not remove entry %s from the graph", entry_id)
 
 

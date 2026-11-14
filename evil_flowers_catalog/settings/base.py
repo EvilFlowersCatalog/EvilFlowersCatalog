@@ -672,6 +672,12 @@ EVILFLOWERS_EMBEDDING_API_KEY = os.getenv("EVILFLOWERS_EMBEDDING_API_KEY", "")
 EVILFLOWERS_EMBEDDING_HOST = os.getenv("EVILFLOWERS_EMBEDDING_HOST", "")
 # `model@revision` stored with every vector; empty = read from TEI's /info.
 EVILFLOWERS_EMBEDDING_MODEL = os.getenv("EVILFLOWERS_EMBEDDING_MODEL", "")
+# Gateway lane of document batches (entries, regions, passages), sent as `x-embed-lane` like the text
+# worker's TEI_LANE: `bulk` has a 150 s timeout and E-core pods and keeps batches away from searches.
+# Empty: no header (default lane). Readers' queries never carry it.
+EVILFLOWERS_EMBEDDING_BATCH_LANE = os.getenv("EVILFLOWERS_EMBEDDING_BATCH_LANE", "bulk")
+# Seconds one batch request waits; matches the bulk lane's gateway timeout.
+EVILFLOWERS_EMBEDDING_BATCH_TIMEOUT = float(os.getenv("EVILFLOWERS_EMBEDDING_BATCH_TIMEOUT", 150))
 # Seconds a catalog search (`GET /api/v1/entries?query=`, OPDS search) waits for TEI to embed the query
 # (#134). Later the search runs on the words only (`metadata.search.degraded`). Type-ahead never waits:
 # it uses a query vector only when one is already cached.
@@ -790,6 +796,20 @@ EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium", "assistant", "extraction"
 
 # Backups
 EVILFLOWERS_BACKUP_PGDUMP_BIN = os.getenv("EVILFLOWERS_BACKUP_PGDUMP_BIN", "pg_dump")
+# Off-peak model work and the graph (#154): cron expressions (`m h dom mon dow`, UTC) of the beat jobs; empty = off.
+# The two model sweeps are off by default: they keep the assistant's model busy for hours (a section or a figure
+# is about a minute on CPU). Suggested on a deployment with the capacity: summaries '*/10 0-3 * * *', figures
+# '5,35 0-3 * * *' (01:00-05:00 in Bratislava in winter). Both yield to chat turns.
+EVILFLOWERS_ASSISTANT_SUMMARISE_SCHEDULE = os.getenv("EVILFLOWERS_ASSISTANT_SUMMARISE_SCHEDULE", "")
+# Publications whose section summaries are on their way at once; a tick only tops this up.
+EVILFLOWERS_ASSISTANT_SUMMARISE_CONCURRENCY = int(os.getenv("EVILFLOWERS_ASSISTANT_SUMMARISE_CONCURRENCY", 1))
+# A publication whose summaries failed (after the job's retries) is swept again after this many hours.
+EVILFLOWERS_ASSISTANT_SUMMARISE_RETRY_HOURS = float(os.getenv("EVILFLOWERS_ASSISTANT_SUMMARISE_RETRY_HOURS", 20))
+EVILFLOWERS_ASSISTANT_DESCRIBE_FIGURES_SCHEDULE = os.getenv("EVILFLOWERS_ASSISTANT_DESCRIBE_FIGURES_SCHEDULE", "")
+# Figures one sweep tick asks for; the next tick declares the next batch once this one is done.
+EVILFLOWERS_ASSISTANT_DESCRIBE_FIGURES_BATCH = int(os.getenv("EVILFLOWERS_ASSISTANT_DESCRIBE_FIGURES_BATCH", 10))
+# Drop and re-project the Apache AGE graph; after the sweep window. Skipped where AGE is not installed.
+EVILFLOWERS_GRAPH_REBUILD_SCHEDULE = os.getenv("EVILFLOWERS_GRAPH_REBUILD_SCHEDULE", "50 4 * * *")
 # Orphan cleanup (#30): cron expression (`m h dom mon dow`) of the beat job; unset = off.
 EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE = os.getenv("EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE")
 # Orphan directories holding a file younger than this are kept.

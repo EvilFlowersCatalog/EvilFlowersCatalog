@@ -81,7 +81,7 @@ def index_run(run: ExtractionRun, *, embed: bool = True) -> Dict[str, int]:
     pending = [region for region in regions if region.embedding_text and region.embedding is None]
     if not pending:
         return counts
-    model = embeddings.model_id(timeout=embeddings.BATCH_TIMEOUT)
+    model = embeddings.model_id(timeout=embeddings.batch_timeout())
     vectors = embeddings.embed_documents([region.embedding_text for region in pending])
     for region, vector in zip(pending, vectors):
         region.embedding = vector

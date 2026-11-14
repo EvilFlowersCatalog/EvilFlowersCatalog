@@ -14,6 +14,7 @@ To declare a job from domain code (an upload starting OCR), use `declare()`.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import timedelta
 from typing import Any
 
 from apps.tasks.application.registry import registry
@@ -28,12 +29,18 @@ def declare(kind: str, subject_id: Any = None, *, spec: Mapping | None = None, c
     return facade.apply(kind, subject_id, spec=spec, cause_id=cause_id, check_permission=False)
 
 
-def maintenance(kind: str, task: str, title: str, description: str) -> type[JobDefinition]:
-    """Register a subjectless kind for a beat task: one job for the whole kind; applying it runs it now."""
+def maintenance(
+    kind: str, task: str, title: str, description: str, time_limit: timedelta | None = None
+) -> type[JobDefinition]:
+    """Register a subjectless kind for a beat task: one job for the whole kind; applying it runs it now.
+
+    `time_limit`: for a task that runs longer than CELERY_TASK_TIME_LIMIT (it sets its own), so the sweeper
+    does not call its run lost.
+    """
     definition = type(
         "".join(part.title() for part in kind.replace(".", "_").split("_")) + "Definition",
         (JobDefinition,),
-        {"kind": kind, "task": task, "title": title, "description": description},
+        {"kind": kind, "task": task, "title": title, "description": description, "time_limit": time_limit},
     )
     return registry.register(definition)
 
