@@ -156,6 +156,7 @@ def _reset(run: ExtractionRun) -> None:
         run.error = None
         run.started_at = None
         run.finished_at = None
+        run.post_processed = None
         run.save()
     delete_files(run.storage_dir)
 
@@ -395,6 +396,8 @@ def _finish(run: ExtractionRun) -> None:
     )
     run.status = ExtractionRun.Status.DONE
     run.is_active = True
+    # New results: post-processed again (#155), here or by the sweep if the queue below is lost.
+    run.post_processed = None
     transaction.on_commit(lambda: update_embedding(run.pk))
     # IP-030: cross-references, figure vectors and the graph, off the ingestion request.
     from apps.extraction.tasks import queue_post_process

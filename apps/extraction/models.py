@@ -72,6 +72,9 @@ class ExtractionRun(BaseModel):
     embedding = HalfVectorField(dimensions=EMBEDDING_DIMENSIONS, null=True)
     started_at = models.DateTimeField(null=True)
     finished_at = models.DateTimeField(null=True)
+    #: `POST_PROCESS_VERSION` (`apps.extraction.tasks`) of the post-processing that last succeeded on this run in
+    #: full; null for none. The sweep (#155) post-processes every active run whose marker is not current.
+    post_processed = models.PositiveSmallIntegerField(null=True)
 
     @property
     def storage_dir(self) -> str:

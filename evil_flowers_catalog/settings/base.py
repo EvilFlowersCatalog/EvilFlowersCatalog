@@ -810,6 +810,17 @@ EVILFLOWERS_ASSISTANT_DESCRIBE_FIGURES_SCHEDULE = os.getenv("EVILFLOWERS_ASSISTA
 EVILFLOWERS_ASSISTANT_DESCRIBE_FIGURES_BATCH = int(os.getenv("EVILFLOWERS_ASSISTANT_DESCRIBE_FIGURES_BATCH", 10))
 # Drop and re-project the Apache AGE graph; after the sweep window. Skipped where AGE is not installed.
 EVILFLOWERS_GRAPH_REBUILD_SCHEDULE = os.getenv("EVILFLOWERS_GRAPH_REBUILD_SCHEDULE", "50 4 * * *")
+# Post-processing sweep (#155): references, figure documents and vectors, similarity and graph of every active run
+# not marked with the current POST_PROCESS_VERSION. On by default where extraction is; empty = off.
+EVILFLOWERS_POST_PROCESS_SWEEP_SCHEDULE = os.getenv(
+    "EVILFLOWERS_POST_PROCESS_SWEEP_SCHEDULE", "*/5 * * * *" if EVILFLOWERS_EXTRACTION_ENABLED else ""
+)
+# Post-processing runs in flight at most; each embeds its figures through TEI (the bulk lane).
+EVILFLOWERS_POST_PROCESS_SWEEP_BATCH = int(os.getenv("EVILFLOWERS_POST_PROCESS_SWEEP_BATCH", 4))
+# Runs of one run's post-processing before its job is failed; the sweep skips it until a manual apply.
+EVILFLOWERS_POST_PROCESS_MAX_ATTEMPTS = int(os.getenv("EVILFLOWERS_POST_PROCESS_MAX_ATTEMPTS", 3))
+# Weekly recompute of every section pair with one set of per-language means, before `graph-rebuild`; empty = off.
+EVILFLOWERS_SIMILARITY_REBUILD_SCHEDULE = os.getenv("EVILFLOWERS_SIMILARITY_REBUILD_SCHEDULE", "20 4 * * 0")
 # Orphan cleanup (#30): cron expression (`m h dom mon dow`) of the beat job; unset = off.
 EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE = os.getenv("EVILFLOWERS_ORPHAN_CLEANUP_SCHEDULE")
 # Orphan directories holding a file younger than this are kept.

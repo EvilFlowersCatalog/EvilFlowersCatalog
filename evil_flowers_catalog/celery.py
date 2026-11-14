@@ -180,6 +180,17 @@ if settings.EVILFLOWERS_ASSISTANT_ENABLED and settings.EVILFLOWERS_ASSISTANT_DES
         "task": "apps.assistant.tasks.describe_figures_sweep",
         "schedule": _cron(settings.EVILFLOWERS_ASSISTANT_DESCRIBE_FIGURES_SCHEDULE),
     }
+# #155: post-processing of every active run catches up by itself; similarity means refreshed weekly.
+if settings.EVILFLOWERS_POST_PROCESS_SWEEP_SCHEDULE:
+    app.conf.beat_schedule["extraction-post-process-sweep"] = {
+        "task": "apps.extraction.tasks.post_process_sweep",
+        "schedule": _cron(settings.EVILFLOWERS_POST_PROCESS_SWEEP_SCHEDULE),
+    }
+if settings.EVILFLOWERS_SIMILARITY_REBUILD_SCHEDULE:
+    app.conf.beat_schedule["extraction-similarity-rebuild"] = {
+        "task": "apps.extraction.tasks.similarity_rebuild",
+        "schedule": _cron(settings.EVILFLOWERS_SIMILARITY_REBUILD_SCHEDULE),
+    }
 if settings.EVILFLOWERS_GRAPH_REBUILD_SCHEDULE:
     app.conf.beat_schedule["graph-rebuild"] = {
         "task": "apps.graph.tasks.rebuild_graph",
