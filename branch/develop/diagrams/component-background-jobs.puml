@@ -23,7 +23,7 @@ title Background jobs inside the catalog: one service, one registry, one ledger 
 
 actor "Admin · elvira-portal" as admin
 component "MCP client" as mcpc
-component "ocr worker\nevilflowers-ocr-worker" as worker <<proposed>>
+component "ocr worker\nevilflowers-ocr-service" as worker <<proposed>>
 
 package "evilflowers (catalog)" {
 
@@ -31,7 +31,7 @@ package "evilflowers (catalog)" {
     component "JobViews\n/api/v1/jobs …" as api <<proposed>>
     component "JobReportView\n/api/v1/jobs/{id}/report" as report <<proposed>>
     component "MCP job tools\napps.mcp" as mcp <<proposed>>
-    component "Domain signals\nAcquisition post_save" as signals
+    component "Domain triggers\nupload (on commit)" as signals
   }
 
   package "apps.tasks · job core" as core {
@@ -40,10 +40,11 @@ package "evilflowers (catalog)" {
     database "Ledger\nJobProtocol · JobEvent" as ledger
     component "Event listener\ncelery_event_handler" as listener
     component "Sweeper · prune\nbeat tasks" as sweeper <<proposed>>
+    component "Publish hook\nbefore_task_publish" as hook <<proposed>>
   }
 
   package "job kinds (implement JobKind)" as kinds {
-    component "files.ocr\n(#146)" as ocr <<proposed>>
+    component "files.ocr\nfirst kind (issue 146)" as ocr <<proposed>>
     component "readium.encrypt\n→ EncryptedContent" as lcp <<proposed>>
     component "extraction.run\n→ ExtractionRun" as ext <<proposed>>
     component "in-process\napps.*.tasks" as local <<proposed>>
@@ -82,11 +83,13 @@ svc -right-> registry : kind(name)
 svc -[$accent()]down-> ledger : <b>row before send</b>
 listener -left-> ledger : upsert by task_id
 sweeper -up-> ledger : mark lost · prune
-registry -down-> kinds : JobKind\n(build · eligible · on_report)
+registry -down-> kinds : JobKind\n(eligible · dispatch · on_report)
 
 ' ---- transport --------------------------------------------------------------------
 svc -[$accent()]-> celery : <b>send_task(task_id = row id)</b>
 celery -down-> redis : LPUSH · revoke
+celery -up-> hook : every catalog send\n(.delay, beat, JobService)
+hook -up-> ledger : row queued,\nkind + subject from args
 listener -down-> redis : SUBSCRIBE celeryev
 
 legend bottom left
@@ -98,6 +101,6 @@ legend bottom left
   | blue arrows | the path of one start: adapter → JobService → ledger row → Celery |
 endlegend
 
-caption Every start, retry and revoke goes through JobService: it checks the kind's permission and eligibility,\nwrites the ledger row first, then sends the task with that row's id as Celery task id, so a task is visible\nas queued before any worker sees it. The listener only updates rows; it never starts work.\nA kind is a small class: subject model, Celery task name, arguments, permission, report handler.\nWorkers consume from and publish events to the same Redis (deployment-background-jobs-dev).
+caption Every start, retry and revoke goes through JobService: it checks the kind's permission and eligibility,\nwrites the ledger row first, then sends the task with that row's id as Celery task id, so a task is visible\nas queued before any worker sees it. Tasks sent elsewhere (.delay in a signal, beat) are recorded by the\npublish hook, which reads kind and subject from the call. The listener only updates rows; it never starts work.\nA kind is a small class: subject model, Celery task name, arguments, permission, report handler.\nWorkers consume from and publish events to the same Redis (deployment-background-jobs-dev).
 footer ELVIRA · FIIT STU · EvilFlowersCatalog · docs/diagrams/component-background-jobs.puml
 @enduml

@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "4690de5570d402dcb9dfbf321dbea59f4eb97729",
-    "short": "4690de5",
-    "message": "Fixng acces to AGE in ProstreSQL",
+    "sha": "d259392346875d63a90395a489170b2aff78a858",
+    "short": "d259392",
+    "message": "Refactoring Jobs framework (IP-031)",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/4690de5570d402dcb9dfbf321dbea59f4eb97729"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/d259392346875d63a90395a489170b2aff78a858"
   },
-  "deployed_at": "2026-11-14T19:00:01Z",
+  "deployed_at": "2026-11-14T20:19:31Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
