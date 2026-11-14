@@ -1,0 +1,103 @@
+@startuml component-background-jobs
+!include elvira.iuml
+' =============================================================================
+' What: inside the catalog, one JobService owns every way a job starts, changes
+'       or is read: the REST API, the MCP tools and domain signals all go through
+'       it; it asks the JobKind registry what a kind needs (subject, permission,
+'       arguments, report handling) and writes one ledger (JobProtocol +
+'       JobEvent), which the Celery event listener also writes. OCR (#146) is the
+'       first kind; LCP encryption and extraction keep their own models and
+'       register as kinds that point at them.
+' Kind: UML component diagram, specification level, proposal (IP-031). Layers top
+'       to bottom: callers, interface adapters, job core, kinds, transport.
+'       Scope: the catalog's job components. Omitted: auth backends,
+'       serializers, telemetry, the extraction ingest API internals.
+' Source: apps/tasks (models.py, management/commands/celery_event_handler.py,
+'         tasks.py); evil_flowers_catalog/celery.py; apps/core/models/acquisition.py
+'         background_tasks; apps/readium (EncryptedContent, views/hooks.py);
+'         apps/extraction/services.py; apps/mcp/tools; EvilFlowersCatalog#146
+'         (2026-11-14).
+' =============================================================================
+
+title Background jobs inside the catalog: one service, one registry, one ledger (proposal, 2026-11-14)
+
+actor "Admin · elvira-portal" as admin
+component "MCP client" as mcpc
+component "ocr worker\nevilflowers-ocr-worker" as worker <<proposed>>
+
+package "evilflowers (catalog)" {
+
+  package "interface adapters" as adapters {
+    component "JobViews\n/api/v1/jobs …" as api <<proposed>>
+    component "JobReportView\n/api/v1/jobs/{id}/report" as report <<proposed>>
+    component "MCP job tools\napps.mcp" as mcp <<proposed>>
+    component "Domain signals\nAcquisition post_save" as signals
+  }
+
+  package "apps.tasks · job core" as core {
+    component "JobService\nstart · retry · revoke · report" as svc <<proposed>> <<focus>>
+    component "JobKind registry" as registry <<proposed>>
+    database "Ledger\nJobProtocol · JobEvent" as ledger
+    component "Event listener\ncelery_event_handler" as listener
+    component "Sweeper · prune\nbeat tasks" as sweeper <<proposed>>
+  }
+
+  package "job kinds (implement JobKind)" as kinds {
+    component "files.ocr\n(#146)" as ocr <<proposed>>
+    component "readium.encrypt\n→ EncryptedContent" as lcp <<proposed>>
+    component "extraction.run\n→ ExtractionRun" as ext <<proposed>>
+    component "in-process\napps.*.tasks" as local <<proposed>>
+  }
+
+  component "Celery app\nsend_task · control.revoke" as celery
+}
+
+queue "Redis db 7\ntasks · celeryev · pidbox" as redis
+
+' ---- layout only ------------------------------------------------------------------
+admin -[hidden]right- mcpc
+mcpc -[hidden]right- worker
+api -[hidden]right- report
+report -[hidden]right- mcp
+mcp -[hidden]right- signals
+ocr -[hidden]right- lcp
+lcp -[hidden]right- ext
+ext -[hidden]right- local
+sweeper -[hidden]down- ocr
+celery -[hidden]down- lcp
+
+' ---- callers into the adapters ----------------------------------------------------
+admin -down-> api : HTTPS · Jobs REST
+mcpc -down-> mcp : MCP
+worker -down-> report : HTTP POST · report
+
+' ---- adapters into the core -------------------------------------------------------
+api -[$accent()]down-> svc : <b>start · retry · revoke</b>
+report -down-> svc : report(job, payload)
+mcp -down-> svc : start · retry · revoke
+signals -down-> svc : start(kind, subject)
+
+' ---- the core ---------------------------------------------------------------------
+svc -right-> registry : kind(name)
+svc -[$accent()]down-> ledger : <b>row before send</b>
+listener -left-> ledger : upsert by task_id
+sweeper -up-> ledger : mark lost · prune
+registry -down-> kinds : JobKind\n(build · eligible · on_report)
+
+' ---- transport --------------------------------------------------------------------
+svc -[$accent()]-> celery : <b>send_task(task_id = row id)</b>
+celery -down-> redis : LPUSH · revoke
+listener -down-> redis : SUBSCRIBE celeryev
+
+legend bottom left
+  |= Notation |= Meaning |
+  | solid box | exists in the catalog today |
+  | dashed box, «proposed» | new in IP-031 |
+  | blue fill, «focus» | the component this figure is about |
+  | arrow | uses / calls, labelled with the operation |
+  | blue arrows | the path of one start: adapter → JobService → ledger row → Celery |
+endlegend
+
+caption Every start, retry and revoke goes through JobService: it checks the kind's permission and eligibility,\nwrites the ledger row first, then sends the task with that row's id as Celery task id, so a task is visible\nas queued before any worker sees it. The listener only updates rows; it never starts work.\nA kind is a small class: subject model, Celery task name, arguments, permission, report handler.\nWorkers consume from and publish events to the same Redis (deployment-background-jobs-dev).
+footer ELVIRA · FIIT STU · EvilFlowersCatalog · docs/diagrams/component-background-jobs.puml
+@enduml

@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "28123944964a84e693ff509d98683ca42785732e",
-    "short": "2812394",
-    "message": "Performance improvements in search (parallel embedding creation)",
+    "sha": "4690de5570d402dcb9dfbf321dbea59f4eb97729",
+    "short": "4690de5",
+    "message": "Fixng acces to AGE in ProstreSQL",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/28123944964a84e693ff509d98683ca42785732e"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/4690de5570d402dcb9dfbf321dbea59f4eb97729"
   },
-  "deployed_at": "2026-11-14T18:28:27Z",
+  "deployed_at": "2026-11-14T19:00:01Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

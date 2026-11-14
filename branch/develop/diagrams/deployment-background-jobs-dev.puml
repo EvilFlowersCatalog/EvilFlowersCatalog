@@ -1,0 +1,134 @@
+@startuml deployment-background-jobs-dev
+!include elvira.iuml
+' =============================================================================
+' What: background jobs on dev need one new pod (ocr) and no new transport: every
+'       Celery worker, the catalog's own and each service's, publishes its task
+'       events to Redis db 7, where the catalog's event listener (pod
+'       evilflowers-beat) writes the one job ledger in postgresql18; services report
+'       results to one catalog endpoint, and the portal reads and controls jobs
+'       only through the catalog API.
+' Kind: UML deployment diagram, instance level, proposal (IP-031). Artifacts listed
+'       as text inside the nodes. Scope: job dispatch, events, reports and control.
+'       Omitted: readium, flower, maildev, tei-*, the VPN, telemetry (every pod
+'       sends OTLP to its node's alloy-node as today), prod (Compose on gateway:
+'       one evilflowers container runs gunicorn, worker, beat and the listener
+'       under supervisord; no OCR worker until a deployment decision).
+' Source: Mimir kube_pod_info{namespace="evilflowers-dev"} (2026-11-14 19:39 UTC);
+'         knowledge ansible/roles/evilflowers_k8s/templates/evilflowers.yaml.j2
+'         (catalog_split: evilflowers, evilflowers-worker, evilflowers-beat with
+'         containers beat + events); conf/supervisor.conf;
+'         apps/tasks/management/commands/celery_event_handler.py;
+'         evilflowers_catalog/settings/base.py CELERY_*; evilflowers-ocr-worker
+'         ef4311d; diagrams deployment-k8s-dev-environment and
+'         deployment-lcp-encryption-dev (2026-11-08); EvilFlowersCatalog#146.
+' =============================================================================
+
+title Background jobs on dev: one ledger, one listener, one report endpoint (proposal, 2026-11-14)
+
+node portal <<device>> [
+**Admin browser**
+----
+elvira-portal · Background jobs
+]
+
+node "**gateway** · 192.168.122.227" <<virtualMachine>> as gw {
+  node edge <<webServer>> [
+**nginx** (host) → **cilium-envoy** :8082
+----
+dev → HTTPRoute evilflowers
+]
+  node bridge <<container>> [
+**k8s-bridge** · nginx stream
+:5432 · :6379
+]
+  node "**Docker Engine** · network elvira" <<executionEnvironment>> as docker {
+    node redis <<container>> [
+**redis** 172.28.1.2 · db 7
+----
+task lists: celery,
+evilflowers_ocr_worker, …
+events: celeryev fanout
+control: celery.pidbox
+]
+    node pg <<container>> [
+**postgresql18** 172.28.1.1
+----
+job_protocols (+ kind, subject,
+attempts, error, report)
+job_events
+]
+  }
+}
+
+node "**control** · 192.168.122.60 · k3s" <<virtualMachine>> as ct {
+  frame "**evilflowers-dev** · namespace" as nsdev {
+    node web <<container>> [
+**evilflowers** · gunicorn :8000
+----
+/api/v1/jobs (list, start,
+retry, revoke, report)
+JobService → send_task
+]
+    node workers <<container>> [
+**Celery workers** ×6 deployments
+----
+**evilflowers-worker** (apps.*.tasks)
+**lcpencrypt** · **analyzer** · **image**
+**equation** · **text** ×3
+]
+    node beat <<container>> <<focus>> [
+**evilflowers-beat**
+----
+container beat: schedules,
+jobs sweep + prune
+container events:
+celery_event_handler (ledger)
+]
+    node ocr <<container>> <<proposed>> [
+**ocr** · Celery worker -E
+evilflowers-ocr-worker
+----
+queue evilflowers_ocr_worker
+ocrmypdf skip_text
+]
+    artifact pvc <<volume>> [
+**evilflowers-dev/data** · PVC
+----
+catalogs/…/{acquisition}.pdf
+catalogs/…/ocr/{job}.pdf (new)
+]
+  }
+}
+
+' ---- layout only ------------------------------------------------------------------
+' gateway above control: one leaf of each linked (diagram guide).
+redis -[hidden]right- pg
+redis -[hidden]down- web
+web -[hidden]right- beat
+beat -[hidden]right- workers
+web -[hidden]down- ocr
+
+' ---- reading and controlling jobs -----------------------------------------------
+portal --> edge : HTTPS :443
+edge --> web : HTTP :8000\n/api/v1/jobs
+
+' ---- everything meets in Redis db 7 and postgresql18, through the bridge ----------
+' Each pod's Redis and SQL connections are one edge; the bridge forwards both.
+bridge <-- web : Redis db 7 LPUSH · revoke\nSQL :5432
+bridge <-[$accent()]- beat : <b>Redis db 7 SUBSCRIBE celeryev</b>\n<b>SQL :5432 job ledger</b>
+bridge <-- workers : Redis db 7\nconsume · events (-E)
+bridge <-[$accent()]- ocr : <b>Redis db 7</b>\n<b>consume · events</b>
+bridge --> redis : TCP :6379
+bridge --> pg : TCP :5432
+
+' ---- results come back over HTTP --------------------------------------------------
+web <-- ocr : HTTP :8000 POST\n/api/v1/jobs/{id}/report
+web <-- workers : HTTP :8000\nexisting hooks
+
+ocr ..> pvc : <<mount>>
+
+$legend_live_proposed()
+
+caption The only new workload is the ocr pod; it uses the paths lcpencrypt and the extraction workers already use.\nEvery worker sends task events (-E; the catalog's own through CELERY_WORKER_SEND_TASK_EVENTS), so the listener in evilflowers-beat sees every task of every worker, catalog or service,\nand writes it to job_protocols. The portal never talks to Redis or a worker: list, start, retry and revoke go through\n/api/v1/jobs, and a revoke reaches the worker as a Celery control message (pidbox) on the same Redis.
+footer ELVIRA · FIIT STU · EvilFlowersCatalog · docs/diagrams/deployment-background-jobs-dev.puml
+@enduml
