@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "cc228f3bb25d5a9e7393551984207dfffca10f54",
-    "short": "cc228f3",
-    "message": "CHANGELOG",
+    "sha": "33763a0daa7c49246412c66df413277b73fd0486",
+    "short": "33763a0",
+    "message": "RAD in AI Assistant module",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/cc228f3bb25d5a9e7393551984207dfffca10f54"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/33763a0daa7c49246412c66df413277b73fd0486"
   },
-  "deployed_at": "2026-11-12T21:26:13Z",
+  "deployed_at": "2026-11-14T09:55:21Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

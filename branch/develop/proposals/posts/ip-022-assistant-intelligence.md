@@ -19,7 +19,11 @@ tags:
 
 ## Status
 
-**Draft.** Phases 1–3 shipped on `develop` (5f6ddb5, ec91538) with the recommended answers to Q1–Q7
+**Superseded by [IP-030](ip-030-assistant-evidence-first.md) (2026-11-13).** What shipped here stays, and IP-030 lists
+it under "What stays". Open items and the unanswered review questions moved to IP-030 "Carried over". The text
+below is kept as the record of what was built and why.
+
+**Draft (until 2026-11-13).** Phases 1–3 shipped on `develop` (5f6ddb5, ec91538) with the recommended answers to Q1–Q7
 (pending confirmation). Dev has run on `elvira-assistant` since 2026-11-11 (knowledge#29). The first
 evaluation is in #104's closing comment, and its findings are #130.
 
@@ -749,3 +753,4 @@ Not decidable from the catalog: a deployment experiment, tracked in the follow-u
 | 2026-11-11 | jdubec | Phase 6 (#127, #130): §7 reading publications from a plain chat, §8 first-evaluation fixes (round cap, prompt, scorer, cases rewritten against dev, prefix budget in calibrated tokens, prompt-cache findings); status updated (Phases 1–3 on develop) |
 | 2026-11-11 | jdubec | Added Review Questions Q8–Q11 |
 | 2026-11-11 | jdubec | Read-back fixes: phases 1–3 marked on develop; tool list also depends on binding; prefix table extended; Prompt cache section notes no reuse on Qwen3.6; #130 A marked open (Ollama on control not checked); page-read cost added to §8 and Q8; Q11-A no longer relies on `--swa-full`; bound chats share the turn's page budget |
+| 2026-11-13 | jdubec | Superseded by IP-030. Tempo on dev shows the prompt cache now hits within a turn (8.4 K tokens in 3 s) and on quick follow-up turns; misses followed capped turns or a long pause. §8 "never hits" is stale; open items and Q1–Q11 carried into IP-030 |

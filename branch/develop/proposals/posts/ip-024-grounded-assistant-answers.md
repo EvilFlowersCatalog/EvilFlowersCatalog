@@ -19,7 +19,11 @@ tags:
 
 ## Status
 
-**Draft.** Phases 1–5 are implemented on the working tree and tested locally with a scripted model (no real
+**Superseded by [IP-030](ip-030-assistant-evidence-first.md) (2026-11-13).** The evidence ledger, structured output,
+citation scoring, prompt registry and evaluation tooling stay and are extended there. Chapter summaries become section
+summaries, and bound chats move to labels (IP-030 Q1). Open items and Q1–Q7 moved to IP-030 "Carried over".
+
+**Draft (until 2026-11-13).** Phases 1–5 are implemented on the working tree and tested locally with a scripted model (no real
 LLM). Prompts are byte-identical to before (Phase 2 test). What remains needs people or the cluster: a run on
 `elvira-assistant` (IP-022 Phase 4), ~200 human-labelled support pairs (Phase 3), ~50 gold questions with
 pages (Phase 4), and a first batch of chapter summaries (Phase 5) — all tracked in EvilFlowersCatalog#121;
@@ -588,3 +592,4 @@ in chats that ask about that publication, and as a tool result rather than in ev
 | 2026-11-09 | jdubec | Linked issues #115–#119 and elvira-portal#37 |
 | 2026-11-09 | jdubec | §2: staged JSON repair (commas before quotes) so Slovak „…“ quotation marks survive |
 | 2026-11-09 | jdubec | Phases 2–5 implemented (#116–#119) and #114 prefix budget enforced; §4–§7 rewritten to match; pre-registered retrieval bars; Q6, Q7 added |
+| 2026-11-13 | jdubec | Superseded by IP-030; Q1 resolved by the portal implementation (elvira-portal#37, branch `dev`); open items and Q2–Q7 carried into IP-030 |
