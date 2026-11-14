@@ -62,6 +62,9 @@ class ExtractionRun(BaseModel):
     page_sizes = models.JSONField(null=True)
     #: `{job: pending | done | failed}`, declared by the analyzer when it starts the run.
     jobs = models.JSONField(default=dict)
+    #: Bumped by every `/start` and every reset (#140). Services send the attempt they work for; results of an
+    #: earlier attempt are refused as `superseded`, and a long job polls it to stop before doing the work.
+    attempt = models.PositiveIntegerField(default=0)
     #: Image tags and digests, model names and versions that produced the run.
     provenance = models.JSONField(default=dict)
     error = models.TextField(null=True)

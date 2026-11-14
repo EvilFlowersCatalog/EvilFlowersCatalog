@@ -162,16 +162,30 @@ class EntryPaginator(SecuredView):
         if extraction_admin.wants_entry_columns(request):
             entries = extraction_admin.annotate_entries(entries)
 
+        include = {part.strip() for part in request.GET.get("include", "").split(",")}
+        facet_service = EntryFacetService(request, search=search) if "facets" in include else None
+
+        def page_lcp_states(items) -> dict:
+            if facet_service is None or not facet_service.counts_availability:
+                return lcp_state_mapping(request.user, items)
+            # The availability facet reads the states of every LCP title of the result anyway: the page's
+            # come from there instead of a second round of license/reservation/package queries (#141).
+            # Entries missing from the mapping serialize as `not_lcp`.
+            known = facet_service.availability_states()
+            states = {item.pk: known[item.pk] for item in items if item.pk in known}
+            missing = [item for item in items if item.pk not in known and item.read_config("readium_enabled")]
+            if missing:
+                states.update(lcp_state_mapping(request.user, missing))
+            return states
+
         def context(items):
             result = {
-                "lcp_states": lcp_state_mapping(request.user, items),
+                "lcp_states": page_lcp_states(items),
                 "own_ratings": own_ratings(request.user, [item.pk for item in items]),
             }
             if search is not None:
                 result["search_hits"] = describe_hits(search, items)
             return result
-
-        include = {part.strip() for part in request.GET.get("include", "").split(",")}
 
         def extras(items, total):
             metadata, response = {}, {}
@@ -185,8 +199,8 @@ class EntryPaginator(SecuredView):
                     did_you_mean=search.did_you_mean,
                     total=total,
                 )
-            if "facets" in include:
-                facets = EntryFacetService(request, search=search).compute()
+            if facet_service is not None:
+                facets = facet_service.compute()
                 response["facets"] = EntryFacetSerializer.Base.model_validate(facets)
             return metadata, response
 

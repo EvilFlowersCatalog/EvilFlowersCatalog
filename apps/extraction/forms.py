@@ -149,7 +149,8 @@ class ParagraphsForm(Form):
 
 
 class JobReportForm(Form):
-    #: `done`, or `failed` when the job as a whole could not run.
-    status = forms.ChoiceField(choices=[("done", "done"), ("failed", "failed")])
+    #: `done`, `failed` when the job as a whole could not run, or `superseded` when the service found its
+    #: attempt replaced by a newer one and stopped (#140): counted, the run is left alone.
+    status = forms.ChoiceField(choices=[("done", "done"), ("failed", "failed"), ("superseded", "superseded")])
     error = forms.CharField(required=False)
     provenance = forms.JSONField(required=False)

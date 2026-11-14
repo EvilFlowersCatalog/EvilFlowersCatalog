@@ -15,6 +15,8 @@ class ExtractionRunSerializer:
         page_count: Optional[int]
         #: `{job: pending | done | failed}`.
         jobs: Dict[str, str]
+        #: The current attempt (#140): send it back as `?attempt=` with every result of this pass.
+        attempt: int
         error: Optional[str]
         #: Where the services write this run's crops, relative to the storage root.
         storage_dir: str

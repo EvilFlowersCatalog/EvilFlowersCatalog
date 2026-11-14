@@ -9,6 +9,8 @@ a route cannot:
   the borrow path expired them).
 - `evilflowers.extraction.runs` / `evilflowers.extraction.run.duration` — how
   many extraction runs finished, by outcome, and how long they took.
+- `evilflowers.extraction.jobs.superseded` — jobs of an earlier attempt of a
+  reset run, by job and whether they stopped early or did the work for nothing.
 - `evilflowers.acquisitions.served` — publication files actually handed out, by
   format and path.
 
@@ -39,6 +41,11 @@ extraction_run_duration = _meter.create_histogram(
     description="Time from the start of an extraction run to its last job report.",
     explicit_bucket_boundaries_advisory=[1, 5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200, 14400],
 )
+extraction_jobs_superseded = _meter.create_counter(
+    "evilflowers.extraction.jobs.superseded",
+    unit="{job}",
+    description="Extraction jobs of an earlier attempt of their run: stopped early by the service, or refused late.",
+)
 acquisitions_served = _meter.create_counter(
     "evilflowers.acquisitions.served",
     unit="{file}",
@@ -48,6 +55,9 @@ acquisitions_served = _meter.create_counter(
 LICENSE_TRANSITIONS = frozenset({"issued", "returned", "renewed", "revoked", "cancelled", "expired"})
 EXPIRY_PATHS = frozenset({"sweep", "on_read"})
 EXTRACTION_OUTCOMES = frozenset({"done", "failed"})
+EXTRACTION_JOBS = frozenset({"analyzer", "paragraphs", "figures", "tables", "equations"})
+#: `early`: the service saw the new attempt and stopped; `late`: its results were refused after the work.
+SUPERSEDED_STAGES = frozenset({"early", "late"})
 
 
 def _bounded(value, allowed) -> str:
@@ -72,6 +82,17 @@ def record_extraction_run(outcome: str, started_at=None, finished_at=None) -> No
     telemetry.on_commit(_record)
 
 
+def record_extraction_superseded(job: str, stage: str) -> None:
+    """Not deferred to a commit: the refusal itself rolls nothing back that should cancel the count."""
+    extraction_jobs_superseded.add(
+        1,
+        {
+            "evilflowers.extraction.job": _bounded(job, EXTRACTION_JOBS),
+            "evilflowers.extraction.superseded.stage": _bounded(stage, SUPERSEDED_STAGES),
+        },
+    )
+
+
 def record_acquisition_served(mime: str, via: str, delivery: str) -> None:
     """`via`: acquisition | user_acquisition; `delivery`: file | base64."""
     from apps.core.models import Acquisition
@@ -87,5 +108,6 @@ def record_acquisition_served(mime: str, via: str, delivery: str) -> None:
 __all__ = [
     "record_acquisition_served",
     "record_extraction_run",
+    "record_extraction_superseded",
     "record_license_transition",
 ]

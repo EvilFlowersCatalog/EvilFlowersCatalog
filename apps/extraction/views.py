@@ -39,12 +39,44 @@ from apps.extraction.serializers import ExtractionRunSerializer, ExtractionStatu
 from apps.files.storage import get_storage
 from apps.files.views import _check_ip_block
 from apps.openapi.types import ParameterLocation
+from evil_flowers_catalog import domain_metrics
 
 #: Job name the analyzer reports under when the document itself cannot be processed.
 ANALYZER_JOB = "analyzer"
+#: The job that posts regions of a kind, for counting superseded batches.
+_REGION_JOBS = {Region.Kind.FIGURE: "figures", Region.Kind.TABLE: "tables", Region.Kind.EQUATION: "equations"}
+
+# On the view classes: the OpenAPI generator reads parameters from the class, not from the method.
+_ATTEMPT_PARAMETER = openapi.parameter(
+    name="attempt",
+    param_type=int,
+    location=ParameterLocation.QUERY,
+    description=(
+        "The run's `attempt` the caller works for (returned by `/start`). Results of an earlier attempt are "
+        "refused with 409 `superseded`. Omitted: not checked (services that predate #140)."
+    ),
+    required=False,
+)
 
 
 class IngestionView(SecuredView):
+    @staticmethod
+    def _attempt(request) -> Optional[int]:
+        value = request.GET.get("attempt")
+        if value in (None, ""):
+            return None
+        try:
+            attempt = int(value)
+        except ValueError:
+            attempt = -1
+        if attempt < 0:
+            raise ProblemDetailException(
+                _("Invalid attempt"),
+                status=HTTPStatus.BAD_REQUEST,
+                detail=_("`attempt` must be a non-negative integer."),
+            )
+        return attempt
+
     def _run(self, request, run_id: UUID) -> ExtractionRun:
         if not request.user.is_authenticated:
             raise UnauthorizedException(detail=_("Extraction services must authenticate"))
@@ -60,17 +92,32 @@ class IngestionView(SecuredView):
         return run
 
     @staticmethod
-    def _conflict(error: services.RunNotRunning) -> ProblemDetailException:
+    def _conflict(error: services.RunNotRunning, job: Optional[str] = None) -> ProblemDetailException:
+        if isinstance(error, services.RunSuperseded):
+            # The job did its work for a pass that no longer counts: the waste #140 makes visible.
+            domain_metrics.record_extraction_superseded(job or "", "late")
+            return ProblemDetailException(
+                _("The extraction run was started again"),
+                status=HTTPStatus.CONFLICT,
+                detail=_("Attempt %(attempt)s was superseded by attempt %(current)s.")
+                % {"attempt": error.attempt, "current": error.current},
+                additional_data={"reason": "superseded", "attempt": error.current},
+            )
         return ProblemDetailException(
             _("The extraction run is not running"),
             status=HTTPStatus.CONFLICT,
             detail=_("Run status is %(status)s.") % {"status": error},
+            additional_data={"reason": "not_running"},
         )
 
 
 class RunDetail(IngestionView):
     @openapi.metadata(
-        description="An extraction run as the services see it: status, jobs and the storage folder for its crops.",
+        description=(
+            "An extraction run as the services see it: status, attempt, jobs and the storage folder for its "
+            "crops. Long jobs poll it before the expensive part and between batches, and stop when `status` is "
+            "not `running` or `attempt` is no longer theirs (#140)."
+        ),
         tags=["Extraction"],
         summary="Get an extraction run",
     )
@@ -84,7 +131,8 @@ class RunStart(IngestionView):
     @openapi.metadata(
         description=(
             "Called by the analyzer once it has opened the document: page count, page sizes in PDF points "
-            "and the jobs it dispatched. The run is `running` from here until every job has reported."
+            "and the jobs it dispatched. The run is `running` from here until every job has reported. Every "
+            "start is a new `attempt`: pass the returned one to the jobs, which send it back with their results."
         ),
         tags=["Extraction"],
         summary="Start an extraction run",
@@ -104,6 +152,7 @@ class RunStart(IngestionView):
         return SingleResponse(request, data=ExtractionRunSerializer.Base.model_validate(run))
 
 
+@_ATTEMPT_PARAMETER
 class RunRegions(IngestionView):
     @openapi.metadata(
         description=(
@@ -116,18 +165,21 @@ class RunRegions(IngestionView):
     )
     def post(self, request, run_id: UUID):
         run = self._run(request, run_id)
+        attempt = self._attempt(request)
         form = RegionsForm.create_from_request(request)
         if not form.is_valid():
             raise ValidationException(form)
 
+        regions = form.cleaned_data["regions"]
         try:
-            count = services.add_regions(run, form.cleaned_data["regions"])
+            count = services.add_regions(run, regions, attempt=attempt)
         except services.RunNotRunning as error:
-            raise self._conflict(error) from error
+            raise self._conflict(error, _REGION_JOBS.get(regions[0]["kind"]) if regions else None) from error
 
         return SingleResponse(request, data={"created": count}, status=HTTPStatus.CREATED)
 
 
+@_ATTEMPT_PARAMETER
 class RunParagraphs(IngestionView):
     @openapi.metadata(
         description=(
@@ -140,14 +192,17 @@ class RunParagraphs(IngestionView):
     )
     def post(self, request, run_id: UUID):
         run = self._run(request, run_id)
+        attempt = self._attempt(request)
         form = ParagraphsForm.create_from_request(request)
         if not form.is_valid():
             raise ValidationException(form)
 
         try:
-            count = services.add_paragraphs(run, form.cleaned_data["paragraphs"], form.cleaned_data.get("links") or [])
+            count = services.add_paragraphs(
+                run, form.cleaned_data["paragraphs"], form.cleaned_data.get("links") or [], attempt=attempt
+            )
         except services.RunNotRunning as error:
-            raise self._conflict(error) from error
+            raise self._conflict(error, "paragraphs") from error
         except services.DuplicateParagraphs as error:
             raise ProblemDetailException(
                 _("The extraction run already holds these paragraphs"),
@@ -158,12 +213,15 @@ class RunParagraphs(IngestionView):
         return SingleResponse(request, data={"created": count}, status=HTTPStatus.CREATED)
 
 
+@_ATTEMPT_PARAMETER
 class RunJob(IngestionView):
     @openapi.metadata(
         description=(
             "A service reports its job of the run `done` or `failed`. When the last job reports, the run "
             "becomes the acquisition's active run and the previous one is deleted, or fails if any job "
-            "failed. The analyzer reports job `analyzer` as `failed` when the document cannot be processed."
+            "failed. The analyzer reports job `analyzer` as `failed` when the document cannot be processed. "
+            "`superseded` is a job that found its attempt replaced and stopped early: counted, the run is left "
+            "alone."
         ),
         tags=["Extraction"],
         summary="Report an extraction job",
@@ -171,24 +229,30 @@ class RunJob(IngestionView):
     @openapi.response(HTTPStatus.OK, "The run", ExtractionRunSerializer.Base)
     def post(self, request, run_id: UUID, job: str):
         run = self._run(request, run_id)
+        attempt = self._attempt(request)
         form = JobReportForm.create_from_request(request)
         if not form.is_valid():
             raise ValidationException(form)
 
-        failed = form.cleaned_data["status"] == "failed"
-        if job == ANALYZER_JOB and failed:
-            services.fail(run, form.cleaned_data.get("error") or _("The analyzer failed"))
-        else:
-            try:
+        status = form.cleaned_data["status"]
+        failed = status == "failed"
+        try:
+            if status == "superseded":
+                services.report_superseded(run, job, attempt)
+            elif job == ANALYZER_JOB and failed:
+                services.check_attempt(run, attempt)
+                services.fail(run, form.cleaned_data.get("error") or _("The analyzer failed"))
+            else:
                 services.report_job(
                     run,
                     job,
                     failed=failed,
                     error=form.cleaned_data.get("error"),
                     provenance=form.cleaned_data.get("provenance") or {},
+                    attempt=attempt,
                 )
-            except services.RunNotRunning as error:
-                raise self._conflict(error) from error
+        except services.RunNotRunning as error:
+            raise self._conflict(error, job) from error
 
         run.refresh_from_db()
         return SingleResponse(request, data=ExtractionRunSerializer.Base.model_validate(run))

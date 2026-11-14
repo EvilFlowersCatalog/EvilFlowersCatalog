@@ -647,6 +647,10 @@ EVILFLOWERS_EMBEDDING_MODEL = os.getenv("EVILFLOWERS_EMBEDDING_MODEL", "")
 # (#134). Later the search runs on the words only (`metadata.search.degraded`). Type-ahead never waits:
 # it uses a query vector only when one is already cached.
 EVILFLOWERS_EMBEDDING_QUERY_TIMEOUT = float(os.getenv("EVILFLOWERS_EMBEDDING_QUERY_TIMEOUT", 0.3))
+# The query is embedded on a thread while the lexical leg runs (#141); `false` keeps it on the request
+# thread, after the lexical query. Threads per process (gunicorn worker, Celery child).
+EVILFLOWERS_SEARCH_EMBED_CONCURRENT = os.getenv("EVILFLOWERS_SEARCH_EMBED_CONCURRENT", "true").lower() == "true"
+EVILFLOWERS_SEARCH_EMBED_THREADS = int(os.getenv("EVILFLOWERS_SEARCH_EMBED_THREADS", 4))
 # Hybrid search (IP-021): entries whose cosine similarity to the query is at least this, at most
 # this many, are fused with the lexical results by Reciprocal Rank Fusion (k).
 EVILFLOWERS_SEARCH_VECTOR_MIN_SCORE = float(os.getenv("EVILFLOWERS_SEARCH_VECTOR_MIN_SCORE", 0.8))

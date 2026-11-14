@@ -19,7 +19,13 @@ IP-021 adds two things on top of the matched set:
   by weighted Reciprocal Rank Fusion (words 1.0, meaning `EVILFLOWERS_SEARCH_VECTOR_WEIGHT`).
 """
 
+import contextvars
+import functools
+import logging
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -52,6 +58,8 @@ from django.db.models.functions import Cast, Coalesce, Concat, Greatest
 from apps.core.search.ddl import SIMPLE_CONFIG
 from apps.core.search.index import available_configs
 from evil_flowers_catalog import tracing
+
+logger = logging.getLogger(__name__)
 
 WORD = re.compile(r"[^\W_]+")
 # websearch syntax: a quoted phrase, a negated word or `or`
@@ -270,6 +278,66 @@ def bm25_scores(text: str, entry_ids: list) -> dict:
         return {row[0]: float(row[1]) for row in cursor.fetchall()}
 
 
+_embed_executor: Optional[ThreadPoolExecutor] = None
+_embed_executor_lock = threading.Lock()
+
+
+def _executor() -> ThreadPoolExecutor:
+    """Threads that wait on tei-embed while the request thread runs SQL (#141).
+
+    Created on first use, so each forked gunicorn/Celery process starts its own after the fork.
+    The work is an HTTP call and a cache read: the GIL is released for nearly all of it.
+    """
+    global _embed_executor
+    if _embed_executor is None:
+        with _embed_executor_lock:
+            if _embed_executor is None:
+                _embed_executor = ThreadPoolExecutor(
+                    max_workers=getattr(settings, "EVILFLOWERS_SEARCH_EMBED_THREADS", 4),
+                    thread_name_prefix="search-embed",
+                )
+    return _embed_executor
+
+
+def _gevent_patched() -> bool:
+    try:
+        from gevent import monkey
+    except ImportError:
+        return False
+    return monkey.is_module_patched("threading")
+
+
+class _GreenletFuture:
+    """`Future.result` over a greenlet, so `query_vector` joins either kind the same way."""
+
+    def __init__(self, greenlet):
+        self._greenlet = greenlet
+
+    def result(self, timeout: Optional[float] = None):
+        import gevent
+
+        try:
+            return self._greenlet.get(timeout=timeout)
+        except gevent.Timeout as error:
+            self._greenlet.kill(block=False)
+            raise FutureTimeout() from error
+
+
+def _submit(fn):
+    """
+    Run `fn` beside the caller. Under gunicorn's gevent workers `threading` is patched and one process
+    serves many requests: a greenlet per search, never a pool whose few slots would queue them. Elsewhere
+    (Celery prefork, `runserver`) a small thread pool. `fn` runs in a copy of the caller's context, so its
+    span is a child of the caller's.
+    """
+    call = functools.partial(contextvars.copy_context().run, fn)
+    if _gevent_patched():
+        import gevent
+
+        return _GreenletFuture(gevent.spawn(call))
+    return _executor().submit(call)
+
+
 @dataclass
 class SearchState:
     """
@@ -302,6 +370,8 @@ class SearchState:
     _tsqueries: dict = field(default_factory=dict, repr=False)
     _vector: Optional[list] = field(default=None, repr=False)
     _vector_resolved: bool = field(default=False, repr=False)
+    #: the query being embedded on another thread, started by `start_vector` (#141)
+    _vector_future: Optional[object] = field(default=None, repr=False)
     #: rankings already computed in this request, by input queryset (#135)
     _rankings: dict = field(default_factory=dict, repr=False)
 
@@ -339,27 +409,69 @@ class SearchState:
             self._tsqueries[level] = build_tsquery(self.text, level, prefix_last=self.prefix_last)
         return self._tsqueries[level]
 
+    def _wants_vector(self) -> bool:
+        from apps.core.search import embeddings
+
+        return Channel.VECTOR in self.channels and embeddings.enabled()
+
+    def _embed(self) -> Optional[list]:
+        from apps.core.search import embeddings
+
+        # The TEI call (or the cache hit) under its own step; the request to tei-embed is its child.
+        with tracing.span("search.embed_query", {"evilflowers.search.cached_only": self.cached_vector_only}) as span:
+            vector = embeddings.try_embed_query(
+                self.text,
+                "entries",
+                timeout=embeddings.search_budget(),
+                cached_only=self.cached_vector_only,
+                stable=True,
+            )
+            # Type-ahead without a cached vector is lexical by design, not degraded.
+            span.set_attribute("evilflowers.search.degraded", vector is None and not self.cached_vector_only)
+        return vector
+
+    def start_vector(self) -> None:
+        """
+        Start embedding the query on another thread, so the wait for tei-embed (~260 ms on dev while a
+        backfill shares it) runs alongside the lexical leg instead of after it (#141). `query_vector`
+        joins it. The thread runs in a copy of the caller's context, so its span is a child of the
+        caller's. A cache hit is not worth a thread: type-ahead (`cached_vector_only`) never starts one.
+        """
+        if self._vector_resolved or self._vector_future is not None or self.cached_vector_only:
+            return
+        if not getattr(settings, "EVILFLOWERS_SEARCH_EMBED_CONCURRENT", True) or not self._wants_vector():
+            return
+        try:
+            self._vector_future = _submit(self._embed)
+        except RuntimeError:
+            # The executor is shutting down (interpreter exit): embed inline in `query_vector`.
+            self._vector_future = None
+
     def query_vector(self) -> Optional[list]:
         """The query embedded once per search (None: TEI unconfigured or down)."""
         if not self._vector_resolved:
-            from apps.core.search import embeddings
-
             self._vector_resolved = True
-            if Channel.VECTOR in self.channels and embeddings.enabled():
-                # The TEI call (or the cache hit) under its own step; the request to tei-embed is its child.
-                with tracing.span(
-                    "search.embed_query", {"evilflowers.search.cached_only": self.cached_vector_only}
-                ) as span:
-                    self._vector = embeddings.try_embed_query(
-                        self.text,
-                        "entries",
-                        timeout=embeddings.search_budget(),
-                        cached_only=self.cached_vector_only,
-                        stable=True,
-                    )
-                    # Type-ahead without a cached vector is lexical by design, not degraded.
-                    self.degraded = self._vector is None and not self.cached_vector_only
-                    span.set_attribute("evilflowers.search.degraded", self.degraded)
+            future, self._vector_future = self._vector_future, None
+            if future is not None:
+                from apps.core.search import embeddings
+
+                try:
+                    # `try_embed_query` keeps its own budget; this one also bounds the wait for a free thread
+                    # (outside gevent, more concurrent searches in the process than threads).
+                    self._vector = future.result(timeout=embeddings.search_budget() + 0.1)
+                except FutureTimeout:
+                    logger.warning("Query not embedded within the search budget, searching without vectors")
+                    self._vector = None
+                    if not self.cached_vector_only:
+                        embeddings.mark_degraded(self.text, "entries")
+                except Exception:
+                    logger.exception("Query embedding thread failed, searching without vectors")
+                    self._vector = None
+            elif self._wants_vector():
+                self._vector = self._embed()
+            else:
+                return self._vector
+            self.degraded = self._vector is None and not self.cached_vector_only
         return self._vector
 
     def lexical_ranking(self, qs: QuerySet, ordered: bool = True) -> list:
@@ -476,6 +588,8 @@ class SearchState:
                 "evilflowers.search.prefix": self.prefix_last,
             },
         ) as span:
+            if Channel.LEXICAL in self.channels:
+                self.start_vector()
             key = self._ranking_key(qs)
             lexical = self._lexical(qs, key, ordered=record) if Channel.LEXICAL in self.channels else []
             semantic = self._semantic(qs, key) if Channel.VECTOR in self.channels else []

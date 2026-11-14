@@ -198,6 +198,11 @@ def embed_query(text: str, task: str = "entries", *, timeout: float = QUERY_TIME
     return vector
 
 
+def mark_degraded(text: str, task: str = "entries") -> None:
+    """The query went without vectors: its later pages stay so for `DEGRADED_SECONDS` (#134)."""
+    cache.set(_degraded_key(query_text(text, task)), True, DEGRADED_SECONDS)
+
+
 def try_embed_query(
     text: str,
     task: str = "entries",
@@ -249,6 +254,7 @@ __all__ = [
     "embed_query",
     "enabled",
     "known_model_id",
+    "mark_degraded",
     "model_id",
     "query_text",
     "search_budget",

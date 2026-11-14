@@ -8,6 +8,7 @@ client contract, entry embedding, degradation without TEI, and the OPDS `mode=ke
 
 import math
 import os
+import threading
 from contextlib import nullcontext
 from unittest import mock
 
@@ -362,7 +363,8 @@ class HybridRankingTests(SearchFixtureMixin, TestCase):
         """#135: the facet dimensions reuse the main result's rankings instead of searching again."""
         payload, sql = self.statements()
         self.assertEqual(payload["metadata"]["search"]["mode"], "hybrid")
-        self.assert_ranked_once(sql, budget=15)
+        # 15 until 2026-11-14; 14 since the feed parents/children ride in the feeds query (#141).
+        self.assert_ranked_once(sql, budget=14)
 
     def test_search_with_facets_for_a_signed_in_reader_with_lcp_titles(self):
         """The dev shape of the request: a reader's credentials and LCP titles in the result (#135)."""
@@ -375,8 +377,104 @@ class HybridRankingTests(SearchFixtureMixin, TestCase):
         payload, sql = self.statements(headers={"Authorization": f"Bearer {token}"})
         self.assertEqual(payload["metadata"]["search"]["mode"], "hybrid")
         # 25 on 2026-11-11: the reader's own lookups (token, catalogs, shelf, reviews) and the availability
-        # facet's licence/reservation queries come on top of the anonymous 15.
-        self.assert_ranked_once(sql, budget=25)
+        # facet's licence/reservation queries come on top of the anonymous 15. 22 since 2026-11-14: the page's
+        # LCP states come from the availability facet's lookup, feed relations from the feeds query (#141).
+        self.assert_ranked_once(sql, budget=22)
+
+    def test_the_query_is_embedded_while_the_lexical_leg_runs(self):
+        """#141: the wait for tei-embed overlaps the lexical query instead of following it."""
+        embedding_started = threading.Event()
+        seen = {}
+
+        def embed(*args, **kwargs):
+            seen["thread"] = threading.current_thread().name
+            embedding_started.set()
+            return axis(0)
+
+        lexical_ranking = SearchState.lexical_ranking
+
+        def lexical(state, *args, **kwargs):
+            # Run one after the other, the embed would only start after this returns: the wait times out.
+            seen["overlapped"] = embedding_started.wait(5)
+            return lexical_ranking(state, *args, **kwargs)
+
+        with (
+            mock.patch("apps.core.search.embeddings.try_embed_query", side_effect=embed),
+            mock.patch.object(SearchState, "lexical_ranking", lexical),
+        ):
+            response = self.client.get(
+                "/api/v1/entries", {"query": "machine learning", "catalog_id": str(self.catalog.pk)}
+            )
+        self.assertEqual(response.status_code, 200, response.content[:400])
+        self.assertTrue(seen["overlapped"])
+        self.assertTrue(seen["thread"].startswith("search-embed"), seen["thread"])
+        self.assertEqual(response.json()["metadata"]["search"]["mode"], "hybrid")
+
+    @override_settings(EVILFLOWERS_SEARCH_EMBED_CONCURRENT=False)
+    def test_the_embed_can_be_kept_on_the_request_thread(self):
+        with mock.patch("apps.core.search.embeddings.try_embed_query", return_value=axis(0)) as embed:
+            state = SearchState("machine learning")
+            state.start_vector()
+            self.assertEqual(state.query_vector(), axis(0))
+        embed.assert_called_once()
+
+    def test_under_gevent_the_embed_is_a_greenlet(self):
+        with (
+            mock.patch("apps.core.search.query._gevent_patched", return_value=True),
+            mock.patch("apps.core.search.embeddings.try_embed_query", return_value=axis(0)),
+        ):
+            state = SearchState("machine learning")
+            state.start_vector()
+            self.assertEqual(type(state._vector_future).__name__, "_GreenletFuture")
+            self.assertEqual(state.query_vector(), axis(0))
+        self.assertFalse(state.degraded)
+
+    @override_settings(EVILFLOWERS_EMBEDDING_QUERY_TIMEOUT=0.05)
+    def test_an_embed_past_the_budget_degrades_and_stays_degraded(self):
+        import gevent
+
+        def slow(*args, **kwargs):
+            gevent.sleep(1)
+            return axis(0)
+
+        cache.clear()
+        with (
+            mock.patch("apps.core.search.query._gevent_patched", return_value=True),
+            mock.patch("apps.core.search.embeddings.try_embed_query", side_effect=slow),
+        ):
+            state = SearchState("machine learning")
+            state.start_vector()
+            self.assertIsNone(state.query_vector())
+        self.assertTrue(state.degraded)
+        self.assertTrue(cache.get(embeddings._degraded_key(embeddings.query_text("machine learning"))))
+
+    def test_a_failed_embedding_thread_degrades_to_lexical(self):
+        with mock.patch("apps.core.search.embeddings.try_embed_query", side_effect=RuntimeError("bug")):
+            state = SearchState("machine learning")
+            state.start_vector()
+            self.assertIsNone(state.query_vector())
+        self.assertTrue(state.degraded)
+
+    def test_lcp_states_are_read_once_for_the_page_and_the_availability_facet(self):
+        """#141: the page's availability comes from the facet's lookup, not a second round of queries."""
+        reader = User(username="lcp-reader", name="R", surname="D", auth_source=self.owner.auth_source)
+        reader.set_unusable_password()
+        reader.save()
+        key = ApiKey.objects.create(user=reader, name="portal")
+        Entry.objects.filter(pk=self.keys["ml"]).update(config={"readium_enabled": True, "readium_amount": 2})
+        token = JWTFactory(reader.pk).api_key(str(key.pk))
+
+        payload, sql = self.statements(headers={"Authorization": f"Bearer {token}"})
+
+        self.assertEqual(len([s for s in sql if 'FROM "licenses"' in s]), 1, sql)
+        self.assertEqual(len([s for s in sql if 'FROM "reservations"' in s]), 1, sql)
+        self.assertEqual(len([s for s in sql if 'FROM "encrypted_contents"' in s]), 1, sql)
+        ml = next(item for item in payload["items"] if item["id"] == str(self.keys["ml"]))
+        # Not registered with the LCP server yet: no copy is free.
+        self.assertEqual((ml["total_slots"], ml["lcp_ready"]), (2, False))
+        self.assertEqual(ml["lcp_state"], "fully_borrowed")
+        others = [item for item in payload["items"] if item["id"] != str(self.keys["ml"])]
+        self.assertTrue(all(item["lcp_state"] == "not_lcp" for item in others))
 
     def test_facets_with_an_active_filter_rank_again_only_for_that_dimension(self):
         payload, sql = self.statements(language_code="sk")

@@ -111,6 +111,7 @@ class EntryFacetService:
         #: `entries_without` per effective filter parameters: a dimension whose own filter is not in the
         #: request counts the same entries as every other such dimension, so they share one EntryFilter.
         self._matching: dict[tuple, QuerySet] = {}
+        self._availability_states: Optional[dict] = None
 
     @staticmethod
     def _parse_limit(raw) -> Optional[int]:
@@ -220,13 +221,28 @@ class EntryFacetService:
             return {"name": row["authors__name"], "surname": row["authors__surname"]}
         return {}
 
-    def _availability(self) -> list[dict]:
-        from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
+    @property
+    def counts_availability(self) -> bool:
+        return "availability" in self.dimensions
 
-        # Only LCP titles have an availability state; `lcp_state_mapping` reads just pk + config.
-        entries = self.entries_without("lcp_state").filter(config__readium_enabled=True).only("pk", "config")
+    def availability_states(self) -> dict:
+        """
+        `lcp_state_mapping` of every LCP title the availability facet counts, computed once. The entry list
+        builds its page's states from it: the page is a subset of these entries (they ignore only the
+        `lcp_state` filter), so licenses, reservations and packages are read once, not twice (#141).
+        """
+        if self._availability_states is None:
+            from apps.readium.services.entry_lcp_decorator import lcp_state_mapping
+
+            self._resolve_search()
+            # Only LCP titles have an availability state; `lcp_state_mapping` reads just pk + config.
+            entries = self.entries_without("lcp_state").filter(config__readium_enabled=True).only("pk", "config")
+            self._availability_states = lcp_state_mapping(self.request.user, entries)
+        return self._availability_states
+
+    def _availability(self) -> list[dict]:
         states = Counter()
-        for row in lcp_state_mapping(self.request.user, entries).values():
+        for row in self.availability_states().values():
             state = row["lcp_state"]
             states[state.value if hasattr(state, "value") else str(state)] += 1
             if row.get("user_reservation_id") is not None:

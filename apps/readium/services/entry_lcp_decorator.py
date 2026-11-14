@@ -51,34 +51,35 @@ def lcp_state_mapping(user, entries: Iterable) -> dict:
 
     now = timezone.now()
     active_states = [License.LicenseState.READY, License.LicenseState.ACTIVE]
-    entry_ids = [e.pk for e in entries_list]
-
-    # One round-trip for all active licenses on the relevant entries.
-    license_rows = License.objects.filter(
-        entry_id__in=entry_ids,
-        state__in=active_states,
-        expires_at__gt=now,
-    ).values("id", "entry_id", "user_id", "expires_at")
+    # Only LCP titles read their licenses and reservations (`_resolve_one`): a page without one costs no
+    # query at all, and one with a few asks only for those (#141).
+    lcp_entry_ids = [e.pk for e in entries_list if e.read_config("readium_enabled")]
+    Reservation = _import_reservation_model()
 
     licenses_by_entry: dict[UUID, list] = {}
-    for row in license_rows:
-        licenses_by_entry.setdefault(row["entry_id"], []).append(row)
-
-    # Reservation queue (Phase 3 — guarded).
     reservations_by_entry: dict[UUID, list] = {}
-    Reservation = _import_reservation_model()
-    if Reservation is not None:
-        res_rows = Reservation.objects.filter(
-            entry_id__in=entry_ids,
-            status__in=[Reservation.Status.QUEUED, Reservation.Status.AVAILABLE],
-        ).values("id", "entry_id", "user_id", "status", "position")
-        for row in res_rows:
-            reservations_by_entry.setdefault(row["entry_id"], []).append(row)
+    if lcp_entry_ids:
+        # One round-trip for all active licenses on the relevant entries.
+        license_rows = License.objects.filter(
+            entry_id__in=lcp_entry_ids,
+            state__in=active_states,
+            expires_at__gt=now,
+        ).values("id", "entry_id", "user_id", "expires_at")
+        for row in license_rows:
+            licenses_by_entry.setdefault(row["entry_id"], []).append(row)
+
+        # Reservation queue (Phase 3 — guarded).
+        if Reservation is not None:
+            res_rows = Reservation.objects.filter(
+                entry_id__in=lcp_entry_ids,
+                status__in=[Reservation.Status.QUEUED, Reservation.Status.AVAILABLE],
+            ).values("id", "entry_id", "user_id", "status", "position")
+            for row in res_rows:
+                reservations_by_entry.setdefault(row["entry_id"], []).append(row)
 
     # A publication can only be lent once its package is registered with the LCP
     # server (`ContentEncryptionService.is_ready_for_licensing`). One query for the
     # protected entries on this page.
-    lcp_entry_ids = [e.pk for e in entries_list if e.read_config("readium_enabled")]
     ready_entry_ids = set()
     if lcp_entry_ids:
         ready_entry_ids = set(

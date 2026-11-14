@@ -149,13 +149,15 @@ class ListQueryCountTests(TestCase):
             self.assertFalse(any(f'"entries"."{column}"' in sql for sql in selects), column)
 
     def test_feed_relations_load_only_ids(self):
-        """Of a feed's parents and children the serializer reads only the id: no other column is loaded."""
+        """
+        Of a feed's parents and children the serializer reads only the id: both come as array subselects of
+        the feeds query, no extra round trip and no other column of the related feeds (#124, #141).
+        """
         with CaptureQueriesContext(connection) as queries:
             self.client.get(f"/api/v1/entries?catalog_id={self.catalog.pk}&limit=2", headers=self.headers)
         relations = [query["sql"] for query in queries if '"feed_parents"' in query["sql"]]
-        self.assertEqual(len(relations), 2)  # parents and children
-        for sql in relations:
-            self.assertNotIn('"feeds"."content"', sql)
+        self.assertEqual(len(relations), 1, relations)
+        self.assertEqual(relations[0].count("ARRAY("), 2)
 
     def test_feeds(self):
         self.assertConstantQueries("/api/v1/feeds")

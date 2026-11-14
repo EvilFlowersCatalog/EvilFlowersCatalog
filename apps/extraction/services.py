@@ -32,6 +32,15 @@ class RunNotRunning(Exception):
     """Results for a run that was not started, or has already finished."""
 
 
+class RunSuperseded(RunNotRunning):
+    """Results of an earlier attempt of a run that was reset or started again since (#140)."""
+
+    def __init__(self, attempt: int, current: int):
+        super().__init__("superseded")
+        self.attempt = attempt
+        self.current = current
+
+
 class DuplicateParagraphs(Exception):
     """A batch repeats a paragraph `seq` the run already holds."""
 
@@ -134,8 +143,13 @@ def _send(kwargs: dict) -> None:
 def _reset(run: ExtractionRun) -> None:
     """Back to `queued`, dropping whatever a previous attempt of this version stored."""
     with transaction.atomic():
+        # Locked before the delete: a batch of the attempt being dropped either committed already (and is
+        # deleted here) or waits and is refused as superseded (`_require_running_locked`).
+        run.refresh_from_db(from_queryset=ExtractionRun.objects.select_for_update())
         _delete_results(run)
         run.status = ExtractionRun.Status.QUEUED
+        # Jobs of the attempt being dropped learn it on their next call, not after their whole pass (#140).
+        run.attempt += 1
         run.is_active = False
         run.jobs = {}
         run.error = None
@@ -160,8 +174,9 @@ def start(
     pass collides with its paragraphs (#120). The crops are left in place; the
     new pass writes the same names over them.
 
-    Known gap: a job of the earlier pass still in flight can post regions after
-    this reset. Closing that needs an attempt counter on the run.
+    Every start is a new `attempt` (#140), returned to the analyzer, which hands
+    it to the jobs it dispatches. A job of an earlier pass still in flight is
+    refused as `superseded` from here on, and stops early if it polls the run.
     """
     with transaction.atomic():
         # Two passes may post `/start` at once; the second waits and then sees the first one's state.
@@ -173,36 +188,88 @@ def start(
             _delete_results(run)
 
         run.status = ExtractionRun.Status.RUNNING
+        run.attempt += 1
         run.page_count = page_count
         run.page_sizes = page_sizes
         run.jobs = {job: ExtractionRun.JobStatus.PENDING for job in jobs}
         run.provenance = {**run.provenance, **(provenance or {})}
         run.started_at = timezone.now()
         run.save()
+    tracing.set_attributes({"evilflowers.extraction.attempt": run.attempt})
     return run
 
 
-def _require_running(run: ExtractionRun) -> None:
+def _require_running(run: ExtractionRun, attempt: Optional[int] = None) -> None:
+    """`attempt`: the one the caller works for; `None` from services that predate #140 (not checked)."""
+    if attempt is not None and attempt != run.attempt:
+        tracing.set_attributes(
+            {"evilflowers.extraction.attempt": attempt, "evilflowers.extraction.attempt.current": run.attempt}
+        )
+        raise RunSuperseded(attempt, run.attempt)
     if run.status != ExtractionRun.Status.RUNNING:
         raise RunNotRunning(run.status)
 
 
-def add_regions(run: ExtractionRun, regions: List[dict]) -> int:
-    _require_running(run)
-    Region.objects.bulk_create(Region(run=run, **region) for region in regions)
+def check_attempt(run: ExtractionRun, attempt: Optional[int]) -> None:
+    """Refuse a result of an earlier attempt even where the run's status is not checked."""
+    if attempt is not None and attempt != run.attempt:
+        raise RunSuperseded(attempt, run.attempt)
+
+
+def report_superseded(run: ExtractionRun, job: str, attempt: Optional[int]) -> None:
+    """A service saw that its attempt is no longer the run's and stopped before the work (#140).
+
+    Changes nothing: the new attempt's jobs report for themselves. Only counted, so the
+    extraction dashboard shows how much work resets cost and how much the early stop saved.
+    """
+    logger.info(
+        "Extraction job superseded, stopped early: run_id=%s job=%s attempt=%s current=%s",
+        run.pk,
+        job,
+        attempt,
+        run.attempt,
+    )
+    tracing.set_attributes(
+        {
+            tracing.EXTRACTION_JOB: job,
+            "evilflowers.extraction.attempt": attempt,
+            "evilflowers.extraction.attempt.current": run.attempt,
+        }
+    )
+    domain_metrics.record_extraction_superseded(job, "early")
+
+
+def _require_running_locked(run: ExtractionRun, attempt: Optional[int]) -> None:
+    """`_require_running` on the run's row locked until the caller's transaction ends.
+
+    `/start` and a reset lock the same row, so a batch checked here cannot land in the
+    next attempt's results: either it commits first and the reset drops it, or it waits
+    and sees the new attempt.
+    """
+    locked = ExtractionRun.objects.select_for_update().only("id", "status", "attempt").get(pk=run.pk)
+    run.status, run.attempt = locked.status, locked.attempt
+    _require_running(run, attempt)
+
+
+def add_regions(run: ExtractionRun, regions: List[dict], attempt: Optional[int] = None) -> int:
+    with transaction.atomic():
+        _require_running_locked(run, attempt)
+        Region.objects.bulk_create(Region(run=run, **region) for region in regions)
     return len(regions)
 
 
-def add_paragraphs(run: ExtractionRun, paragraphs: List[dict], links: List[dict]) -> int:
+def add_paragraphs(
+    run: ExtractionRun, paragraphs: List[dict], links: List[dict], attempt: Optional[int] = None
+) -> int:
     """Store paragraphs with their sentences; links refer to paragraphs by `seq`.
 
     Paragraphs may arrive in several batches. A link may point at a paragraph of
     an earlier batch, never of a later one: text-service sends links with the
     last batch.
     """
-    _require_running(run)
     try:
         with transaction.atomic():
+            _require_running_locked(run, attempt)
             created = Paragraph.objects.bulk_create(
                 Paragraph(run=run, **{key: value for key, value in paragraph.items() if key != "sentences"})
                 for paragraph in paragraphs
@@ -234,11 +301,19 @@ def add_paragraphs(run: ExtractionRun, paragraphs: List[dict], links: List[dict]
     return len(created)
 
 
-def report_job(run: ExtractionRun, job: str, *, failed: bool, error: Optional[str], provenance: dict) -> None:
+def report_job(
+    run: ExtractionRun,
+    job: str,
+    *,
+    failed: bool,
+    error: Optional[str],
+    provenance: dict,
+    attempt: Optional[int] = None,
+) -> None:
     """A service finished its job of the run. The last report finishes the run."""
     with transaction.atomic():
         run = ExtractionRun.objects.select_for_update().get(pk=run.pk)
-        _require_running(run)
+        _require_running(run, attempt)
         if failed and run.jobs.get(job) == ExtractionRun.JobStatus.DONE:
             # A duplicate of a job that already succeeded (a redelivered task) must not fail the run.
             logger.warning("Ignoring failure of job %s already done: run_id=%s error=%s", job, run.pk, error)

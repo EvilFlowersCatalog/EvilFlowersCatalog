@@ -4,6 +4,12 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 
 ## 0.16.0 : TBD
 
+- **Added**: Extraction runs count attempts ([#140]). Every `/start` or reset starts a new `attempt`. Services send theirs as `?attempt=`, and results of an earlier one get 409 `superseded`. Long jobs poll `GET /extraction/v1/runs/<id>` and report `superseded` when they stop early. Both cases are counted in `evilflowers.extraction.jobs.superseded`. Migration `extraction.0007`
+- **Changed**: Search embeds the query while the lexical query runs (`EVILFLOWERS_SEARCH_EMBED_CONCURRENT`, [#141]). Feed parents/children load inside the feeds query. With `include=facets`, the page's LCP states reuse the availability facet's lookup. A page without LCP titles reads no licenses or reservations
+
+[#140]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/140
+[#141]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/141
+
 ## 0.15.0 : 2026-11-12 (The Library Reads Back)
 
 The catalog has learned to read its own books. It searches inside them, explains them and cites the page.
