@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "040085d7836d85ec0cb4649d8e2809fc9b8f2ef4",
-    "short": "040085d",
-    "message": "Implementing #145",
+    "sha": "28123944964a84e693ff509d98683ca42785732e",
+    "short": "2812394",
+    "message": "Performance improvements in search (parallel embedding creation)",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/040085d7836d85ec0cb4649d8e2809fc9b8f2ef4"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/28123944964a84e693ff509d98683ca42785732e"
   },
-  "deployed_at": "2026-11-14T16:27:38Z",
+  "deployed_at": "2026-11-14T18:28:27Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
