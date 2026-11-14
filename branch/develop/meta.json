@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "d259392346875d63a90395a489170b2aff78a858",
-    "short": "d259392",
-    "message": "Refactoring Jobs framework (IP-031)",
+    "sha": "45a52fc5b5460a77c9f65ab613d9fb2e1fd3b7ef",
+    "short": "45a52fc",
+    "message": "Refactoring Jobs framework (IP-031 - better abstraction) + new graph features",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/d259392346875d63a90395a489170b2aff78a858"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/45a52fc5b5460a77c9f65ab613d9fb2e1fd3b7ef"
   },
-  "deployed_at": "2026-11-14T20:19:31Z",
+  "deployed_at": "2026-11-14T21:24:16Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

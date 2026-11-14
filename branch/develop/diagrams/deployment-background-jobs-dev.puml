@@ -53,9 +53,8 @@ control: celery.pidbox
     node pg <<container>> [
 **postgresql18** 172.28.1.1
 ----
-job_protocols (+ kind, subject,
-attempts, error, report)
-job_events
+jobs (spec · desired · state)
+job_protocols (runs) · job_events
 ]
   }
 }
@@ -65,14 +64,14 @@ node "**control** · 192.168.122.60 · k3s" <<virtualMachine>> as ct {
     node web <<container>> [
 **evilflowers** · gunicorn :8000
 ----
-/api/v1/jobs (list, start,
-retry, revoke, report)
-JobService → send_task
+/api/v1/jobs (apply · patch ·
+list · runs report)
+JobFacade · reconcile
 ]
     node workers <<container>> [
 **Celery workers** ×6 deployments
 ----
-**evilflowers-worker** (apps.*.tasks)
+**evilflowers-worker** (catalog)
 **lcpencrypt** · **analyzer** · **image**
 **equation** · **text** ×3
 ]
@@ -80,7 +79,7 @@ JobService → send_task
 **evilflowers-beat**
 ----
 container beat: schedules,
-jobs sweep + prune
+reconcile · sweep · prune
 container events:
 celery_event_handler (ledger)
 ]
@@ -116,19 +115,19 @@ edge --> web : HTTP :8000\n/api/v1/jobs
 ' Each pod's Redis and SQL connections are one edge; the bridge forwards both.
 bridge <-- web : Redis db 7 LPUSH · revoke\nSQL :5432
 bridge <-[$accent()]- beat : <b>Redis db 7 SUBSCRIBE celeryev</b>\n<b>SQL :5432 job ledger</b>
-bridge <-- workers : Redis db 7\nconsume · events (-E)
+bridge <-- workers : Redis db 7\nconsume · events
 bridge <-[$accent()]- ocr : <b>Redis db 7</b>\n<b>consume · events</b>
 bridge --> redis : TCP :6379
 bridge --> pg : TCP :5432
 
 ' ---- results come back over HTTP --------------------------------------------------
-web <-- ocr : HTTP :8000 POST\n/api/v1/jobs/{id}/report
+web <-- ocr : HTTP :8000 POST\njobs/runs/{run}/report
 web <-- workers : HTTP :8000\nexisting hooks
 
 ocr ..> pvc : <<mount>>
 
 $legend_live_proposed()
 
-caption The only new workload is the ocr pod; it uses the paths lcpencrypt and the extraction workers already use.\nEvery worker sends task events (-E; the catalog's own through CELERY_WORKER_SEND_TASK_EVENTS), so the listener in evilflowers-beat sees every task of every worker, catalog or service,\nand writes it to job_protocols. The portal never talks to Redis or a worker: list, start, retry and revoke go through\n/api/v1/jobs, and a revoke reaches the worker as a Celery control message (pidbox) on the same Redis.
+caption The only new workload is the ocr pod; it uses the paths lcpencrypt and the extraction workers already use.\nEvery worker sends task events (-E; the catalog's own through CELERY_WORKER_SEND_TASK_EVENTS),\nso the listener in evilflowers-beat sees every task of every worker and records it as a run of its job.\nThe portal never talks to Redis or a worker: it declares jobs at /api/v1/jobs (apply, patch);\nthe reconciler sends runs, and revokes a cancelled job's run (pidbox, same Redis).
 footer ELVIRA · FIIT STU · EvilFlowersCatalog · docs/diagrams/deployment-background-jobs-dev.puml
 @enduml
