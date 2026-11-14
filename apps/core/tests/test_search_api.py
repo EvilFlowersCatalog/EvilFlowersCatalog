@@ -113,6 +113,17 @@ class SearchApiTests(SearchFixtureMixin, TestCase):
         self.assertEqual(payload["items"], [])
         self.assertEqual(payload["metadata"]["search"]["total"], 0)
 
+    def test_reader_who_may_read_no_catalog_gets_empty_result_not_500(self):
+        """#149: the readable set compiles to `IN ()`; `did_you_mean` must not raise `EmptyResultSet`."""
+        Catalog.objects.update(is_public=False)
+        payload = self.get("/api/v1/entries", query="Hirshberger", limit=1).json()
+        self.assertEqual(payload["items"], [])
+        self.assertIsNone(payload["metadata"]["search"]["did_you_mean"])
+
+        suggest = self.get("/api/v1/entries/suggest", query="Hirshbergr").json()["response"]
+        self.assertEqual(suggest["entries"], [])
+        self.assertIsNone(suggest["did_you_mean"])
+
     def test_negated_word_is_excluded_in_every_language(self):
         ids = [item["id"] for item in self.entries(query="climate -architecture")["items"]]
         self.assertEqual(ids, [str(self.keys["climate"])])

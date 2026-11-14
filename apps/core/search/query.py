@@ -742,7 +742,11 @@ def did_you_mean(text: str, readable: QuerySet) -> Optional[str]:
     if not tokens:
         return None
 
-    subquery, subquery_params = readable.order_by().values("pk").query.sql_with_params()
+    try:
+        subquery, subquery_params = readable.order_by().values("pk").query.sql_with_params()
+    except EmptyResultSet:
+        # Provably empty (e.g. a reader who may read no catalog, #149): nothing readable, nothing to suggest.
+        return None
     sql = SUGGEST_WORDS_SQL.replace("{entries}", subquery)
     threshold = getattr(settings, "EVILFLOWERS_SEARCH_SUGGEST_THRESHOLD", 0.3)
 
