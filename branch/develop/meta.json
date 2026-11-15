@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "5da22e608b52db715601214cdb7e738b3c5cb314",
-    "short": "5da22e6",
-    "message": "Implementing #181",
+    "sha": "ee179ecc68dd4723bd930209feb1ee50dfbb2b7f",
+    "short": "ee179ec",
+    "message": "Providing agents access to publication based on policies (#175, #177, #176) and bibliography extraction #178",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/5da22e608b52db715601214cdb7e738b3c5cb314"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/ee179ecc68dd4723bd930209feb1ee50dfbb2b7f"
   },
-  "deployed_at": "2026-11-15T16:57:50Z",
+  "deployed_at": "2026-11-15T18:51:06Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
