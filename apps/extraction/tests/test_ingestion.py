@@ -245,6 +245,54 @@ class AttemptContractTests(TestCase):
         self.assertEqual(response.status_code, 409, response.content[:400])
         self.assertEqual(response.json()["additional_data"], {"reason": "duplicate"})
 
+    def test_a_refused_paragraph_batch_is_logged_without_its_text(self):
+        attempt = self.start()
+        bad = paragraph(1) | {"bbox": {"x0": 0.5, "y0": 0.1, "x1": 0.2, "y1": 0.2}, "text": "SECRET TEXT"}
+        offsets = paragraph(2) | {"sentences": [{"seq": 0, "start": 0, "end": 999, "page": 1}]}
+        with (
+            self.assertLogs("apps.extraction.views", level="WARNING") as logs,
+            mock.patch("evil_flowers_catalog.domain_metrics.extraction_ingest_refused") as counter,
+        ):
+            response = self.post("/paragraphs", {"paragraphs": [paragraph(0), bad, offsets]}, attempt=attempt)
+
+        self.assertEqual(response.status_code, 422, response.content[:400])
+        paths = [item["path"] for item in response.json()["validation_errors"]]
+        self.assertIn(["paragraphs", "1", "bbox"], paths)
+
+        self.assertEqual(len(logs.output), 1)
+        line = logs.output[0]
+        self.assertIn(f"run_id={self.run.pk}", line)
+        self.assertIn(f"attempt={attempt}", line)
+        self.assertIn("endpoint=paragraphs", line)
+        self.assertIn("size=3", line)
+        self.assertIn("paragraphs[1].bbox: invalid: A box must have x0 <= x1 and y0 <= y1.", line)
+        self.assertIn("paragraphs[2].$body", line)
+        self.assertNotIn("SECRET", line)
+        counter.add.assert_any_call(
+            1, {"evilflowers.extraction.endpoint": "paragraphs", "evilflowers.extraction.field": "paragraphs.bbox"}
+        )
+        counter.add.assert_any_call(
+            1, {"evilflowers.extraction.endpoint": "paragraphs", "evilflowers.extraction.field": "paragraphs.$body"}
+        )
+        self.assertEqual(counter.add.call_count, 2)
+
+    def test_a_refused_region_batch_names_the_kind_and_caps_the_errors(self):
+        attempt = self.start()
+        regions = [
+            {"kind": "table", "page": 1, "seq": seq, "bbox": {"x0": 0.1, "y0": 0.1, "x1": 1.5, "y1": 0.2}}
+            for seq in range(12)
+        ]
+        with self.assertLogs("apps.extraction.views", level="WARNING") as logs:
+            response = self.post("/regions", {"regions": regions}, attempt=attempt)
+
+        self.assertEqual(response.status_code, 422, response.content[:400])
+        self.assertEqual(len(response.json()["validation_errors"]), 12)
+        line = logs.output[0]
+        self.assertIn("endpoint=regions kinds=table size=12 errors=12", line)
+        self.assertIn("regions[9].bbox", line)
+        self.assertNotIn("regions[10].bbox", line)
+        self.assertTrue(line.endswith("; …"))
+
     def test_a_report_for_an_undeclared_job_is_409_unknown_job(self):
         self.start()
         response = self.post("/jobs/figure", {"status": "done"})

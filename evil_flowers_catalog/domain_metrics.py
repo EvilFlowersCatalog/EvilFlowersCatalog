@@ -11,6 +11,8 @@ a route cannot:
   many extraction runs finished, by outcome, and how long they took.
 - `evilflowers.extraction.jobs.superseded` — jobs of an earlier attempt of a
   reset run, by job and whether they stopped early or did the work for nothing.
+- `evilflowers.extraction.ingest.refused` — batches a service posted that the
+  forms refused (422), by endpoint and failing field (#181).
 - `evilflowers.acquisitions.served` — publication files actually handed out, by
   format and path.
 
@@ -46,6 +48,11 @@ extraction_jobs_superseded = _meter.create_counter(
     unit="{job}",
     description="Extraction jobs of an earlier attempt of their run: stopped early by the service, or refused late.",
 )
+extraction_ingest_refused = _meter.create_counter(
+    "evilflowers.extraction.ingest.refused",
+    unit="{batch}",
+    description="Extraction batches refused with 422, once per batch and failing form field (#181).",
+)
 acquisitions_served = _meter.create_counter(
     "evilflowers.acquisitions.served",
     unit="{file}",
@@ -58,6 +65,7 @@ EXTRACTION_OUTCOMES = frozenset({"done", "failed"})
 EXTRACTION_JOBS = frozenset({"analyzer", "paragraphs", "figures", "tables", "equations"})
 #: `early`: the service saw the new attempt and stopped; `late`: its results were refused after the work.
 SUPERSEDED_STAGES = frozenset({"early", "late"})
+INGEST_ENDPOINTS = frozenset({"paragraphs", "regions"})
 
 
 def _bounded(value, allowed) -> str:
@@ -94,6 +102,19 @@ def record_extraction_superseded(job: str, stage: str) -> None:
     )
 
 
+def record_extraction_ingest_refused(endpoint: str, fields) -> None:
+    """One per failing field of a refused batch. Not deferred: a refusal commits nothing.
+
+    `fields` are form field paths without list indexes (`paragraphs.bbox`,
+    `paragraphs.sentences.quads`, `paragraphs.$body`): a closed set, the forms' own fields.
+    """
+    endpoint = _bounded(endpoint, INGEST_ENDPOINTS)
+    for field in sorted(set(fields)):
+        extraction_ingest_refused.add(
+            1, {"evilflowers.extraction.endpoint": endpoint, "evilflowers.extraction.field": field[:64]}
+        )
+
+
 def record_acquisition_served(mime: str, via: str, delivery: str) -> None:
     """`via`: acquisition | user_acquisition; `delivery`: file | base64."""
     from apps.core.models import Acquisition
@@ -108,6 +129,7 @@ def record_acquisition_served(mime: str, via: str, delivery: str) -> None:
 
 __all__ = [
     "record_acquisition_served",
+    "record_extraction_ingest_refused",
     "record_extraction_run",
     "record_extraction_superseded",
     "record_license_transition",

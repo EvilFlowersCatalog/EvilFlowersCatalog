@@ -9,6 +9,7 @@ and the crop under `/data/v1/`) make the same checks as the download of that
 copy and speak the reader's page numbers.
 """
 
+import logging
 import mimetypes
 from http import HTTPStatus
 from typing import List, Optional
@@ -41,6 +42,10 @@ from apps.files.views import _check_ip_block
 from apps.openapi.types import ParameterLocation
 from evil_flowers_catalog import domain_metrics
 
+logger = logging.getLogger(__name__)
+
+#: How many form errors of a refused batch the warning names (#181).
+_LOGGED_ERRORS = 10
 #: Job name the analyzer reports under when the document itself cannot be processed.
 ANALYZER_JOB = services.ANALYZER_JOB
 #: The job that posts regions of a kind, for counting superseded batches.
@@ -90,6 +95,46 @@ class IngestionView(SecuredView):
         if run is None:
             raise ProblemDetailException(_("Extraction run not found"), status=HTTPStatus.NOT_FOUND)
         return run
+
+    @staticmethod
+    def _refuse(form, run: ExtractionRun, attempt: Optional[int], endpoint: str) -> ValidationException:
+        """The 422 for an invalid batch, logged first: the service may discard the body (#181).
+
+        Only paths, codes and messages: never a paragraph's text, a table's markdown or an embedding.
+        """
+        errors = list(form.errors)
+        details = []
+        for item in errors[:_LOGGED_ERRORS]:
+            path = "".join(f"[{part}]" if isinstance(part, int) else f".{part}" for part in item.path).lstrip(".")
+            try:
+                message = item.message % (item.params or ())
+            except (TypeError, ValueError, KeyError):
+                message = str(item.message)
+            details.append(f"{path}: {item.code or 'invalid'}: {message[:200]}")
+
+        data = form._data if isinstance(getattr(form, "_data", None), dict) else {}
+        items = data.get(endpoint)
+        size = len(items) if isinstance(items, list) else None
+        kinds = sorted(
+            {item.get("kind") for item in items if isinstance(item, dict) and item.get("kind") in Region.Kind.values}
+            if endpoint == "regions" and isinstance(items, list)
+            else ()
+        )
+
+        logger.warning(
+            "Extraction batch refused: run_id=%s attempt=%s endpoint=%s%s size=%s errors=%s: %s",
+            run.pk,
+            attempt,
+            endpoint,
+            f" kinds={','.join(kinds)}" if kinds else "",
+            size,
+            len(errors),
+            "; ".join(details) + ("; …" if len(errors) > _LOGGED_ERRORS else ""),
+        )
+        domain_metrics.record_extraction_ingest_refused(
+            endpoint, (".".join(str(part) for part in item.path if not isinstance(part, int)) for item in errors)
+        )
+        return ValidationException(form)
 
     @staticmethod
     def _conflict(error: services.RunNotRunning, job: Optional[str] = None) -> ProblemDetailException:
@@ -168,7 +213,7 @@ class RunRegions(IngestionView):
         attempt = self._attempt(request)
         form = RegionsForm.create_from_request(request)
         if not form.is_valid():
-            raise ValidationException(form)
+            raise self._refuse(form, run, attempt, "regions")
 
         regions = form.cleaned_data["regions"]
         try:
@@ -195,7 +240,7 @@ class RunParagraphs(IngestionView):
         attempt = self._attempt(request)
         form = ParagraphsForm.create_from_request(request)
         if not form.is_valid():
-            raise ValidationException(form)
+            raise self._refuse(form, run, attempt, "paragraphs")
 
         try:
             count = services.add_paragraphs(
