@@ -46,6 +46,19 @@ class DuplicateParagraphs(Exception):
     """A batch repeats a paragraph `seq` the run already holds."""
 
 
+class UnknownJob(Exception):
+    """A report for a job `/start` did not declare (#180)."""
+
+    def __init__(self, job: str, declared):
+        super().__init__(job)
+        self.job = job
+        self.declared = sorted(declared)
+
+
+#: Job name the analyzer reports under; never declared by `/start` (it is the one declaring).
+ANALYZER_JOB = "analyzer"
+
+
 def is_extractable(acquisition: Acquisition) -> bool:
     return (
         acquisition.mime == Acquisition.AcquisitionMIME.PDF
@@ -312,10 +325,17 @@ def report_job(
     provenance: dict,
     attempt: Optional[int] = None,
 ) -> None:
-    """A service finished its job of the run. The last report finishes the run."""
+    """A service finished its job of the run. The last report finishes the run.
+
+    Only jobs `/start` declared (and the analyzer's own) are accepted: a misnamed report would
+    add a key, leave the declared job pending until the stale sweep and merge provenance under
+    a kind that does not exist (#180).
+    """
     with transaction.atomic():
         run = ExtractionRun.objects.select_for_update().get(pk=run.pk)
         _require_running(run, attempt)
+        if job != ANALYZER_JOB and job not in run.jobs:
+            raise UnknownJob(job, run.jobs)
         if failed and run.jobs.get(job) == ExtractionRun.JobStatus.DONE:
             # A duplicate of a job that already succeeded (a redelivered task) must not fail the run.
             logger.warning("Ignoring failure of job %s already done: run_id=%s error=%s", job, run.pk, error)

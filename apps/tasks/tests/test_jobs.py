@@ -379,6 +379,33 @@ class HousekeepingTests(Fixtures):
         job.refresh_from_db()
         self.assertEqual(job.state, JobState.FAILED)
 
+    @override_settings(EVILFLOWERS_EXTRACTION_ENABLED=True)
+    def test_sweeper_measures_a_requeued_stable_id_run_from_its_last_publish(self):
+        """#173: a re-sent stable-id run keeps its old row; it is not lost by its `created_at`."""
+        acquisition = self.acquisition()
+        with patch("apps.extraction.services.queue", return_value=object()):
+            job = facade.apply("extraction.run", acquisition.pk, user=self.admin)
+        run_id = job.current_run_id
+        days_ago = timezone.now() - timedelta(days=5)
+        JobRun.objects.filter(pk=run_id).update(
+            status=RunStatus.SUCCEEDED, created_at=days_ago, sent_at=days_ago, last_event_at=days_ago
+        )
+        # Re-published outside the facade (backfill_extraction): the same task id is sent again.
+        with self.captureOnCommitCallbacks(execute=True):
+            ledger.record_publish({"id": str(run_id), "task": job.current_run.name}, [[], {}], "extraction")
+        self.assertEqual(sweep_lost_runs(), 0)
+        run = JobRun.objects.get(pk=run_id)
+        self.assertEqual(run.status, RunStatus.QUEUED)
+        self.assertGreater(run.sent_at, days_ago)
+
+    def test_sweeper_loses_a_run_queued_too_long(self):
+        job = facade.apply("maintenance.backup", user=self.admin)
+        old = timezone.now() - timedelta(days=5)
+        JobRun.objects.filter(pk=job.current_run_id).update(created_at=old, sent_at=old, last_event_at=old)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(sweep_lost_runs(), 1)
+        self.assertEqual(JobRun.objects.get(pk=job.current_run_id).status, RunStatus.LOST)
+
     def test_prune_keeps_every_jobs_current_run(self):
         job = facade.apply("maintenance.backup", user=self.admin)
         old_run = JobRun.objects.create(name="apps.tasks.tasks.backup", job=job, status=RunStatus.SUCCEEDED)

@@ -63,7 +63,18 @@ FOLLOW = "follow"
 STUDY = "study"
 LIBRARY_OVERVIEW = "library_overview"
 GATHER_EVIDENCE = "gather_evidence"
-LOCAL_TOOLS = (FIND_SIMILAR, SEARCH_PASSAGES, READ_PAGE, FOLLOW, STUDY, LIBRARY_OVERVIEW, GATHER_EVIDENCE)
+# #179: marks on a cited figure, offered only with `marks.offered()`.
+ANNOTATE_FIGURE = "annotate_figure"
+LOCAL_TOOLS = (
+    FIND_SIMILAR,
+    SEARCH_PASSAGES,
+    READ_PAGE,
+    FOLLOW,
+    STUDY,
+    LIBRARY_OVERVIEW,
+    GATHER_EVIDENCE,
+    ANNOTATE_FIGURE,
+)
 
 #: Tools whose result the turn closes on: the reader sees it as cards, the model does not restate it.
 CLOSING_TOOLS = (STUDY,)
@@ -196,8 +207,9 @@ SPECIFICATIONS: Dict[str, tuple] = {
 
 
 def _local_specifications() -> None:
-    from apps.assistant import follow, overview, pack, study
+    from apps.assistant import follow, marks, overview, pack, study
 
+    SPECIFICATIONS[ANNOTATE_FIGURE] = marks.SPECIFICATION
     SPECIFICATIONS[FOLLOW] = follow.SPECIFICATION
     SPECIFICATIONS[STUDY] = study.SPECIFICATION
     SPECIFICATIONS[LIBRARY_OVERVIEW] = overview.SPECIFICATION
@@ -249,6 +261,12 @@ def _offered(authenticated: bool, bound: bool = False) -> List[str]:
         # round that answered from memory (#162), stored as a call; `call` runs it if the model then asks itself.
         if name == GATHER_EVIDENCE and not settings.EVILFLOWERS_ASSISTANT_PREFETCH:
             continue
+        if name == ANNOTATE_FIGURE:
+            from apps.assistant.marks import offered
+
+            # Also fixed per process: ~150 tokens of round 1, over the CPU budget while off (#179).
+            if not offered():
+                continue
         names.append(name)
     return names
 
@@ -789,12 +807,19 @@ def _gather(context, arguments: dict) -> dict:
     return gather(context, query)
 
 
+def _annotate(context, arguments: dict) -> dict:
+    from apps.assistant.marks import annotate
+
+    return annotate(context, arguments)
+
+
 #: Local tools that need the chat's context (`library.ToolContext`): they label into its ledger.
 _CONTEXT_TOOLS: Dict[str, Callable] = {
     FOLLOW: _follow,
     STUDY: _study,
     LIBRARY_OVERVIEW: _overview,
     GATHER_EVIDENCE: _gather,
+    ANNOTATE_FIGURE: _annotate,
 }
 
 
@@ -928,6 +953,12 @@ def _slim_pack(payload: dict) -> dict:
     return slim_pack(payload)
 
 
+def _slim_marks(payload: dict) -> dict:
+    from apps.assistant.marks import slim as slim_marks
+
+    return slim_marks(payload)
+
+
 def _slim_pages(payload: dict) -> dict:
     """Pages read, with their labels; the evidence map is for resolving citations."""
     from apps.assistant.evidence import EVIDENCE_KEY
@@ -948,6 +979,7 @@ _SLIMMERS: Dict[str, Callable[[dict], dict]] = {
     STUDY: _slim_study,
     LIBRARY_OVERVIEW: _slim_labelled,
     GATHER_EVIDENCE: _slim_pack,
+    ANNOTATE_FIGURE: _slim_marks,
 }
 
 

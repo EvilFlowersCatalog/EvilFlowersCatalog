@@ -56,8 +56,8 @@ def describe(name: str, arguments: dict) -> dict:
         page = _int(arguments.get("page"))
         if page is not None:
             detail["pages"] = [page]
-    elif name == "follow":
-        # "Followed E3 · next"
+    elif name in ("follow", "annotate_figure"):
+        # "Followed E3 · next"; "Marked F2"
         for key in ("label", "relation"):
             value = _text(arguments.get(key))
             if value:

@@ -42,7 +42,7 @@ from apps.openapi.types import ParameterLocation
 from evil_flowers_catalog import domain_metrics
 
 #: Job name the analyzer reports under when the document itself cannot be processed.
-ANALYZER_JOB = "analyzer"
+ANALYZER_JOB = services.ANALYZER_JOB
 #: The job that posts regions of a kind, for counting superseded batches.
 _REGION_JOBS = {Region.Kind.FIGURE: "figures", Region.Kind.TABLE: "tables", Region.Kind.EQUATION: "equations"}
 
@@ -208,6 +208,7 @@ class RunParagraphs(IngestionView):
                 _("The extraction run already holds these paragraphs"),
                 status=HTTPStatus.CONFLICT,
                 detail=_("A paragraph with the same seq was stored before; retrying the batch will not help."),
+                additional_data={"reason": "duplicate"},
             ) from error
 
         return SingleResponse(request, data={"created": count}, status=HTTPStatus.CREATED)
@@ -221,7 +222,7 @@ class RunJob(IngestionView):
             "becomes the acquisition's active run and the previous one is deleted, or fails if any job "
             "failed. The analyzer reports job `analyzer` as `failed` when the document cannot be processed. "
             "`superseded` is a job that found its attempt replaced and stopped early: counted, the run is left "
-            "alone."
+            "alone. A job `/start` did not declare (other than `analyzer`) is refused with 409 `unknown_job`."
         ),
         tags=["Extraction"],
         summary="Report an extraction job",
@@ -253,6 +254,19 @@ class RunJob(IngestionView):
                 )
         except services.RunNotRunning as error:
             raise self._conflict(error, job) from error
+        except services.UnknownJob as error:
+            raise ProblemDetailException(
+                _("The extraction run did not declare this job"),
+                status=HTTPStatus.CONFLICT,
+                # A per-batch run declares hundreds of jobs (#150): name a few.
+                detail=_("Job %(job)s is not one of the %(count)s jobs /start declared (%(sample)s).")
+                % {
+                    "job": error.job,
+                    "count": len(error.declared),
+                    "sample": ", ".join(error.declared[:5]) + (", …" if len(error.declared) > 5 else ""),
+                },
+                additional_data={"reason": "unknown_job"},
+            ) from error
 
         run.refresh_from_db()
         return SingleResponse(request, data=ExtractionRunSerializer.Base.model_validate(run))

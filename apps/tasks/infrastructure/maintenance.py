@@ -68,8 +68,13 @@ def sweep_lost_runs(now=None) -> int:
                 lost += _lose(run, now, f"no event for {limit + grace} (worker lost or event missed)")
 
     # A queued run no worker ever announced: missed events (listener down, deploy) or lost in the broker.
+    # Measured from the last publish, not the row: a stable-id kind (extraction.run) reuses one row for
+    # every attempt, so its `created_at` is the first dispatch, possibly days ago (#173).
     queued_limit = timedelta(hours=settings.EVILFLOWERS_JOBS_QUEUED_LOST_HOURS)
-    for run in JobRun.objects.filter(status=RunStatus.QUEUED, created_at__lt=now - queued_limit).iterator():
+    queued = JobRun.objects.filter(status=RunStatus.QUEUED).annotate(
+        queued_since=Coalesce("last_event_at", "sent_at", "created_at")
+    )
+    for run in queued.filter(queued_since__lt=now - queued_limit).iterator():
         with transaction.atomic():
             lost += _lose(run, now, f"queued for more than {queued_limit} without any event")
     if lost:

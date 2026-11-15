@@ -238,6 +238,29 @@ class AttemptContractTests(TestCase):
             1, {"evilflowers.extraction.job": "paragraphs", "evilflowers.extraction.superseded.stage": "early"}
         )
 
+    def test_a_duplicate_batch_is_409_duplicate(self):
+        self.start()
+        self.assertEqual(self.post("/paragraphs", {"paragraphs": [paragraph(0)]}).status_code, 201)
+        response = self.post("/paragraphs", {"paragraphs": [paragraph(0)]})
+        self.assertEqual(response.status_code, 409, response.content[:400])
+        self.assertEqual(response.json()["additional_data"], {"reason": "duplicate"})
+
+    def test_a_report_for_an_undeclared_job_is_409_unknown_job(self):
+        self.start()
+        response = self.post("/jobs/figure", {"status": "done"})
+        self.assertEqual(response.status_code, 409, response.content[:400])
+        self.assertEqual(response.json()["additional_data"], {"reason": "unknown_job"})
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.jobs, {"paragraphs": "pending"})
+
+    def test_the_analyzer_and_superseded_reports_need_no_declaration(self):
+        stale = self.start()
+        self.start()
+        response = self.post("/jobs/figure", {"status": "superseded"}, attempt=stale)
+        self.assertEqual(response.status_code, 200, response.content[:400])
+        response = self.post("/jobs/analyzer", {"status": "done"})
+        self.assertEqual(response.status_code, 200, response.content[:400])
+
     def test_a_stale_analyzer_failure_does_not_fail_the_new_attempt(self):
         stale = self.start()
         self.start()

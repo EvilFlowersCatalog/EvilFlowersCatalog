@@ -35,12 +35,15 @@ class OpenApiService:
                 # This is an include() - process recursively
                 app_name = getattr(pattern, "app_name", None)
                 if app_name in settings.EVILFLOWERS_OPENAPI_APPS:
-                    new_prefix = f"{prefix}/{pattern.pattern}"
-                    self._process_url_patterns(pattern.url_patterns, new_prefix)
+                    self._process_url_patterns(pattern.url_patterns, self._join(prefix, str(pattern.pattern)))
             elif hasattr(pattern, "lookup_str"):
                 # This is a regular URL pattern
-                full_path = f"{prefix}/{pattern.pattern}"
-                self._openapi.add_path(full_path, pattern.lookup_str)
+                self._openapi.add_path(self._join(prefix, str(pattern.pattern)), pattern.lookup_str)
+
+    @staticmethod
+    def _join(prefix: str, part: str) -> str:
+        """`/extraction/v1` + `runs/…`: include prefixes end with `/`, which a naive join doubled (#180)."""
+        return f"{prefix.rstrip('/')}/{part.lstrip('/')}"
 
     def build(self):
         # Add common schemas first

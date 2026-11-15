@@ -215,7 +215,7 @@ def record_publish(headers: dict, body, routing_key: str | None = None) -> None:
                 run.received_at = run.started_at = run.finished_at = None
                 run.result = run.error = run.traceback = run.report = None
                 run.reported_at = None
-                run.last_event_at = now
+                run.last_event_at = run.sent_at = now
                 run.args_exact = False
             run.sent_at = run.sent_at or now
             run.queue = run.queue or routing_key

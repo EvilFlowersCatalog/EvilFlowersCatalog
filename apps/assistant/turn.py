@@ -360,6 +360,9 @@ def _rounds(
             for event, data in context.frames:
                 if event == "study":
                     state.study = data
+                if event == "citation" and data.get("label") not in state.cited:
+                    # Marks on a figure not cited yet (#179): its citation carries them when the answer cites it.
+                    continue
                 yield sse(event, data)
             context.frames.clear()
 

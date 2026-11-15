@@ -504,6 +504,10 @@ EVILFLOWERS_ASSISTANT_QUIZ_FIGURES = _bool_env("EVILFLOWERS_ASSISTANT_QUIZ_FIGUR
 # accept images (Qwen3.6 with its vision projector; llama-server needs `--mmproj`); otherwise the caption and the
 # referring paragraph answer.
 EVILFLOWERS_ASSISTANT_VISION = _bool_env("EVILFLOWERS_ASSISTANT_VISION", default=False)
+# `annotate_figure` (#179): the model points at parts of a cited figure, the vision model locates them, the portal
+# draws the marks. Needs EVILFLOWERS_ASSISTANT_VISION. Off by default: the tool adds ~150 tokens to the first round
+# of every chat, past the CPU prefix budget (`test_tool_surface`), and grounding accuracy is unmeasured.
+EVILFLOWERS_ASSISTANT_FIGURE_MARKS = _bool_env("EVILFLOWERS_ASSISTANT_FIGURE_MARKS", default=False)
 # Figures (and tables) found by search_regions must reach this cosine similarity.
 EVILFLOWERS_SEARCH_REGION_MIN_SCORE = float(os.getenv("EVILFLOWERS_SEARCH_REGION_MIN_SCORE", 0.78))
 
