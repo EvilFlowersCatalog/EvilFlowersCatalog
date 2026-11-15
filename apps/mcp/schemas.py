@@ -91,6 +91,7 @@ ENTRY_DETAIL_SCHEMA = {
         "content_truncated": {"type": "boolean"},
         "identifiers": {"type": "object"},
         "citation": {"type": "string"},
+        "rights": {"type": "object", "description": "Licence and TDM reservation (#177)."},
         "table_of_contents": {"type": "array"},
         "cover_url": {"type": "string"},
         "acquisitions": {

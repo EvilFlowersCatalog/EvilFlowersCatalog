@@ -20,6 +20,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.views.static import serve
 
+from apps.content.tdmrep import TDMRepView
 from apps.notifications.views import NotificationAsset
 
 urlpatterns = [
@@ -33,6 +34,8 @@ urlpatterns = [
     path("docs/", include(("apps.openapi.urls", "openapi"), namespace="openapi")),
     path("extraction/v1/", include(("apps.extraction.urls", "extraction"), namespace="extraction")),
     path("admin/", admin.site.urls),
+    # #177: W3C TDMRep, the text-and-data-mining reservations of publications.
+    path(".well-known/tdmrep.json", TDMRepView.as_view(), name="tdmrep"),
 ]
 
 # IP-015: the chat assistant is opt-out, following the MCP pattern above.

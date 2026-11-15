@@ -11,6 +11,7 @@ from apps.mcp.tools import (  # noqa: F401  (registration side effect)
     api_keys,
     catalogs,
     categories,
+    content,
     content_policies,
     encryption,
     entries,

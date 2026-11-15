@@ -17,7 +17,8 @@ POST_PROCESS_KIND = "extraction.post_process"
 #: Bump when a post-processing step changes: the sweep then re-processes every active run, a batch at a time.
 #: 1: references, figure documents and vectors, section similarity (#151), graph projection.
 #: 2: locators (#171): keys of the runs active before them, and the graph's run-independent section keys.
-POST_PROCESS_VERSION = 2
+#: 3: reference lists (#178): bibliography items, their locators, in-text markers and `CITES` edges.
+POST_PROCESS_VERSION = 3
 
 #: Seconds the weekly similarity rebuild may take (every pair of every active run, one set of means).
 SIMILARITY_REBUILD_TIME_LIMIT = 60 * 60
@@ -31,7 +32,7 @@ def post_process_run(run_id: str) -> dict:
     Every step is tried. The run is marked post-processed only when all of them succeeded; otherwise the task
     fails, the job is retried (`PostProcessDefinition.max_attempts`) and the sweep picks the run again.
     """
-    from apps.extraction import locators, references, regions, similarity
+    from apps.extraction import bibliography, locators, references, regions, similarity
     from apps.extraction.models import ExtractionRun
     from apps.graph import projection
 
@@ -40,6 +41,7 @@ def post_process_run(run_id: str) -> dict:
         return {}
     attempt = run.attempt
     steps = (
+        ("bibliography", bibliography.build),  # before the locators, which key its items (#178)
         ("locators", locators.assign),  # idempotent; done at activation already, here for older runs (#171)
         ("references", references.build),
         ("regions", regions.index_run),  # TEI down: the documents are set, the vectors fail the step
@@ -55,12 +57,26 @@ def post_process_run(run_id: str) -> dict:
             failed.append(name)
     if failed:
         raise RuntimeError(f"Post-processing of run {run_id} failed in: {', '.join(failed)}")
+    if report.get("bibliography", {}).get("items"):
+        # Crossref for the items with a DOI: network-bound and optional, so its own task (#178).
+        try:
+            enrich_bibliography.delay(str(run.pk))
+        except Exception:
+            logger.warning("Could not queue Crossref enrichment of run %s", run.pk)
     # Not when the run was extracted again meanwhile: those results are new and wait for their own pass.
     ExtractionRun.objects.filter(pk=run.pk, is_active=True, attempt=attempt).update(
         post_processed=POST_PROCESS_VERSION
     )
     report["version"] = POST_PROCESS_VERSION
     return report
+
+
+@shared_task(ignore_result=True, soft_time_limit=30 * 60)
+def enrich_bibliography(run_id: str) -> dict:
+    """Crossref metadata of a run's reference list items with a DOI (#178); at most 200 lookups per call."""
+    from apps.extraction import bibliography
+
+    return bibliography.enrich_run(run_id)
 
 
 def queue_post_process(run_id) -> None:

@@ -85,6 +85,14 @@ def prune_user_activity() -> int:
 
 
 @shared_task
+def prune_content_disclosures() -> int:
+    """#175: drop disclosure log rows past their policy's retention (never inside a budget window)."""
+    from apps.content.disclosure import prune
+
+    return prune()
+
+
+@shared_task
 def reconcile_jobs() -> dict:
     """IP-031: the reconciler's tick — every job with something to do (blocked, retry due, cancel) moves on."""
     from apps.tasks.application.facade import facade

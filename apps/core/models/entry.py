@@ -170,6 +170,9 @@ class Entry(BaseModel):
     popularity = models.PositiveBigIntegerField(default=0, null=False)
     config = models.JSONField(null=False, default=default_entry_config)
     citation = models.TextField(null=True)
+    # #177: licence and TDM reservation (`apps.content.rights`). Never picks a content policy; a reservation only
+    # applies the policy's `caps.tdm_reserved`.
+    rights = models.JSONField(null=True, blank=True)
     touched_at = models.DateTimeField(null=True, auto_now=True)
 
     # Advanced entry details (issue #50; ratings/reviews in #57, IP-023)

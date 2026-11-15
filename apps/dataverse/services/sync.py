@@ -130,6 +130,11 @@ class DataverseSyncService:
 
         with transaction.atomic():
             entry, created, updated = self._upsert_entry(catalog, system_user, payload, metadata)
+            # #177: the dataset's licence; a manual edit of the entry's rights is kept.
+            if metadata.get("rights"):
+                from apps.content.rights import apply as apply_rights
+
+                apply_rights(entry, metadata["rights"])
             summary.entry_id = str(entry.pk)
             if created:
                 summary.upserts = 1

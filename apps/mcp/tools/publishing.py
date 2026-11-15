@@ -40,6 +40,7 @@ from object_checker.base_object_checker import has_object_permission
 from apps.api.filters.entries import EntryFilter
 from apps.api.forms.entries import EntryForm
 from apps.api.services.entry import EntryService
+from apps.content.rights import SCHEMA as RIGHTS_SCHEMA
 from apps.api.views.entries import _assert_readium_amount_above_active, shelf_record_mapping
 from apps.core.models import Acquisition, Entry
 from apps.files.signals import entry_folder
@@ -129,6 +130,15 @@ ENTRY_FIELDS = {
     "allow_print": {"type": "boolean", "description": "Whether the web viewer offers printing."},
     "allow_share": {"type": "boolean", "description": "Whether readers may share a link to the publication."},
     "allow_annotations": {"type": "boolean", "description": "Whether readers may create annotations and highlights."},
+    "rights": {
+        **RIGHTS_SCHEMA,
+        "description": (
+            "Licence and text-and-data-mining facts (#177): `license_url`, `license_name`, `tdm_reservation` "
+            "(1 = the rights holder reserves TDM; the content policy then caps what agents read), "
+            "`tdm_policy_url`, `ai_use`. Replaces the stored rights and marks them a manual edit, which "
+            "Dataverse and Crossref never overwrite. null clears them."
+        ),
+    },
 }
 
 EDITABLE = tuple(ENTRY_FIELDS.keys())
@@ -201,6 +211,11 @@ def _payload(arguments: Arguments, raw: dict, *, current_identifiers=None) -> di
             else:
                 merged[key] = str(value).strip()
         payload["identifiers"] = merged
+
+    if "rights" in raw:
+        if raw["rights"] is not None and not isinstance(raw["rights"], dict):
+            raise ToolError(_("`rights` must be an object or null."))
+        payload["rights"] = raw["rights"]
 
     if "category_ids" in raw:
         payload["category_ids"] = arguments.uuid_sequence("category_ids") or []

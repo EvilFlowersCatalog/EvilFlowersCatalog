@@ -220,6 +220,26 @@ class UpdateEntryTests(PublishingTestCase):
         updated = self.ok("update_entry", {"entry_id": entry["id"], "identifiers": {"doi": None}}, self.manager)
         self.assertEqual(updated["entry"]["identifiers"], {"isbn": "978-80-227-5078-3"})
 
+    def test_rights_are_a_manual_edit_and_null_clears_them(self):
+        entry = self.create()
+        licence = "https://creativecommons.org/licenses/by/4.0/"
+        updated = self.ok(
+            "update_entry",
+            {"entry_id": entry["id"], "rights": {"license_url": licence, "tdm_reservation": 1}},
+            self.manager,
+        )
+        self.assertEqual(updated["entry"]["rights"]["license_url"], licence)
+        stored = Entry.objects.get(pk=entry["id"]).rights
+        self.assertEqual((stored["tdm_reservation"], stored["source"]), (1, "manual"))
+
+        message = self.refused(
+            "update_entry", {"entry_id": entry["id"], "rights": {"tdm_reservation": 7}}, self.manager
+        )
+        self.assertIn("tdm_reservation", message)
+
+        self.ok("update_entry", {"entry_id": entry["id"], "rights": None}, self.manager)
+        self.assertIsNone(Entry.objects.get(pk=entry["id"]).rights)
+
     def test_renaming_onto_an_existing_title_is_refused(self):
         entry = self.create()
         message = self.refused("update_entry", {"entry_id": entry["id"], "title": self.entry.title}, self.manager)

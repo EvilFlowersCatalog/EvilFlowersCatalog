@@ -45,7 +45,8 @@ from apps.readium.models import EncryptedContent, License, Reservation
 # copies from the previous release are not revalidated as current.
 # v2: Dublin Core metadata, category attributes, lending extensions on links.
 # v3: `rel="related"` links to similar publications (#160).
-ETAG_VERSION = "opds1-v3"
+# v4: `dc:rights` and the `rel="license"` link (#177).
+ETAG_VERSION = "opds1-v4"
 
 LICENSED_STATES = (License.LicenseState.READY, License.LicenseState.ACTIVE)
 

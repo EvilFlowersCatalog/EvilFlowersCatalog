@@ -243,6 +243,7 @@ def entry_detail(
                 "content_truncated": content_truncated or None,
                 "identifiers": dict(instance.identifiers) if instance.identifiers else None,
                 "citation": instance.citation,
+                "rights": instance.rights or None,
                 "table_of_contents": instance.table_of_contents,
                 "cover_url": request.build_absolute_uri(instance.image_url) if instance.image_url else None,
                 "acquisitions": [acquisition(item, request) for item in instance.acquisitions.all()],

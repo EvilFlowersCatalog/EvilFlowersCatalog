@@ -430,3 +430,38 @@ def library_map(request, raw_arguments: dict) -> dict:
         _etag, payload = build_map(request, _scope(catalog_id))
         current.set_attribute("evilflowers.graph.rows", len(payload["edges"]))
     return payload
+
+
+@registry.tool(
+    name="cited_by",
+    title="Find what cites a publication",
+    description=(
+        "Publications of the library whose reference lists cite this one (#178), matched by DOI or ISBN, each "
+        "with the reference item's address (`uri`, `url`) and page. Also `cites`: what this publication's own "
+        "reference list cites in the library. Only publications you may see are listed."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"entry_id": UUID_SCHEMA},
+        "required": ["entry_id"],
+        "additionalProperties": False,
+    },
+    output_schema={
+        "type": "object",
+        "properties": {
+            "entry_id": {"type": "string"},
+            "cited_by": {"type": "array", "items": {"type": "object"}},
+            "cites": {"type": "array", "items": {"type": "object"}},
+        },
+        "required": ["entry_id", "cited_by", "cites"],
+    },
+)
+def cited_by(request, raw_arguments: dict) -> dict:
+    from apps.extraction.bibliography import citations_of
+
+    arguments = Arguments(raw_arguments, allowed=("entry_id",))
+    entry_id = arguments.uuid("entry_id", required=True)
+    if entry_id not in set(_visible(request)):
+        raise ToolNotFound("Entry", entry_id)
+    with _span("entries.cited_by"):
+        return citations_of(request, entry_id)

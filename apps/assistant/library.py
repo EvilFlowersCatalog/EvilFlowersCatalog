@@ -65,6 +65,12 @@ class Text:
     run: object
     page_of: Callable[[int], Optional[int]]
     bound: bool = False
+    #: The gate's decision when the reader's basis is metered (#175): each passage handed out is charged.
+    decision: object = None
+    request: object = None
+
+    def __post_init__(self):
+        self._budget_left = self.decision.budget_left if self.decision is not None else None
 
     @classmethod
     def of(cls, context: ToolContext, entry) -> "Text":
@@ -86,14 +92,32 @@ class Text:
         run = _entry_run(entry.pk)
         if run is None:
             raise ToolError(_UNREADABLE["none"])
-        return cls(entry, run, lambda page: page)
+        metered = decision if decision.metered else None
+        return cls(entry, run, lambda page: page, decision=metered, request=context.request)
 
     def passage(self, paragraph, chars: int = PASSAGE_CHARS) -> Optional[dict]:
-        """A paragraph as a labelled-to-be passage; None when its page is outside the reader's copy."""
+        """A paragraph as a labelled-to-be passage; None when its page is outside the reader's copy.
+
+        Under a metered basis (#175) the passage is charged to the reader's budget. A passage is never cut to fit:
+        one that does not fit in what is left is withheld (None), and once the budget is spent the next tool
+        call's decision drops to `snippet` and refuses.
+        """
         page = self.page_of(paragraph.page)
         if page is None:
             return None
         text = paragraph.text if len(paragraph.text) <= chars else paragraph.text[:chars].rsplit(" ", 1)[0] + " […]"
+        if self.decision is not None:
+            from apps.content import disclosure
+
+            charged = disclosure.record(
+                self.request,
+                self.decision,
+                [disclosure.Item(chars=len(text), locator=getattr(paragraph, "locator_key", None))],
+                budget_left=self._budget_left,
+            )
+            self._budget_left = charged.budget_left
+            if charged.left_out:
+                return None
         return {
             "kind": "passage",
             "entry_id": str(self.entry.pk),

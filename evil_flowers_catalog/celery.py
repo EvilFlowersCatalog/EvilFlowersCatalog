@@ -201,3 +201,8 @@ app.conf.beat_schedule["core-prune-user-activity"] = {
     "task": "apps.tasks.tasks.prune_user_activity",
     "schedule": crontab(hour=3, minute=30),
 }
+# #175: the content disclosure log keeps each policy's `log.retention_days`.
+app.conf.beat_schedule["content-prune-disclosures"] = {
+    "task": "apps.tasks.tasks.prune_content_disclosures",
+    "schedule": crontab(hour=3, minute=45),
+}

@@ -2,7 +2,7 @@
 
 | Node | From | Edges |
 |---|---|---|
-| `Entry {id, title, catalog_id}` | the entry | `WRITTEN_BY → Author`, `FILED_UNDER → Subject`, `HAS_SECTION → Section` |
+| `Entry {id, title, catalog_id}` | the entry | `WRITTEN_BY → Author`, `FILED_UNDER → Subject`, `HAS_SECTION → Section`, `CITES {items} → Entry` (#178) |
 | `Author {id, name}`, `Subject {id, term}` | authors, categories | — |
 | `Section {key, entry_id, run_id, title, first_page, last_page, seq}` (`key` run-independent, #171) | `outline(run)` | `NEXT → Section`, `SHOWS → Figure`, `MENTIONS {role} → Concept`, `SIMILAR_TO {weight} → Section` |
 | `Figure {id, entry_id, kind, page, caption}` | referenced figures and tables | — |
@@ -217,13 +217,45 @@ def project_run(run) -> Dict[str, int]:
                 {"rows": batch},
             )
         )
+
+    cited = _cited_entries(run)
+    statements.append(("MATCH (e:Entry {id: $entry_id})-[r:CITES]->() DELETE r", {"entry_id": entry_id}))
+    for batch in _batches(cited):
+        statements.append(
+            (
+                "MATCH (e:Entry {id: $entry_id}) UNWIND $rows AS row MERGE (t:Entry {id: row.id}) "
+                "SET t.title = row.title MERGE (e)-[c:CITES]->(t) SET c.items = row.items",
+                {"entry_id": entry_id, "rows": batch},
+            )
+        )
     age.execute_many(statements)
 
     summaries = SectionSummary.objects.filter(run=run)
     subject = concept_subject(entry)
     for summary in summaries:
         project_concepts(summary, subject)
-    return {"sections": len(rows), "figures": len(figures), "similar": len(similar), "summaries": len(summaries)}
+    return {
+        "sections": len(rows),
+        "figures": len(figures),
+        "similar": len(similar),
+        "cites": len(cited),
+        "summaries": len(summaries),
+    }
+
+
+def _cited_entries(run) -> List[dict]:
+    """`[{id, title, items}]`: catalog entries the run's reference list cites, matched by DOI or ISBN (#178)."""
+    from django.db.models import Count
+
+    from apps.extraction.models import Bibitem
+
+    rows = (
+        Bibitem.objects.filter(run=run, entry__isnull=False)
+        .values("entry_id", "entry__title")
+        .annotate(items=Count("id"))
+        .order_by("entry_id")
+    )
+    return [{"id": str(row["entry_id"]), "title": row["entry__title"], "items": row["items"]} for row in rows]
 
 
 def _similar_sections(run) -> List[dict]:
@@ -341,7 +373,7 @@ def rebuild() -> Dict[str, int]:
 
 
 #: Edge labels `counts` reports.
-EDGE_LABELS = ("HAS_SECTION", "NEXT", "SHOWS", "MENTIONS", "SIMILAR_TO", "WRITTEN_BY", "FILED_UNDER")
+EDGE_LABELS = ("HAS_SECTION", "NEXT", "SHOWS", "MENTIONS", "SIMILAR_TO", "WRITTEN_BY", "FILED_UNDER", "CITES")
 
 
 def counts() -> Dict[str, int]:

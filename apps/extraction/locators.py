@@ -8,6 +8,7 @@ kept a row id lost its paragraph. A locator is keyed by what the unit is, not by
 | paragraph | `base32(sha256(entry_id, source page, normalised text))[:16]` |
 | figure, table, equation | `base32(sha256(entry_id, kind, source page, normalised printed caption, quantised bbox))[:16]` |
 | section | `sha1(entry_id, normalised heading, ordinal)[:20]` hex: the graph's `Section.key` (`section_key`) |
+| bibitem | `base32(sha256(entry_id, "bibitem", normalised item text))[:16]` (#178, `apps.extraction.bibliography`) |
 
 Two units with the same key in one run (a running header repeated on a page, two equal headings) get an ordinal in
 reading order. An unchanged paragraph or heading keeps its key in every later run.
@@ -154,6 +155,14 @@ def _section_specs(entry_id, run) -> Dict[str, dict]:
     }
 
 
+def _bibitem_specs(run) -> Dict[str, dict]:
+    """The reference list's items (#178); their keys are set by `apps.extraction.bibliography.build`."""
+    return {
+        key: {"kind": Locator.Kind.BIBITEM, "source_page": page, "quote_exact": _clip(normalise(raw))}
+        for key, page, raw in run.bibitems.exclude(locator_key=None).values_list("locator_key", "page", "raw")
+    }
+
+
 def assign(run: ExtractionRun) -> Dict[str, int]:
     """Key the units of a run that is (becoming) active, and bring the entry's locators up to date (idempotent).
 
@@ -168,6 +177,7 @@ def assign(run: ExtractionRun) -> Dict[str, int]:
     specs = {
         **_section_specs(entry_id, run),
         **_region_specs(entry_id, regions),
+        **_bibitem_specs(run),
         **_paragraph_specs(entry_id, paragraphs),
     }
     now = timezone.now()
@@ -227,6 +237,8 @@ class Resolution:
     region: Optional[Region] = None
     #: An outline section (`apps.extraction.outline.Section`) for a section locator.
     section: Optional[object] = None
+    #: A reference list item (`Bibitem`, #178) for a bibitem locator.
+    bibitem: Optional[object] = None
 
     @property
     def bbox(self) -> Optional[dict]:
@@ -323,6 +335,17 @@ def _resolve_section(locator: Locator, run: ExtractionRun) -> Optional[Resolutio
     return None
 
 
+def _resolve_bibitem(locator: Locator, run: ExtractionRun) -> Optional[Resolution]:
+    item = run.bibitems.filter(locator_key=locator.key).first()
+    if item is not None:
+        return Resolution(locator, EXACT, item.page, run, bibitem=item)
+    candidates = list(run.bibitems.filter(page__range=_window(locator)).order_by("seq"))
+    item = _best(locator, candidates, lambda candidate: candidate.raw)
+    if item is not None:
+        return Resolution(locator, RELOCATED, item.page, run, bibitem=item)
+    return None
+
+
 def resolve(entry_id, key: str, run: Optional[ExtractionRun] = None) -> Optional[Resolution]:
     """Where `key` of `entry_id` is now (module docstring), or None for a key the entry never had."""
     locator = Locator.objects.filter(entry_id=entry_id, key=key).first()
@@ -334,6 +357,8 @@ def resolve(entry_id, key: str, run: Optional[ExtractionRun] = None) -> Optional
             found = _resolve_paragraph(locator, run)
         elif locator.kind == Locator.Kind.SECTION:
             found = _resolve_section(locator, run)
+        elif locator.kind == Locator.Kind.BIBITEM:
+            found = _resolve_bibitem(locator, run)
         else:
             found = _resolve_region(locator, run)
         if found is not None:

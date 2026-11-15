@@ -119,5 +119,5 @@ class ParityTests(TestCase):
         request = request_for(self.reader, OUTSIDE)
         entries = [getattr(self, name) for name in EXPECTED_OUTSIDE]
         decide_many(request, entries[:2])  # warm the policy cache
-        with self.assertNumQueries(4):  # visibility, catalogs, licences, copies
+        with self.assertNumQueries(3):  # visibility, catalogs, grants (#175)
             decide_many(request, entries)

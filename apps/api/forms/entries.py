@@ -100,6 +100,16 @@ class EntryForm(Form):
     )
     config = FormField(EntryConfigForm, required=False)
     citation = forms.CharField(required=False)
+    # #177: `{license_url, license_name, tdm_reservation, tdm_policy_url, ai_use}`; stored with `source: manual`.
+    rights = forms.JSONField(required=False)
+
+    def clean_rights(self) -> Optional[dict]:
+        from apps.content.rights import RightsError, clean
+
+        try:
+            return clean(self.cleaned_data.get("rights"), "manual")
+        except RightsError as error:
+            raise ValidationError(str(error), "invalid-rights")
 
     def clean_language_code(self) -> Language:
         code = self.cleaned_data["language_code"].lower()

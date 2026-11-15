@@ -143,7 +143,8 @@ def build(run: ExtractionRun) -> Dict[str, int]:
             )
 
     with transaction.atomic():
-        Reference.objects.filter(run=run).delete()
+        # Markers of the reference list (#178) belong to `apps.extraction.bibliography`.
+        Reference.objects.filter(run=run).exclude(kind=Reference.Kind.BIBITEM).delete()
         Reference.objects.bulk_create(rows, batch_size=2000)
         provenance = dict(ExtractionRun.objects.filter(pk=run.pk).values_list("provenance", flat=True).first() or {})
         provenance["references"] = counts

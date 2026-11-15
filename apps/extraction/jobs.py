@@ -30,6 +30,7 @@ from apps.tasks.contract import (
     entry_scope,
     maintenance,
     registry,
+    run_only,
     uuid_arg,
 )
 
@@ -200,6 +201,14 @@ class PostProcessDefinition(JobDefinition):
 
         return ExtractionRun.objects.filter(is_active=True).select_related("acquisition__entry")
 
+
+# #178: Crossref metadata of a run's reference list, queued after its post-processing.
+run_only(
+    "extraction.enrich_bibliography",
+    "apps.extraction.tasks.enrich_bibliography",
+    "Reference list metadata",
+    "Look the DOIs of a run's reference list items up in Crossref, at most 200 per run (#178).",
+)
 
 # #155: the beat jobs that keep post-processing and the similarity means current.
 maintenance(

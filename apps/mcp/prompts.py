@@ -186,6 +186,26 @@ def _study_path(arguments: Dict[str, str]) -> str:
     )
 
 
+def _answer_with_citations(arguments: Dict[str, str]) -> str:
+    question = arguments["question"]
+
+    return (
+        f"Answer this question from the library's publications, with citations: **{question}**\n\n"
+        "Work in this order:\n"
+        "1. `content_pack` with the question (add `entry_ids` if I named books). It returns passages labelled "
+        "`E1`, `E2`… with a `url` each, and lists in `withheld` what I may not read.\n"
+        "2. If the pack is thin, `search_content` with other phrasings (the Slovak and the English term), then "
+        "`read` around the best hits for context.\n"
+        "3. Answer only from passages you actually received. After each claim, cite the passage as a Markdown "
+        "link on its label, e.g. [E2](url). Use `cite` with `style: iso690` for a reference list at the end.\n\n"
+        "Rules:\n"
+        "- Never state what a withheld or unread passage says. If the best source is withheld, name the book, "
+        "say that it needs to be borrowed (or read on the library's network) and give its link.\n"
+        "- If the library has nothing on the question, say so instead of answering from general knowledge.\n"
+        "- Quote sparingly; the links take the reader to the exact passage."
+    )
+
+
 _PROMPTS = [
     Prompt(
         name="reading_list",
@@ -245,6 +265,16 @@ _PROMPTS = [
         ),
         arguments=[_argument("topic", "The topic or concept to study, e.g. 'the CFL condition'.", required=True)],
         builder=_study_path,
+    ),
+    Prompt(
+        name="answer_with_citations",
+        title="Answer with citations",
+        description=(
+            "Answer a question from inside the library's publications, citing each claim with a link that opens "
+            "the passage, within what your access allows."
+        ),
+        arguments=[_argument("question", "The question to answer.", required=True)],
+        builder=_answer_with_citations,
     ),
 ]
 

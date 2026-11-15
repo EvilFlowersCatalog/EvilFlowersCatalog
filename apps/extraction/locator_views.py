@@ -55,6 +55,8 @@ def _quote(resolution: locators.Resolution) -> str:
         return locators.normalise(resolution.region.printed_caption)[: locators.QUOTE_CHARS]
     if resolution.section is not None:
         return locators.normalise(resolution.section.title)[: locators.QUOTE_CHARS]
+    if getattr(resolution, "bibitem", None) is not None:
+        return locators.normalise(resolution.bibitem.raw)[: locators.QUOTE_CHARS]
     return resolution.locator.quote_exact
 
 

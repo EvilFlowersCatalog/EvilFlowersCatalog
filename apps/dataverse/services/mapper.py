@@ -313,4 +313,9 @@ def extract_metadata(
     metadata["content"] = _build_content(metadata, files)
     metadata["citation"] = _build_citation(metadata)
 
+    # #177: the dataset version's licence.
+    from apps.content.rights import from_dataverse
+
+    metadata["rights"] = from_dataverse(dataset_data)
+
     return metadata

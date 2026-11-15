@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 #: Ordered from least to most; the gate compares positions.
 TIERS = ("metadata", "outline", "snippet", "passage", "full")
 BASES = ("open", "loan", "past_loan", "none")
-LICENSE_STATES = ("ready", "active", "returned", "expired", "revoked", "cancelled")
+#: `cancelled` is not offered: a loan is cancelled when it is returned before any reading app opened it, so it
+#: never grants (#175).
+LICENSE_STATES = ("ready", "active", "returned", "expired", "revoked")
 ACQUISITION_TYPES = ("personal", "shared")
 PROCESSORS = ("local", "external")
 

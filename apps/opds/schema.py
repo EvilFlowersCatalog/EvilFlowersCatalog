@@ -91,6 +91,14 @@ class LinkType(str, Enum):
     LAST = "last"
     # OPDS 1.2 §4.3 facets (IP-020).
     FACET = "http://opds-spec.org/facet"
+    # RFC 4946: the licence of the entry's content (#177).
+    LICENSE = "license"
+
+
+def _rights_text(entry: Entry) -> Optional[str]:
+    """`dc:rights` of an entry: its licence's name, else the licence URL (#177)."""
+    rights = entry.rights or {}
+    return rights.get("license_name") or rights.get("license_url") or None
 
 
 class IndirectAcquisition(BaseXmlModel, tag="indirectAcquisition", ns="opds", nsmap=NSMAP):
@@ -193,6 +201,8 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
     language: Optional[str] = element(tag="language", ns="dc", default=None)
     publisher: Optional[str] = element(tag="publisher", ns="dc", default=None)
     issued: Optional[str] = element(tag="issued", ns="dc", default=None)
+    # #177: the licence's name (or URL); the URL itself is a `rel="license"` link.
+    rights: Optional[str] = element(tag="rights", ns="dc", default=None)
     summary: Summary = element()
     categories: Optional[List[Category]] = element(tag="category", default=list())
     content: Optional[Content] = element(default=None)
@@ -234,9 +244,22 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
             language=entry.language.alpha2 if entry.language_id else None,
             publisher=entry.publisher or None,
             issued=str(entry.published_at) if entry.published_at else None,
+            rights=_rights_text(entry),
             # `Entry.summary` is nullable; a `None` here 500s the whole feed.
             summary=Summary(type="text", value=entry.summary or ""),
         )
+
+        license_url = (entry.rights or {}).get("license_url")
+        if license_url:
+            # RFC 4946: the licence of the entry's content.
+            acquisition_entry.links.append(
+                Link(
+                    rel=LinkType.LICENSE,
+                    href=license_url,
+                    type="text/html",
+                    title=(entry.rights or {}).get("license_name"),
+                )
+            )
 
         if not complete:
             acquisition_entry.links.append(

@@ -157,6 +157,8 @@ class EntrySerializer:
         thumbnail_url: Optional[str] = Field(serialization_alias="thumbnail", default=None, validate_default=True)
         config: Optional[dict]
         citation: Optional[str]
+        # #177: licence and TDM reservation.
+        rights: Optional[dict] = None
         touched_at: datetime
         created_at: datetime
         updated_at: datetime

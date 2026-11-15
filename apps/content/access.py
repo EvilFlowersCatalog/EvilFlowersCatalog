@@ -23,8 +23,13 @@ The decision, in order:
 4. **Caps** — outside the entry's IP ranges, the caller's processor (an API key's
    `processor`; the in-app assistant is `local`), a TDM reservation, model-written
    text. Each can only lower the tier.
-5. **Budget** — what the policy allows a basis to read in a window. Carried on the
-   disclosure; enforced by #175.
+5. **Budget** — what the policy allows a metered basis to read in a window (#175,
+   `apps.content.budget`). Over budget the tier drops to `snippet` with `reason: budget`;
+   surfaces charge what they hand out through `apps.content.disclosure.record`.
+
+The basis facts come from `content_grant` (#175): one row per licence and own copy, kept
+by signals, read in one query per batch. A hidden entry stays hidden whatever the grant,
+unless the policy sets `grants.survive_hidden` (no preset does).
 
 `open` deliberately means only "no LCP": whether a stored PDF exists, and whether
 the acquisition is lent or restricted, stays with `ReaderDocument.for_open_access`
@@ -82,6 +87,7 @@ class Reason:
     TDM_RESERVED = "tdm_reserved"
     GENERATED = "generated"
     POLICY = "policy"
+    BUDGET = "budget"
 
 
 #: Licence states that are a loan right now; the others the policy lists are a past loan.
@@ -104,20 +110,38 @@ class Disclosure:
     inside_ip: bool = True
     processor: Optional[str] = None
     caps: List[dict] = field(default_factory=list)
+    #: The reader's budget for this entry when the basis is metered (#175, `apps.content.budget.BudgetState`).
+    budget_state: Optional[object] = None
+    #: The policy's `log.retention_days`: 0 keeps no disclosure log.
+    log_retention_days: int = 0
+    surface: str = ""
     _ip_error: Optional[Exception] = field(default=None, repr=False)
 
     def allows(self, tier: str) -> bool:
         return self.visible and rank(self.tier) >= rank(tier)
 
-    def receipt(self) -> dict:
-        """What a surface that renders the decision shows: `{tier, basis, reason, how_to_unlock, policy}`."""
-        return {
+    @property
+    def metered(self) -> bool:
+        return self.budget_state is not None
+
+    @property
+    def budget_left(self) -> Optional[int]:
+        return self.budget_state.left if self.budget_state is not None else None
+
+    def receipt(self, chars_charged: Optional[int] = None) -> dict:
+        """What a surface that renders the decision shows: `{tier, basis, reason, how_to_unlock, policy}`, and for a
+        metered basis what this response charged and what is left (#175)."""
+        receipt = {
             "tier": self.tier,
             "basis": self.basis,
             "reason": self.reason or None,
             "how_to_unlock": self.how_to_unlock,
             "policy": f"policy:{self.policy}",
         }
+        if self.metered:
+            receipt["chars_charged"] = chars_charged or 0
+            receipt["budget_left"] = self.budget_left
+        return receipt
 
     def explain(self) -> dict:
         return {
@@ -130,6 +154,7 @@ class Disclosure:
             "processor": self.processor,
             "caps": self.caps,
             "budget": self.budget,
+            "budget_state": self.budget_state.payload() if self.budget_state is not None else None,
         }
 
     def capped_below(self, name: str, tier: str) -> bool:
@@ -183,6 +208,15 @@ def _ip_check(request, entry):
     return None
 
 
+def tdm_reserved(entry) -> bool:
+    """Whether the rights holder reserved text and data mining (`entry.rights.tdm_reservation = 1`, #177).
+
+    Rights never pick a policy (Q7); a reservation only applies the policy's `caps.tdm_reserved`.
+    """
+    rights = getattr(entry, "rights", None) or {}
+    return isinstance(rights, dict) and rights.get("tdm_reservation") in (1, True, "1")
+
+
 def _user(request):
     user = getattr(request, "user", None)
     return user if user is not None and user.is_authenticated else None
@@ -195,8 +229,7 @@ class _Facts:
         self.request = request
         self.user = _user(request)
         self.entries = entries
-        self._licenses = None
-        self._copies = None
+        self._grants = None
         self._members = None
         self._catalogs = None
         self._resolver = None
@@ -219,31 +252,29 @@ class _Facts:
             }
         return self._catalogs.get(entry.catalog_id)
 
-    def licenses(self) -> Dict[str, List[tuple]]:
-        if self._licenses is None:
-            self._licenses = {}
-            lcp_ids = [entry.pk for entry in self.entries if entry.read_config("readium_enabled")]
-            if self.user is not None and lcp_ids:
-                from apps.readium.models import License
-
-                for entry_id, state, devices in License.objects.filter(
-                    user=self.user, entry_id__in=lcp_ids
-                ).values_list("entry_id", "state", "device_count"):
-                    self._licenses.setdefault(str(entry_id), []).append((state, devices))
-        return self._licenses
-
-    def copies(self) -> Dict[str, set]:
-        if self._copies is None:
-            self._copies = {}
+    def grants(self) -> Dict[str, List[tuple]]:
+        """`{entry_id: [(source, state, first_opened_at), ...]}` of the caller's live grants (#175), one query."""
+        if self._grants is None:
+            self._grants = {}
             if self.user is not None:
-                from apps.core.models import UserAcquisition
+                from apps.content.models import ContentGrant
 
-                rows = UserAcquisition.objects.filter(
-                    user=self.user, acquisition__entry_id__in=[entry.pk for entry in self.entries]
-                ).values_list("acquisition__entry_id", "type")
-                for entry_id, kind in rows:
-                    self._copies.setdefault(str(entry_id), set()).add(kind)
-        return self._copies
+                rows = ContentGrant.objects.filter(
+                    user=self.user, entry_id__in=[entry.pk for entry in self.entries], revoked_at__isnull=True
+                ).values_list("entry_id", "source", "source_state", "first_opened_at")
+                for entry_id, source, state, opened in rows:
+                    self._grants.setdefault(str(entry_id), []).append((source, state, opened))
+        return self._grants
+
+    def licenses(self, entry) -> List[tuple]:
+        """`(state, first_opened_at)` of the caller's licences of `entry`."""
+        return [
+            (state, opened) for source, state, opened in self.grants().get(str(entry.pk), []) if source == "license"
+        ]
+
+    def copies(self, entry) -> set:
+        """The types of the caller's own copies of `entry`."""
+        return {state for source, state, _opened in self.grants().get(str(entry.pk), []) if source == "acquisition"}
 
     def members(self) -> set:
         """Catalog ids the caller belongs to."""
@@ -266,15 +297,16 @@ def _grants(entry, policy: policies.Policy, facts: _Facts) -> List[str]:
     grants = policy.grants
     found = []
     if entry.read_config("readium_enabled"):
-        states = set(grants["license_states"])
-        for state, devices in facts.licenses().get(str(entry.pk), []):
+        # `cancelled` never grants: the loan was returned before any reading app opened it.
+        states = set(grants["license_states"]) - {"cancelled"}
+        for state, opened in facts.licenses(entry):
             if state in states:
                 found.append(Basis.LOAN if state in LIVE_LICENSE_STATES else Basis.PAST_LOAN)
-            elif state == "expired" and grants["expired_if_opened"] and devices:
+            elif state == "expired" and grants["expired_if_opened"] and opened:
                 found.append(Basis.PAST_LOAN)
     else:
         # An own copy grants a loan only of an entry without LCP: an LCP title is lent by licence.
-        if facts.copies().get(str(entry.pk), set()) & set(grants["acquisition_types"]):
+        if facts.copies(entry) & set(grants["acquisition_types"]):
             found.append(Basis.LOAN)
     return found
 
@@ -328,12 +360,21 @@ def _decide_one(
         cap(Reason.OUTSIDE_IP, policy.caps["outside_ip"], "campus_network")
     if processor is not None:
         cap(Reason.PROCESSOR, policy.caps["processor"][processor], "local_processor")
-    if getattr(getattr(entry, "rights", None), "tdm_reservation", None) == 1:
+    if tdm_reserved(entry):
         cap(Reason.TDM_RESERVED, policy.caps["tdm_reserved"])
     if generated:
         cap(Reason.GENERATED, policy.caps["generated"])
 
     budget = policy.budget if policy.budget and basis in policy.budget["bases"] else None
+    budget_state = None
+    if budget is not None and rank(tier) > rank(Tier.SNIPPET):
+        from apps.content import budget as budgets
+
+        # Only a basis the policy meters, and only when there is more than a snippet to meter (#175).
+        budget_state = budgets.state(facts.user, entry, budget)
+        if budget_state is not None and budget_state.left <= 0:
+            tier = Tier.SNIPPET
+            reason = Reason.BUDGET
     return Disclosure(
         entry_id=str(entry.pk),
         visible=True,
@@ -348,6 +389,9 @@ def _decide_one(
         inside_ip=inside_ip,
         processor=processor,
         caps=caps,
+        budget_state=budget_state,
+        log_retention_days=int((policy.document.get("log") or {}).get("retention_days") or 0),
+        surface=surface,
         _ip_error=ip_error,
     )
 

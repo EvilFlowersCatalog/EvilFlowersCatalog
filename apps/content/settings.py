@@ -42,6 +42,19 @@ settings_store.register(
 
 settings_store.register(
     SettingDefinition(
+        key="content.crossref_enabled",
+        schema={"type": "boolean"},
+        description=(
+            "Look DOIs up in Crossref (api.crossref.org): licences for `entry.rights` (#177) and the metadata of "
+            "cited works (#178). Off keeps the catalog from calling out."
+        ),
+        default=True,
+        tags=["content"],
+    )
+)
+
+settings_store.register(
+    SettingDefinition(
         key="content.external_processor_default",
         schema={"type": "string", "enum": ["local", "external"]},
         description="The processor of an API key that declares none: where its client sends the text it reads.",

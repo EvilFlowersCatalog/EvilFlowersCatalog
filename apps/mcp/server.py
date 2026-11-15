@@ -81,7 +81,13 @@ READ_INSTRUCTIONS = (
     "session sees public catalogs only. `whoami`, `get_my_shelf` and `list_my_loans` describe the "
     "authenticated user's own library and require credentials. `get_user` and `list_api_keys` "
     "describe the caller's own account and API keys; administrators see everyone's through "
-    "`list_users` and `get_user`."
+    "`list_users` and `get_user`.\n\n"
+    "To answer from inside publications, `search_content` finds passages, figures and tables, `read` "
+    "reads on from an address, `get_outline` and `get_region` show structure and figures, and "
+    "`content_pack` gathers labelled evidence in one call. Every result is an address "
+    "(`evilflowers://entry/<id>/locator/<key>`) with a `url` that opens the viewer at it: cite those "
+    "links, formatted with `cite`. How much text you get depends on your access (`my_access`); when a "
+    "result says how to unlock more (e.g. borrow), tell the user instead of guessing at the content."
 )
 
 WRITE_INSTRUCTIONS = (
@@ -402,6 +408,17 @@ class McpServer:
                     break
 
         links = []
+        # A tool may name its links itself (#176: the figures and tables on the pages `read` returned).
+        for item in (payload.get("resource_links") or [])[:25]:
+            if isinstance(item, dict) and item.get("uri"):
+                links.append(
+                    {
+                        "type": "resource_link",
+                        "uri": item["uri"],
+                        "name": localize(item.get("name")) or item["uri"],
+                        "mimeType": "application/json",
+                    }
+                )
         for item in candidates[:25]:
             if not isinstance(item, dict):
                 continue

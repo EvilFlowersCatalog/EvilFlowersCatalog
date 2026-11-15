@@ -23,6 +23,16 @@ from apps.mcp.protocol import (
 URL = "/mcp/v1"
 
 READ_TOOLS = {
+    # #176: reading publications; #178: what cites a publication.
+    "cite",
+    "cited_by",
+    "content_pack",
+    "get_outline",
+    "get_region",
+    "my_access",
+    "read",
+    "resolve_citation",
+    "search_content",
     "explain_access",
     "find_concept",
     "get_catalog",

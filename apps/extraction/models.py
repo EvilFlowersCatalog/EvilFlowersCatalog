@@ -193,6 +193,8 @@ class Locator(BaseModel):
         FIGURE = "figure", _("figure")
         TABLE = "table", _("table")
         EQUATION = "equation", _("equation")
+        #: An item of the reference list (#178).
+        BIBITEM = "bibitem", _("reference list item")
 
     key = models.CharField(max_length=40)
     entry = models.ForeignKey("core.Entry", on_delete=models.CASCADE, related_name="+")
@@ -308,13 +310,51 @@ class Reference(BaseModel):
         TABLE = "table", _("table")
         EQUATION = "equation", _("equation")
         SECTION = "section", _("section")
+        #: An in-text citation (`[12]`, "Smith 2019") of an item of the reference list (#178).
+        BIBITEM = "bibitem", _("bibliography item")
 
     run = models.ForeignKey(ExtractionRun, on_delete=models.CASCADE, related_name="references")
     paragraph = models.ForeignKey(Paragraph, on_delete=models.CASCADE, related_name="references")
     region = models.ForeignKey(Region, on_delete=models.CASCADE, null=True, related_name="references")
     target_paragraph = models.ForeignKey(Paragraph, on_delete=models.CASCADE, null=True, related_name="+")
+    bibitem = models.ForeignKey("extraction.Bibitem", on_delete=models.CASCADE, null=True, related_name="references")
     kind = models.CharField(max_length=10, choices=Kind.choices)
     #: The text as written ("Obr. 2.1").
     anchor = models.CharField(max_length=100)
     #: The number referred to, normalised ("2.1").
     number = models.CharField(max_length=30)
+
+
+class Bibitem(BaseModel):
+    """One item of a run's reference list (#178), parsed by `apps.extraction.bibliography`.
+
+    Belongs to the run, like its paragraphs; `locator_key` addresses it across runs (`Locator` of kind
+    `bibitem`). `entry` is the catalog publication it cites, matched by DOI or ISBN: the graph's `CITES` edge.
+    """
+
+    class Meta:
+        app_label = "extraction"
+        db_table = "extraction_bibitem"
+        default_permissions = ()
+        ordering = ["run", "seq"]
+        indexes = [models.Index(fields=["run", "seq"]), models.Index(fields=["doi"])]
+        verbose_name = _("Bibliography item")
+        verbose_name_plural = _("Bibliography items")
+
+    run = models.ForeignKey(ExtractionRun, on_delete=models.CASCADE, related_name="bibitems")
+    #: The reference list it belongs to (a book has one per chapter as often as one at the end), 0-based.
+    block = models.PositiveIntegerField(default=0)
+    seq = models.PositiveIntegerField()
+    #: The printed number of a numbered list ("12").
+    number = models.CharField(max_length=10, null=True)
+    #: Page of the original file the item starts on.
+    page = models.PositiveIntegerField()
+    raw = models.TextField()
+    #: CSL-JSON: title, author, issued, container-title, DOI, ISBN; Crossref fills more (`source: crossref`).
+    csl = models.JSONField(default=dict)
+    doi = models.CharField(max_length=255, null=True)
+    isbn = models.CharField(max_length=13, null=True)
+    entry = models.ForeignKey("core.Entry", on_delete=models.SET_NULL, null=True, related_name="cited_by")
+    locator_key = models.CharField(max_length=40, null=True, db_index=True)
+    #: When Crossref was asked about the DOI (whatever it answered).
+    crossref_at = models.DateTimeField(null=True)

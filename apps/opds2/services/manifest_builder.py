@@ -68,6 +68,10 @@ class ManifestBuilder:
         else:
             links.extend(cls._build_acquisition_links(entry, base_url))
 
+        license_link = cls._build_license_link(entry)
+        if license_link is not None:
+            links.append(license_link)
+
         for related_id, related_title in related:
             links.append(
                 Link(
@@ -99,6 +103,9 @@ class ManifestBuilder:
                 rel="self",
             )
         ]
+        license_link = cls._build_license_link(entry)
+        if license_link is not None:
+            links.append(license_link)
         images = cls._build_cover_links(entry, base_url)
 
         reading_order = []
@@ -155,6 +162,14 @@ class ManifestBuilder:
             modified=entry.updated_at,
             number_of_pages=entry.page_count or None,
         )
+
+    @staticmethod
+    def _build_license_link(entry: Entry) -> Optional[Link]:
+        """`rel: "license"` (RFC 4946) to the licence of the publication, from `entry.rights` (#177)."""
+        rights = entry.rights or {}
+        if not rights.get("license_url"):
+            return None
+        return Link(href=rights["license_url"], type="text/html", rel="license", title=rights.get("license_name"))
 
     @staticmethod
     def from_borrow_link(link: BorrowLink) -> Link:
