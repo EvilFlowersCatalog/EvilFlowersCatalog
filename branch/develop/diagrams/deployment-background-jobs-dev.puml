@@ -4,9 +4,10 @@
 ' What: background jobs on dev need one new pod (ocr) and no new transport: every
 '       Celery worker, the catalog's own and each service's, publishes its task
 '       events to Redis db 7, where the catalog's event listener (pod
-'       evilflowers-beat) writes the one job ledger in postgresql18; services report
-'       results to one catalog endpoint, and the portal reads and controls jobs
-'       only through the catalog API.
+'       evilflowers-beat) writes the one job ledger in postgresql18; the OCR worker
+'       writes its outcome file next to its output on the shared volume and the
+'       catalog reads it on the run's terminal event (#169, no HTTP callback); the
+'       portal reads and controls jobs only through the catalog API.
 ' Kind: UML deployment diagram, instance level, proposal (IP-031). Artifacts listed
 '       as text inside the nodes. Scope: job dispatch, events, reports and control.
 '       Omitted: readium, flower, maildev, tei-*, the VPN, telemetry (every pod
@@ -23,7 +24,7 @@
 '         deployment-lcp-encryption-dev (2026-11-08); EvilFlowersCatalog#146.
 ' =============================================================================
 
-title Background jobs on dev: one ledger, one listener, one report endpoint (proposal, 2026-11-14)
+title Background jobs on dev: one ledger, one listener, outcomes as files (proposal, 2026-11-15)
 
 node portal <<device>> [
 **Admin browser**
@@ -65,7 +66,7 @@ node "**control** · 192.168.122.60 · k3s" <<virtualMachine>> as ct {
 **evilflowers** · gunicorn :8000
 ----
 /api/v1/jobs (apply · patch ·
-list · runs report)
+list · runs)
 JobFacade · reconcile
 ]
     node workers <<container>> [
@@ -81,7 +82,8 @@ JobFacade · reconcile
 container beat: schedules,
 reconcile · sweep · prune
 container events:
-celery_event_handler (ledger)
+celery_event_handler (ledger,
+applies outcome files)
 ]
     node ocr <<container>> <<proposed>> [
 **ocr** · Celery worker -E
@@ -94,7 +96,8 @@ ocrmypdf skip_text
 **evilflowers-dev/data** · PVC
 ----
 catalogs/…/{acquisition}.pdf
-catalogs/…/ocr/{job}.pdf (new)
+catalogs/…/ocr/{run}.pdf (new)
+catalogs/…/ocr/{run}.json (outcome)
 ]
   }
 }
@@ -120,11 +123,11 @@ bridge <-[$accent()]- ocr : <b>Redis db 7</b>\n<b>consume · events</b>
 bridge --> redis : TCP :6379
 bridge --> pg : TCP :5432
 
-' ---- results come back over HTTP --------------------------------------------------
-web <-- ocr : HTTP :8000 POST\njobs/runs/{run}/report
+' ---- results: OCR through the shared volume (#169), the others over HTTP -------------
 web <-- workers : HTTP :8000\nexisting hooks
 
-ocr ..> pvc : <<mount>>
+ocr ..> pvc : <<mount>>\nwrites output, then outcome
+beat ..> pvc : <<mount>> (proposed, knowledge#54)\nreads outcome
 
 $legend_live_proposed()
 

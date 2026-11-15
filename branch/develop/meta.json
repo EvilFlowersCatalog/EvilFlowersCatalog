@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "54c3b82d125bb72a5ac7ca1ee24ce7936de90a5b",
-    "short": "54c3b82",
-    "message": "Implementing #182",
+    "sha": "88054963e884e056bdeda5bb45839a475db847c0",
+    "short": "8805496",
+    "message": "OCR issues (#169, #156, #146)",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/54c3b82d125bb72a5ac7ca1ee24ce7936de90a5b"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/88054963e884e056bdeda5bb45839a475db847c0"
   },
-  "deployed_at": "2026-11-15T19:02:52Z",
+  "deployed_at": "2026-11-15T19:27:39Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
