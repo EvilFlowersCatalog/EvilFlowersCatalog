@@ -44,7 +44,8 @@ from apps.readium.models import EncryptedContent, License, Reservation
 # Bump when the rendered XML changes shape for the same inputs, so cached
 # copies from the previous release are not revalidated as current.
 # v2: Dublin Core metadata, category attributes, lending extensions on links.
-ETAG_VERSION = "opds1-v2"
+# v3: `rel="related"` links to similar publications (#160).
+ETAG_VERSION = "opds1-v3"
 
 LICENSED_STATES = (License.LicenseState.READY, License.LicenseState.ACTIVE)
 
@@ -85,9 +86,13 @@ def feed_etag(request, *, head: Iterable, entries: Iterable = ()) -> str:
     `head` holds the feed-level inputs (ids, timestamps, page number);
     `entries` is a sequence of `(pk, touched_at)` pairs for the page.
     """
+    from apps.opds.services.related import RelatedEntries
+
     entries = list(entries)
     parts = [ETAG_VERSION, request_language(request), *head, *(f"{pk}@{touched}" for pk, touched in entries)]
     parts.extend(_lending_parts([pk for pk, _ in entries]))
+    # Similar publications (#160) move when a run is (re)processed, which never touches the entry.
+    parts.extend(RelatedEntries.for_request(request).signature([pk for pk, _ in entries]))
 
     user = request.user
     if user.is_authenticated:

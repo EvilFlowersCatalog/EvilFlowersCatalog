@@ -154,6 +154,7 @@ class PromptTests(SurfaceTestCase):
                 "organise_catalog",
                 "classify_collection",
                 "catalog_overview",
+                "study_path",
             },
         )
 

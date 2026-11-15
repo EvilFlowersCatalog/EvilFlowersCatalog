@@ -8,6 +8,7 @@ from apps.api.utils.parse import parse_int_query
 from apps.core.errors import ProblemDetailException
 from apps.core.models import Entry
 from apps.opds.services.entry_search import EntrySearchService
+from apps.opds.services.related import RelatedEntries
 from apps.opds2.services import FeedBuilder, ManifestBuilder
 from apps.opds2.views.base import Opds2CatalogView
 
@@ -46,7 +47,9 @@ class PublicationDetailView(Opds2CatalogView):
         except Entry.DoesNotExist:
             raise ProblemDetailException(_("Publication not found"), status=HTTPStatus.NOT_FOUND)
 
-        publication = ManifestBuilder.build_publication(entry, request, user=request.user)
+        publication = ManifestBuilder.build_publication(
+            entry, request, user=request.user, related=RelatedEntries(request).of(entry)
+        )
         return self.publication_response(publication.model_dump(exclude_none=True, by_alias=True))
 
 

@@ -164,6 +164,28 @@ def _catalog_overview(arguments: Dict[str, str]) -> str:
     )
 
 
+def _study_path(arguments: Dict[str, str]) -> str:
+    topic = arguments["topic"]
+
+    return (
+        f"Plan a study path through this library for **{topic}**.\n\n"
+        "Work in this order:\n"
+        "1. `find_concept` with a short form of the topic (try the Slovak and the English term if the first "
+        "finds nothing), then `get_concept` on the best `key`. Its defining sections are where the topic is "
+        "explained; pick the one that fits best.\n"
+        "2. `section_prerequisites` on that section (`entry_id` and `key`): what to read first. Call it again "
+        "on the prerequisites themselves, once or twice, until nothing new comes back. Order the path so every "
+        "section comes after what it needs; a result with `later: true` is defined further on in the same book, "
+        "say so instead of putting it first.\n"
+        "3. `related_sections` on the main section: where other books explain the same thing, possibly in "
+        "another language. Offer one or two as a second explanation.\n\n"
+        "Present the path as a numbered list. For every step give the book's title, the section and the page "
+        "(`first_page`), and one sentence on why it is there. A section with `section: null` may not be quoted "
+        "outside the reader: name the book and page only. If `available` is false, the library graph is not "
+        "installed: say so and fall back to `search_entries`. Never invent a section or a page."
+    )
+
+
 _PROMPTS = [
     Prompt(
         name="reading_list",
@@ -213,6 +235,16 @@ _PROMPTS = [
         description="A tour of what the library holds, how it is organised, and what this session can reach.",
         arguments=[],
         builder=_catalog_overview,
+    ),
+    Prompt(
+        name="study_path",
+        title="Plan a study path",
+        description=(
+            "Find where a topic is explained, what to read before it (in order, with pages) and where other "
+            "books explain it too, from the library graph."
+        ),
+        arguments=[_argument("topic", "The topic or concept to study, e.g. 'the CFL condition'.", required=True)],
+        builder=_study_path,
     ),
 ]
 

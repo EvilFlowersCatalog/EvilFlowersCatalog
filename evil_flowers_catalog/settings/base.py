@@ -491,6 +491,8 @@ EVILFLOWERS_ASSISTANT_PREFETCH = _bool_env("EVILFLOWERS_ASSISTANT_PREFETCH", def
 EVILFLOWERS_ASSISTANT_PACK_ENTRIES = int(os.getenv("EVILFLOWERS_ASSISTANT_PACK_ENTRIES", 5))
 EVILFLOWERS_ASSISTANT_PACK_PASSAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_PACK_PASSAGES", 5))
 EVILFLOWERS_ASSISTANT_PACK_FIGURES = int(os.getenv("EVILFLOWERS_ASSISTANT_PACK_FIGURES", 3))
+# Sections of other books (SIMILAR_TO) added when a reader's question finds evidence in their book only (#157).
+EVILFLOWERS_ASSISTANT_PACK_ELSEWHERE = int(os.getenv("EVILFLOWERS_ASSISTANT_PACK_ELSEWHERE", 2))
 # Relevance floor (cosine) of a passage or figure in the pack; tuned on the gold set.
 EVILFLOWERS_ASSISTANT_PACK_MIN_SCORE = float(os.getenv("EVILFLOWERS_ASSISTANT_PACK_MIN_SCORE", 0.80))
 # Pages a study tool (walkthrough, quiz, key concepts, section summary) may read per turn (Q8).

@@ -11,6 +11,7 @@ One read-only tool over the links already in Postgres, plus the AGE graph for `r
 | `section` | `E#` | the paragraphs of its section in reading order, within the page budget |
 | `related` | `E#` | sections of other publications sharing its section's concepts or similar to it (graph) |
 | `look` | `F#` | what the figure shows: caption, the paragraph that refers to it, and with vision on, the model's view |
+| `compare` | `E#` (+ `entry_id`) | the passage, and how another book explains the same thing over `SIMILAR_TO` (#157) |
 
 Everything returned is labelled into the chat's ledger, so a followed passage is citable like any other.
 """
@@ -21,12 +22,13 @@ from typing import List, Optional
 
 from django.conf import settings
 
+from apps.assistant import crossbook
 from apps.assistant.library import Text, ToolContext, label_units
 from apps.mcp.errors import ToolError
 
 logger = logging.getLogger(__name__)
 
-RELATIONS = ("next", "previous", "figure", "mentions", "similar_elsewhere", "section", "related", "look")
+RELATIONS = ("next", "previous", "figure", "mentions", "similar_elsewhere", "section", "related", "look", "compare")
 
 #: Paragraphs returned for `next` / `previous`.
 NEIGHBOURS = 2
@@ -36,13 +38,14 @@ SECTION_PARAGRAPHS = 12
 LINKS = 3
 
 SPECIFICATION = (
-    "From a passage (E#): its neighbours, the figure it refers to, similar passages elsewhere, its section, "
-    "related sections. From a figure (F#): passages mentioning it, or what it shows (look).",
+    "From a passage (E#): neighbours, its figure, similar passages elsewhere, its section, related sections, or "
+    "how book entry_id explains it (compare). From a figure (F#): passages mentioning it, or what it shows (look).",
     {
         "type": "object",
         "properties": {
             "label": {"type": "string"},
             "relation": {"type": "string", "enum": list(RELATIONS)},
+            "entry_id": {"type": "string"},
         },
         "required": ["label", "relation"],
     },
@@ -69,6 +72,10 @@ def follow(context: ToolContext, arguments: dict) -> dict:
     paragraph_id = source.get("paragraph_id")
     if not paragraph_id or str(paragraph_id).startswith("page:"):
         raise ToolError("This label is a whole page, not a paragraph; search inside the publication instead.")
+    if relation == "compare":
+        from apps.assistant import crossbook
+
+        return crossbook.compare(context, label, source, str(arguments.get("entry_id") or "").strip() or None)
     return _from_passage(context, label, source, relation)
 
 
@@ -89,11 +96,14 @@ def _result(context: ToolContext, label: str, relation: str, passages: List[dict
     passages = [passage for passage in passages if passage]
     figures = [figure for figure in figures if figure]
     payload = {"from": label, "relation": relation, "passages": passages, "figures": list(figures)}
+    language_note = crossbook.mark_languages(context, payload["passages"] + payload["figures"])
     issued = label_units(context.ledger, payload["passages"] + payload["figures"])
     if issued:
         payload["evidence"] = issued
     if note or not (passages or figures):
         payload["note"] = note or "Nothing to follow there."
+    if language_note:
+        payload["language_note"] = language_note
     return payload
 
 

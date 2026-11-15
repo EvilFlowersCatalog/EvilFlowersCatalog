@@ -52,6 +52,7 @@ class OfferedToolsTests(SimpleTestCase):
     #: turn (#138), so the cost is round 1 of a new chat; the capability list and `follow`, `study` and
     #: `library_overview` added ~210 tokens (~3-4 s) against the 4-6 generated retrieval rounds they replace.
     #: The estimate is 1,959 signed out and 2,076 signed in; held there, so anything new has to replace something.
+    #: #157 added `follow(compare, entry_id)` and shortened the description to pay for it: 1,979 / 2,097.
     PREFIX_TOKEN_BUDGET = 2100
 
     def test_first_round_prefix_stays_within_the_cpu_budget(self):

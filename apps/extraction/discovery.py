@@ -317,6 +317,45 @@ def _may_read_text(request, entry: Entry) -> bool:
     return True
 
 
+def _live_loans(request, entry_ids) -> set:
+    """Ids of these entries the caller holds a live Readium LCP loan of (`ready` or `active`): they may open it."""
+    from apps.readium.models import License
+
+    user = getattr(request, "user", None)
+    if user is None or not user.is_authenticated or not entry_ids:
+        return set()
+    return set(
+        License.objects.filter(
+            user=user,
+            entry_id__in=list(entry_ids),
+            state__in=[License.LicenseState.READY, License.LicenseState.ACTIVE],
+        ).values_list("entry_id", flat=True)
+    )
+
+
+def may_open_region(request, entry: Entry) -> bool:
+    """Whether the caller may see a figure's caption and crop outside the viewer (#159).
+
+    Open access: anyone who sees the entry, inside its IP ranges. Readium LCP: only a reader with a live loan.
+    """
+    try:
+        _check_ip_block(request, entry)
+    except ProblemDetailException:
+        return False
+    if entry.read_config("readium_enabled"):
+        return entry.pk in _live_loans(request, [entry.pk])
+    return True
+
+
+def region_downloadable(entry: Entry) -> bool:
+    """Whether a client may offer a crop for download: open access, with printing and sharing allowed (#159)."""
+    return (
+        not entry.read_config("readium_enabled")
+        and bool(entry.read_config("evilflowers_viewer_print"))
+        and bool(entry.read_config("evilflowers_share_enabled"))
+    )
+
+
 class EntryPassages(SecuredView):
     @openapi.metadata(
         description=(
@@ -570,9 +609,24 @@ class EntryFigures(ReaderView):
 
 
 class EntryRegionImage(EntryFigures):
-    @openapi.metadata(description="The crop of a figure of an open-access entry, as an image.", tags=["Files"])
+    @openapi.metadata(
+        description=(
+            "The crop of a figure or table, as an image. Open-access entries: anyone who may see the entry, "
+            "inside its allowed IP ranges. Entries lent through Readium LCP: only a reader with a live loan; "
+            "403 for anyone else (#159)."
+        ),
+        tags=["Files"],
+    )
     def get(self, request, entry_id: UUID, region_id: UUID):
-        run = self._open_run(request, entry_id)
+        entry = _entry(request, entry_id)
+        _check_ip_block(request, entry)
+        if not may_open_region(request, entry):
+            raise ProblemDetailException(
+                _("Access denied"),
+                status=HTTPStatus.FORBIDDEN,
+                detail=_("This publication is lent through Readium LCP: borrow it to see its figures."),
+            )
+        run = _entry_run(entry_id)
         region = run and run.regions.filter(pk=region_id).first()
         storage = get_storage()
         if region is None or not region.image_path or not storage.exists(region.image_path):

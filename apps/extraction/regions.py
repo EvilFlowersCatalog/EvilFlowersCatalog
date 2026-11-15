@@ -8,15 +8,19 @@ LaTeX string is a poor search document.
 
 `search_regions` works like `discovery.search_passages`: access control first (and only publications whose
 text the reader may read outside the viewer: a figure's caption and crop are its content), then meaning and
-words, fused by reciprocal rank, cut at `EVILFLOWERS_SEARCH_REGION_MIN_SCORE`.
+words, fused by reciprocal rank, cut at `EVILFLOWERS_SEARCH_REGION_MIN_SCORE`. The figure search
+(`GET /api/v1/search`, #159) also passes `licensed=True`: publications lent through Readium LCP the caller holds
+a live loan of.
 """
 
 import logging
-from dataclasses import dataclass
-from typing import Dict, List, Optional
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 
 from django.conf import settings
 from django.db import connection, transaction
+from django.db.models import FloatField
+from django.db.models.expressions import RawSQL
 from pgvector import HalfVector
 from pgvector.django import CosineDistance
 
@@ -98,8 +102,20 @@ class FigureHit:
     kind: str
     page: int
     caption: Optional[str]
+    #: Cosine similarity, 0-1, when the region matched by meaning; else its word-match rank, 0-1.
     score: float
     has_image: bool
+    #: The model's description, when there is one (#154).
+    description: Optional[str] = None
+    #: `semantic` (by meaning), `words` (the query's words, accents ignored), or both.
+    matched: Tuple[str, ...] = ()
+
+
+@dataclass
+class RegionSearch:
+    hits: List[FigureHit] = field(default_factory=list)
+    #: True when the query could not be embedded: word matches only.
+    degraded: bool = False
 
 
 def search_regions(
@@ -111,17 +127,39 @@ def search_regions(
     scope=None,
     vector: Optional[List[float]] = None,
     min_score: Optional[float] = None,
+    licensed: bool = False,
 ) -> List[FigureHit]:
-    """Figures (and tables) about `text` in publications the caller may see and read, best first."""
+    """Figures (and tables) about `text` in publications the caller may see and read, best first.
+
+    `licensed` also searches publications lent through Readium LCP that the caller holds a live loan of (the
+    figure search, #159); the assistant leaves them out, as it never quotes them.
+    """
+    return search(
+        request, text, kinds=kinds, limit=limit, scope=scope, vector=vector, min_score=min_score, licensed=licensed
+    ).hits
+
+
+def search(
+    request,
+    text: str,
+    *,
+    kinds=(Region.Kind.FIGURE, Region.Kind.TABLE),
+    limit: int = 3,
+    scope=None,
+    vector: Optional[List[float]] = None,
+    min_score: Optional[float] = None,
+    licensed: bool = False,
+) -> RegionSearch:
+    """`search_regions`, saying also whether the query could be embedded."""
     from apps.api.filters.entries import EntryFilter
     from apps.core.models import Entry
     from apps.core.search import embeddings
     from apps.core.search.query import rrf
-    from apps.extraction.discovery import RRF_K, _document, _may_read_text, _tsquery
+    from apps.extraction.discovery import RRF_K, _document, _live_loans, _may_read_text, _tsquery
 
     text = (text or "").strip()[:2000]
     if not text:
-        return []
+        return RegionSearch()
     visible = EntryFilter(scope if scope is not None else {}, queryset=Entry.objects.all(), request=request).qs
     # Processed publications the reader may see (a few hundred), then only those readable here.
     runs = dict(
@@ -129,14 +167,25 @@ def search_regions(
             "pk", "acquisition__entry_id"
         )
     )
-    readable = {
-        entry.pk
-        for entry in Entry.objects.filter(pk__in=set(runs.values())).select_related("catalog")
-        if _may_read_text(request, entry)
-    }
+    entries = list(Entry.objects.filter(pk__in=set(runs.values())).select_related("catalog"))
+    readable = {entry.pk for entry in entries if _may_read_text(request, entry)}
+    if licensed:
+        from apps.core.errors import ProblemDetailException
+        from apps.files.views import _check_ip_block
+
+        lcp = [entry for entry in entries if entry.read_config("readium_enabled")]
+        loans = _live_loans(request, [entry.pk for entry in lcp])
+        for entry in lcp:
+            if entry.pk not in loans:
+                continue
+            try:
+                _check_ip_block(request, entry)
+            except ProblemDetailException:
+                continue
+            readable.add(entry.pk)
     runs = {run_id: entry_id for run_id, entry_id in runs.items() if entry_id in readable}
     if not runs:
-        return []
+        return RegionSearch()
     candidates = Region.objects.filter(run_id__in=list(runs), kind__in=list(kinds), embedding_text__isnull=False)
 
     if vector is None:
@@ -156,21 +205,24 @@ def search_regions(
             )
             by_meaning = {pk: 1 - distance for pk, distance in rows if 1 - distance >= floor}
 
+    # Words: the GIN index of migration 0010, ranked like passages (#113).
     document = _document(f'"{Region._meta.db_table}"."embedding_text"')
-    by_words = list(
-        candidates.extra(where=[f"{document} @@ {_tsquery()}"], params=[text]).values_list("pk", flat=True)[
-            :CANDIDATES
-        ]
+    by_words = dict(
+        candidates.extra(where=[f"{document} @@ {_tsquery()}"], params=[text])
+        .annotate(rank=RawSQL(f"ts_rank_cd({document}, {_tsquery()}, 32)", [text], output_field=FloatField()))
+        .order_by("-rank", "pk")
+        .values_list("pk", "rank")[:CANDIDATES]
     )
-    fused = [pk for pk, _score in rrf([sorted(by_meaning, key=lambda pk: -by_meaning[pk]), by_words], k=RRF_K)]
+    fused = [pk for pk, _score in rrf([sorted(by_meaning, key=lambda pk: -by_meaning[pk]), list(by_words)], k=RRF_K)]
     if not fused:
-        return []
+        return RegionSearch(degraded=vector is None)
     regions = {region.pk: region for region in Region.objects.filter(pk__in=fused[: limit * 3])}
     hits = []
     for pk in fused:
         region = regions.get(pk)
         if region is None:
             continue
+        semantic = pk in by_meaning
         hits.append(
             FigureHit(
                 region_id=str(region.pk),
@@ -178,10 +230,12 @@ def search_regions(
                 kind=region.kind,
                 page=region.page,
                 caption=region.printed_caption or region.caption or region.description,
-                score=round(by_meaning.get(pk, 0.0), 4),
+                score=round(by_meaning[pk] if semantic else by_words.get(pk, 0.0), 4),
                 has_image=bool(region.image_path),
+                description=region.description,
+                matched=(("semantic",) if semantic else ()) + (("words",) if pk in by_words else ()),
             )
         )
         if len(hits) >= limit:
             break
-    return hits
+    return RegionSearch(hits=hits, degraded=vector is None)

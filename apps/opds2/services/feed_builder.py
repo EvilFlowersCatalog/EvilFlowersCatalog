@@ -7,6 +7,7 @@ from django.utils import timezone
 from apps.core.fields.localized import localize, request_language
 from apps.core.models import Catalog, Entry, Feed
 from apps.opds.services.borrow_link import LICENSED_STATES
+from apps.opds.services.related import RelatedEntries
 from apps.readium.models import Reservation
 from apps.api.services.facets import facet_href, opds_facets
 from apps.opds2.schema.opds import NavigationEntry, OpdsFeed
@@ -147,10 +148,13 @@ class FeedBuilder:
         page_entries = entries.order_by(*ordering, "-pk")[offset : offset + per_page]
 
         publications = []
+        related = RelatedEntries(request)
         for entry in page_entries.select_related("catalog", "language").prefetch_related(
             "entry_authors__author", "categories", "acquisitions__encrypted_content"
         ):
-            publications.append(ManifestBuilder.build_publication(entry, request, user=request.user))
+            publications.append(
+                ManifestBuilder.build_publication(entry, request, user=request.user, related=related.of(entry))
+            )
 
         if self_url is None:
             self_url = request.build_absolute_uri()
@@ -243,7 +247,11 @@ class FeedBuilder:
             .prefetch_related("entry_authors__author", "categories", "acquisitions__encrypted_content")
         )
 
-        publications = [ManifestBuilder.build_publication(entry, request, user=user) for entry in entries]
+        related = RelatedEntries(request)
+        publications = [
+            ManifestBuilder.build_publication(entry, request, user=user, related=related.of(entry))
+            for entry in entries
+        ]
 
         return OpdsFeed(
             metadata=Metadata(title="My Shelf", number_of_items=len(publications)),

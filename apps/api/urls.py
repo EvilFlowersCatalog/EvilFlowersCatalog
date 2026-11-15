@@ -32,6 +32,7 @@ from apps.api.views import (
 from apps.dataverse.views import PrepublishView as _DataversePrepublishView
 from apps.extraction import admin_views as extraction_admin
 from apps.extraction import discovery as extraction_discovery
+from apps.extraction import figure_search as extraction_figure_search
 from apps.extraction import views as extraction_views
 from apps.graph import views as graph_views
 from apps.readium.views.statistics import StatisticsView
@@ -70,6 +71,8 @@ urlpatterns = [
     path("entries/facets", entries.EntryFacets.as_view()),
     path("entries/suggest", entries.EntrySuggest.as_view()),
     path("entries/passages", extraction_discovery.EntryPassages.as_view(), name="entry-passages"),
+    # Figures and tables across the library (#159)
+    path("search", extraction_figure_search.FigureSearch.as_view(), name="figure-search"),
     # The library graph and the vectors behind it, read-only for the portal (#152)
     path("entries/map", graph_views.LibraryMap.as_view(), name="entry-map"),
     path("entries/<uuid:entry_id>/chapters", graph_views.EntryChapters.as_view(), name="entry-chapters"),

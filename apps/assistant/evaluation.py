@@ -19,6 +19,7 @@ A case is a question plus what a good turn looks like:
   or a bound chat's document tools) must be called, so an answer from the model's own knowledge fails even
   when it names a real publication (#130: `sk-passage` credited a chapter to a book that has none).
 - `reads_pages`: the answer drew on pages of the chat's publication (the `pages` frame of a bound chat).
+- `cites_other_entry`: a bound case's answer cites at least one publication other than the chat's (#157).
 
 A case may bind its chat to a publication, as the portal's "ask about this book" does: `entry_title` is looked
 up among the publications the user can see (titles, unlike ids, are the same on every instance), and the turn
@@ -128,6 +129,8 @@ class Outcome:
     evidence: int = 0
     #: The turn failed and stored its notice (`ChatMessage.error`).
     failed_row: bool = False
+    #: The publication a bound case is about (`entry_title`), for `cites_other_entry` (#157).
+    bound_entry: Optional[str] = None
 
 
 def parse_frames(frames: Iterable[str]) -> List[tuple]:
@@ -186,6 +189,8 @@ def score(case: dict, outcome: Outcome) -> Outcome:
     acceptable = expect.get("cites_any_entry") or []
     if acceptable and not set(acceptable) & set(outcome.cited_entries):
         failures.append("no gold publication cited")
+    if expect.get("cites_other_entry") and not set(outcome.cited_entries) - {outcome.bound_entry, "None"}:
+        failures.append("no other publication cited")
     # IP-030 cases.
     if expect.get("shows_figure") and not outcome.figures_shown:
         failures.append("no figure shown")
@@ -232,6 +237,7 @@ def run_case(user, case: dict, verify: bool = False) -> Outcome:
         # Scored as an error rather than stopping the run: the other cases still say something.
         outcome.error = str(error)
         return score(case, outcome)
+    outcome.bound_entry = str(entry.pk) if entry is not None else None
     chat = Chat.objects.create(user=user, title=f"[evaluation] {outcome.id}", entry=entry)
     document = _case_document(request, entry)
 

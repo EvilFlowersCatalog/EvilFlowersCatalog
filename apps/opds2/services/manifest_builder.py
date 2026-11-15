@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Sequence, Tuple
 
 from django.urls import reverse
 
@@ -41,6 +41,7 @@ class ManifestBuilder:
         *,
         user=None,
         lending: Optional[LendingState] = None,
+        related: Sequence[Tuple[str, str]] = (),
     ) -> Publication:
         """An OPDS 2.0 publication, as `user` sees it.
 
@@ -48,6 +49,8 @@ class ManifestBuilder:
         link (with copies, holds and availability) or, when the user holds a
         loan, the `.lcpl` link with the loan period. `lending` lets a caller
         that has just changed the loan state pass it in instead of re-reading.
+        `related` is `[(entry_id, title)]` of similar publications in the same
+        catalog (`apps.opds.services.related`, #160): `rel: "related"` links.
         """
         base_url = cls.base_url(request)
         links = [
@@ -64,6 +67,16 @@ class ManifestBuilder:
             links.extend(cls.from_borrow_link(link) for link in resolver.emit_links(entry, user, lending))
         else:
             links.extend(cls._build_acquisition_links(entry, base_url))
+
+        for related_id, related_title in related:
+            links.append(
+                Link(
+                    href=f"{base_url}{reverse('opds2:publication-detail', kwargs={'catalog_name': entry.catalog.url_name, 'entry_id': related_id})}",
+                    type=OPDS_PUBLICATION_JSON,
+                    rel="related",
+                    title=related_title,
+                )
+            )
 
         return Publication(
             metadata=cls.build_metadata(entry),

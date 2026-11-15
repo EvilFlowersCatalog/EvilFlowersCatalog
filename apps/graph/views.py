@@ -435,6 +435,23 @@ def library_map(request, scope) -> tuple:
     return etag, payload
 
 
+def entry_neighbours(request, scope) -> Dict[str, List[tuple]]:
+    """`{entry_id: [(neighbour_id, score), ...]}`, best first: the edges of the caller's library map (#160, #161).
+
+    The same mutual kNN as `GET /api/v1/entries/map`, over the publications the caller may see within `scope`
+    (e.g. `{"catalog_id": ...}`), so a hidden publication is never a neighbour and never changes a visible pair.
+    Only entries with an active extraction run take part. Cached with the map (its ETag is the key).
+    """
+    _etag, payload = library_map(request, scope)
+    found: Dict[str, List[tuple]] = {}
+    for edge in payload["edges"]:
+        found.setdefault(edge["source"], []).append((edge["target"], edge["score"]))
+        found.setdefault(edge["target"], []).append((edge["source"], edge["score"]))
+    for items in found.values():
+        items.sort(key=lambda item: (-item[1], item[0]))
+    return found
+
+
 class LibraryMap(SecuredView):
     @openapi.metadata(
         description=(

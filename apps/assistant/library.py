@@ -128,8 +128,19 @@ def entry_for(context: ToolContext, entry_id) -> object:
     raise ToolError("`entry_id` is required: the publication's id from a tool result.")
 
 
-#: What a ledger source keeps of a passage or figure (`evidence` module docstring).
-SOURCE_KEYS = ("kind", "entry_id", "title", "page", "source_page", "section", "paragraph_id", "region_id")
+#: What a ledger source keeps of a passage or figure (`evidence` module docstring). `language` only when it is not
+#: the reader's (#157), so a citation says the original is in another language.
+SOURCE_KEYS = (
+    "kind",
+    "entry_id",
+    "title",
+    "page",
+    "source_page",
+    "section",
+    "paragraph_id",
+    "region_id",
+    "language",
+)
 
 
 def label_units(ledger, units: List[dict]) -> Dict[str, dict]:

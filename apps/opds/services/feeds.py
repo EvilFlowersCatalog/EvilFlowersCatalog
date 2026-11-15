@@ -1,5 +1,6 @@
 import datetime
 from abc import ABC, abstractmethod
+from functools import cached_property
 from typing import Iterable, List, Optional
 
 from django.conf import settings
@@ -136,5 +137,13 @@ class AcquisitionFeed(BaseFeed):
                 self._extras.get("complete", False),
                 request=self._extras.get("request"),
                 user=self._extras.get("user"),
+                related=self._related.of(entry),
             )
         )
+
+    @cached_property
+    def _related(self):
+        """One per feed: each catalog's similar publications are worked out once for all its entries (#160)."""
+        from apps.opds.services.related import RelatedEntries
+
+        return RelatedEntries.for_request(self._extras.get("request"))

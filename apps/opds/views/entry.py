@@ -8,6 +8,7 @@ from django.utils.translation import gettext as _
 from apps.core.errors import ProblemDetailException
 from apps.core.models import Entry
 from apps.opds.schema import AcquisitionEntry
+from apps.opds.services.related import RelatedEntries
 from apps.opds.views.base import OpdsCatalogView
 
 
@@ -18,7 +19,9 @@ class EntryView(OpdsCatalogView):
         except Entry.DoesNotExist as e:
             raise ProblemDetailException(_("Entry not found"), status=HTTPStatus.NOT_FOUND, previous=e)
 
-        result = AcquisitionEntry.from_model(entry, True, request=request, user=request.user)
+        result = AcquisitionEntry.from_model(
+            entry, True, request=request, user=request.user, related=RelatedEntries(request).of(entry)
+        )
 
         return HttpResponse(
             result.to_xml(

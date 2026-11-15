@@ -23,8 +23,10 @@ from apps.mcp.protocol import (
 URL = "/mcp/v1"
 
 READ_TOOLS = {
+    "find_concept",
     "get_catalog",
     "get_category",
+    "get_concept",
     "get_entry",
     "get_feed",
     "get_job",
@@ -41,8 +43,13 @@ READ_TOOLS = {
     "list_jobs",
     "list_my_loans",
     "list_users",
+    "library_map",
     "preview_notification",
+    "related_sections",
     "search_entries",
+    "search_figures",
+    "section_prerequisites",
+    "similar_entries",
     "whoami",
 }
 

@@ -1,190 +1,258 @@
 # Evil Flowers Catalog
 
 <p align="center">
-    <img width="150" height="150" src="docs/images/logo.png">
+    <img width="150" height="150" src="docs/images/logo.png" alt="Evil Flowers logo">
 </p>
 
-A publication catalog server compatible with [OPDS 1.2](https://specs.opds.io/opds-1.2) and
-[OPDS 2.0](https://drafts.opds.io/opds-2.0), written in Python with a straightforward management REST API for CRUD
-operations and end-to-end Readium LCP DRM support.
+<p align="center">
+    A self-hosted publication catalog and lending server, built on open standards.
+</p>
+
+<p align="center">
+    <a href="https://specs.opds.io/opds-1.2">OPDS 1.2</a> ·
+    <a href="https://drafts.opds.io/opds-2.0">OPDS 2.0</a> ·
+    <a href="https://readium.org/lcp-specs/">Readium LCP</a> ·
+    <a href="https://elvira.digital/EvilFlowersCatalog/">REST API</a> ·
+    <a href="https://modelcontextprotocol.io/">MCP</a>
+</p>
+
+---
+
+Evil Flowers Catalog is the server side of a digital library. It stores publications and their metadata, organises
+them into catalogs and feeds, and makes them available to people and programs through standard protocols. Readers
+can browse and borrow in any OPDS-capable app. Administrators and web frontends use the REST API. Copyrighted titles
+can be lent with Readium LCP DRM, while open material is downloaded directly.
+
+It is a backend. It does not ship an end-user web interface; see [Ecosystem](#ecosystem) for the frontends and
+workers that are developed alongside it.
+
+The catalog is general-purpose: a personal collection, a company knowledge base, a public or a research library
+can all run on it. So far it has been used mostly by academic libraries, which explains features such as LDAP
+sign-in, controlled lending and full-text search inside publications.
 
 ## Features
 
-We are aware that the current documentation may not be satisfactory, and we are actively working to improve it. Right
-now there is available at least complete documentation for the REST endpoints using OpenAPI
-here: [https://elvira.digital/EvilFlowersCatalog/](https://elvira.digital/EvilFlowersCatalog/) If you have any
-questions regarding usage, feel free to
-[open an issue for clarification](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/new?assignees=&labels=documentation%2C+help+wanted%2C+question&projects=&template=request-for-clarification.md&title=),
-[start a discussion](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/discussions),
-or [contact us directly](mailto:jakub.dubec@stuba.sk).
+**Publishing and access**
 
-The current list of features:
+- OPDS 1.2 (Atom) and OPDS 2.0 (JSON) feeds with navigation, search, facets and pagination. They work with
+  e-readers and reading apps such as [Thorium Reader](https://thorium.edrlab.org/).
+- Multiple catalogs on one instance, with per-catalog access levels (`read`, `write`, `manage`).
+- Custom feeds and hierarchical categories for curating collections.
+- Rich entry metadata: authors, languages, identifiers (ISBN, DOI), BibTeX import, covers and tables of contents.
+- Several acquisitions per entry (formats, open access or restricted), with HTTP Range downloads.
 
-- **OPDS 1.2**: Access your publications using [OPDS 1.2](https://specs.opds.io/opds-1.2) — suitable for e-book
-  readers.
-- **OPDS 2.0**: Full [OPDS 2.0](https://drafts.opds.io/opds-2.0) JSON server with navigation, search, custom feeds,
-  pagination, and Readium LCP borrowing — compatible with Thorium Reader and other modern LCP-capable reading apps.
-- **Readium LCP**: End-to-end DRM lending pipeline (encrypt → license → borrow → reserve → renew → return) with
-  reservation queue, oversharing detection, capability tokens, and a fully proxied LSD surface.
-- **REST API**: Facilitates easy access and manipulation of catalog data for developers through CRUD operations.
-- **Multiple storage options**: Store your documents on the filesystem or any S3-compatible object store.
-- **Multi-tenant Catalog**: Supports multiple tenants, allowing separate catalogs for different user groups within the
-  same server instance.
-- **Authentication Support**: Local users, LDAP, JWT access/refresh tokens, and long-lived API keys.
-- **Custom Feeds**: Users can organize publications into custom feeds, tailoring the catalog to specific needs or
-  themes.
-- **Publications Sharing**: Enables users to share publications with others, facilitating collaboration and
-  distribution.
-- **Annotation Storage**: Integrates with the EvilFlowersViewer project for storing annotations, enhancing the reading
-  experience with personalized notes and highlights.
-- **PDF Slicing & Editing**: Provides tools for slicing and editing PDF documents directly within the catalog, allowing
-  for custom modifications and adjustments.
-- **Dataverse integration**: Imports published Dataverse datasets into Evil Flowers Catalog through a Dataverse
-  publish workflow, preserving dataset metadata and file links as catalog entries and acquisitions.
-- **Search service**: Optional integration with an external keyword/semantic search backend (IP-008).
-- **Notifications**: MJML-based email notifications for license, reservation, and passphrase events (IP-002).
-- **Asynchronous Task Processing with Celery**: EvilFlowers Catalog leverages a Celery-based distributed task system to
-  handle resource-intensive jobs — OCR processing, data extraction, LCP encryption, license-lifecycle sweeps, daily
-  reminders, and database backups — through dedicated workers and beat schedules.
+**Lending**
 
-The implementation is based on these RFCs and specifications:
+- End-to-end [Readium LCP](https://readium.org/lcp-specs/) pipeline: encrypt, license, borrow, renew and return.
+- Limited copies, a reservation queue and automatic license expiry.
+- E-mail notifications for loans, reservations and reminders.
 
-- [RFC7807: Problem Details for HTTP APIs](https://datatracker.ietf.org/doc/html/rfc7807)
-- [RFC7617: The 'Basic' HTTP Authentication Scheme](https://datatracker.ietf.org/doc/html/rfc7617)
-- [RFC6750: The OAuth 2.0 Authorization Framework: Bearer Token Usage](https://datatracker.ietf.org/doc/html/rfc6750)
-- [RFC7519: JSON Web Token (JWT)](https://datatracker.ietf.org/doc/html/rfc7519)
-- [OPDS 1.2](https://specs.opds.io/opds-1.2) and [OPDS 2.0](https://drafts.opds.io/opds-2.0)
-- [Readium LCP](https://readium.org/lcp-specs/) and [Readium Web Publication Manifest](https://readium.org/webpub-manifest/)
+**Discovery**
 
-## Project status
+- Full-text search in PostgreSQL with stemming, highlighting and "did you mean" suggestions.
+- Optional hybrid ranking (BM25 + semantic embeddings) when an embedding service is configured.
+- Search inside publications at the passage level, type-ahead suggestions and facet counts.
+- Similar publications, ratings and reviews, reading history.
 
-The project is in active production use. Major specifications — OPDS 1.2, OPDS 2.0 (navigation, search, pagination,
-facets), and Readium LCP — are implemented end-to-end. New features are tracked as **Implementation Proposals (IP-XXX)**
-under [`docs/proposals/posts/`](docs/proposals/posts); see the [proposals index](docs/proposals/index.md) for current
-status. The REST API remains under active iteration — if you plan to deploy, please
-[open a discussion](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/discussions) or
-[email us](mailto:jakub.dubec@stuba.sk).
+**Reading companions**
 
-## Installation
+- Storage for annotations and highlights, used by the [EvilFlowersViewer](https://github.com/EvilFlowersCatalog/EvilFlowersViewer).
+- Per-download PDF modifiers, for example personalised or sliced copies.
+- An optional reading assistant that answers questions about the collection and cites pages. It runs on a
+  self-hosted model, and LCP-protected titles are never passed to it.
 
-### Docker
+**Integration**
 
-A pre-built Docker image is available on the GitHub Container registry as
-[evilflowerscatalog](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pkgs/container/evilflowerscatalog).
+- REST API with an auto-generated [OpenAPI specification](https://elvira.digital/EvilFlowersCatalog/) and
+  [RFC 7807](https://datatracker.ietf.org/doc/html/rfc7807) error responses.
+- A [Model Context Protocol](docs/catalog-wiki/Model-Context-Protocol.md) server, so LLM agents can search and,
+  with permission, curate the catalog.
+- Import from [Dataverse](https://dataverse.org/) through its publish workflow.
+- Domain events through Celery or Kafka.
 
-The repository contains a working `compose.yml` configured for a development environment, with sidecars for
-PostgreSQL, Redis, MinIO, Dataverse, the Readium LCP server, and the external workers (`evilflowers-ocr-worker`,
-`evilflowers-lcpencrypt-worker`, `evilflowers-text-service`, `evil-flowers-search-service`). You can use a similar
-configuration for production. The application image is built from the source.
+**Operations**
 
-Setup steps (service name `django` per `compose.yml`):
+- Authentication with local accounts, LDAP, JWT (access and refresh tokens) and long-lived API keys.
+- File storage on the local filesystem or any S3-compatible object store.
+- Background work on Celery: OCR, LCP encryption, content extraction, scheduled sweeps and backups.
+- OpenTelemetry traces, metrics and structured JSON logs, plus optional continuous profiling.
 
-1. Initialize the stack: `docker compose up -d --build`
-2. Seed languages and currencies: `docker compose exec django python3 manage.py setup`
-3. Create a superuser: `docker compose exec django python3 manage.py createsuperuser`
+## How it fits together
 
-The server will start on port 8000. For a Readium LCP-enabled deployment with shared filesystem storage between
-Django, the LCP Server, and the lcpencrypt worker, follow the dedicated
-[Readium LCP Deployment guide](docs/catalog-wiki/Readium-LCP-Deployment.md).
+```mermaid
+flowchart LR
+    readers["OPDS reading apps"] -->|OPDS 1.2 / 2.0| catalog
+    web["Web portal / admin UI"] -->|REST API| catalog
+    agents["LLM agents"] -->|MCP| catalog
 
-### Dataverse
+    subgraph server["Evil Flowers Catalog"]
+        catalog["Django application"]
+        workers["Celery workers"]
+    end
 
-The Docker setup includes a local [Dataverse](https://dataverse.org/) instance through `conf/dataverse/compose.yml`.
+    catalog --- pg[("PostgreSQL")]
+    catalog --- redis[("Redis")]
+    catalog --- storage[("Filesystem / S3")]
+    workers --- redis
+    catalog -.->|optional| lcp["Readium LCP server"]
+    workers -.->|optional| services["OCR, encryption and<br/>extraction services"]
+```
 
-In the local development stack:
+Only PostgreSQL and Redis are required. Everything drawn with a dashed line is optional and enabled by
+configuration.
 
-- Evil Flowers Catalog runs at `http://localhost:8000`.
-- Dataverse runs at `http://localhost:8080`.
-- The default Dataverse admin login is username `dataverseAdmin` with password `admin1`.
-- Solr runs at `http://localhost:8983` and is used by Dataverse for GUI/search indexing.
+A typical workflow:
 
-How the integration works:
+1. An administrator creates a catalog and grants users access to it.
+2. Publications are added through the REST API, the MCP server or a management command, and files are uploaded.
+3. Entries are organised into feeds and categories.
+4. Readers sign in from a web portal or add the OPDS URL (`/opds/v2/` or `/opds/v1.2/`) to their reading app,
+   then browse, search, download or borrow.
 
-1. A Dataverse pre-publish workflow is registered from `conf/dataverse/hooks/prepublish-sync.json`.
-2. When a user clicks **Publish** in the Dataverse GUI, Dataverse calls the Django endpoint
-   `POST /api/v1/dataverse-prepublish`.
-3. Django validates `DATAVERSE_WORKFLOW_SECRET`, fetches dataset metadata and files from Dataverse using
-   `DATAVERSE_API_TOKEN`, and creates or updates an Evil Flowers `Entry` plus its Dataverse file acquisitions.
-4. Django resumes the Dataverse workflow asynchronously so Dataverse can finish the publish operation and the GUI can
-   show the dataset as released.
+## Getting started
 
-Local setup:
+### Requirements
 
-1. Start the stack:
-   ```bash
-   docker compose up -d --build
-   ```
-2. Run the normal Evil Flowers setup commands if this is a fresh database:
-   ```bash
-   docker compose exec django python3 manage.py setup
-   docker compose exec django python3 manage.py createsuperuser
-   ```
-3. Open Dataverse at `http://localhost:8080` and log in as user: `dataverseAdmin`, password: `admin1`.
-4. Create or copy a Dataverse API token for the admin user and set the same value as `DATAVERSE_API_TOKEN` in `compose.yml`.
-   Then restart Django:
-   ```bash
-   docker compose up -d django
-   ```
-5. Register the Dataverse pre-publish workflow:
-   ```bash
-   export DATAVERSE_API_TOKEN="your-dataverse-api-token"
-   conf/dataverse/scripts/hook.sh "$DATAVERSE_API_TOKEN" --url http://127.0.0.1:8080 --trigger pre --file conf/dataverse/hooks/prepublish-sync.json
-   ```
-6. Publish a dataset from the Dataverse GUI. During publish, Dataverse sends the dataset to Django; after Django
-   imports it, Dataverse completes the publish workflow.
+- Python 3.12+ and [Poetry](https://python-poetry.org/)
+- PostgreSQL 16+ with the `vector` ([pgvector](https://github.com/pgvector/pgvector)) and `pg_trgm` extensions.
+  `pg_search` (BM25) and Apache AGE (library graph) are optional.
+- Redis 7+
 
+### Docker Compose (development)
+
+The repository contains a [`compose.yml`](compose.yml) for local development. It starts PostgreSQL, Redis, the
+Readium LCP server, the processing workers and a local Dataverse instance.
+
+```bash
+docker compose up -d --build
+docker compose exec django python3 manage.py setup            # seed languages and currencies
+docker compose exec django python3 manage.py createsuperuser
+```
+
+The API is then available at `http://localhost:8000`. Start the optional local Grafana/OpenTelemetry stack with
+`docker compose --profile observability up -d otel-lgtm`.
+
+> [!WARNING]
+> `compose.yml` contains development-only secrets (`SECRET_KEY`, the JWK, tokens). Generate your own for any other
+> environment.
+
+A pre-built image is published to the GitHub Container Registry as
+[`evilflowerscatalog`](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/pkgs/container/evilflowerscatalog).
 
 ### From source
 
-We use [poetry](https://python-poetry.org/) for dependency management and [PostgreSQL](https://www.postgresql.org/) 15
-(12+ should be compatible) as a data storage (acquisition files are stored on the filesystem, not in the database).
-To set up an instance with a demo database, follow these simple steps:
+```bash
+poetry install                    # optional groups: --with s3,pdf,otel,kafka
+cp .env.example .env              # then edit it, see below
+python manage.py migrate
+python manage.py setup
+python manage.py createsuperuser
+python manage.py runserver
+```
 
-1. Create a Python virtual environment (`python -m venv venv`)
-2. Enter the environment (`source venv/bin/activate`)
-3. Install dependencies `poetry install`
-4. Create a JWK (if you are unsure how, check this [mkjwk](https://mkjwk.org/) generator) and keep it private
-5. Create an `.env` file according to `.env.example` (see the
-   [Settings & Enumerations wiki](docs/catalog-wiki/Settings-&-Enumerations.md) for the full env-variable reference)
-6. Execute migrations `python manage.py migrate`
-7. Seed currencies and languages using `python manage.py setup`
-8. Create a superuser using `python manage.py createsuperuser`
-9. (Optional) Start a Celery worker (`celery -A evil_flowers_catalog worker -l info`) and Celery beat
-   (`celery -A evil_flowers_catalog beat -l info`) to enable asynchronous tasks (OCR, LCP encryption, lifecycle sweeps,
-   reservation queue, daily reminders, backups).
+In `.env`, at minimum, point `PG*` at your database, set `REDIS_HOST`, and set `SECURED_VIEW_JWK` to a private RSA
+JWK used to sign tokens (for example from [mkjwk.org](https://mkjwk.org/)). Every variable is described in
+[Settings & Enumerations](docs/catalog-wiki/Settings-&-Enumerations.md).
+
+For background tasks, run a worker and the scheduler next to the web process:
+
+```bash
+celery -A evil_flowers_catalog worker -l info
+celery -A evil_flowers_catalog beat -l info
+```
+
+### Optional components
+
+| Component                       | What it enables                       | Guide                                                                      |
+|---------------------------------|---------------------------------------|----------------------------------------------------------------------------|
+| Readium LCP server + encryption | DRM-protected lending                 | [Readium LCP Deployment](docs/catalog-wiki/Readium-LCP-Deployment.md)      |
+| S3-compatible storage           | Object storage instead of filesystem  | [Storage](docs/catalog-wiki/Storage.md)                                    |
+| LDAP                            | Sign-in with institutional accounts   | [Security](docs/catalog-wiki/Security.md)                                  |
+| Embedding service               | Semantic and hybrid search            | [Settings](docs/catalog-wiki/Settings-&-Enumerations.md)                   |
+| Extraction services             | Passage search, figures, summaries    | [Asynchronous Tasks](docs/catalog-wiki/Asynchronous-Tasks.md)              |
+| Self-hosted LLM                 | Reading assistant                     | [Settings](docs/catalog-wiki/Settings-&-Enumerations.md)                   |
+| Dataverse                       | Dataset import on publish             | [Dataverse integration](#dataverse-integration)                            |
+
+### Dataverse integration
+
+The development stack includes a Dataverse instance at `http://localhost:8080` (user `dataverseAdmin`, password
+`admin1`). When a dataset is published there, a pre-publish workflow calls the catalog. The catalog then imports the dataset as an entry with file acquisitions and lets Dataverse finish publishing.
+
+1. Create an API token for the Dataverse admin, set it as `DATAVERSE_API_TOKEN` for the `django` service, then
+   restart it with `docker compose up -d django`.
+2. Register the workflow:
+   ```bash
+   conf/dataverse/scripts/hook.sh "$DATAVERSE_API_TOKEN" --url http://127.0.0.1:8080 \
+       --trigger pre --file conf/dataverse/hooks/prepublish-sync.json
+   ```
+3. Publish a dataset from the Dataverse UI.
 
 ## Documentation
 
-The OpenAPI specification is generated automatically from the source code using `python manage.py openapi`
-(see `apps.openapi`) and is published from `master` at
-[elvira.digital/EvilFlowersCatalog/](https://elvira.digital/EvilFlowersCatalog/).
+- **API reference**: the [OpenAPI specification](https://elvira.digital/EvilFlowersCatalog/), generated with
+  `python manage.py openapi`.
+- **Operator and contributor guides**: [`docs/catalog-wiki/`](docs/catalog-wiki/Home.md), mirrored on the
+  [GitHub Wiki](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/wiki). Topics include
+  [OPDS 2.0](docs/catalog-wiki/OPDS-2.md), [Readium LCP](docs/catalog-wiki/Readium-LCP-Integration.md),
+  [Security](docs/catalog-wiki/Security.md), [Caching](docs/catalog-wiki/Caching.md),
+  [Management commands](docs/catalog-wiki/Management-commands.md) and
+  [Asynchronous tasks](docs/catalog-wiki/Asynchronous-Tasks.md).
+- **Design decisions**: every feature starts as an implementation proposal (`IP-XXX`); see the
+  [proposals index](docs/proposals/index.md).
+- **Release notes**: [CHANGELOG.md](CHANGELOG.md).
 
-Operator and contributor documentation lives in this repository under [`docs/catalog-wiki/`](docs/catalog-wiki/) and
-is mirrored on the [GitHub Wiki](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/wiki). Start with:
+The implementation follows these specifications:
+[OPDS 1.2](https://specs.opds.io/opds-1.2),
+[OPDS 2.0](https://drafts.opds.io/opds-2.0),
+[Readium LCP](https://readium.org/lcp-specs/),
+[Readium Web Publication Manifest](https://readium.org/webpub-manifest/),
+[RFC 7807](https://datatracker.ietf.org/doc/html/rfc7807) (Problem Details),
+[RFC 7617](https://datatracker.ietf.org/doc/html/rfc7617) (Basic auth),
+[RFC 6750](https://datatracker.ietf.org/doc/html/rfc6750) (Bearer tokens) and
+[RFC 7519](https://datatracker.ietf.org/doc/html/rfc7519) (JWT).
 
-- [Home](docs/catalog-wiki/Home.md) — overview and navigation
-- [Settings & Enumerations](docs/catalog-wiki/Settings-&-Enumerations.md) — every environment variable
-- [Storage](docs/catalog-wiki/Storage.md) — filesystem vs S3
-- [Security](docs/catalog-wiki/Security.md) — authentication, authorization, JWT, LDAP
-- [OPDS 2.0 Server](docs/catalog-wiki/OPDS-2.md)
-- [Readium LCP Integration](docs/catalog-wiki/Readium-LCP-Integration.md) and
-  [Deployment](docs/catalog-wiki/Readium-LCP-Deployment.md)
-- [Management Commands](docs/catalog-wiki/Management-commands.md)
-- [Asynchronous Tasks](docs/catalog-wiki/Asynchronous-Tasks.md)
-- [Model Context Protocol](docs/catalog-wiki/Model-Context-Protocol.md) — the MCP server that lets
-  LLM agents search the catalog
+## Ecosystem
 
-Implementation proposals (`IP-XXX`) sit under [`docs/proposals/posts/`](docs/proposals/posts) — every feature has one.
+The catalog is the core of a set of related projects:
+
+| Project                                                                                                  | Role                                               |
+|----------------------------------------------------------------------------------------------------------|----------------------------------------------------|
+| [elvira-portal](https://github.com/EvilFlowersCatalog/elvira-portal)                                     | Web frontend for readers and administrators        |
+| [EvilFlowersViewer](https://github.com/EvilFlowersCatalog/EvilFlowersViewer)                             | In-browser PDF viewer with annotations             |
+| [evilflowers-lcpencrypt-worker](https://github.com/EvilFlowersCatalog/evilflowers-lcpencrypt-worker)     | Readium LCP encryption worker                      |
+| [evilflowers-ocr-worker](https://github.com/EvilFlowersCatalog/evilflowers-ocr-worker)                   | OCR for scanned PDFs                               |
+| [evilflowers-analyzer-service](https://github.com/EvilFlowersCatalog/evilflowers-analyzer-service), [text](https://github.com/EvilFlowersCatalog/evilflowers-text-service), [image](https://github.com/EvilFlowersCatalog/evilflowers-image-service), [equation](https://github.com/EvilFlowersCatalog/evilflowers-equation-service) | Content extraction pipeline |
+| [evilflowers-postgresql](https://github.com/EvilFlowersCatalog/evilflowers-postgresql)                   | PostgreSQL image with the required extensions      |
+| [calibre-evilflowers](https://github.com/EvilFlowersCatalog/calibre-evilflowers)                         | Calibre plugin for syncing a library               |
+
+## Project status
+
+The server is in production use and under active development. OPDS 1.2, OPDS 2.0 and Readium LCP are
+implemented end to end. The REST API still evolves between minor versions, so read the upgrade notes in the
+[changelog](CHANGELOG.md) before updating. If you plan a deployment, we are happy to hear about it in
+[Discussions](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/discussions).
+
+## Contributing
+
+Bug reports, questions and pull requests are welcome. Please read the [contributing guidelines](CONTRIBUTING.md)
+and the [code of conduct](CODE_OF_CONDUCT.md). Larger changes start with a proposal in
+[`docs/proposals/posts/`](docs/proposals/posts). Code is formatted with [Black](https://black.readthedocs.io/)
+(line length 119).
+
+## License
+
+Released under the [MIT License](LICENSE).
 
 ## Acknowledgment
 
 This open-source project is maintained by students and PhD candidates of the
 [Faculty of Informatics and Information Technologies](https://www.fiit.stuba.sk/) at the Slovak University of
-Technology. The software is utilized by the university, aligning with its educational and research activities. We
-appreciate the faculty's support of our work and their contribution to the open-source community.
+Technology. The software is used by the university in its educational and research activities. We appreciate the
+faculty's support of our work and its contribution to the open-source community.
 
-![](docs/images/fiit.png)
+![FIIT STU](docs/images/fiit.png)
 
-[BACKBONE, s.r.o.](https://www.backbone.sk/en/) actively supporting the development of this project by providing the required infrastrucutre, software licenses and working personel.
+[BACKBONE, s.r.o.](https://www.backbone.sk/en/) actively supports the development of this project by providing
+infrastructure, software licenses and staff.
 
-![](docs/images/backbone.svg)
+![BACKBONE](docs/images/backbone.svg)

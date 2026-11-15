@@ -1,6 +1,6 @@
 import datetime
 from enum import Enum
-from typing import Optional, List, Union, Literal, Dict
+from typing import Optional, List, Union, Literal, Dict, Sequence, Tuple
 
 from django.urls import reverse
 from pydantic import EmailStr, Field
@@ -205,6 +205,7 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
         *,
         request=None,
         user=None,
+        related: Sequence[Tuple[str, str]] = (),
     ) -> "AcquisitionEntry":
         """Build an OPDS 1.2 `<entry>` from a domain `Entry`.
 
@@ -214,6 +215,9 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
         1.2 and OPDS 2.0 stay in sync at the link semantics layer
         (IP-008 Phase 2 B5). The raw download link is suppressed for
         LCP-protected entries to match OPDS 2.0 behaviour.
+
+        `related` is `[(entry_id, title)]` of similar publications in the same catalog
+        (`apps.opds.services.related`, #160), each a `rel="related"` link to its entry.
         """
         acquisition_entry = AcquisitionEntry(
             title=entry.title,
@@ -300,6 +304,18 @@ class AcquisitionEntry(OpdsEntry, tag="entry"):
             resolver = BorrowLinkResolver(request, opds_version="1.2")
             for borrow_link in resolver.emit_links(entry, user):
                 acquisition_entry.links.append(Link.from_borrow_link(borrow_link))
+
+        for related_id, related_title in related:
+            acquisition_entry.links.append(
+                Link(
+                    rel=LinkType.RELATED,
+                    href=reverse(
+                        "opds:complete-entry", kwargs={"catalog_name": entry.catalog.url_name, "entry_id": related_id}
+                    ),
+                    type="application/atom+xml;type=entry;profile=opds-catalog",
+                    title=related_title,
+                )
+            )
 
         return acquisition_entry
 

@@ -261,7 +261,7 @@ def _texts(payload: dict) -> Dict[str, str]:
         for passage in item.get("passages") or []
         if passage.get("label") and passage.get("text")
     }
-    for key in ("pages", "passages", "paragraphs"):
+    for key in ("pages", "passages", "paragraphs", "from_other_books"):
         for unit in payload.get(key) or []:
             if isinstance(unit, dict) and unit.get("label") and unit.get("text"):
                 texts[unit["label"]] = unit["text"]

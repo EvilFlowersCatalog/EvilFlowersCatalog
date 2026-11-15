@@ -78,5 +78,14 @@
   {"id": "sk-czech-trap", "language": "sk", "question": "Potřebuji knihu o statistice, máte něco?",
    "expect": {"tools_any": ["search_entries"], "answer_language": "sk"}},
   {"id": "en-details", "language": "en", "question": "Find a book on compilers and tell me what its table of contents covers.",
-   "expect": {"tools_all": ["search_entries", "get_entry"]}}
+   "expect": {"tools_all": ["search_entries", "get_entry"]}},
+  {"id": "sk-crossbook-pde", "language": "sk", "entry_title": "Programming for Computations",
+   "question": "Ako sa rieši rovnica vedenia tepla metódou konečných diferencií? Vysvetľuje to aj iná kniha?",
+   "expect": {"grounded": true, "cites": true, "cites_other_entry": true, "answer_language": "sk"}},
+  {"id": "sk-crossbook-language", "language": "sk", "entry_title": "North Sea Region Climate Change Assessment",
+   "question": "Ako sa mení hladina mora pri Hamburgu? Píše o tom aj iná kniha v knižnici?",
+   "expect": {"cites": true, "cites_other_entry": true, "answer_language": "sk"}},
+  {"id": "sk-crossbook-compare", "language": "sk", "entry_title": "Programming for Computations",
+   "question": "Ako táto kniha vysvetľuje stabilitu explicitnej metódy pre rovnicu vedenia tepla v porovnaní s inou Langtangenovou knihou?",
+   "expect": {"tools_any": ["follow", "gather_evidence"], "cites": true, "cites_other_entry": true, "answer_language": "sk"}}
 ]

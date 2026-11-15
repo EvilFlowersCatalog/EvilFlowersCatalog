@@ -8,6 +8,10 @@ before the answer. The turn instead runs the retrieval itself, before round 1:
 | Catalog | `search_entries` (hybrid, IP-021) on the message | ≤ `PACK_ENTRIES` slim records |
 | Passages | `discovery.search_passages`; scoped to the chat's publication when bound or attached | ≤ `PACK_PASSAGES` × ≤ 600 characters |
 | Figures | `regions.search_regions`, plus figures the chosen passages refer to | ≤ `PACK_FIGURES`, caption only |
+| Other books | scoped and all passages from that book: `SIMILAR_TO` from their sections (`crossbook.widen`, #157) | ≤ `PACK_ELSEWHERE` as `from_other_books` |
+
+A passage in another language than the reader's carries its `language` and `marker`, and the pack a
+`language_note` (`crossbook.mark_languages`).
 
 The channels share one query embedding (`embeddings.embed_query` caches it), and the database work is three
 indexed queries; they run one after another, which keeps one database connection per turn under gevent.
@@ -27,6 +31,7 @@ from typing import List, Optional
 
 from django.conf import settings
 
+from apps.assistant import crossbook
 from apps.assistant.library import PASSAGE_CHARS, ToolContext, label_units
 
 GATHER_EVIDENCE = "gather_evidence"
@@ -90,11 +95,18 @@ def gather(context: ToolContext, query: str, entry=None) -> dict:
     publications = _publications(context, query, scope)
     passages = _passages(context, query, scope, floor)
     figures = _figures(context, query, scope, floor, passages)
+    # Asked inside one book and answered from it alone: what other books say about the same sections (#157).
+    elsewhere = crossbook.widen(context, passages) if scope and passages else []
 
     payload = {"query": query, "publications": publications, "passages": passages, "figures": figures}
-    issued = label_units(context.ledger, passages + figures) if context.ledger is not None else {}
+    if elsewhere:
+        payload[crossbook.FROM_OTHER_BOOKS] = elsewhere
+    language_note = crossbook.mark_languages(context, passages + elsewhere + figures)
+    issued = label_units(context.ledger, passages + elsewhere + figures) if context.ledger is not None else {}
     if issued:
         payload["evidence"] = issued
+    if language_note:
+        payload["language_note"] = language_note
     if not (passages or figures):
         payload["low_relevance"] = True
         payload["note"] = (
@@ -251,7 +263,7 @@ def slim(payload: dict) -> dict:
     """The pack as the model sees it: labelled evidence without ids it would only copy, scores rounded away."""
     from apps.assistant.evidence import strip
 
-    seen = strip(payload, private=("paragraph_id", "region_id", "source_page", "score", "kind"))
+    seen = strip(payload, private=("paragraph_id", "region_id", "source_page", "score", "kind", "via"))
     for figure in seen.get("figures") or []:
         if figure.get("kind") is None:
             figure.pop("kind", None)
@@ -264,7 +276,12 @@ def sources(payload: dict, request) -> dict:
 
     items = []
     ledger_sources = payload.get("evidence") or {}
-    for unit in (payload.get("passages") or []) + (payload.get("figures") or []):
+    units = (
+        (payload.get("passages") or [])
+        + (payload.get(crossbook.FROM_OTHER_BOOKS) or [])
+        + (payload.get("figures") or [])
+    )
+    for unit in units:
         label = unit.get("label")
         source = ledger_sources.get(label)
         if not label or source is None:
