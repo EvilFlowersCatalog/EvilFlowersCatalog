@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "5b14b5f7c75fc9e2aaee9d211d96a96d4a2dc56c",
-    "short": "5b14b5f",
-    "message": "Implementing #173, #180, #179",
+    "sha": "05cf002915bcb978937893d11556c6d64b92e9b5",
+    "short": "05cf002",
+    "message": "Settings, Fixed locators and Content policies",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/5b14b5f7c75fc9e2aaee9d211d96a96d4a2dc56c"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/05cf002915bcb978937893d11556c6d64b92e9b5"
   },
-  "deployed_at": "2026-11-15T02:03:55Z",
+  "deployed_at": "2026-11-15T03:12:47Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
