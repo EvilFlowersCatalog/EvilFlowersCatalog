@@ -94,10 +94,13 @@ def prune_content_disclosures() -> int:
 
 @shared_task
 def reconcile_jobs() -> dict:
-    """IP-031: the reconciler's tick — every job with something to do (blocked, retry due, cancel) moves on."""
+    """IP-031: the reconciler's tick — every job with something to do (blocked, retry due, cancel) moves on.
+
+    Also applies outcome files whose run's terminal event never reached the listener (#169).
+    """
     from apps.tasks.application.facade import facade
 
-    return {"reconciled": facade.reconcile_due()}
+    return {"reconciled": facade.reconcile_due(), "outcomes": facade.apply_pending_outcomes()}
 
 
 @shared_task

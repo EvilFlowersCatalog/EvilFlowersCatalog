@@ -51,6 +51,10 @@ class AcquisitionForm(AcquisitionMetaForm):
 class EntryConfigForm(Form):
     evilflowers_ocr_enabled = BooleanField(required=False)
     evilflowers_ocr_rewrite = BooleanField(required=False)
+    # #156: the OCR engine when a job does not name one; empty: the worker's default.
+    evilflowers_ocr_engine = forms.ChoiceField(
+        required=False, choices=(("", "-"), ("tesseract", "Tesseract"), ("rapidocr", "RapidOCR"))
+    )
     evilflowers_annotations_create = BooleanField(required=False)
     evilflowers_viewer_print = BooleanField(required=False)
     evilflowers_share_enabled = BooleanField(required=False)

@@ -97,7 +97,6 @@ class JobRun(SubjectMixin, BaseModel):
         app_label = "tasks"
         db_table = "job_protocols"
         default_permissions = ("view", "add")
-        permissions = (("report_job", _("Can report the outcome of a background job")),)
         verbose_name = _("Job run")
         verbose_name_plural = _("Job runs")
         indexes = [

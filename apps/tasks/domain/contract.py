@@ -76,7 +76,7 @@ class Declarer(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class Report[S]:
-    """A worker's report on one run."""
+    """A run's outcome, as its worker wrote it to the outcome file."""
 
     job_id: str
     run_id: str
@@ -110,8 +110,9 @@ class JobDefinition[S, P: Spec](ABC):
     stable_task_id: ClassVar[bool] = False
     #: A running run may be terminated when the job is cancelled (workers that write files: no).
     terminate_safe: ClassVar[bool] = False
-    #: The worker reports its outcome (`POST /api/v1/jobs/runs/{run}/report`).
-    reports: ClassVar[bool] = False
+    #: The worker writes its outcome to shared storage (`kwargs()["outcome"]`, with the run's capability
+    #: token); a run's terminal event, or the reconcile tick, makes the catalog apply it (#169).
+    outcome_file: ClassVar[bool] = False
     #: Sweeper limit for a run without events; None: the catalog's or the service default.
     time_limit: ClassVar[timedelta | None] = None
     #: Domain models whose changes `observe()` reads (post_save → facade.observe).
@@ -163,9 +164,17 @@ class JobDefinition[S, P: Spec](ABC):
         """Subjects that should have a job even if nobody applied one (they get one, without intent)."""
         return ()
 
+    def outcome_path(self, subject: S, run_id: str) -> str | None:
+        """Storage path of a run's outcome file (`outcome_file` kinds); sent as the `outcome` kwarg."""
+        return None
+
+    def leftovers(self, subject: S, run_id: str, run_kwargs: Mapping[str, Any]) -> list[str]:
+        """Files the run wrote that the catalog deletes when its outcome is not applied (besides the outcome)."""
+        return []
+
     def on_report(self, report: Report[S]) -> Mapping[str, Any]:
-        """Apply a worker's report; return what to store as the run's report."""
-        raise DispatchError("This kind of job does not take reports.", status=400)
+        """Apply a run's outcome; return what to store as the run's report. A `DispatchError` rejects it."""
+        raise DispatchError("This kind of job does not take outcomes.", status=400)
 
     # -- presentation ---------------------------------------------------------------------------------
 
@@ -177,7 +186,7 @@ class JobDefinition[S, P: Spec](ABC):
             "task": self.task,
             "subject_type": self.subject_model._meta.label_lower if self.subject_model else None,
             "keyed": self.keyed,
-            "reports": self.reports,
+            "outcome_file": self.outcome_file,
             "terminate_safe": self.terminate_safe,
             "max_attempts": self.max_attempts,
             "spec_schema": self.spec_model.model_json_schema(),

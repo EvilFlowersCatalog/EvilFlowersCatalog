@@ -22,7 +22,9 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 from pydantic import ValidationError
 
+from apps.core.services.capability_tokens import CapabilityTokenService
 from apps.tasks.application.registry import Registry, registry as default_registry
+from apps.tasks.capability_scopes import JOB_RUN_OUTCOME
 from apps.tasks.domain import machine
 from apps.tasks.domain.contract import Dispatch, DispatchError, Dispatcher, JobDefinition, Report, Spec
 from apps.tasks.domain.machine import Action
@@ -366,7 +368,18 @@ class JobFacade:
             self._attach(run)
 
     def run_changed(self, run: JobRun) -> None:
-        """A run's status changed (Celery event, sweeper, failed dispatch): move its job."""
+        """A run's status changed (Celery event, sweeper, failed dispatch): move its job, then apply its outcome."""
+        self._move_job(run)
+        if run.job_id is not None and RunStatus(run.status).final and run.reported_at is None:
+            definition = self.registry.for_task(run.name)
+            if definition is not None and definition.outcome_file:
+                try:
+                    self.apply_outcome(run.pk)
+                except Exception:
+                    # Never into the event listener: the reconcile tick applies it later.
+                    logger.exception("jobs.outcome_failed run=%s", run.pk)
+
+    def _move_job(self, run: JobRun) -> None:
         if run.job_id is None and not self._attach(run):
             return
         with transaction.atomic():
@@ -471,43 +484,176 @@ class JobFacade:
         subject = self._load_subject(definition, job.subject_id)
         return definition.observe(subject) if subject is not None else None
 
-    # -- facts: reports -------------------------------------------------------------------------------
+    # -- facts: outcome files (#169) ------------------------------------------------------------------
 
-    def report(self, run_id, payload: Mapping[str, Any], *, user) -> JobRun:
-        """A worker reports a run's outcome; the definition applies it (idempotent)."""
-        if user is None or not user.is_authenticated or not user.has_perm("tasks.report_job"):
-            raise DispatchError(_("Reporting a run needs the tasks.report_job permission."), status=403)
+    def apply_outcome(self, run_id) -> str | None:
+        """Apply the outcome file a finished run's worker wrote to shared storage. Idempotent.
+
+        Returns what happened: `applied`, `rejected` (the file failed a check: the job fails and the run's
+        files are deleted), `discarded` (the run was revoked or replaced: its files are deleted), or None when
+        there is nothing to apply yet (no file, storage unreadable, already applied). None is retried by the
+        reconcile tick; the other three are final (`reported_at` is set).
+        """
         run = JobRun.objects.select_related("job").filter(pk=run_id).first()
-        if run is None:
-            raise DispatchError(_("Run not found."), status=404)
+        if run is None or run.job is None or run.reported_at is not None or RunStatus(run.status).active:
+            return None
         definition = self.registry.for_task(run.name)
-        if definition is None or not definition.reports or run.job is None:
-            raise DispatchError(_("This run does not take reports."), status=400)
-        if run.status == RunStatus.REVOKED or run.job.desired_state == DesiredState.CANCELLED:
-            raise DispatchError(_("The job was cancelled; the report is not applied."), status=409)
-        if run.job.current_run_id not in (None, run.pk):
-            raise DispatchError(_("A newer run replaced this one; the report is not applied."), status=409)
+        if definition is None or not definition.outcome_file:
+            return None
+        subject = self._load_subject(definition, run.job.subject_id) if definition.subject_model else None
+        run_kwargs = dict(run.job_kwargs or {})
+        path = run_kwargs.get("outcome") or (
+            definition.outcome_path(subject, str(run.pk)) if subject is not None else None
+        )
+        if not path:
+            return None
+        try:
+            payload, problem = self._read_outcome(path)
+        except Exception:
+            # Storage unreachable from this process: not the file's fault, the tick tries again.
+            logger.warning("jobs.outcome_unreadable run=%s path=%s", run.pk, path, exc_info=True)
+            return None
+        if payload is None and problem is None:
+            return None  # not written yet
+
         with transaction.atomic():
             run = JobRun.objects.select_for_update().get(pk=run.pk)
-            if run.reported_at:
-                return run
-            job = run.job
-            subject = self._load_subject(definition, job.subject_id) if definition.subject_model else None
-            spec = definition.spec_model.model_validate(job.spec)
-            stored = definition.on_report(
-                Report(str(job.pk), str(run.pk), subject, payload, spec, run.job_kwargs or {}, declarer=self)
-            )
-            run.report = json_safe(dict(stored))
-            run.reported_at = timezone.now()
-            run.save(update_fields=["report", "reported_at", "updated_at"])
+            # Before anything else: a duplicate event for an applied (and since replaced) run must never
+            # delete what the first apply installed.
+            if run.reported_at is not None:
+                return None
+            job = Job.objects.select_for_update(of=("self",)).get(pk=run.job_id)
+            status = (payload or {}).get("status")
+            if run.status == RunStatus.REVOKED or job.desired_state == DesiredState.CANCELLED:
+                verdict, reason = "discarded", "the job was cancelled"
+            elif definition.subject_model is not None and subject is None:
+                verdict, reason = "discarded", "the job's subject no longer exists"
+            elif job.current_run_id not in (None, run.pk):
+                verdict, reason = "discarded", "a newer run replaced this one"
+            else:
+                problem = problem or self._outcome_problem(run, payload)
+                stored = None
+                if problem is None:
+                    spec = definition.spec_model.model_validate(job.spec)
+                    try:
+                        with transaction.atomic():
+                            stored = definition.on_report(
+                                Report(str(job.pk), str(run.pk), subject, payload, spec, run_kwargs, declarer=self)
+                            )
+                    except DispatchError as error:
+                        problem = error.message
+                verdict, reason = ("applied", None) if problem is None else ("rejected", problem)
+
+            now = timezone.now()
+            if verdict == "applied":
+                run.report = json_safe(dict(stored))
+                token = payload.get("token")
+                transaction.on_commit(lambda: CapabilityTokenService.consume(token, JOB_RUN_OUTCOME))
+                target = machine.run_after_outcome(RunStatus(run.status), status)
+                if status == "failed" and payload.get("error"):
+                    run.error = str(payload["error"])
+            else:
+                run.report = json_safe(
+                    {"status": "outcome_rejected" if verdict == "rejected" else "discarded", "reason": reason}
+                    | ({"outcome_status": status} if status else {})
+                )
+                target = machine.run_after_outcome(RunStatus(run.status), None) if verdict == "rejected" else None
+                if verdict == "rejected":
+                    run.error = f"outcome rejected: {reason}"
+            # The report is stored; the file goes, and so does any output no acquisition serves (failed,
+            # skipped, rejected, discarded). Computed after `on_report`, which may have installed the output.
+            cleanup = [path, *definition.leftovers(subject, str(run.pk), run_kwargs)]
+            if target is not None:
+                run.status = target
+                run.last_event_at = now
+            run.reported_at = now
+            run.save()
             JobEvent.objects.create(
                 job_ref=job,
                 run=run,
-                type="reported",
-                timestamp=run.reported_at,
-                data={"status": (payload or {}).get("status")},
+                type="reported" if verdict == "applied" else f"outcome_{verdict}",
+                timestamp=now,
+                data=json_safe({"status": status, "reason": reason}),
             )
-        return run
+            if verdict != "discarded":
+                transaction.on_commit(lambda: self.run_changed(run))
+            transaction.on_commit(lambda: self._delete_files(cleanup))
+        log = logger.info if verdict == "applied" else logger.warning
+        log("jobs.outcome kind=%s run=%s verdict=%s reason=%s", definition.kind, run.pk, verdict, reason)
+        return verdict
+
+    def apply_pending_outcomes(self, limit: int = 200) -> int:
+        """The reconcile tick's fallback for lost events: apply outcome files of finished, unreported runs."""
+        from apps.tasks.capability_scopes import outcome_token_ttl
+
+        count = 0
+        now = timezone.now()
+        for definition in self.registry.all():
+            if not definition.outcome_file:
+                continue
+            # Past twice the token's lifetime a file is never applied; it was rejected (and removed) by then.
+            window = timedelta(seconds=2 * outcome_token_ttl(definition.time_limit))
+            pending = (
+                JobRun.objects.filter(
+                    name=definition.task,
+                    job__isnull=False,
+                    reported_at__isnull=True,
+                    status__in=(RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.LOST, RunStatus.REVOKED),
+                    created_at__gte=now - window,
+                )
+                .order_by("-created_at")  # newest first: runs that never wrote a file do not starve them
+                .values_list("pk", flat=True)[:limit]
+            )
+            for run_id in list(pending):
+                try:
+                    if self.apply_outcome(run_id) is not None:
+                        count += 1
+                except Exception:
+                    logger.exception("jobs.outcome_failed run=%s", run_id)
+        return count
+
+    @staticmethod
+    def _read_outcome(path: str) -> tuple[dict | None, str | None]:
+        """(payload, None) for a valid file; (None, problem) for a file that is not an outcome; (None, None): none yet."""
+        import json
+
+        from apps.files.storage import get_storage
+
+        storage = get_storage()
+        if not storage.exists(path):
+            return None, None
+        with storage.open(path, "rb") as handle:
+            raw = handle.read()
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            return None, "the outcome file is not JSON"
+        if not isinstance(payload, dict):
+            return None, "the outcome file is not a JSON object"
+        return payload, None
+
+    @staticmethod
+    def _outcome_problem(run: JobRun, payload: Mapping[str, Any]) -> str | None:
+        if str(payload.get("run_id") or "") != str(run.pk):
+            return "the outcome names another run"
+        grant = CapabilityTokenService.peek(str(payload.get("token") or ""), JOB_RUN_OUTCOME)
+        if grant is None:
+            return "the outcome's token is unknown or expired"
+        if grant.get("resource_id") != str(run.pk):
+            return "the outcome's token belongs to another run"
+        return None
+
+    @staticmethod
+    def _delete_files(paths) -> None:
+        from apps.files.storage import get_storage
+
+        storage = get_storage()
+        for path in dict.fromkeys(p for p in paths if p):
+            try:
+                if storage.exists(path):
+                    storage.delete(path)
+            except Exception:
+                logger.exception("jobs.outcome_cleanup_failed path=%s", path)
 
     # -- helpers --------------------------------------------------------------------------------------
 

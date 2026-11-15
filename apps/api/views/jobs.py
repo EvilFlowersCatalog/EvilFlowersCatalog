@@ -2,14 +2,11 @@
 
 Clients declare (`POST` applies a spec, `PATCH` changes spec or desired state) and read; the
 reconciler and the facts move the state. Retry = apply again; cancel = `desired_state: cancelled`.
-Administrators only, except the run report, which a service worker posts with `tasks.report_job`.
+Administrators only. Workers never call in: a run's outcome arrives as a file in shared storage (#169).
 """
 
-import json
 from http import HTTPStatus
 from uuid import UUID
-
-from django.utils.translation import gettext as _
 
 from apps import openapi
 from apps.api.filters.jobs import JobFilter, RunFilter
@@ -171,26 +168,3 @@ class RunCollection(SecuredView):
         return PaginationResponse(
             request, runs, serializer=RunSerializer.Base, ordering=_ordering(request, "-created_at")
         )
-
-
-class RunReport(SecuredView):
-    @openapi.metadata(
-        description=(
-            "A service worker reports the outcome of a run (the `report_url` its task carries); the job's kind "
-            "applies it. Needs an API key with `tasks.report_job`. Idempotent; 409 when the job was cancelled."
-        ),
-        tags=["Jobs"],
-        summary="Report a run's outcome",
-    )
-    def post(self, request, run_id: UUID):
-        try:
-            payload = json.loads(request.body or b"{}")
-        except ValueError as error:
-            raise ProblemDetailException(_("The report must be JSON."), status=HTTPStatus.BAD_REQUEST, previous=error)
-        if not isinstance(payload, dict):
-            raise ProblemDetailException(_("The report must be a JSON object."), status=HTTPStatus.BAD_REQUEST)
-        try:
-            run = facade.report(run_id, payload, user=request.user)
-        except DispatchError as error:
-            raise _refused(error)
-        return SingleResponse(request, data=RunSerializer.Detail.model_validate(run))

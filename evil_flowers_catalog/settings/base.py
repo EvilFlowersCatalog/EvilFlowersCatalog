@@ -560,10 +560,9 @@ EVILFLOWERS_JOBS_RETENTION_FAILED_DAYS = int(os.getenv("EVILFLOWERS_JOBS_RETENTI
 EVILFLOWERS_JOBS_IGNORE_TASKS = frozenset(
     name.strip() for name in os.getenv("EVILFLOWERS_JOBS_IGNORE_TASKS", "").split(",") if name.strip()
 )
-# Base of the URL workers report to (`<base>/api/v1/jobs/<id>/report`); in a cluster the internal one.
-EVILFLOWERS_JOBS_REPORT_BASE_URL = os.getenv("EVILFLOWERS_JOBS_REPORT_BASE_URL") or os.getenv(
-    "EVILFLOWERS_BASE_URL", os.getenv("EVILFLOWERS_READIUM_BASE_URL", "http://localhost:8000")
-)
+# Lifetime of the per-run token an outcome file must carry (#169). 0: queued-lost hours + the kind's
+# time limit + the lost grace, i.e. as long as the run can still end without being called lost.
+EVILFLOWERS_JOBS_OUTCOME_TOKEN_TTL_SECONDS = int(os.getenv("EVILFLOWERS_JOBS_OUTCOME_TOKEN_TTL_SECONDS", 0))
 # OCR (#146): off until an OCR worker consumes `evilflowers_ocr_worker`; otherwise every task would wait forever.
 EVILFLOWERS_OCR_ENABLED = _bool_env("EVILFLOWERS_OCR_ENABLED", default=False)
 EVILFLOWERS_OCR_QUEUE = os.getenv("EVILFLOWERS_OCR_QUEUE", "evilflowers_ocr_worker")

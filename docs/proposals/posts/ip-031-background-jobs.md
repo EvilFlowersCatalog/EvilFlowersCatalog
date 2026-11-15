@@ -68,8 +68,9 @@ job endpoints (`/readium/v1/encryption-jobs`). Revision 2 replaces both:
 
 Compatibility: `GET/POST /readium/v1/entries/{id}/encryption` and the MCP tools
 `list_encryption_jobs`, `requeue_encryption`, `reencrypt_publication` predate IP-031; they stay as thin
-adapters over the facade until Q11 decides their removal. The worker report stays a `POST` to the
-`report_url` the task carries (`/api/v1/jobs/runs/{run_id}/report`).
+adapters over the facade until Q11 decides their removal. Workers do not report over HTTP: an
+`outcome_file` kind's worker writes its outcome to shared storage with the run's capability token, and
+the run's terminal Celery event (or the reconcile tick) makes the catalog apply it (#169, Q8).
 
 ### Implementation notes (2026-11-14, revision 2)
 
@@ -91,7 +92,13 @@ modules that need `pytest`. Not run against a real broker.
   of `/api/v1/jobs/{id}`; the MCP tools `start_job`, `retry_job`, `revoke_job`, `run_job_action`
   (replaced by `apply_job`); `JobService`; `JobKind`.
 - The worker report moved to `POST /api/v1/jobs/runs/{run_id}/report`. The task id is the **run** id;
-  OCR kwargs carry `job_id` and `run_id`.
+  OCR kwargs carry `job_id` and `run_id`. *Superseded 2026-11-15 by #169:* the endpoint, the
+  `tasks.report_job` permission (migration `tasks.0004`) and `EVILFLOWERS_JOBS_REPORT_BASE_URL` are gone.
+  `JobDefinition.reports` became `outcome_file`; OCR kwargs carry `outcome` (`…/ocr/<run>.json`) and
+  `token` (single use, scope `job_run_outcome`, redacted in the ledger) instead of `report_url`.
+  `JobFacade.apply_outcome` checks `run_id`, the token and `on_report`, then applies the outcome, rejects it
+  (job failed, files deleted) or discards it (revoked or replaced run, files deleted). `reconcile_jobs`
+  applies outcomes whose event was lost. #156: `OcrSpec.engine` plus the entry key `evilflowers_ocr_engine`.
 - #150: the job detail counts runs per task name and status, and `extraction.run` observes its run
   with `jobs` grouped per kind. #150's own items (grouped provenance, a short stale reason, the admin
   list) are not done.
@@ -303,7 +310,8 @@ These are bugs; they ship before and independently of the rest.
 - [ ] OpenAPI schemas (no bare `{"type": "object"}`)
 - [ ] MCP tools: `list_jobs`, `get_job`, `start_job`, `retry_job`, `revoke_job`, `run_job_action`;
       existing encryption tools stay and call JobService
-- [ ] Worker report endpoint with service credentials (`tasks.report_job` permission)
+- [ ] Worker report endpoint with service credentials (`tasks.report_job` permission). *Superseded by
+      #169 (2026-11-15): outcome file + Celery events, endpoint and permission removed.*
 - [ ] API and MCP tests
 
 ### Phase 4: OCR (#146), the first kind
@@ -314,7 +322,8 @@ These are bugs; they ship before and independently of the rest.
       remove the old `event_broker.execute("evilflowers_ocr_worker.ocr", …)` branch, the unused
       `dependent_tasks` variable and the stale docstring
 - [ ] Task kwargs: `source`, `destination` (`…/ocr/{job_id}.pdf`), `language`, `job_id`,
-      `report_url`; the original file is never written
+      `report_url`; the original file is never written. *#169: `outcome` + `token` replace `report_url`;
+      #156 adds `engine`.*
 - [ ] Start OCR after the content is saved (on commit of `attach_acquisition`), not from the
       `created=True` save that has no file yet
 - [ ] Report handler: verify the output, then apply it per Q3 (replace the content and clear
@@ -322,9 +331,11 @@ These are bugs; they ship before and independently of the rest.
       content id, guards loans) and `extraction.run` as child jobs; `skipped` changes nothing
 - [ ] evilflowers-ocr-worker: kwargs task signature, `ocrmypdf.ocr(skip_text=True)`, write
       `destination`, report to `report_url` with `Authorization: Bearer`, `-E`, OTel SDK and JSON
-      logs per Deploy-a-Service (separate repository and PR)
+      logs per Deploy-a-Service (separate repository and PR). *#169: the worker writes the outcome
+      file instead of reporting (evilflowers-ocr-service#5).*
 - [ ] Deployment: issue in EvilFlowersCatalog/knowledge with the Ansible steps for an `ocr`
-      Deployment in `evilflowers-dev` (image, queue, data PVC, API key Secret, OTLP)
+      Deployment in `evilflowers-dev` (image, queue, data PVC, API key Secret, OTLP). *#169: no API key
+      Secret; the listener needs the data PVC (knowledge#54).*
 
 ### Phase 5: LCP (#148) and extraction as kinds
 
@@ -346,7 +357,7 @@ These are bugs; they ship before and independently of the rest.
 ### Prerequisites
 
 - #122 Ellipsis fix (uncommitted on develop) is kept by Phase 1
-- A catalog API key for the OCR worker (user with `tasks.report_job`)
+- ~~A catalog API key for the OCR worker (user with `tasks.report_job`)~~ not needed since #169
 
 ## Technical Details
 
@@ -482,7 +493,7 @@ All under the administrator gate of the kind (`core.change_entry` by default), p
 | POST | `/api/v1/jobs/{id}/retry` | `{options?}` | 201 new job (`retry_of`); 409 for jobs without a kind |
 | POST | `/api/v1/jobs/{id}/revoke` | `{terminate?}` | 202 job |
 | POST | `/api/v1/jobs/{id}/actions/{action}` | action options (`dry_run`, `force`, …) | action result |
-| POST | `/api/v1/jobs/{id}/report` | kind payload | 200; idempotent; service credentials only |
+| POST | `/api/v1/jobs/{id}/report` | kind payload | 200; idempotent; service credentials only (removed by #169) |
 
 How #148's table maps: `GET /readium/v1/encryption-jobs` → `GET /api/v1/jobs?kind=readium.encrypt&latest=true&status=queued,failed`;
 `/requeue` → `POST /api/v1/jobs/{id}/actions/requeue`; `/reencrypt` →
@@ -569,7 +580,7 @@ prefers REST). The MCP tools remain, on top of the same service.
 | Event volume grows with `task-sent` and every worker on `-E` | Medium | `JobEvent` trimmed, retention; `EVILFLOWERS_JOBS_IGNORE_TASKS` for the every-minute beat tasks |
 | Listener falls behind under a backfill (thousands of events) | Medium | one transaction per event today; batch per second if the lag metric shows it |
 | Clock skew between hosts breaks precedence | Low | chrony on every node; precedence also uses the state order for equal timestamps |
-| Revoke of a queued task is lost when workers restart (revokes live in worker memory) | Medium | the row is `revoked` at once; if the task still runs, its report gets 409 and changes nothing, and the listener keeps `revoked` over later events (Q7) |
+| Revoke of a queued task is lost when workers restart (revokes live in worker memory) | Medium | the row is `revoked` at once; if the task still runs, its outcome is discarded and its files deleted (#169; formerly a 409), and the listener keeps `revoked` over later events (Q7) |
 | OCR replaces a file that LCP or extraction is reading | High | the original is never written; the swap happens in the report handler and re-queues both as child jobs |
 
 ## Success Criteria
@@ -810,10 +821,19 @@ the existing two stay as they are.
 
 **Answer**:
 ```
+(decided in #169) No HTTP report at all: the worker writes its outcome to shared storage, Celery events
+tell the catalog when to read it. No service account or API key for OCR.
 ```
 
 **Resolution**:
 ```
+Built 2026-11-15 (#169). A per-run capability token (scope `job_run_outcome`, single use, TTL = queued-lost
+hours + the kind's time limit + the lost grace) travels in the task kwargs, and the worker copies it into the
+outcome file. The token binds the file to its run; it does not authenticate a caller (it sits in the broker).
+`/api/v1/jobs/runs/{run}/report` and `tasks.report_job` are removed. The rule for job kinds: a worker that
+needs an HTTP callback authenticates with its run's token, never with a static service API key. Extraction
+(`/extraction/v1`, static key) and lcpencrypt (Basic credentials in the report URL) are outside this rule
+for now; decision in #184.
 ```
 
 ---
@@ -939,3 +959,4 @@ Revision 2 starts a new generation only when the spec differs or the job is sett
 | 2026-11-14 | jdubec | Revision 2: one facade and one resource (`/api/v1/jobs`), declarative spec + desired state driven by a job state machine, Job vs JobRun, provider contract `JobDefinition` with observe/discover, clean-architecture layers; state diagrams `state-job`, `state-job-run`; component and sequence diagrams redrawn; Q11 (old LCP surfaces), Q12 (apply semantics) added |
 | 2026-11-14 | jdubec | #148 resolved: `/readium/v1/encryption-jobs` (list/detail/requeue/reencrypt over EncryptedContent, dispatch via JobService), MCP encryption tools on the same operations, entry endpoint lists jobs with LCP off, typed OpenAPI responses; Q5 effectively B for LCP |
 | 2026-11-14 | jdubec | Run reports from a replaced run refused (409); #150 implemented in `apps/extraction/batches.py`: provenance per kind with `variants`, per-kind stale reason, `job_groups` on the admin run list, superseded-counter label by kind |
+| 2026-11-15 | jdubec | #169: outcome file + Celery events replace the HTTP report (per-run capability token, `outcome_file`, report endpoint and `tasks.report_job` removed); Q8 resolved; #156: OCR engine in the spec and entry config |

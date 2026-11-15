@@ -135,6 +135,22 @@ def settle_with_observation(run_state: JobState, observed: JobState | None) -> J
     return observed
 
 
+OUTCOME_SUCCEEDED = ("done", "skipped")
+
+
+def run_after_outcome(current: RunStatus, outcome: str | None) -> RunStatus | None:
+    """The run status an outcome file implies (#169); None: keep the run as it is.
+
+    The worker writes the file last, so it is the truth about how the run ended: a `lost` run whose file
+    says `done` succeeded, and a succeeded run whose file was rejected (`outcome=None`) failed. A revoked
+    run stays revoked; its outcome is discarded, never applied.
+    """
+    if current is RunStatus.REVOKED or not current.final:
+        return None
+    target = RunStatus.SUCCEEDED if outcome in OUTCOME_SUCCEEDED else RunStatus.FAILED
+    return None if target is current else target
+
+
 # -- run: facts ------------------------------------------------------------------------------------
 
 
@@ -168,5 +184,6 @@ __all__ = [
     "on_run",
     "reconcile",
     "run_accepts",
+    "run_after_outcome",
     "settle_with_observation",
 ]

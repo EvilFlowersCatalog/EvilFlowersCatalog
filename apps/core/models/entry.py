@@ -1,5 +1,5 @@
 import hashlib
-from typing import Optional, TypedDict, Literal
+from typing import NotRequired, Optional, TypedDict, Literal
 from urllib.parse import urlencode
 
 from django.conf import settings
@@ -29,6 +29,8 @@ from apps.files.storage import get_storage
 class EntryConfig(TypedDict):
     evilflowers_ocr_enabled: bool
     evilflowers_ocr_rewrite: bool
+    # #156: the OCR engine when the job's spec names none; missing or None: the worker's default.
+    evilflowers_ocr_engine: NotRequired[Optional[Literal["tesseract", "rapidocr"]]]
     evilflowers_annotations_create: bool
     evilflowers_viewer_print: bool
     evilflowers_render_type: Literal["page", "document"]

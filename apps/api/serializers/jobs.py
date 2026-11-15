@@ -148,7 +148,7 @@ class JobSerializer:
         task: str
         subject_type: Optional[str]
         keyed: bool = Field(description="False: run-only kind (recorded, never declared).")
-        reports: bool
+        outcome_file: bool = Field(description="The worker writes its outcome to shared storage (#169).")
         terminate_safe: bool
         max_attempts: int
         spec_schema: dict

@@ -156,6 +156,24 @@ class RunPrecedenceTests(TestCase):
         self.assertFalse(machine.run_accepts(R.QUEUED, R.RETRYING, newer=True))
 
 
+class OutcomeTests(TestCase):
+    """#169: the outcome file is the truth about how a finished run ended."""
+
+    def test_a_lost_run_with_a_done_file_succeeded(self):
+        self.assertEqual(machine.run_after_outcome(R.LOST, "done"), R.SUCCEEDED)
+        self.assertEqual(machine.run_after_outcome(R.FAILED, "skipped"), R.SUCCEEDED)
+
+    def test_a_rejected_outcome_fails_a_succeeded_run(self):
+        self.assertEqual(machine.run_after_outcome(R.SUCCEEDED, None), R.FAILED)
+        self.assertEqual(machine.run_after_outcome(R.SUCCEEDED, "failed"), R.FAILED)
+
+    def test_agreement_revoked_and_active_runs_stay(self):
+        self.assertIsNone(machine.run_after_outcome(R.SUCCEEDED, "done"))
+        self.assertIsNone(machine.run_after_outcome(R.FAILED, "failed"))
+        self.assertIsNone(machine.run_after_outcome(R.REVOKED, "done"))
+        self.assertIsNone(machine.run_after_outcome(R.STARTED, "done"))
+
+
 class LayeringTests(TestCase):
     def test_the_domain_imports_neither_django_nor_celery(self):
         code = (

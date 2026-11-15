@@ -230,7 +230,6 @@ urlpatterns = [
     path("jobs/kinds", jobs.JobKinds.as_view(), name="job-kinds"),
     path("jobs/summary", jobs.JobSummary.as_view(), name="job-summary"),
     path("jobs/runs", jobs.RunCollection.as_view(), name="job-run-collection"),
-    path("jobs/runs/<uuid:run_id>/report", jobs.RunReport.as_view(), name="job-run-report"),
     path("jobs/<uuid:job_id>", jobs.JobDetail.as_view(), name="job-detail"),
     # Status
     path("status", status.StatusManagement.as_view(), name="status"),

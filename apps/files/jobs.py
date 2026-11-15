@@ -1,19 +1,25 @@
 """OCR job kind (#146, IP-031): make a scanned PDF searchable.
 
 The worker (`evilflowers-ocr-service`) reads the acquisition's file from shared storage, runs
-`ocrmypdf(skip_text=True)` into `<entry dir>/ocr/<run id>.pdf` and reports to the `report_url` the task
-carries (`POST /api/v1/jobs/runs/<run id>/report`). It never writes the original. The report decides (Q3):
+`ocrmypdf(skip_text=True)` into `<entry dir>/ocr/<run id>.pdf` and then writes its outcome, with the run's
+capability token, to `<entry dir>/ocr/<run id>.json` (#169). The run's terminal Celery event (or the reconcile
+tick) makes the catalog apply it; there is no HTTP callback and no service API key. The worker never writes
+the original. The outcome decides (Q3):
 
 - `evilflowers_ocr_rewrite` on: the acquisition's file becomes the OCR output, its checksum is cleared,
   and LCP re-encryption and extraction are declared as follow-up jobs. The original stays where it was
   (named in the report) until the next successful OCR of the same file.
 - off: the output becomes a new, derived acquisition; the original is untouched.
 
-A `skipped` report (the PDF already had text) changes nothing.
+A `skipped` outcome (the PDF already had text) changes nothing.
+
+The engine (#156): the spec's `engine`, else the entry's `evilflowers_ocr_engine`, else the worker's
+`OCR_DEFAULT_ENGINE` (sent as None). The worker never falls back silently: an engine it lacks fails the run.
 """
 
 import logging
 from datetime import timedelta
+from typing import Literal
 
 from django.conf import settings
 from django.db import transaction
@@ -31,6 +37,7 @@ from apps.tasks.contract import (
     Spec,
     declare,
     entry_scope,
+    outcome_token,
     registry,
     uuid_arg,
 )
@@ -38,15 +45,32 @@ from apps.tasks.contract import (
 logger = logging.getLogger(__name__)
 
 REPORT_STATUSES = ("done", "skipped", "failed")
+#: Engines the worker offers: Tesseract 5 LSTM (best on Slovak/Czech diacritics, faster on CPU) and RapidOCR
+#: (PaddleOCR on ONNX Runtime: cleaner on noisy scans; Cyrillic, Greek, CJK).
+OCR_ENGINES = ("tesseract", "rapidocr")
+OcrEngine = Literal["tesseract", "rapidocr"]
 
 
 class OcrSpec(Spec):
     #: Redo OCR on pages that already have text (ocrmypdf `redo_ocr`).
     redo: bool = False
+    #: OCR engine; None: the entry's `evilflowers_ocr_engine`, else the worker's default.
+    engine: OcrEngine | None = None
 
 
 def _destination(acquisition, run_id) -> str:
     return f"{acquisition.upload_base_path()}/ocr/{run_id}.pdf"
+
+
+def _outcome(acquisition, run_id) -> str:
+    return f"{acquisition.upload_base_path()}/ocr/{run_id}.json"
+
+
+def _engine(acquisition, spec: OcrSpec) -> str | None:
+    if spec.engine:
+        return spec.engine
+    configured = acquisition.entry.read_config("evilflowers_ocr_engine")
+    return configured if configured in OCR_ENGINES else None
 
 
 @registry.register
@@ -55,12 +79,16 @@ class OcrDefinition(JobDefinition[Acquisition, OcrSpec]):
     title = "OCR"
     description = (
         "Add a text layer to a scanned PDF with ocrmypdf (pages that already have text are skipped). The entry's "
-        "`evilflowers_ocr_rewrite` decides whether the result replaces the file or is added as a new acquisition."
+        "`evilflowers_ocr_rewrite` decides whether the result replaces the file or is added as a new acquisition. "
+        "Engines (`spec.engine`, else the entry's `evilflowers_ocr_engine`, else the worker's default): "
+        "`tesseract` (Tesseract 5 LSTM; best on Slovak and Czech, faster on CPU) and `rapidocr` (PaddleOCR on "
+        "ONNX Runtime; cleaner on noisy scans, reads Cyrillic, Greek and CJK). An engine the worker lacks, or a "
+        "language it cannot read, fails the run."
     )
     task = "evilflowers_ocr_worker.ocr"
     subject_model = Acquisition
     spec_model = OcrSpec
-    reports = True
+    outcome_file = True
 
     @property
     def queue(self):
@@ -90,17 +118,31 @@ class OcrDefinition(JobDefinition[Acquisition, OcrSpec]):
 
     def kwargs(self, dispatch: Dispatch[Acquisition, OcrSpec]) -> dict:
         acquisition = dispatch.subject
-        base = settings.EVILFLOWERS_JOBS_REPORT_BASE_URL.rstrip("/")
         return {
             "job_id": dispatch.job_id,
             "run_id": dispatch.run_id,
             "acquisition_id": str(acquisition.pk),
             "source": acquisition.content.name,
             "destination": _destination(acquisition, dispatch.run_id),
+            "outcome": _outcome(acquisition, dispatch.run_id),
+            "token": outcome_token(self, dispatch),
             "language": acquisition.entry.language.alpha3,
             "redo": dispatch.spec.redo,
-            "report_url": f"{base}/api/v1/jobs/runs/{dispatch.run_id}/report",
+            # Older workers ignore unknown kwargs; None means the worker's OCR_DEFAULT_ENGINE.
+            "engine": _engine(acquisition, dispatch.spec),
         }
+
+    def outcome_path(self, acquisition, run_id):
+        return _outcome(acquisition, run_id)
+
+    def leftovers(self, acquisition, run_id, run_kwargs):
+        destination = run_kwargs.get("destination") or (
+            _destination(acquisition, run_id) if acquisition is not None else None
+        )
+        # Never a file an acquisition serves (an earlier apply installed it, or a derived acquisition).
+        if not destination or Acquisition.objects.filter(content=destination).exists():
+            return []
+        return [destination]
 
     def on_report(self, report: Report[Acquisition]):
         from apps.files.storage import get_storage
@@ -113,7 +155,18 @@ class OcrDefinition(JobDefinition[Acquisition, OcrSpec]):
             )
         stored = {
             key: payload[key]
-            for key in ("status", "pages", "pages_ocred", "skipped_reason", "error", "warnings")
+            for key in (
+                "status",
+                "pages",
+                "pages_ocred",
+                "skipped_reason",
+                "error",
+                "warnings",
+                "engine",
+                "engine_version",
+                "language",
+                "seconds",
+            )
             if payload.get(key) is not None
         }
         if status != "done":

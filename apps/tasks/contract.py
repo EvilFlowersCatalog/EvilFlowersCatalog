@@ -29,6 +29,19 @@ def declare(kind: str, subject_id: Any = None, *, spec: Mapping | None = None, c
     return facade.apply(kind, subject_id, spec=spec, cause_id=cause_id, check_permission=False)
 
 
+def outcome_token(definition: JobDefinition, dispatch: Dispatch) -> str:
+    """The per-run capability token an `outcome_file` kind sends as the `token` kwarg (#169).
+
+    The worker copies it into the outcome file; the catalog applies the file only with it. A worker that
+    ever needs an HTTP callback authenticates with this token too, never with a static service API key.
+    """
+    from apps.tasks.capability_scopes import mint_outcome_token
+
+    return mint_outcome_token(
+        job_id=dispatch.job_id, run_id=dispatch.run_id, kind=definition.kind, time_limit=definition.time_limit
+    )
+
+
 def maintenance(
     kind: str, task: str, title: str, description: str, time_limit: timedelta | None = None
 ) -> type[JobDefinition]:
@@ -99,6 +112,7 @@ __all__ = [
     "declare",
     "entry_scope",
     "maintenance",
+    "outcome_token",
     "registry",
     "run_only",
     "uuid_arg",
