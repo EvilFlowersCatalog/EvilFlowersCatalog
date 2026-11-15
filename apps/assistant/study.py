@@ -18,6 +18,7 @@ the model is told so. Readium LCP publications are refused: their text never rea
 
 import json
 import logging
+import re
 from typing import Callable, Dict, List, Optional
 
 from django.conf import settings
@@ -48,7 +49,8 @@ SPECIFICATION = (
         "properties": {
             "mode": {"type": "string", "enum": list(MODES)},
             "entry_id": {"type": "string", "description": "Omit for the chat's publication."},
-            "section": {"type": "string", "description": "As outline lists it; omit for the first."},
+            "section": {"type": "string", "description": "As outline lists it."},
+            "topic": {"type": "string", "description": "Subject asked about, if no section"},
             "part": {"type": "integer"},
         },
         "required": ["mode"],
@@ -85,6 +87,7 @@ SCHEMAS = {
                         "answer_index": {"type": "integer"},
                         "explanation": {"type": "string"},
                         "labels": _LABELS,
+                        "figure": {"type": "string"},
                     },
                     "required": ["question", "options", "answer_index", "explanation", "labels"],
                 },
@@ -116,8 +119,16 @@ PROMPTS = {mode: prompts.render(f"study_{mode}") for mode in ARTEFACTS}
 RETRY = "Your answer was not valid: every item needs `labels` from the paragraphs given (E1, E2 …). Answer again."
 
 
+#: Modes that cover a chapter with its subsections, sampled across them (#166); the others read one section.
+#: Not `key_concepts`: its terms are recorded as defined by the section read (`_record_definitions`), and a
+#: chapter's span would file every subsection's terms under the chapter heading.
+SPANNING = ("quiz",)
+#: Figures a quiz is offered to ask about.
+QUIZ_FIGURES = 4
+
+
 def study(context: ToolContext, arguments: dict, client=None) -> dict:
-    from apps.extraction.outline import find, following, outline
+    from apps.extraction.outline import end_seq, find, first_content, following, outline, span
 
     mode = str(arguments.get("mode") or "").strip().lower()
     if mode not in MODES:
@@ -132,19 +143,29 @@ def study(context: ToolContext, arguments: dict, client=None) -> dict:
         return _outline(text, sections)
 
     wanted = str(arguments.get("section") or "").strip() or None
-    section = find(sections, wanted)
-    if section is None:
-        names = "; ".join(item.title[:80] for item in sections[:20])
-        raise ToolError(f"No section named {wanted!r}. Sections: {names}")
+    topic = str(arguments.get("topic") or "").strip() or None
+    if wanted:
+        section = find(sections, wanted)
+        if section is None:
+            names = "; ".join(item.title[:80] for item in sections[:20])
+            raise ToolError(f"No section named {wanted!r}. Sections: {names}")
+    else:
+        # Not the copyright page (#166): the section the topic is about, else the first one with content.
+        section = (_by_topic(context, text, sections, topic) if topic else None) or first_content(sections)
     try:
         part = max(1, int(arguments.get("part") or 1))
     except (TypeError, ValueError):
         part = 1
 
-    passages, has_more = _section_passages(context, text, section, part)
+    covered = span(sections, section) if mode in SPANNING else [section]
+    spread = len(covered) > 1
+    passages, has_more = _section_passages(
+        context, text, section.first_seq, end_seq(sections, covered[-1]), part, spread
+    )
     if not passages:
         raise ToolError("Nothing readable in this part of the section.")
-    issued = label_units(context.ledger, passages)
+    figures = _figures(text, passages) if mode == "quiz" and settings.EVILFLOWERS_ASSISTANT_QUIZ_FIGURES else []
+    issued = label_units(context.ledger, passages + figures)
     base = {
         "mode": mode,
         "entry_id": str(entry.pk),
@@ -154,13 +175,17 @@ def study(context: ToolContext, arguments: dict, client=None) -> dict:
         "part": part,
         "has_more": has_more,
     }
+    if spread:
+        base["sections"] = [item.title for item in covered]
 
     from apps.assistant.llm import LLMUnavailable
 
     try:
         if mode == "summary":
             return _summary(context, text, section, passages, issued, base, client)
-        data = _generate(mode, section.title, passages, context.language, set(issued), client, context.book)
+        data = _generate(
+            mode, section.title, passages, context.language, set(issued), client, context.book, figures=figures
+        )
     except LLMUnavailable as error:
         # Its own request found the model busy (every llama-server slot leased) or down: the turn goes on, and
         # the model answers from the labelled passages instead.
@@ -193,7 +218,46 @@ def study(context: ToolContext, arguments: dict, client=None) -> dict:
     frame = {"mode": mode, "data": artefact}
     context.frames.append(("study", frame))
     payload = {**base, "study": frame, "passages": passages, "evidence": issued}
+    if figures:
+        payload["figures"] = figures
     return payload
+
+
+def _by_topic(context: ToolContext, text: Text, sections, topic: str):
+    """The section of this publication whose passages answer `topic` best (#166); None when nothing matches."""
+    from collections import Counter
+
+    from apps.extraction.discovery import search_passages
+    from apps.extraction.outline import is_matter
+
+    try:
+        result = search_passages(context.request, topic, limit=1, per_entry=8, scope={"id": str(text.entry.pk)})
+    except Exception:
+        logger.exception("Study topic search failed for %r", topic[:60])
+        return None
+    scores: Counter = Counter()
+    for hit in result.items:
+        for passage in hit.passages:
+            if passage.section:
+                scores[passage.section] += passage.score if passage.score else 1.0
+    by_title = {section.title: section for section in sections if not is_matter(section)}
+    for title, _score in scores.most_common():
+        if title in by_title:
+            return by_title[title]
+    return None
+
+
+def _figures(text: Text, passages: List[dict]) -> List[dict]:
+    """Figures and tables on the pages a quiz reads, for questions about them (#166)."""
+    from apps.extraction.models import Region
+
+    source_pages = {passage.get("source_page") or passage["page"] for passage in passages}
+    regions = (
+        Region.objects.filter(run=text.run, page__in=source_pages, kind__in=("figure", "table"))
+        .exclude(image_path__isnull=True)
+        .order_by("page", "seq")[:QUIZ_FIGURES]
+    )
+    return [figure for figure in (text.figure(region) for region in regions) if figure is not None]
 
 
 def _outline(text: Text, sections) -> dict:
@@ -211,12 +275,27 @@ def _outline(text: Text, sections) -> dict:
     return payload
 
 
-def _section_passages(context: ToolContext, text: Text, section, part: int):
-    """The labelled-to-be passages of one part of a section, and whether more parts follow."""
+def _section_passages(context: ToolContext, text: Text, start: int, end: Optional[int], part: int, spread=False):
+    """The labelled-to-be passages of one part of a section, and whether more parts follow.
+
+    The section is the paragraphs from `start` up to `end` (`seq`, end excluded; None: to the end): one heading, or
+    a chapter with its subsections. Read in parts of `EVILFLOWERS_ASSISTANT_STUDY_MAX_PAGES` pages; with `spread`
+    (a chapter for a quiz, #166) the pages are sampled across all of it instead, so the questions cover every
+    subsection and not only the chapter's first pages.
+    """
     per_part = max(int(settings.EVILFLOWERS_ASSISTANT_STUDY_MAX_PAGES), 1)
-    paragraphs = list(text.run.paragraphs.filter(section=section.title).order_by("seq"))
+    paragraphs = text.run.paragraphs.filter(seq__gte=start)
+    if end is not None:
+        paragraphs = paragraphs.filter(seq__lt=end)
+    paragraphs = list(paragraphs.order_by("seq"))
     pages = list(dict.fromkeys(paragraph.page for paragraph in paragraphs))
-    wanted = set(pages[(part - 1) * per_part : part * per_part])
+    if spread and len(pages) > per_part:
+        step = len(pages) / per_part
+        wanted = {pages[int(index * step)] for index in range(per_part)}
+        has_more = False
+    else:
+        wanted = set(pages[(part - 1) * per_part : part * per_part])
+        has_more = len(pages) > part * per_part
     if not wanted:
         raise ToolError(f"The section has {max(1, -(-len(pages) // per_part))} part(s).")
 
@@ -226,18 +305,25 @@ def _section_passages(context: ToolContext, text: Text, section, part: int):
         raise ToolError("Study reading budget for this answer reached; continue in the next message.")
     read.extend(new)
 
-    passages, size = [], 0
+    # Spread across pages, each page gets its share of the size limits, so the last ones are not cut off.
+    page_limit = -(-MAX_PARAGRAPHS // len(wanted)) if spread else MAX_PARAGRAPHS
+    page_chars = MAX_CHARS // len(wanted) if spread else MAX_CHARS
+    passages, size, per_page = [], 0, {}
     for paragraph in paragraphs:
         if paragraph.page not in wanted:
+            continue
+        taken, chars = per_page.get(paragraph.page, (0, 0))
+        if spread and (taken >= page_limit or chars >= page_chars):
             continue
         passage = text.passage(paragraph, chars=900)
         if passage is None:
             continue
         passages.append(passage)
+        per_page[paragraph.page] = (taken + 1, chars + len(passage["text"]))
         size += len(passage["text"])
         if len(passages) >= MAX_PARAGRAPHS or size >= MAX_CHARS:
             break
-    return passages, len(pages) > part * per_part
+    return passages, has_more
 
 
 def _summary(context, text: Text, section, passages, issued, base, client) -> dict:
@@ -259,10 +345,16 @@ def _summary(context, text: Text, section, passages, issued, base, client) -> di
     return payload
 
 
-def _content(section: str, passages: List[dict], language: Optional[str]) -> str:
+def _content(section: str, passages: List[dict], language: Optional[str], figures: Optional[List[dict]] = None) -> str:
     lines = [f'Section: "{section}"', ""]
     for passage in passages:
         lines.append(f"[{passage['label']}] (page {passage['page']}) {passage['text']}")
+    if figures:
+        lines.append("")
+        lines.append("Figures and tables the reader can be shown:")
+        for figure in figures:
+            caption = figure.get("caption") or "no caption"
+            lines.append(f"[{figure['label']}] ({figure.get('kind') or 'figure'}, page {figure['page']}) {caption}")
     name = prompts.language_name(language)
     lines.append("")
     lines.append(
@@ -271,7 +363,9 @@ def _content(section: str, passages: List[dict], language: Optional[str]) -> str
     return "\n".join(lines)
 
 
-def _generate(mode: str, section: str, passages, language, labels: set, client=None, book=None) -> Optional[dict]:
+def _generate(
+    mode: str, section: str, passages, language, labels: set, client=None, book=None, figures=None
+) -> Optional[dict]:
     from apps.assistant.evidence import normalise
 
     if client is None:
@@ -281,7 +375,7 @@ def _generate(mode: str, section: str, passages, language, labels: set, client=N
         client = make_client()
     messages = [
         {"role": "system", "content": PROMPTS[mode]},
-        {"role": "user", "content": _content(section, passages, language)},
+        {"role": "user", "content": _content(section, passages, language, figures)},
     ]
     for attempt in range(2):
         content = ""
@@ -310,32 +404,67 @@ def _valid_items(mode: str, data: dict, labels: set, normalise: Callable) -> Lis
         if not cited or not set(cited) <= labels:
             continue
         if mode == "walkthrough" and str(item.get("text") or "").strip():
+            # A walkthrough point cites inline, as the chat does (`_citations.md`): its labels stay.
             valid.append({"text": item["text"].strip(), "labels": cited})
         elif mode == "quiz":
-            options = [str(option).strip() for option in item.get("options") or []]
+            options = [unlabel(str(option), labels) for option in item.get("options") or []]
             try:
                 answer = int(item.get("answer_index"))
             except (TypeError, ValueError):
                 continue
             if len(options) == 4 and all(options) and 0 <= answer < 4 and str(item.get("question") or "").strip():
-                valid.append(
-                    {
-                        "question": item["question"].strip(),
-                        "options": options,
-                        "answer_index": answer,
-                        "explanation": str(item.get("explanation") or "").strip(),
-                        "labels": cited,
-                    }
-                )
+                question = {
+                    "question": unlabel(item["question"], labels),
+                    "options": options,
+                    "answer_index": answer,
+                    "explanation": unlabel(str(item.get("explanation") or ""), labels),
+                    "labels": cited,
+                }
+                # A question about a figure shows it (#166): its F# label, also among the labels so the card's
+                # citation carries the crop.
+                figure = normalise(str(item.get("figure") or ""))
+                if figure and figure.startswith("F") and figure in labels:
+                    question["figure"] = figure
+                    if figure not in cited:
+                        question["labels"] = [*cited, figure]
+                valid.append(question)
         elif mode == "key_concepts" and str(item.get("term") or "").strip():
             valid.append(
                 {
-                    "term": item["term"].strip(),
-                    "definition": str(item.get("definition") or "").strip(),
+                    "term": unlabel(item["term"], labels),
+                    "definition": unlabel(str(item.get("definition") or ""), labels),
                     "labels": cited,
                 }
             )
     return valid
+
+
+#: Evidence labels written into a card's text: "[E1]", "(E1, E2)", "v odseku E1", "in passage E3" (#166).
+_LABEL_MENTION = re.compile(
+    r"\s*(?:\[\s*[EF]\d+(?:\s*[,;]\s*[EF]\d+)*\s*\]|\(\s*[EF]\d+(?:\s*[,;]\s*[EF]\d+)*\s*\)|"
+    r"\b(?:v|vo|na|in|see|pozri|podľa|according to)?\s*"
+    r"(?:odseku|odsek|odseky|odsekoch|pasáži|pasáže|úryvku|paragraph|paragraphs|passage|passages|label)\s+"
+    r"[EF]\d+(?:\s*(?:,|a|and)\s*[EF]\d+)*\b)",
+    re.IGNORECASE,
+)
+
+
+def unlabel(text: str, labels: Optional[set] = None) -> str:
+    """A card's text without the evidence labels the model wrote into it: the portal adds the citation chip.
+
+    With `labels`, only mentions of those (the labels given for the card): "(F5)" in a software book is a key.
+    """
+    from apps.assistant.evidence import _LABEL
+
+    def drop(match: re.Match) -> str:
+        if labels is None:
+            return ""
+        named = {f"{m.group(1).upper()}{int(m.group(2))}" for m in _LABEL.finditer(match.group(0))}
+        return "" if named and named <= labels else match.group(0)
+
+    cleaned = _LABEL_MENTION.sub(drop, str(text or ""))
+    cleaned = re.sub(r"\s+([.,;:!?])", r"\1", cleaned)
+    return " ".join(cleaned.split())
 
 
 def _prerequisites(context: ToolContext, text: Text, section) -> List[dict]:

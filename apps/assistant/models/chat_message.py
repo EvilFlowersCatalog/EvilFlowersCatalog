@@ -80,6 +80,10 @@ class ChatMessage(BaseModel):
     #: Viewer page the reader was on when they sent this message.
     page = models.PositiveIntegerField(null=True, blank=True)
 
+    #: Portal page the reader was on when they sent this message (#167), e.g. `/administration/jobs`. Replayed to
+    #: the model as a note on the message, so "where is X" is answered from there.
+    portal_path = models.CharField(max_length=200, null=True, blank=True)
+
     #: Tool calls the model asked for on this turn, as issued. Empty for plain
     #: user and assistant messages.
     tool_calls = models.JSONField(null=True, blank=True)

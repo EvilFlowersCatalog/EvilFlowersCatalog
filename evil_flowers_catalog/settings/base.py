@@ -497,6 +497,9 @@ EVILFLOWERS_ASSISTANT_PACK_ELSEWHERE = int(os.getenv("EVILFLOWERS_ASSISTANT_PACK
 EVILFLOWERS_ASSISTANT_PACK_MIN_SCORE = float(os.getenv("EVILFLOWERS_ASSISTANT_PACK_MIN_SCORE", 0.80))
 # Pages a study tool (walkthrough, quiz, key concepts, section summary) may read per turn (Q8).
 EVILFLOWERS_ASSISTANT_STUDY_MAX_PAGES = int(os.getenv("EVILFLOWERS_ASSISTANT_STUDY_MAX_PAGES", 6))
+# Quiz questions about a figure (#166): the item names an F# label the card shows. Off until the portal's quiz card
+# renders `figure`; until then a question about a diagram the reader cannot see would be unanswerable.
+EVILFLOWERS_ASSISTANT_QUIZ_FIGURES = _bool_env("EVILFLOWERS_ASSISTANT_QUIZ_FIGURES", default=False)
 # Send a figure's crop to the model when the reader asks what it shows (Q4). Only with a model and server that
 # accept images (Qwen3.6 with its vision projector; llama-server needs `--mmproj`); otherwise the caption and the
 # referring paragraph answer.

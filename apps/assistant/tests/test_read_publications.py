@@ -142,23 +142,45 @@ class ReadPublicationTests(TestCase):
         self.assertEqual(dict(events)["message"]["text"], "Nič vhodné som nenašla.")
         self.assertEqual(chat.messages.order_by("-created_at").first().text, "Nič vhodné som nenašla.")
 
-    def test_a_tool_call_in_the_last_round_is_refused_and_stored(self):
+    def test_a_tool_call_in_the_last_round_is_refused_and_answered_after(self):
+        # #164: the refused call's text ("Let me check …") is not the answer; one more request is.
         searches = [[_call("search_entries", query=f"engine {number}")] for number in range(turn.MAX_CHAT_ROUNDS)]
-        chat, client, _events = self._turn(searches, text="Máte niečo o motoroch?")
-        self.assertEqual(len(client.requests), turn.MAX_CHAT_ROUNDS)
-        last_tool = chat.messages.filter(role=ChatMessage.Role.TOOL).order_by("-created_at").first()
-        self.assertEqual(last_tool.text, turn.REFUSED)
+        chat, client, events = self._turn(searches + ["Motory v knižnici nemám."], text="Máte niečo o motoroch?")
+        self.assertEqual(len(client.requests), turn.MAX_CHAT_ROUNDS + 1)
+        refused = chat.messages.filter(role=ChatMessage.Role.TOOL).order_by("-created_at").first()
+        self.assertEqual(refused.text, turn.REFUSED)
+        # The extra request extends the last round's, with the refusal after it.
+        last, before = client.requests[-1], client.requests[-2]
+        self.assertEqual(last["messages"][: len(before["messages"])], before["messages"])
+        self.assertEqual(last["messages"][-1], {"role": "tool", "content": turn.REFUSED})
+        self.assertEqual(last["tools"], before["tools"])
+        answer = chat.messages.visible().filter(role=ChatMessage.Role.ASSISTANT).get()
+        self.assertEqual(answer.text, "Motory v knižnici nemám.")
+        self.assertGreater(answer.tokens_used, 0)
+        self.assertEqual(dict(events)["message"]["text"], "Motory v knižnici nemám.")
+
         # The next turn extends this one's last request: nothing sent was left out of the history.
-        followup = ScriptedClient(["Áno."])
+        followup = ScriptedClient([[_call("search_entries", query="motor")], "Áno."])
         with mock.patch.object(turn, "make_client", return_value=followup):
             list(turn.run(self._request(), chat, "A teraz?", language="sk"))
         replay = followup.requests[0]["messages"]
         self.assertEqual(replay[: len(client.requests[-1]["messages"])], client.requests[-1]["messages"])
 
+    def test_a_tool_call_after_the_refusal_ends_with_a_notice(self):
+        calls = [[_call("search_entries", query=f"engine {number}")] for number in range(turn.MAX_CHAT_ROUNDS + 1)]
+        chat, client, events = self._turn(calls, text="Máte niečo o motoroch?")
+        self.assertEqual(len(client.requests), turn.MAX_CHAT_ROUNDS + 1)
+        answer = chat.messages.visible().filter(role=ChatMessage.Role.ASSISTANT).get()
+        self.assertEqual(answer.text, dict(events)["message"]["text"])
+        self.assertTrue(answer.text)
+        # The calls of that extra request are never stored: they would replay without results.
+        stored_calls = sum(len(row.tool_calls) for row in chat.messages.filter(tool_calls__isnull=False))
+        self.assertEqual(stored_calls, turn.MAX_CHAT_ROUNDS)
+
     def test_a_silent_final_round_still_answers(self):
         searches = [[_call("search_entries", query=f"engine {number}")] for number in range(turn.MAX_CHAT_ROUNDS - 1)]
         _chat, _client, events = self._turn(searches + [""], text="Máte niečo o motoroch?")
-        self.assertIn("rephrase", dict(events)["message"]["text"])
+        self.assertEqual(dict(events)["message"]["text"], turn.NOTICES["rephrase"]["sk"])
 
     def test_a_bound_case_runs_with_the_publication_open(self):
         client = ScriptedClient(

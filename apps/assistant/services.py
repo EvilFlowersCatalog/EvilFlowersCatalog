@@ -13,6 +13,7 @@ from django.utils.html import strip_tags
 
 from apps.assistant import contexts, prompts
 from apps.assistant.models import Chat, ChatMessage
+from apps.assistant.portal import SHOW_IN_PORTAL
 from apps.assistant.tools import (
     DISPLAY_BOOKS,
     FIND_SIMILAR,
@@ -38,6 +39,7 @@ SYSTEM_PROMPT = prompts.render(
     follow=FOLLOW,
     study=STUDY,
     library_overview=LIBRARY_OVERVIEW,
+    show_in_portal=SHOW_IN_PORTAL,
 )
 
 
@@ -318,6 +320,8 @@ def reader_notes(row: ChatMessage) -> str:
         notes.append(entry_note(row.entry))
     if row.page:
         notes.append(f"The reader is on page {row.page} of the viewer.")
+    if getattr(row, "portal_path", None):
+        notes.append(f"The reader is on the portal page {row.portal_path}.")
     if row.contexts:
         notes.append("The reader attached:\n" + "\n".join(f"- {contexts.describe(c)}" for c in row.contexts))
     return "\n".join(notes)

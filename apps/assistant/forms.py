@@ -43,6 +43,14 @@ class MessageForm(Form):
     #: The reader's UI language (`sk`, `en`). The answer is written in it.
     language = forms.CharField(max_length=10, required=False)
 
+    #: The portal page the reader is on (#167), e.g. `/administration/jobs`. Kept only when it looks like a path.
+    portal_path = forms.CharField(required=False)
+
+    def clean_portal_path(self):
+        from apps.assistant.portal import clean_path
+
+        return clean_path(self.cleaned_data.get("portal_path"))
+
     def clean_contexts(self):
         try:
             return contexts.normalize(self.cleaned_data.get("contexts"))

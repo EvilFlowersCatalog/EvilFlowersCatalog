@@ -76,10 +76,10 @@ class CitationTurnTests(TestCase):
         request.user = self.reader
         return request
 
-    def _turn(self, rounds, chat=None):
+    def _turn(self, rounds, chat=None, text="Máte niečo o Bernoulliho číslach?"):
         chat = chat or Chat.objects.create(user=self.reader)
         with mock.patch.object(turn, "make_client", return_value=ScriptedClient(rounds)):
-            frames = list(turn.run(self._request(), chat, "Máte niečo o Bernoulliho číslach?", language="sk"))
+            frames = list(turn.run(self._request(), chat, text, language="sk"))
         return chat, evaluation.parse_frames(frames)
 
     def _search(self, *pages):
@@ -109,11 +109,15 @@ class CitationTurnTests(TestCase):
         self.assertEqual(frames["citations"]["citations"][0]["entry_id"], str(self.entry.pk))
         self.assertEqual(frames["citations"]["unknown"], ["E5"])
 
+        # #162: the invented label is taken out of the text as it streams, so stored, streamed and `message`
+        # agree, and the reader never sees a chip that leads nowhere.
         answer = chat.messages.visible().filter(role=ChatMessage.Role.ASSISTANT).get()
-        self.assertEqual(answer.text, "Lovelace computes them [E2] [E5].")  # stored as streamed
+        self.assertEqual(answer.text, "Lovelace computes them [E2].")
+        self.assertEqual("".join(data["text"] for event, data in events if event == "chunk"), answer.text)
+        self.assertEqual(frames["message"]["text"], answer.text)
         self.assertEqual(answer.citations[0]["title"], self.entry.title)
 
-    def test_labels_continue_across_turns(self):
+    def test_labels_continue_across_turns_and_an_earlier_turns_label_is_not_cited(self):
         chat = Chat.objects.create(user=self.reader)
         with self._search(1, 2):
             self._turn([[_call(tools.SEARCH_PASSAGES, query="first")], "See [E1]."], chat)
@@ -124,12 +128,40 @@ class CitationTurnTests(TestCase):
             chat.messages.filter(role=ChatMessage.Role.TOOL, tool_result__has_key="evidence").last().text
         )
         self.assertEqual(seen["items"][0]["passages"][0]["label"], "E3")
+        # #162: E1 is page 1 of the first question's search; this turn found its own evidence, so E1 here would
+        # be a stale label (the copyright page cited for the Decorator pattern). It is taken out.
         citations = dict(events)["citations"]
-        self.assertEqual([c["page"] for c in citations["citations"]], [3, 1])
-        self.assertEqual(citations["unknown"], [])
+        self.assertEqual([c["page"] for c in citations["citations"]], [3])
+        self.assertEqual(citations["unknown"], ["E1"])
+        answer = chat.messages.visible().filter(role=ChatMessage.Role.ASSISTANT).last()
+        self.assertEqual(answer.text, "See [E3] and.")
+
+    def test_a_passage_found_again_keeps_its_label_and_stays_citable(self):
+        chat = Chat.objects.create(user=self.reader)
+        paragraph = uuid4()
+        hit = SimpleNamespace(
+            entry_id=self.entry.pk,
+            passages=[SimpleNamespace(paragraph_id=paragraph, page=4, section="Notes", score=0.9, text="Text 4")],
+        )
+        found = mock.patch(
+            "apps.extraction.discovery.search_passages",
+            return_value=SimpleNamespace(degraded=False, items=[hit], indexed=1),
+        )
+        with found:
+            self._turn([[_call(tools.SEARCH_PASSAGES, query="first")], "See [E1]."], chat)
+            _chat, events = self._turn([[_call(tools.SEARCH_PASSAGES, query="again")], "Again [E1]."], chat)
+        self.assertEqual([c["label"] for c in dict(events)["citations"]["citations"]], ["E1"])
+        self.assertEqual(dict(events)["citations"]["unknown"], [])
+
+    def test_a_follow_up_without_new_evidence_may_cite_earlier_labels(self):
+        chat = Chat.objects.create(user=self.reader)
+        with self._search(1):
+            self._turn([[_call(tools.SEARCH_PASSAGES, query="first")], "See [E1]."], chat)
+        _chat, events = self._turn([[_call("list_categories")], "As said, [E1]."], chat, text="A podrobnejšie?")
+        self.assertEqual([c["label"] for c in dict(events)["citations"]["citations"]], ["E1"])
 
     def test_answer_without_labels_sends_no_citations_frame(self):
-        _chat, events = self._turn(["Dobrý deň, s čím vám pomôžem?"])
+        _chat, events = self._turn(["Dobrý deň, s čím vám pomôžem?"], text="Ahoj")
         self.assertNotIn("citations", [event for event, _data in events])
 
     def test_evaluation_fails_an_invented_label(self):

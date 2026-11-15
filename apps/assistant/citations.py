@@ -153,11 +153,16 @@ def _clip(text: str) -> str:
 class Resolver:
     """Streaming citation resolution over the chunks of one model round (module docstring)."""
 
-    def __init__(self, ledger: Ledger, request=None, seen: Optional[set] = None):
+    def __init__(self, ledger: Ledger, request=None, seen: Optional[set] = None, allowed=None):
         self.ledger = ledger
         self.request = request
         #: Labels already reported in this turn (a later round does not report them again).
         self.seen = seen if seen is not None else set()
+        #: `allowed(label)`: whether the answer may cite it (#162). Refused labels are taken out of the text as
+        #: it streams, so the chunks, the `message` frame and the stored answer all lack them. None keeps all.
+        self.allowed = allowed
+        #: Labels taken out, in order.
+        self.dropped: List[str] = []
         self.text = ""
         self._held = ""
         self._scanned = 0
@@ -169,8 +174,15 @@ class Resolver:
         start = buffer.rfind("[")
         if start != -1 and "]" not in buffer[start:] and len(buffer) - start <= MAX_HELD:
             if _PARTIAL.fullmatch(buffer[start:]):
+                # The spaces before it too: a group that turns out refused goes with them.
+                while start > 0 and buffer[start - 1] in " \t":
+                    start -= 1
                 self._held = buffer[start:]
                 buffer = buffer[:start]
+        if not self._held and self.allowed is not None:
+            # Trailing spaces wait for the next chunk: a refused `[E9]` there takes them along.
+            trimmed = buffer.rstrip(" \t")
+            self._held, buffer = buffer[len(trimmed) :], trimmed
         return self._emit(buffer)
 
     def finish(self) -> Tuple[str, List[dict]]:
@@ -179,6 +191,11 @@ class Resolver:
         return self._emit(buffer)
 
     def _emit(self, buffer: str) -> Tuple[str, List[dict]]:
+        if self.allowed is not None and buffer:
+            from apps.assistant.evidence import keep_citations
+
+            buffer, dropped = keep_citations(buffer, self.allowed)
+            self.dropped.extend(label for label in dropped if label not in self.dropped)
         self.text += buffer
         found: List[dict] = []
         # Re-scan from a little before the last scan: a group closes only when its `]` arrives.

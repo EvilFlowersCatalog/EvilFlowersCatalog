@@ -29,17 +29,27 @@ IP-030 adds, in the order a turn meets them:
   into it; at the end it saves and releases (`begin_turn` / `end_turn`).
 - **Study artefacts and suggestions** (§6, § API): a `study` frame closes the turn like cards do, and
   `suggestions` comes before `done`.
+
+Live testing on 2026-11-15 added:
+
+- **Look before answering** (#162): until a content question's turn has called a tool, its round is held back;
+  an answer from memory is discarded unsent, the pack is gathered as a stored `gather_evidence` call, and the
+  model is asked again (once). A label the answer may not cite (`Ledger.citable`) is taken out as it streams.
+- **Real cards only** (#163): `displayBooks` shows publications whose ids came from this chat's tool results.
+- **An answer after the refusal** (#164): when the last round's calls are refused, one more request answers.
+- **The portal's guide** (#167): `show_in_portal` sends a `navigate` frame, like cards close the turn.
 """
 
 import hashlib
 import json
 import logging
+import re
 from typing import Generator, Iterator, List, Optional
 
 from django.conf import settings
 from django.utils.translation import gettext as _
 
-from apps.assistant import activity, citations, document_tools, evidence, prompts, services, tools
+from apps.assistant import activity, citations, document_tools, evidence, portal, prompts, services, tools
 from apps.assistant import suggestions as suggestion_chips
 from apps.assistant.library import ToolContext
 from apps.assistant.llm import Delta, LLMUnavailable
@@ -71,7 +81,15 @@ def sse(event: str, data: dict) -> str:
 
 
 def run(
-    request, chat: Chat, text: str, entry=None, contexts=None, page=None, document=None, language=None
+    request,
+    chat: Chat,
+    text: str,
+    entry=None,
+    contexts=None,
+    page=None,
+    document=None,
+    language=None,
+    portal_path: Optional[str] = None,
 ) -> Iterator[str]:
     """Drive one turn, yielding SSE frames.
 
@@ -95,10 +113,13 @@ def run(
         entry=entry,
         contexts=contexts or None,
         page=page,
+        portal_path=portal.clean_path(portal_path),
     )
 
     cancelled = False
     state = _Turn()
+    # A selection, explanation or figure attached in the viewer is the evidence the question is about (#162).
+    state.attached = bool(contexts)
     try:
         services.start_turn(chat, was_cold)
         begin = getattr(client, "begin_turn", None)
@@ -155,7 +176,9 @@ def _failed(chat: Chat, code: str, notice, state: Optional["_Turn"] = None) -> s
 
 def _specifications(request, chat: Chat, document) -> List[dict]:
     """Fixed for the session (IP-022): the tool list is part of the cached prompt prefix."""
-    specifications = tools.specifications(authenticated=request.user.is_authenticated, bound=document is not None)
+    specifications = tools.specifications(
+        authenticated=request.user.is_authenticated, bound=document is not None, staff=portal.is_staff(request.user)
+    )
     if document is not None:
         specifications = specifications + document_tools.SPECIFICATIONS
         if chat.user_acquisition_id and chat.user_acquisition.user_id == chat.user_id:
@@ -186,6 +209,16 @@ class _Turn:
         self.seen_calls: set = set()
         # Labels already sent as `citation` frames in this turn.
         self.cited: set = set()
+        # Labels taken out of the answer: unknown, or from an earlier turn once this one has evidence (#162).
+        self.dropped: List[str] = []
+        # A lookup ran in this turn (any tool but the portal directives), or the pack was gathered (#162).
+        self.retrieved = False
+        # The model called a tool in this turn, a portal directive included: it is not answering from memory.
+        self.called = False
+        # The reader attached viewer contexts to the message: they are its evidence.
+        self.attached = False
+        # The turn already made the model look before answering once (#162); never twice.
+        self.forced = False
         # The stored answer that closed the turn; `done` carries it (#145).
         self.message_id = None
 
@@ -211,6 +244,11 @@ def _rounds(
     if settings.EVILFLOWERS_ASSISTANT_PREFETCH:
         yield from _prefetch(request, chat, context, state, text, entry, fingerprint)
 
+    from apps.assistant.pack import needs_pack
+
+    # A question about content must be answered from evidence looked up for it (#162).
+    content_question = needs_pack(text)
+    staff = portal.is_staff(request.user)
     rounds = MAX_TOOL_ROUNDS if document is not None else MAX_CHAT_ROUNDS
     previous: Optional[List[dict]] = None
     for _round in range(rounds):
@@ -236,23 +274,44 @@ def _rounds(
         # On CPU inference a round can spend tens of seconds evaluating the prompt
         # before its first token (#104): tell the client something is happening.
         yield sse("status", {"state": "thinking", "round": _round + 1})
-        resolver = citations.Resolver(ledger, request, state.cited)
-        content, tool_calls, done = yield from _stream(client, messages, specifications, resolver, prefix)
+        resolver = citations.Resolver(ledger, request, state.cited, allowed=ledger.citable)
+        # #162: until something was looked up, a content question's round is held back rather than streamed: if
+        # it answers without looking, that answer is discarded, and the portal must not have shown it.
+        guarded = content_question and not (state.retrieved or state.called or state.forced or state.attached or final)
+        held: Optional[List[str]] = [] if guarded else None
+        cited_before = set(state.cited)
+        content, tool_calls, done = yield from _stream(client, messages, specifications, resolver, prefix, held)
+
+        if not tool_calls and guarded and _from_memory(ledger, content, resolver):
+            # It answered a question about content from memory (invented books, labels it was never given). The
+            # turn looks the question up itself, stored as a call the model made, and asks again (#162).
+            state.forced = True
+            gathered = yield from _prefetch(
+                request, chat, context, state, text, entry, fingerprint, spent=(done.total_tokens, done.model_seconds)
+            )
+            if gathered:
+                # Nothing of that answer was sent, so none of its citations were either.
+                state.cited.clear()
+                state.cited.update(cited_before)
+                continue
+            # Nothing could be gathered: the answer it wrote is all there is.
+        _keep_dropped(state, resolver)
+        for frame in held or []:
+            yield frame
+        state.called = state.called or bool(tool_calls)
 
         if not tool_calls:
             if final and not content.strip() and not state.displayed:
-                content = str(_("I could not complete that search. Could you rephrase it?"))
+                content = _notice(language, "rephrase")
                 yield sse("message", {"text": content})
             yield from close(content, done.total_tokens, done.model_seconds)
             return
 
-        # Showing cards is the answer, not a lookup: when displayBooks is all the
-        # model asked for, its text and the cards close the turn. Asking it again
-        # only made it call more tools until the rounds ran out.
-        only_display = all(
-            tools.is_display_books((call.get("function") or {}).get("name") or "") for call in tool_calls
-        )
-        moves_text = only_display or final
+        # Showing cards or a place in the portal is the answer, not a lookup: when that is all the model asked
+        # for, its text and the cards close the turn. Asking it again only made it call more tools until the
+        # rounds ran out. Not when every id was refused (made-up ids, #163) or there is nothing to read with it:
+        # then the model hears why and goes on.
+        only_display = _closes(request, chat, tool_calls, content, staff)
 
         # The assistant turn that requested the tools has to be recorded before
         # their results, or the replayed conversation would show results with
@@ -262,7 +321,7 @@ def _rounds(
             chat=chat,
             user=chat.user,
             role=ChatMessage.Role.ASSISTANT,
-            text="" if moves_text else content,
+            text="" if only_display else content,
             tool_calls=tool_calls,
             tokens_used=done.total_tokens,
             model_seconds=done.model_seconds,
@@ -271,12 +330,15 @@ def _rounds(
 
         if final and not only_display:
             # Out of rounds: every call is answered with the refusal, stored, so the next turn replays exactly
-            # this request plus what follows (IP-030 §5); the turn closes with what the model said.
+            # this request plus what follows (IP-030 §5). The model then answers from what it found (#164).
             for _call in tool_calls:
                 ChatMessage.objects.create(chat=chat, user=chat.user, role=ChatMessage.Role.TOOL, text=REFUSED)
-            break
+            yield from _synthesise(request, chat, client, specifications, ledger, state, document, language, close)
+            return
 
         for call in tool_calls:
+            if not tools.is_directive((call.get("function") or {}).get("name") or ""):
+                state.retrieved = True
             run = _run_tool(
                 request,
                 chat,
@@ -290,6 +352,7 @@ def _rounds(
                 reading,
                 context=context,
                 note=ANSWER_NOW if closing else None,
+                staff=staff,
             )
             for entry_id in (yield from run):
                 if entry_id not in state.displayed:
@@ -308,34 +371,170 @@ def _rounds(
             yield from close(keep_empty=True)
             return
 
-    # Out of rounds. In a plain chat the last round's text (it asked for tools instead of answering) is all
-    # there is to say.
-    if final and content.strip():
-        yield from close(content)
-        return
+    # Out of rounds (a chat bound to a copy: the runaway guard).
     if state.displayed or state.annotations or state.study is not None:
         # Publications were already shown — that is an answer.
         yield from close(keep_empty=True)
         return
 
     # Nothing to show: say so rather than leaving the reader with silence.
-    notice = str(_("I could not complete that search. Could you rephrase it?"))
+    notice = _notice(language, "rephrase")
     yield sse("message", {"text": notice})
     yield from close(notice)
 
 
-def _prefetch(request, chat: Chat, context: ToolContext, state: _Turn, text: str, entry, fingerprint: str):
-    """Gather the evidence pack before round 1 and store it as a `gather_evidence` call (IP-030 §1)."""
+def _keep_dropped(state: _Turn, resolver: "citations.Resolver") -> None:
+    for label in resolver.dropped:
+        if label not in state.dropped:
+            state.dropped.append(label)
+
+
+#: Fixed notices a turn closes with when the model gave no answer, in the UI languages. The catalog has no Slovak
+#: translation files, and a Slovak reader got these in English.
+NOTICES = {
+    "rephrase": {
+        "sk": "Toto vyhľadávanie sa mi nepodarilo dokončiť. Skúsite to sformulovať inak?",
+        "en": "I could not complete that search. Could you rephrase it?",
+    },
+    "not_found": {
+        "sk": "V knižnici som to nenašla. Skúste sa opýtať inými slovami.",
+        "en": "I could not find that in the library. Could you ask with other words?",
+    },
+}
+
+
+def _notice(language: Optional[str], key: str) -> str:
+    """A fixed notice in the reader's UI language (English for any other)."""
+    code = (language or "").split("-")[0].lower()
+    texts = NOTICES[key]
+    return texts.get(code, texts["en"])
+
+
+#: Words of a citing sentence and its passage that count as shared: long enough not to be function words.
+_CONTENT_WORD = 5
+
+
+def _from_memory(ledger: "evidence.Ledger", content: str, resolver: "citations.Resolver") -> bool:
+    """Whether a round that called no tool answered a content question from the model's own knowledge (#162).
+
+    Yes when it cited a label it was never given, or when the chat has no evidence at all (invented books on the
+    first question). A follow-up in a chat with evidence ("thanks", "shorter please") is not looked up again when it
+    cites nothing, or cites earlier labels whose passage shares a word with the sentence citing it; an earlier label
+    with nothing in common (the copyright page cited for the Decorator pattern) is.
+    """
+    if resolver.dropped or not ledger.sources:
+        return True
+    for label, sentence in evidence.labels_with_sentences(content):
+        passage = ledger.texts.get(label)
+        if passage is None:
+            continue
+        said = {word for word in citations._words(sentence) if len(word) >= _CONTENT_WORD}
+        source = {word for word in citations._words(passage) if len(word) >= _CONTENT_WORD}
+        if not said & source:
+            return True
+    return False
+
+
+def _closes(request, chat: Chat, tool_calls: List[dict], content: str, staff: bool) -> bool:
+    """Whether a round's calls close the turn: only portal directives, and they show something (#163, #167).
+
+    Cards close it when at least one id is real; a place in the portal only with text to read beside it, since
+    the `navigate` frame is not stored and an empty answer would vanish when the chat is read back.
+    """
+    shows = False
+    for call in tool_calls:
+        function = call.get("function") or {}
+        name = function.get("name") or ""
+        if not tools.is_directive(name):
+            return False
+        arguments = _arguments(function.get("arguments"))
+        if tools.is_display_books(name):
+            accepted, _rejected = _displayable(request, chat, arguments.get("entry_ids"))
+            shows = shows or bool(accepted)
+        else:
+            frame, _error, _rejected = portal.navigation(arguments, staff)
+            shows = shows or (frame is not None and bool(content.strip()))
+    return shows
+
+
+#: An entry id inside a stored tool result.
+_UUID_TEXT = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
+
+
+def _displayable(request, chat: Chat, requested) -> tuple:
+    """`(accepted, rejected)` publication ids of a `displayBooks` call (#163).
+
+    A card is shown only for a publication the model was actually given: an id in one of this chat's tool results,
+    the chat's publication or one the reader attached, and one this reader may see. A made-up id (an ISBN, a
+    guessed UUID) is refused, never stored and never sent to the portal.
+    """
+    from apps.extraction.discovery import _visible
+
+    if isinstance(requested, str):
+        requested = [requested]
+    requested = list(dict.fromkeys(str(item).strip() for item in requested or [] if str(item).strip()))
+    if not requested:
+        return [], []
+    known = set()
+    if chat.entry_id:
+        known.add(str(chat.entry_id))
+    for row in chat.messages.filter(role__in=(ChatMessage.Role.TOOL, ChatMessage.Role.USER)).values_list(
+        "role", "text", "entry_id"
+    ):
+        role, text, entry_id = row
+        if entry_id:
+            known.add(str(entry_id))
+        if role == ChatMessage.Role.TOOL and text:
+            known.update(match.lower() for match in _UUID_TEXT.findall(text))
+    for displayed in chat.messages.filter(displayed_entries__isnull=False).values_list("displayed_entries", flat=True):
+        known.update(str(item) for item in displayed or [])
+
+    candidates = [tools._uuid(item) for item in requested if tools._uuid(item) and item.lower() in known]
+    visible = {str(pk) for pk in _visible(request, candidates)} if candidates else set()
+    accepted = list(dict.fromkeys(item for item in candidates if item in visible))
+    rejected = [item for item in requested if tools._uuid(item) not in accepted]
+    return accepted, rejected
+
+
+def _synthesise(request, chat: Chat, client, specifications, ledger, state: _Turn, document, language, close):
+    """The answer after the last round's calls were refused (#164).
+
+    Without it the turn closed on the text written beside the refused call ("Let me check …"), with no model call
+    behind the answer. One more request, with the same tools so it extends the previous one; if it calls tools
+    again, those calls are not stored (they would replay without results) and the reader gets a short notice.
+    """
+    messages = services.conversation(chat, document, language)
+    yield sse("status", {"state": "thinking", "round": MAX_CHAT_ROUNDS + 1})
+    resolver = citations.Resolver(ledger, request, state.cited, allowed=ledger.citable)
+    content, tool_calls, done = yield from _stream(
+        client, messages, specifications, resolver, {"evilflowers.assistant.round": MAX_CHAT_ROUNDS + 1}
+    )
+    _keep_dropped(state, resolver)
+    if tool_calls or not content.strip():
+        content = _notice(language, "not_found")
+        yield sse("message", {"text": content})
+    yield from close(content, done.total_tokens, done.model_seconds)
+
+
+def _prefetch(request, chat: Chat, context: ToolContext, state: _Turn, text: str, entry, fingerprint: str, spent=None):
+    """Gather the evidence pack and store it as a `gather_evidence` call (IP-030 §1); True when it was.
+
+    Before round 1 when the deployment prefetches; after a round that answered a content question without
+    looking anything up otherwise (#162). `spent` is that discarded round's `(tokens, seconds)`, booked on the
+    stored call so the quota still counts it.
+    """
     from apps.assistant import pack
 
     if not pack.needs_pack(text):
-        return
+        return False
     try:
         payload = pack.gather(context, text, entry)
     except Exception:
         # A failed pack costs the speed-up, never the answer: the model still has its tools.
         logger.exception("Evidence pack failed (chat %s)", chat.pk)
-        return
+        return False
+    state.retrieved = True
+    tokens, seconds = spent or (0, 0.0)
     call = {"function": {"name": tools.GATHER_EVIDENCE, "arguments": {"query": payload["query"]}}}
     # A model that asks for the same pack gets the repeated-call hint.
     _repeated(state.seen_calls, tools.GATHER_EVIDENCE, {"query": payload["query"]})
@@ -348,6 +547,8 @@ def _prefetch(request, chat: Chat, context: ToolContext, state: _Turn, text: str
         role=ChatMessage.Role.ASSISTANT,
         text="",
         tool_calls=[call],
+        tokens_used=tokens,
+        model_seconds=seconds,
         prompt_fingerprint=fingerprint,
     )
     model_text = json.dumps(pack.slim(payload), ensure_ascii=False, default=str)
@@ -356,6 +557,7 @@ def _prefetch(request, chat: Chat, context: ToolContext, state: _Turn, text: str
     )
     yield sse("evidence", pack.sources(payload, request))
     yield sse("activity", activity.summarize(tools.GATHER_EVIDENCE, {"query": payload["query"]}, payload, model_text))
+    return True
 
 
 CREATE_HIGHLIGHTS = "create_highlights"
@@ -430,14 +632,20 @@ def _close(
     """Store the answer that closes the turn, with what it showed, read, cited and taught.
 
     The evidence labels in `text` are resolved against the chat's ledger (IP-024) and completed for the viewer
-    (IP-030 §2). The text is stored as it was streamed: an unknown label is reported, not removed, so the stored
-    answer is the one the reader saw. A study card's items cite labels of their own; they are resolved too (#145).
+    (IP-030 §2). A label the answer may not cite (`Ledger.citable`: unknown, or from an earlier turn once this one
+    has evidence) was already taken out while streaming, so the stored answer is still the one the reader saw;
+    it is reported under `unknown` (#162). A study card's items cite labels of their own; they are resolved too
+    (#145).
     """
+    text, dropped = evidence.keep_citations(text, ledger.citable)
     found, unknown = ledger.cite(text, request)
+    for label in [*state.dropped, *dropped]:
+        if label not in unknown:
+            unknown.append(label)
     if state.study is not None:
         _study_citations(ledger, state.study, request, found, unknown)
     if unknown:
-        logger.warning("Assistant answer cites unknown evidence labels %s (chat %s)", unknown, chat.pk)
+        logger.warning("Assistant answer cited labels it was not given %s (chat %s)", unknown, chat.pk)
     row = ChatMessage.objects.create(
         chat=chat,
         user=chat.user,
@@ -504,10 +712,12 @@ def _pages_frame(pages_read: List[int]) -> Iterator[str]:
         yield sse("pages", {"pages": pages_read})
 
 
-def _stream(client, messages: List[dict], specifications, resolver=None, span_attributes=None):
+def _stream(client, messages: List[dict], specifications, resolver=None, span_attributes=None, held=None):
     """Consume one completion, forwarding text chunks (and the citations they complete) as they arrive.
 
-    Returns `(content, tool_calls, done delta)`. The `chunk` frames, concatenated, are exactly `content`.
+    Returns `(content, tool_calls, done delta)`. The `chunk` frames, concatenated, are exactly `content`: with a
+    `resolver`, the text as it let it through (labels the answer may not cite taken out). With a `held` list the
+    frames are appended to it instead of yielded, for the caller to send or drop once the round is over.
     """
     content = ""
     tool_calls: List[dict] = []
@@ -519,6 +729,13 @@ def _stream(client, messages: List[dict], specifications, resolver=None, span_at
         for citation in found:
             yield sse("citation", citation)
 
+    def out(produced: Iterator[str]) -> Iterator[str]:
+        for frame in produced:
+            if held is None:
+                yield frame
+            else:
+                held.append(frame)
+
     for delta in client.chat(
         messages,
         tools=specifications,
@@ -528,18 +745,19 @@ def _stream(client, messages: List[dict], specifications, resolver=None, span_at
         if delta.content:
             content += delta.content
             if resolver is None:
-                yield sse("chunk", {"text": delta.content})
+                yield from out(iter([sse("chunk", {"text": delta.content})]))
             else:
-                yield from frames(*resolver.feed(delta.content))
+                yield from out(frames(*resolver.feed(delta.content)))
         if delta.tool_calls:
             tool_calls.extend(delta.tool_calls)
         if delta.done:
             done = delta
     if resolver is not None:
-        yield from frames(*resolver.finish())
+        yield from out(frames(*resolver.finish()))
+        content = resolver.text
 
     if content:
-        yield sse("message", {"text": content})
+        yield from out(iter([sse("message", {"text": content})]))
 
     return content, tool_calls, done
 
@@ -619,6 +837,7 @@ def _run_tool(
     reading: Optional["tools.Reading"] = None,
     context: Optional[ToolContext] = None,
     note: Optional[str] = None,
+    staff: bool = False,
 ) -> Generator[str, None, List[str]]:
     """Run one tool call, yielding SSE frames; returns publication ids to display."""
     function = call.get("function") or {}
@@ -634,17 +853,42 @@ def _run_tool(
         yield sse("status", {"state": "tool", "tool": name, **activity.describe(name, arguments)})
 
     if tools.is_display_books(name):
-        entry_ids = [str(entry_id) for entry_id in (arguments.get("entry_ids") or [])]
+        entry_ids, rejected = _displayable(request, chat, arguments.get("entry_ids"))
         # The tool row answers the call for the model's replay; the ids
         # themselves are persisted on the turn's final answer (see `_rounds`).
+        text = ""
+        if rejected:
+            # Made-up ids never reach the portal or the stored answer (#163); the model hears which.
+            text = json.dumps(
+                {
+                    "error": f"Not shown, not ids from a tool result in this chat: {', '.join(rejected)}. Use the "
+                    "`id` of publications that search_entries or another tool returned.",
+                    "shown": entry_ids,
+                },
+                ensure_ascii=False,
+            )
+            logger.warning("displayBooks refused ids %s (chat %s)", rejected, chat.pk)
         ChatMessage.objects.create(
             chat=chat,
             user=chat.user,
             role=ChatMessage.Role.TOOL,
-            text=_with_note("", note) if note else "",
+            text=_with_note(text, note) if note else text,
         )
-        yield sse("entries", {"entry_ids": entry_ids})
+        if entry_ids:
+            yield sse("entries", {"entry_ids": entry_ids})
         return entry_ids
+
+    if tools.is_show_in_portal(name):
+        frame, error, _rejected = portal.navigation(arguments, staff)
+        result = {"shown": frame is not None}
+        if error:
+            result["error"] = error
+        text = json.dumps(result, ensure_ascii=False)
+        ChatMessage.objects.create(chat=chat, user=chat.user, role=ChatMessage.Role.TOOL, text=_with_note(text, note))
+        if frame is not None:
+            yield sse("navigate", frame)
+        yield sse("activity", activity.summarize(name, arguments, text="" if frame is not None else text))
+        return []
 
     if (
         document is not None

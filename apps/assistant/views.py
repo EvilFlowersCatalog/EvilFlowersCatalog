@@ -248,10 +248,12 @@ class ChatMessages(AssistantView):
             "first round), `chunk` (a fragment of the answer), `citation` (a label such as `[E3]` or `[F2]` "
             "when it first appears, resolved to page, paragraph box and sentence quads, or figure crop), "
             "`message`, `citations` (all cited and unknown labels), `entries` (publication cards), `study` "
-            "(a walkthrough, quiz or key-concepts card), `pages`, `suggestions`, `error` (with `message_id` "
-            "and `retryable`; the failed turn is stored) and `done` (`chat_id`, and `message_id` of the stored "
-            "answer, which feedback is sent to). Pass `contexts` (what the reader attached "
-            "in the viewer), `page` (the viewer page they are on) and `user_acquisition_id` (their copy, which "
+            "(a walkthrough, quiz or key-concepts card), `navigate` (`{targets: [place ids], tour?, auto?}`: "
+            "places in the portal to show the reader, live only), `pages`, `suggestions`, `error` (with "
+            "`message_id` and `retryable`; the failed turn is stored) and `done` (`chat_id`, and `message_id` of "
+            "the stored answer, which feedback is sent to). Pass `contexts` (what the reader attached "
+            "in the viewer), `page` (the viewer page they are on), `portal_path` (the portal page they are on) "
+            "and `user_acquisition_id` (their copy, which "
             "lets the assistant read it); all are stored on the message and returned with the chat. Responds "
             "429 when the caller's daily allowance (messages or model seconds) is spent and 403 when their "
             "assistant access is blocked."
@@ -307,6 +309,7 @@ class ChatMessages(AssistantView):
                     page=form.cleaned_data.get("page"),
                     document=self._chat_document(request, chat, form.cleaned_data.get("entry_id")),
                     language=form.cleaned_data.get("language") or None,
+                    portal_path=form.cleaned_data.get("portal_path"),
                 )
             ),
             content_type="text/event-stream",

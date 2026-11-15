@@ -30,6 +30,8 @@ REGION_KINDS = ("figure", "table", "equation")
 #: `[E3]`, `[E3, E5]`, `[E3; F2]`; `[E3][E5]` is two matches.
 _CITATION = re.compile(r"\[\s*([EF]\d+(?:\s*[,;]\s*[EF]\d+)*)\s*\]", re.IGNORECASE)
 _LABEL = re.compile(r"([EF])(\d+)", re.IGNORECASE)
+#: A citation group with the spaces before it (`keep_citations`).
+_SPACED_CITATION = re.compile(r"([ \t]*)\[\s*([EF]\d+(?:\s*[,;]\s*[EF]\d+)*)\s*\]", re.IGNORECASE)
 
 #: Keys of a source that are bookkeeping, not part of a citation.
 _PRIVATE = ("source_page",)
@@ -49,6 +51,9 @@ class Ledger:
         self.sources: Dict[str, dict] = dict(sources or {})
         #: The passage text behind each label, as the model saw it; for the support check (#117).
         self.texts: Dict[str, str] = dict(texts or {})
+        #: Labels handed out since this ledger was built: new ones and old ones issued again for the same
+        #: paragraph or figure. A turn builds its ledger fresh, so this is "evidence of this turn" (#162).
+        self.touched: set = set()
         self._by_key: Dict[str, str] = {}
         for label, source in self.sources.items():
             key = _key(source)
@@ -84,13 +89,28 @@ class Ledger:
         source = {key: value for key, value in source.items() if value not in (None, "")}
         key = _key(source)
         if key and key in self._by_key:
-            return self._by_key[key], False
+            label = self._by_key[key]
+            self.touched.add(label)
+            return label, False
         series = "F" if source.get("region_id") else "E"
         label = self._next(series)
         self.sources[label] = source
+        self.touched.add(label)
         if key:
             self._by_key[key] = label
         return label, True
+
+    def citable(self, label: str) -> bool:
+        """Whether an answer of this turn may cite `label` (#162).
+
+        Never an unknown label: it points at nothing. Once this turn has handed out evidence, only that: a label
+        from an earlier turn resolves to evidence the model did not look at for this question (the copyright page
+        cited for the Decorator pattern). A turn that found no evidence of its own (a follow-up answered from what
+        is already in the conversation) may still cite the earlier labels.
+        """
+        if label not in self.sources:
+            return False
+        return not self.touched or label in self.touched
 
     def label_for(self, key: str) -> Optional[str]:
         return self._by_key.get(key)
@@ -114,6 +134,25 @@ class Ledger:
             else:
                 found.append(citation(label, source))
         return found, unknown
+
+
+def keep_citations(text: str, allowed) -> Tuple[str, List[str]]:
+    """`text` with every cited label `allowed(label)` refuses taken out, and those labels (#162).
+
+    `[E1, E7]` with E7 refused becomes `[E1]`; a group left empty goes with the spaces before it, so
+    "rastie [E9]." reads "rastie.". Groups whose labels are all allowed are left exactly as written.
+    """
+    dropped: List[str] = []
+
+    def rewrite(match: re.Match) -> str:
+        labels = [f"{m.group(1).upper()}{int(m.group(2))}" for m in _LABEL.finditer(match.group(2))]
+        kept = [label for label in labels if allowed(label)]
+        if len(kept) == len(labels):
+            return match.group(0)
+        dropped.extend(label for label in labels if label not in kept and label not in dropped)
+        return f"{match.group(1)}[{', '.join(dict.fromkeys(kept))}]" if kept else ""
+
+    return _SPACED_CITATION.sub(rewrite, text or ""), dropped
 
 
 def citation(label: str, source: dict) -> dict:

@@ -18,6 +18,8 @@ class ChatMessageSerializer:
         contexts: Optional[list]
         #: Viewer page the reader was on when they sent the message.
         page: Optional[int]
+        #: Portal page the reader was on when they sent the message (#167).
+        portal_path: Optional[str] = None
         #: Pages of the publication the answer was drawn from.
         pages_read: Optional[List[int]]
         displayed_entries: Optional[list]

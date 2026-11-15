@@ -15,7 +15,10 @@ PROMPT_HASHES = {
     # 2026-11-13, IP-030 §7: capability list, evidence first, silent tools, E#/F# citations, answer shape; the
     # language rule moved to the per-message pin (Q9). NOT yet run through `assistant_eval` on elvira-assistant:
     # the Phase 0 baseline and the Phase 2 comparison are what justify (or revert) it.
-    "chat": "270cf038422c3838c01b2aeb8f2d6298b96e40b3f9d8af58ebeec1d4242b8443",
+    # 2026-11-15, #162/#165/#167/#168: search before answering about content, cite only this message's labels,
+    # `search_library_text` for what texts say, no lcp_states hint, `show_in_portal`, no tool names or asking
+    # before a lookup, English term names in Slovak. Not yet run through `assistant_eval` either.
+    "chat": "78135bfeafed391f8cc8006ae43e3fe328258b05abee28c844ea1ff8db3c9335",
     "explain": "78c31a0ef64cd0cd56c2d2b573c7967fe15bfa7632836fda6a0e741599542120",
     "highlight": "e18e507f1b61be651fabf82ea6bebe13a11f95de93c9183f63d8150127805369",
     "semantic": "58e58ff31be28adb45ea2c6890169af7c3e508461df8d1648b7265ae8355d153",

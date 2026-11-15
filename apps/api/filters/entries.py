@@ -1,5 +1,6 @@
 import re
-from typing import Optional
+from typing import List, Optional
+from uuid import UUID
 
 import django_filters
 from django.core.exceptions import ValidationError
@@ -314,30 +315,48 @@ class EntryFilter(BaseSecuredFilter):
         return [token.strip() for token in str(value).split(",") if token.strip()]
 
     @classmethod
+    def _uuids(cls, value) -> Optional[List[UUID]]:
+        """The UUIDs of a comma-separated filter value; None when it names none.
+
+        A token that is no UUID (an ISBN a client took for an id, #163) matches nothing rather than failing the
+        request with a 500; a value of only such tokens matches no entry at all, never every entry.
+        """
+        tokens = cls._split_csv(value)
+        if not tokens:
+            return None
+        ids = []
+        for token in tokens:
+            try:
+                ids.append(UUID(token))
+            except (TypeError, ValueError):
+                continue
+        return ids
+
+    @classmethod
     def filter_id(cls, qs, name, value):
-        ids = cls._split_csv(value)
-        if not ids:
+        ids = cls._uuids(value)
+        if ids is None:
             return qs
         return qs.filter(id__in=ids)
 
     @classmethod
     def filter_author_id(cls, qs, name, value):
-        ids = cls._split_csv(value)
-        if not ids:
+        ids = cls._uuids(value)
+        if ids is None:
             return qs
         return qs.filter(authors__id__in=ids).distinct()
 
     @classmethod
     def filter_category_id(cls, qs, name, value):
-        ids = cls._split_csv(value)
-        if not ids:
+        ids = cls._uuids(value)
+        if ids is None:
             return qs
         return qs.filter(categories__id__in=ids).distinct()
 
     @classmethod
     def filter_feed_id(cls, qs, name, value):
-        ids = cls._split_csv(value)
-        if not ids:
+        ids = cls._uuids(value)
+        if ids is None:
             return qs
         return qs.filter(feeds__id__in=ids).distinct()
 

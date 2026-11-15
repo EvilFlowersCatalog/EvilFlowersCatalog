@@ -22,8 +22,9 @@ it "already made" (`turn._prefetch`): stored as an assistant row with that tool 
 result, so the replayed history stays append-only (#138). The same tool is on offer, so a model that calls it
 itself gets a pack rather than an error.
 
-No pack is gathered for a greeting, a question about the assistant itself, or a short follow-up about what was
-just shown (`needs_pack`).
+No pack is gathered for a greeting or a question about the assistant itself (`needs_pack`). Without
+`EVILFLOWERS_ASSISTANT_PREFETCH` the turn gathers one only after a round that answered such a question from the
+model's own knowledge (`turn._from_memory`, #162).
 """
 
 import re

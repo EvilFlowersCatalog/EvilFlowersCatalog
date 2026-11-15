@@ -79,7 +79,8 @@ class FailedTurnTests(TurnBase):
 
         chat = Chat.objects.create(user=self.reader)
         with mock.patch.object(turn, "make_client", return_value=Slow([])):
-            stream = turn.run(fixtures.request_for(self.reader), chat, "Otázka?", language="sk")
+            # Not a content question: its first round streams (one would be held back until it looked, #162).
+            stream = turn.run(fixtures.request_for(self.reader), chat, "Ahoj", language="sk")
             frames = [next(stream) for _ in range(2)]  # status, first chunk
             stream.close()  # the reader closed the tab
         self.assertIn("chunk", frames[1])

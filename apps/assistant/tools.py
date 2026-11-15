@@ -92,6 +92,8 @@ MAX_SEARCH_LIMIT = 15
 SLIM_SUMMARY_CHARS = 280
 
 _LCP_STATES = ["available_now", "available_in_days", "fully_borrowed", "active_loan_for_user", "not_lcp"]
+#: A subject filter: a guessed one only ever returned nothing (#165).
+_SUBJECT = "Only a term from `list_categories`."
 _UUID_LIST = {"type": "array", "items": {"type": "string"}}
 
 DISPLAY_BOOKS_SCHEMA = {
@@ -115,11 +117,15 @@ SPECIFICATIONS: Dict[str, tuple] = {
             "properties": {
                 "query": {"type": "string", "description": "Topic, title or keywords, any language."},
                 "author": {"type": "string", "description": "Part of an author's name."},
-                "category_term": {"type": "string", "description": "Exact term from `list_categories`."},
+                "category_term": {"type": "string", "description": _SUBJECT},
                 "language_codes": {"type": "array", "items": {"type": "string"}, "description": "e.g. ['sk']"},
                 "published_from": {"type": "string", "description": "YYYY or YYYY-MM-DD"},
                 "published_to": {"type": "string", "description": "YYYY or YYYY-MM-DD"},
-                "lcp_states": {"type": "array", "items": {"type": "string", "enum": _LCP_STATES}},
+                "lcp_states": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": _LCP_STATES},
+                    "description": "Only if asked what can be borrowed",
+                },
                 "order_by": {
                     "type": "string",
                     "enum": ["-published_at", "-created_at", "-popularity", "title"],
@@ -168,7 +174,7 @@ SPECIFICATIONS: Dict[str, tuple] = {
             "properties": {
                 "query": {"type": "string", "description": "The question or topic, in a sentence."},
                 "entry_id": {"type": "string", "description": "Only this publication."},
-                "category_term": {"type": "string", "description": "Only this subject."},
+                "category_term": {"type": "string", "description": _SUBJECT},
                 "figures": {"type": "boolean", "description": "Also figures and tables."},
             },
             "required": ["query"],
@@ -239,15 +245,21 @@ def _offered(authenticated: bool, bound: bool = False) -> List[str]:
         if bound and name in UNBOUND_ONLY:
             continue
         # The pack is a tool only when it is also gathered before round 1 (the deployment's choice, fixed per
-        # process, so the tool list stays part of the stable prefix).
+        # process, so the tool list stays part of the stable prefix). Without it the turn still gathers one after a
+        # round that answered from memory (#162), stored as a call; `call` runs it if the model then asks itself.
         if name == GATHER_EVIDENCE and not settings.EVILFLOWERS_ASSISTANT_PREFETCH:
             continue
         names.append(name)
     return names
 
 
-def specifications(authenticated: bool = True, bound: bool = False) -> List[dict]:
-    """Every tool the model is told about, in Ollama's `/api/chat` format."""
+def specifications(authenticated: bool = True, bound: bool = False, staff: bool = False) -> List[dict]:
+    """Every tool the model is told about, in Ollama's `/api/chat` format.
+
+    `staff`: the reader is a superuser, so `show_in_portal` also lists the administration (#167).
+    """
+    from apps.assistant import portal
+
     specs = []
     for name in _offered(authenticated, bound):
         description, parameters = SPECIFICATIONS[name]
@@ -265,11 +277,25 @@ def specifications(authenticated: bool = True, bound: bool = False) -> List[dict
             },
         }
     )
+    if authenticated:
+        # The portal's guide is for signed-in readers only (the portal's own gate).
+        specs.append(portal.specification(staff))
     return specs
 
 
 def is_display_books(name: str) -> bool:
     return name == DISPLAY_BOOKS
+
+
+def is_show_in_portal(name: str) -> bool:
+    from apps.assistant.portal import SHOW_IN_PORTAL
+
+    return name == SHOW_IN_PORTAL
+
+
+def is_directive(name: str) -> bool:
+    """A tool that only tells the portal to show something (cards, a place): no lookup behind it."""
+    return is_display_books(name) or is_show_in_portal(name)
 
 
 def clean_arguments(arguments) -> dict:
@@ -346,16 +372,95 @@ def call(request, name: str, arguments: dict, reading: Optional[Reading] = None,
     if tool.access is not ToolAccess.PUBLIC and not request.user.is_authenticated:
         raise ToolNotPermitted(_("`%(tool)s` requires an authenticated session.") % {"tool": name})
 
+    subject_note = None
     if name == "search_entries":
         try:
             limit = int(arguments.get("limit") or DEFAULT_SEARCH_LIMIT)
         except (TypeError, ValueError):
             limit = DEFAULT_SEARCH_LIMIT
         arguments["limit"] = max(1, min(limit, MAX_SEARCH_LIMIT))
+        subject_note = _check_subject(request, arguments)
     elif name == "list_categories":
         return _every_page(tool, request, arguments)
 
-    return tool.handler(request, arguments)
+    payload = tool.handler(request, arguments)
+    if name == "search_entries" and isinstance(payload, dict):
+        if subject_note:
+            payload["subject_note"] = subject_note
+        if not payload.get("items"):
+            filters = [key for key in _SEARCH_FILTERS if arguments.get(key)]
+            if filters:
+                # The empty result is the filters' doing more often than the library's (#165): say so.
+                payload["filter_note"] = (
+                    f"Nothing matched with {', '.join(filters)}. Search again without them; for what publications "
+                    f"say about a topic, use {SEARCH_PASSAGES} without entry_id."
+                )
+    return payload
+
+
+#: `search_entries` arguments that narrow the result, as the empty-result note names them.
+_SEARCH_FILTERS = (
+    "category_term",
+    "lcp_states",
+    "language_codes",
+    "author",
+    "published_from",
+    "published_to",
+)
+
+
+def _vocabulary(request) -> List[tuple]:
+    """`(term, [labels])` of every subject this reader may see, as `list_categories` lists them."""
+    tool = registry.get("list_categories")
+    if tool is None:
+        return []
+    items = _every_page(tool, request, {}).get("items") or []
+    vocabulary = []
+    for item in items:
+        label = item.get("label")
+        labels = [str(value) for value in label.values()] if isinstance(label, dict) else [str(label or "")]
+        vocabulary.append((str(item.get("term") or ""), [value for value in labels if value]))
+    return vocabulary
+
+
+#: Close subjects named when a `category_term` is unknown.
+CLOSEST_SUBJECTS = 3
+
+
+def _check_subject(request, arguments: dict) -> Optional[str]:
+    """Check `category_term` against the vocabulary, in place (#165).
+
+    A term the vocabulary has under another spelling (case, accents, a label) is replaced by the term itself. A
+    term it does not have at all is a guess ("fluid mechanics", "72.01"): an exact-match filter on it can only
+    return nothing. It is dropped and its words are added to `query`, and the note returned tells the model so,
+    with the closest real subjects. One model round costs 7-35 s, so correcting is better than refusing.
+    """
+    from apps.assistant.citations import fold
+
+    wanted = str(arguments.get("category_term") or "").strip()
+    if not wanted:
+        return None
+    vocabulary = _vocabulary(request)
+    folded = " ".join(fold(wanted).split())
+    if any(term == wanted for term, _labels in vocabulary):
+        return None
+    for term, labels in vocabulary:
+        if any(" ".join(fold(name).split()) == folded for name in [term, *labels]):
+            arguments["category_term"] = term
+            return None
+
+    arguments.pop("category_term", None)
+    query = str(arguments.get("query") or "").strip()
+    arguments["query"] = f"{query} {wanted}".strip() if folded not in fold(query) else query
+    closest = []
+    for term, labels in vocabulary:
+        names = [" ".join(fold(name).split()) for name in [term, *labels]]
+        if any(name and (folded in name or name in folded or name.startswith(folded[:4])) for name in names):
+            closest.append(term)
+    note = f"'{wanted}' is not a subject of this library, so it was searched as words instead."
+    if closest:
+        note += f" Subjects close to it: {', '.join(closest[:CLOSEST_SUBJECTS])}."
+    return note
 
 
 #: Pages `list_categories` is walked through at most (× EVILFLOWERS_MCP_MAX_LIMIT terms).
@@ -538,9 +643,10 @@ def _read_page(request, arguments: dict, reading: Reading) -> dict:
 def _search_passages(request, arguments: dict) -> dict:
     from apps.extraction.discovery import search_passages
 
-    query = str(arguments.get("query") or "").strip()
-    if not query:
+    if not str(arguments.get("query") or "").strip():
         raise ToolError("`query` is required.")
+    subject_note = None if arguments.get("entry_id") else _check_subject(request, arguments)
+    query = str(arguments.get("query") or "").strip()
     scope = {}
     if arguments.get("category_term"):
         scope["category_term"] = str(arguments["category_term"])
@@ -560,8 +666,14 @@ def _search_passages(request, arguments: dict) -> dict:
     payload = {"items": _passage_items(request, result), "searched_publications": result.indexed}
     if figures:
         payload["figures"] = figures
+    if subject_note:
+        payload["subject_note"] = subject_note
     if not payload["items"] and not figures:
-        payload["note"] = "No passage matched. Try search_entries, or other words."
+        payload["note"] = (
+            "No passage matched within that subject. Search again without category_term."
+            if scope.get("category_term")
+            else "No passage matched. Try search_entries, or other words."
+        )
     return payload
 
 
@@ -724,8 +836,13 @@ def _total(payload: dict, items: list) -> int:
 def _slim_entries(payload: dict) -> dict:
     items = [_slim_entry(item) for item in payload.get("items") or []]
     slim_payload = {"total": _total(payload, items), "items": items}
-    if not items:
-        slim_payload["note"] = "Nothing found. Try other or English words, fewer filters, or search_library_text."
+    notes = [payload[key] for key in ("subject_note", "filter_note") if payload.get(key)]
+    if not items and not payload.get("filter_note"):
+        notes.append(
+            f"Nothing found. Try other or English words, or {SEARCH_PASSAGES} for what publications say about it."
+        )
+    if notes:
+        slim_payload["note"] = " ".join(notes)
     return slim_payload
 
 

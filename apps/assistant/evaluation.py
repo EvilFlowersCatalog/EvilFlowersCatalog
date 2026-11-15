@@ -20,6 +20,12 @@ A case is a question plus what a good turn looks like:
   when it names a real publication (#130: `sk-passage` credited a chapter to a book that has none).
 - `reads_pages`: the answer drew on pages of the chat's publication (the `pages` frame of a bound chat).
 - `cites_other_entry`: a bound case's answer cites at least one publication other than the chat's (#157).
+- `navigates`: the turn shows (true) / does not show (false) a place in the portal (`navigate` frame, #167).
+- `names_no_tools`: the answer names no tool (`list_my_loans`, `displayBooks` …) (#168).
+- `study_section_not`: the study card's section contains none of these (#166: "Copyright").
+- `refuses_not`, `max_rounds`, `study`, `shows_figure`: see `score`.
+
+A case may also carry `portal_path`, the portal page the question is asked from (#167).
 
 A case may bind its chat to a publication, as the portal's "ask about this book" does: `entry_title` is looked
 up among the publications the user can see (titles, unlike ids, are the same on every instance), and the turn
@@ -77,6 +83,26 @@ TEXT_TOOLS = (
 MAX_ROUNDS_OK = 5
 
 
+def tool_names_in(text: str) -> List[str]:
+    """Tool names written into an answer (#168: "použite funkciu list_my_loans", "[displayBooks]")."""
+    from apps.assistant import tools
+    from apps.assistant.portal import SHOW_IN_PORTAL
+
+    names = set(tools.ALLOWED_TOOLS) | set(tools.LOCAL_TOOLS) | {tools.DISPLAY_BOOKS, SHOW_IN_PORTAL}
+    text = text or ""
+    found = []
+    for name in names:
+        if "_" in name or name != name.lower():
+            # Code-like (`list_my_loans`, `displayBooks`): never ordinary prose.
+            pattern = rf"\b{re.escape(name)}\b"
+        else:
+            # `follow`, `study` are words too ("a case study"): only as code, `follow` or [follow].
+            pattern = rf"[`\[]{re.escape(name)}[`\]]"
+        if re.search(pattern, text, re.IGNORECASE):
+            found.append(name)
+    return sorted(found)
+
+
 def czech_words(text: str) -> List[str]:
     """Czech-only words in `text`, lowercased, each once."""
     return list(dict.fromkeys(match.group(0).lower() for match in _CZECH_ONLY.finditer(text or "")))
@@ -131,6 +157,10 @@ class Outcome:
     failed_row: bool = False
     #: The publication a bound case is about (`entry_title`), for `cites_other_entry` (#157).
     bound_entry: Optional[str] = None
+    #: The turn sent a `navigate` frame: places in the portal shown to the reader (#167).
+    navigated: bool = False
+    #: The section a study card is about (#166: a quiz on the copyright page).
+    study_section: Optional[str] = None
 
 
 def parse_frames(frames: Iterable[str]) -> List[tuple]:
@@ -201,6 +231,16 @@ def score(case: dict, outcome: Outcome) -> Outcome:
     for phrase in expect.get("refuses_not") or []:
         if phrase.lower() in (outcome.answer or "").lower():
             failures.append(f"said {phrase!r}")
+    # #167, #168.
+    if "navigates" in expect and outcome.navigated != bool(expect["navigates"]):
+        failures.append("showed a place in the portal" if outcome.navigated else "no place in the portal shown")
+    for phrase in expect.get("study_section_not") or []:
+        if phrase.lower() in (outcome.study_section or "").lower():
+            failures.append(f"study card on {outcome.study_section!r}")
+    if expect.get("names_no_tools"):
+        named = tool_names_in(outcome.answer)
+        if named:
+            failures.append(f"named {', '.join(named)} in the answer")
 
     outcome.failures = failures
     outcome.passed = not failures
@@ -242,7 +282,14 @@ def run_case(user, case: dict, verify: bool = False) -> Outcome:
     document = _case_document(request, entry)
 
     started = time.monotonic()
-    frames = turn.run(request, chat, case["question"], document=document, language=case.get("language"))
+    frames = turn.run(
+        request,
+        chat,
+        case["question"],
+        document=document,
+        language=case.get("language"),
+        portal_path=case.get("portal_path"),
+    )
     try:
         for event, data in parse_frames(_timed(frames, outcome, started)):
             if event == "status" and data.get("state") == "thinking":
@@ -264,8 +311,11 @@ def run_case(user, case: dict, verify: bool = False) -> Outcome:
                 outcome.pages_read = len(data.get("pages") or [])
             elif event == "study":
                 outcome.study = data.get("mode")
+                outcome.study_section = (data.get("data") or {}).get("section")
             elif event == "evidence":
                 outcome.evidence = len(data.get("sources") or [])
+            elif event == "navigate":
+                outcome.navigated = True
             elif event == "error":
                 outcome.error = data.get("error")
                 outcome.failed_row = bool(data.get("message_id"))

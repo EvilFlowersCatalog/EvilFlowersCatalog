@@ -19,6 +19,7 @@ _TEXT = {
         "summary": ("Zhrnúť sekciu", "Zhrň mi túto kapitolu."),
         "overview": ("Prehľad knižnice", "O čom sú publikácie v knižnici?"),
         "loans": ("Moje výpožičky a polica", "Čo mám požičané a dokedy?"),
+        "guide": ("Ukázať, kde čo v portáli nájdeš", "Kde nájdem svoje výpožičky?"),
         "highlights": ("Zvýrazniť v čítačke", "Zvýrazni všetky definície v tejto kapitole."),
     },
     "en": {
@@ -32,6 +33,7 @@ _TEXT = {
         "summary": ("Summarise a section", "Summarise this chapter for me."),
         "overview": ("Library overview", "What are the publications in the library mostly about?"),
         "loans": ("My loans and shelf", "What do I have on loan, and until when?"),
+        "guide": ("Show you around the portal", "Where do I find my loans?"),
         "highlights": ("Highlight in the viewer", "Highlight every definition in this chapter."),
     },
 }
@@ -50,8 +52,9 @@ def card(language: Optional[str], authenticated: bool, about_readable: bool, bou
         label, example = table[key]
         items.append({"id": key, "label": label, "example": example})
     if authenticated:
-        label, example = table["loans"]
-        items.append({"id": "loans", "label": label, "example": example})
+        for key in ("loans", "guide"):
+            label, example = table[key]
+            items.append({"id": key, "label": label, "example": example})
     if bound:
         label, example = table["highlights"]
         items.append({"id": "highlights", "label": label, "example": example})

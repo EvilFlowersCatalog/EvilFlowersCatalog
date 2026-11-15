@@ -53,7 +53,11 @@ class OfferedToolsTests(SimpleTestCase):
     #: `library_overview` added ~210 tokens (~3-4 s) against the 4-6 generated retrieval rounds they replace.
     #: The estimate is 1,959 signed out and 2,076 signed in; held there, so anything new has to replace something.
     #: #157 added `follow(compare, entry_id)` and shortened the description to pay for it: 1,979 / 2,097.
-    PREFIX_TOKEN_BUDGET = 2100
+    #: 2026-11-15: 2,084 / 2,442. The prompt rules of #162/#165/#168 added ~100 tokens to both; `show_in_portal`
+    #: (#167, signed in only) costs ~240 with its place list, ~5 s of round 1 of a new chat on control. Nothing
+    #: smaller replaces it: the place ids are what lets the model stop saying it cannot navigate. A superuser's
+    #: list adds the administration (~110 more), outside this budget.
+    PREFIX_TOKEN_BUDGET = 2450
 
     def test_first_round_prefix_stays_within_the_cpu_budget(self):
         for authenticated in (False, True):
