@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "bd130bdbc8954eb4cfac555b346411a3e9089f70",
-    "short": "bd130bd",
-    "message": "Implementing #155",
+    "sha": "e6b4801fe203bb620be14a48ac5ebf7696c2647b",
+    "short": "e6b4801",
+    "message": "Implementing #161, #160, #159 and #157",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/bd130bdbc8954eb4cfac555b346411a3e9089f70"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e6b4801fe203bb620be14a48ac5ebf7696c2647b"
   },
-  "deployed_at": "2026-11-14T22:32:18Z",
+  "deployed_at": "2026-11-15T00:17:38Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
