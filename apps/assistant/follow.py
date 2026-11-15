@@ -173,8 +173,9 @@ def _section(context: ToolContext, label: str, text: Text, paragraph) -> dict:
 
 
 def _similar(context: ToolContext, label: str, paragraph) -> dict:
+    from apps.content import access
     from apps.core.models import Entry
-    from apps.extraction.discovery import _may_read_text, _visible
+    from apps.extraction.discovery import _visible
     from apps.extraction.models import ParagraphLink
 
     links = list(
@@ -186,10 +187,13 @@ def _similar(context: ToolContext, label: str, paragraph) -> dict:
     entry_ids = {link.target.run.acquisition.entry_id for link in links}
     visible = _visible(context.request, entry_ids)
     entries = {entry.pk: entry for entry in Entry.objects.filter(pk__in=visible)}
+    readable = access.readable_ids(
+        context.request, entries.values(), access.Tier.PASSAGE, access.Surface.ASSISTANT, visible=True
+    )
     passages = []
     for link in links:
         entry = entries.get(link.target.run.acquisition.entry_id)
-        if entry is None or not _may_read_text(context.request, entry):
+        if entry is None or str(entry.pk) not in readable:
             continue
         passage = Text(entry, link.target.run, lambda page: page).passage(link.target)
         passage["score"] = round(link.score or 0, 4)
@@ -200,8 +204,8 @@ def _similar(context: ToolContext, label: str, paragraph) -> dict:
 
 
 def _related(context: ToolContext, label: str, text: Text, paragraph) -> dict:
+    from apps.content import access
     from apps.core.models import Entry
-    from apps.extraction.discovery import _may_read_text
     from apps.extraction.models import Paragraph
     from apps.graph import projection, queries
 
@@ -212,12 +216,16 @@ def _related(context: ToolContext, label: str, text: Text, paragraph) -> dict:
             context, label, "related", [], note="Related sections are not available; use similar_elsewhere."
         )
     visible = queries.visible_entry_ids(context.request)
-    found = queries.related_sections(projection.section_key(paragraph.run_id, paragraph.section), visible, LINKS * 2)
+    found = queries.related_sections(projection.section_key(text.entry.pk, paragraph.section), visible, LINKS * 2)
     entries = {str(entry.pk): entry for entry in Entry.objects.filter(pk__in=[item["entry_id"] for item in found])}
+    # `found` is already limited to the visible entries.
+    readable = access.readable_ids(
+        context.request, entries.values(), access.Tier.PASSAGE, access.Surface.ASSISTANT, visible=True
+    )
     passages = []
     for item in found:
         entry = entries.get(item["entry_id"])
-        if entry is None or not _may_read_text(context.request, entry):
+        if entry is None or item["entry_id"] not in readable:
             continue
         first = Paragraph.objects.filter(run_id=item["run_id"], section=item["title"]).order_by("seq").first()
         if first is None:

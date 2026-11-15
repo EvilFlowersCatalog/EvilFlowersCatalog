@@ -111,7 +111,7 @@ def _section_key(request, entry_id: str, section: str, visible: Iterable[str]) -
     if _SECTION_KEY.match(section) and queries.section_entry(section) == entry_id:
         return section
     run = _entry_run(entry_id)
-    key = projection.section_key(run.pk, section) if run is not None else None
+    key = projection.section_key(entry_id, section) if run is not None else None
     if key is None or queries.section_entry(key) != entry_id:
         raise ToolError(
             _(

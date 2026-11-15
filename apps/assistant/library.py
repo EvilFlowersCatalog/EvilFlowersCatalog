@@ -6,8 +6,8 @@ numbered for the reader:
 - the publication of a chat bound to the reader's copy reads that copy's run, with the viewer's page numbers
   (`ReaderExtraction`);
 - any other publication reads its active run with the original file's pages (as the viewer shows an
-  open-access publication), only where `discovery._may_read_text` allows: never Readium LCP, never outside the
-  entry's IP ranges.
+  open-access publication), only where the content gate allows a passage (`apps.content.access`; under
+  `parity`: never Readium LCP, never outside the entry's IP ranges).
 
 `ToolContext` is what a tool call needs besides its arguments: the chat, the reader's copy when bound, the
 ledger, the page budgets and the reader's language.
@@ -27,7 +27,11 @@ _UNREADABLE = {
     "ip_blocked": "This publication may only be read from the library's network.",
     "none": "This publication has not been processed into paragraphs, so this is not available for it. Use "
     "read_pdf_page instead.",
+    "policy": "The library's content policy does not let this publication's text be read here. Answer from its "
+    "catalogue record.",
 }
+#: The content gate's reason (`apps.content.access.Reason`) → the message above.
+_UNREADABLE_BY_REASON = {"lcp": "readium", "outside_ip": "ip_blocked"}
 
 
 @dataclass
@@ -64,9 +68,11 @@ class Text:
 
     @classmethod
     def of(cls, context: ToolContext, entry) -> "Text":
-        from apps.extraction.discovery import _entry_run, _may_read_text
+        from apps.content import access
+        from apps.extraction.discovery import _entry_run
 
-        if entry.read_config("readium_enabled"):
+        decision = access.decide(context.request, entry, surface=access.Surface.ASSISTANT, visible=True)
+        if decision.reason == access.Reason.LCP and not decision.allows(access.Tier.PASSAGE):
             raise ToolError(_UNREADABLE["readium"])
         if context.document is not None and context.bound_entry_id == str(entry.pk):
             from apps.extraction.reader import ReaderExtraction
@@ -75,8 +81,8 @@ class Text:
             if extraction is None:
                 raise ToolError(_UNREADABLE["none"])
             return cls(entry, extraction.run, extraction.reader_page, bound=True)
-        if not _may_read_text(context.request, entry):
-            raise ToolError(_UNREADABLE["ip_blocked"])
+        if not decision.allows(access.Tier.PASSAGE):
+            raise ToolError(_UNREADABLE[_UNREADABLE_BY_REASON.get(decision.reason, "policy")])
         run = _entry_run(entry.pk)
         if run is None:
             raise ToolError(_UNREADABLE["none"])
@@ -145,9 +151,12 @@ SOURCE_KEYS = (
 
 def label_units(ledger, units: List[dict]) -> Dict[str, dict]:
     """Label passages (`E#`) and figures (`F#`) of a flat list, in place; returns what was issued."""
+    from apps.assistant.evidence import attach_locators
+
     issued: Dict[str, dict] = {}
-    for unit in units:
-        source = {key: unit.get(key) for key in SOURCE_KEYS}
+    sources = [{key: unit.get(key) for key in SOURCE_KEYS} for unit in units]
+    attach_locators(sources)  # one query for the batch instead of one per new label (#171)
+    for unit, source in zip(units, sources):
         label, _new = ledger.issue(source)
         unit["label"] = label
         text = unit.get("text") or unit.get("caption")

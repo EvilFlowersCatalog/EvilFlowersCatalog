@@ -20,6 +20,7 @@ from apps.api.views import (
     notification_contacts,
     reviews,
     jobs,
+    instance_settings,
 )
 
 # IP-008 Phase 4: the Dataverse integration moved to `apps.dataverse`.
@@ -29,15 +30,33 @@ from apps.api.views import (
 # documented but never called by any workflow — kept as a 200 stub for
 # observability so an unexpected POST is visible in logs rather than
 # silently 404ing.
+from apps.content import views as content_views
 from apps.dataverse.views import PrepublishView as _DataversePrepublishView
 from apps.extraction import admin_views as extraction_admin
 from apps.extraction import discovery as extraction_discovery
 from apps.extraction import figure_search as extraction_figure_search
+from apps.extraction import locator_views as extraction_locators
 from apps.extraction import views as extraction_views
 from apps.graph import views as graph_views
 from apps.readium.views.statistics import StatisticsView
 
 urlpatterns = [
+    # Instance settings (#20)
+    path("settings", instance_settings.SettingCollection.as_view(), name="setting-collection"),
+    path("settings/<str:key>", instance_settings.SettingDetail.as_view(), name="setting-detail"),
+    # Content policies (#174); the fixed paths before `<key>`.
+    path("content-policies", content_views.ContentPolicyCollection.as_view(), name="content-policy-collection"),
+    path("content-policies/schema", content_views.ContentPolicySchema.as_view(), name="content-policy-schema"),
+    path("content-policies/explain", content_views.ContentPolicyExplain.as_view(), name="content-policy-explain"),
+    path("content-policies/<str:key>", content_views.ContentPolicyDetail.as_view(), name="content-policy-detail"),
+    path(
+        "content-policies/<str:key>/versions",
+        content_views.ContentPolicyVersions.as_view(),
+        name="content-policy-versions",
+    ),
+    path(
+        "content-policies/<str:key>/assign", content_views.ContentPolicyAssign.as_view(), name="content-policy-assign"
+    ),
     # API keys
     path("api_keys", api_keys.ApiKeyManagement.as_view()),
     path("api_keys/<uuid:api_key_id>", api_keys.ApiKeyDetail.as_view()),
@@ -81,6 +100,8 @@ urlpatterns = [
     path("concepts", graph_views.ConceptList.as_view(), name="concept-list"),
     path("concepts/<str:key>", graph_views.ConceptDetail.as_view(), name="concept-detail"),
     path("graph/overview", graph_views.GraphOverview.as_view(), name="graph-overview"),
+    # Run-independent addresses of paragraphs, sections and figures (#171)
+    path("locators/<uuid:entry_id>/<str:key>", extraction_locators.EntryLocator.as_view(), name="entry-locator"),
     # Recommendations and figures from the extraction index (IP-018 Phase 8)
     path("entries/<uuid:entry_id>/similar", extraction_discovery.EntrySimilar.as_view(), name="entry-similar"),
     # IP-023: ratings and reviews

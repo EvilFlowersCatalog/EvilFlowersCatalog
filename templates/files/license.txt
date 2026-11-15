@@ -24,4 +24,6 @@ Medzi zakázané činnosti patrí najmä (okrem iného) hromadné alebo systemat
 
 Používaním tejto e-knihy vyjadrujete súhlas s podmienkami elektronickej výpožičky a zaväzujete sa používať ju v súlade so zákonom č. 185/2015 Z. z. (Autorský zákon) v znení neskorších predpisov.
 
-This document was distributed using open-source project EvilFlowersCatalog part of ELVIRA project.
+{% if contact_email %}Contact / Kontakt: {{ contact_email }}
+
+{% endif %}This document was distributed using open-source project EvilFlowersCatalog part of ELVIRA project.

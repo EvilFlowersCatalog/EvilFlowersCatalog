@@ -231,7 +231,9 @@ def _by_topic(context: ToolContext, text: Text, sections, topic: str):
     from apps.extraction.outline import is_matter
 
     try:
-        result = search_passages(context.request, topic, limit=1, per_entry=8, scope={"id": str(text.entry.pk)})
+        result = search_passages(
+            context.request, topic, limit=1, per_entry=8, scope={"id": str(text.entry.pk)}, surface="assistant"
+        )
     except Exception:
         logger.exception("Study topic search failed for %r", topic[:60])
         return None
@@ -475,7 +477,7 @@ def _prerequisites(context: ToolContext, text: Text, section) -> List[dict]:
         if not projection.available():
             return []
         found = queries.prerequisites(
-            projection.section_key(text.run.pk, section.title), queries.visible_entry_ids(context.request)
+            projection.section_key(text.entry.pk, section.title), queries.visible_entry_ids(context.request)
         )
     except Exception:
         logger.exception("Prerequisites of section %r failed", section.title[:60])

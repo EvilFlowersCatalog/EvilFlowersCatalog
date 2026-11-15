@@ -31,6 +31,7 @@ from apps import openapi
 from apps.api.filters.entries import EntryFilter
 from apps.api.response import SingleResponse
 from apps.api.serializers import Serializer
+from apps.content import access
 from apps.core.errors import DetailType, ProblemDetailException, ValidationException
 from apps.core.models import Entry
 from apps.core.views import SecuredView
@@ -306,17 +307,6 @@ def _int_param(request, name: str, default: int, maximum: int) -> int:
         return default
 
 
-def _may_read_text(request, entry: Entry) -> bool:
-    """Whether a passage's text may be shown outside the reader (IP-018 Q18/Q19, IP block)."""
-    if entry.read_config("readium_enabled"):
-        return False
-    try:
-        _check_ip_block(request, entry)
-    except ProblemDetailException:
-        return False
-    return True
-
-
 def _live_loans(request, entry_ids) -> set:
     """Ids of these entries the caller holds a live Readium LCP loan of (`ready` or `active`): they may open it."""
     from apps.readium.models import License
@@ -400,14 +390,20 @@ class EntryPassages(SecuredView):
 
 
 def search_passages(
-    request, text: str, *, limit: int = DEFAULT_LIMIT, per_entry: int = DEFAULT_PER_ENTRY, scope=None
+    request,
+    text: str,
+    *,
+    limit: int = DEFAULT_LIMIT,
+    per_entry: int = DEFAULT_PER_ENTRY,
+    scope=None,
+    surface: str = access.Surface.REST,
 ) -> PassageSearchSerializer:
     """Paragraphs closest to `text` across every processed PDF the caller may see.
 
-    Shared by the REST view and the assistant's `search_passages` tool. `scope` holds
+    Shared by the REST view and the assistant's `search_passages` tool (`surface`). `scope` holds
     `EntryFilter` parameters (catalog, category, language, ...); access control is applied
-    before ranking, as in entry search (IP-021). A passage's text is None where the reader
-    may not read it outside the viewer (`_may_read_text`: Readium LCP, IP block).
+    before ranking, as in entry search (IP-021). A passage's text is None where the content gate
+    does not allow a snippet (`apps.content.access`; under `parity`: Readium LCP, IP block).
     """
     from apps.core.search import embeddings
     from apps.core.search.query import rrf
@@ -469,7 +465,10 @@ def search_passages(
         if len(hits) >= limit and all(len(p) >= per_entry for p in hits.values()):
             break
     entry_ids = list(hits)[:limit]
-    readable = {entry.pk: _may_read_text(request, entry) for entry in Entry.objects.filter(pk__in=entry_ids)}
+    # Visible already (the ACL filtered `visible` above); the gate decides how much of each to show (#172).
+    entries = list(Entry.objects.filter(pk__in=entry_ids))
+    decisions = access.decide_many(request, entries, surface, visible=True)
+    readable = {entry.pk: decisions[str(entry.pk)].allows(access.Tier.SNIPPET) for entry in entries}
     snippets = _snippets(
         text, [row["pk"] for entry_id in entry_ids if readable.get(entry_id) for row in hits[entry_id]]
     )
@@ -562,9 +561,11 @@ class EntryFigures(ReaderView):
 
     def _open_run(self, request, entry_id: UUID) -> Optional[ExtractionRun]:
         entry = _entry(request, entry_id)
-        _check_ip_block(request, entry)
-        if entry.read_config("readium_enabled"):
-            # Licensed: borrowers see figures in the viewer, nobody in the detail.
+        decision = access.decide(request, entry, visible=True)
+        # Outside the IP ranges: 403, as the IP check always answered here; otherwise below a passage
+        # (under `parity`: lent through Readium LCP — borrowers see figures in the viewer) nothing.
+        decision.raise_outside_ip(access.Tier.PASSAGE)
+        if not decision.allows(access.Tier.PASSAGE):
             return None
         return _entry_run(entry_id)
 

@@ -45,15 +45,27 @@ class OpenAccessDocumentTests(SimpleTestCase):
     def test_the_chat_gets_no_document_for_a_readium_entry_even_with_a_reader_copy(self):
         chat = SimpleNamespace(entry=_entry(readium=True), user_acquisition=object())
         request = RequestFactory().post("/")
-        self.assertIsNone(ChatMessages()._chat_document(request, chat))
+        with _gate(reason="lcp", tier="metadata"):
+            self.assertIsNone(ChatMessages()._chat_document(request, chat))
 
     def test_the_chat_reads_the_open_access_pdf_when_it_has_no_reader_copy(self):
         chat = SimpleNamespace(entry=None, user_acquisition=None)
         request = RequestFactory().post("/")
         document = ReaderDocument(["one"], toc=[])
-        with mock.patch.object(ReaderDocument, "for_open_access", return_value=document) as read:
+        with (
+            _gate(reason="", tier="full"),
+            mock.patch.object(ReaderDocument, "for_open_access", return_value=document) as read,
+        ):
             self.assertIs(ChatMessages()._chat_document(request, chat, _entry(readium=False)), document)
         read.assert_called_once()
+
+
+def _gate(reason: str, tier: str):
+    """The content gate's decision, without the database (#172); `apps.content.tests` covers the real one."""
+    from apps.content.access import rank
+
+    decision = SimpleNamespace(reason=reason, tier=tier, allows=lambda wanted: rank(tier) >= rank(wanted))
+    return mock.patch("apps.content.access.decide", return_value=decision)
 
 
 class LanguageAndReadableTests(SimpleTestCase):

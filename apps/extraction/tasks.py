@@ -16,7 +16,8 @@ POST_PROCESS_KIND = "extraction.post_process"
 
 #: Bump when a post-processing step changes: the sweep then re-processes every active run, a batch at a time.
 #: 1: references, figure documents and vectors, section similarity (#151), graph projection.
-POST_PROCESS_VERSION = 1
+#: 2: locators (#171): keys of the runs active before them, and the graph's run-independent section keys.
+POST_PROCESS_VERSION = 2
 
 #: Seconds the weekly similarity rebuild may take (every pair of every active run, one set of means).
 SIMILARITY_REBUILD_TIME_LIMIT = 60 * 60
@@ -30,7 +31,7 @@ def post_process_run(run_id: str) -> dict:
     Every step is tried. The run is marked post-processed only when all of them succeeded; otherwise the task
     fails, the job is retried (`PostProcessDefinition.max_attempts`) and the sweep picks the run again.
     """
-    from apps.extraction import references, regions, similarity
+    from apps.extraction import locators, references, regions, similarity
     from apps.extraction.models import ExtractionRun
     from apps.graph import projection
 
@@ -39,6 +40,7 @@ def post_process_run(run_id: str) -> dict:
         return {}
     attempt = run.attempt
     steps = (
+        ("locators", locators.assign),  # idempotent; done at activation already, here for older runs (#171)
         ("references", references.build),
         ("regions", regions.index_run),  # TEI down: the documents are set, the vectors fail the step
         ("similarity", similarity.compute_run),  # before the graph, which projects its pairs as SIMILAR_TO (#151)

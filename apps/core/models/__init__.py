@@ -18,3 +18,4 @@ from .annotation_item import AnnotationItem
 from .entry_author import EntryAuthor
 from .user_activity import UserActivity
 from .entry_review import EntryReview
+from .setting import Setting

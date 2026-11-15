@@ -208,11 +208,13 @@ def _etag_response(request, etag: str, payload) -> HttpResponse:
 
 
 def _readable(request, entry_ids) -> set:
-    """Ids (as str) of these entries whose text the reader may read here: not Readium LCP, inside the IP ranges."""
-    from apps.extraction.discovery import _may_read_text
+    """Ids (as str) of these entries whose headings the reader may see here: the content gate's `outline`
+    (under `parity`: not Readium LCP, inside the IP ranges). Callers pass entries already limited to the visible."""
+    from apps.content import access
 
     ids = {str(entry_id) for entry_id in entry_ids}
-    return {str(entry.pk) for entry in Entry.objects.filter(pk__in=ids) if _may_read_text(request, entry)}
+    entries = Entry.objects.filter(pk__in=ids)
+    return access.readable_ids(request, entries, access.Tier.OUTLINE, access.Surface.GRAPH, visible=True)
 
 
 def _headings(request, items: List[dict]) -> List[dict]:
@@ -486,7 +488,7 @@ def chapter_map(entry_id, readable: bool = True) -> tuple:
     finished = run.finished_at.isoformat() if run.finished_at else ""
     etag = hashlib.sha1(f"chapters:v2:{MIN_CHAPTER_LINKS}:{run.pk}:{finished}:{readable}".encode()).hexdigest()
     sections = outline(run)
-    keys = {section.title: projection.section_key(run.pk, section.title) for section in sections}
+    keys = projection.section_keys(entry_id, [section.title for section in sections])
     order = {section.title: index for index, section in enumerate(sections)}
     with connection.cursor() as cursor:
         cursor.execute(
@@ -544,10 +546,13 @@ class EntryChapters(SecuredView):
     )
     @openapi.response(HTTPStatus.OK, "Chapter map", ChapterMapSerializer)
     def get(self, request, entry_id: UUID):
-        from apps.extraction.discovery import _may_read_text
+        from apps.content import access
 
         entry = _entry(request, entry_id)
+        readable = access.decide(request, entry, surface=access.Surface.GRAPH, visible=True).allows(
+            access.Tier.OUTLINE
+        )
         with _span("entries.chapters") as current:
-            etag, payload = chapter_map(entry_id, readable=_may_read_text(request, entry))
+            etag, payload = chapter_map(entry_id, readable=readable)
             _rows(current, len(payload["links"]))
         return _etag_response(request, etag, payload)

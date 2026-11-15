@@ -18,6 +18,7 @@ from apps.tasks.models import Job, JobRun
 from apps.tasks.tests.test_jobs import FakeDispatcher
 
 STEPS = {
+    "locators": "apps.extraction.locators.assign",
     "references": "apps.extraction.references.build",
     "regions": "apps.extraction.regions.index_run",
     "similarity": "apps.extraction.similarity.compute_run",
@@ -197,17 +198,18 @@ class SweepTests(TestCase):
 
     @override_settings(EVILFLOWERS_POST_PROCESS_SWEEP_BATCH=2)
     def test_a_new_version_requeues_every_run_a_batch_at_a_time(self):
-        ExtractionRun.objects.filter(pk__in=self.runs.values()).update(post_processed=1)
+        current = tasks.POST_PROCESS_VERSION
+        ExtractionRun.objects.filter(pk__in=self.runs.values()).update(post_processed=current)
         facade.discover(POST_PROCESS_KIND)
         self.assertEqual(tasks.post_process_sweep()["declared"], 0)
-        tasks_version, jobs_version = bump_version(2)
+        tasks_version, jobs_version = bump_version(current + 1)
         with tasks_version, jobs_version:
             facade.discover(POST_PROCESS_KIND)
             self.assertEqual(self.job("Quiet").state, JobState.QUEUED)
             self.assertEqual(tasks.post_process_sweep()["declared"], 2)
             self.finish(RunStatus.SUCCEEDED)
             self.assertEqual(tasks.post_process_sweep()["runs"], [str(self.runs["Quiet"])])
-            self.assertEqual(ExtractionRun.objects.get(pk=self.runs["Popular"]).post_processed, 2)
+            self.assertEqual(ExtractionRun.objects.get(pk=self.runs["Popular"]).post_processed, current + 1)
 
     @override_settings(EVILFLOWERS_POST_PROCESS_SWEEP_BATCH=1, EVILFLOWERS_POST_PROCESS_MAX_ATTEMPTS=1)
     def test_a_run_failed_for_an_older_version_is_swept_again(self):
@@ -215,7 +217,7 @@ class SweepTests(TestCase):
         self.finish(RunStatus.FAILED)
         self.assertEqual(self.job("Popular").state, JobState.FAILED)
         self.assertNotIn(self.runs["Popular"], next_to_post_process(10))
-        tasks_version, jobs_version = bump_version(2)
+        tasks_version, jobs_version = bump_version(tasks.POST_PROCESS_VERSION + 1)
         with tasks_version, jobs_version:
             self.assertEqual(next_to_post_process(1), [self.runs["Popular"]])
 

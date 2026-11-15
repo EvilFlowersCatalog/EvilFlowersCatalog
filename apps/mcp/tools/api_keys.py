@@ -44,6 +44,11 @@ API_KEY_SCHEMA = {
         "username": {"type": "string"},
         "name": {"type": ["string", "null"]},
         "is_active": {"type": "boolean"},
+        "processor": {
+            "type": ["string", "null"],
+            "enum": ["local", "external", None],
+            "description": "Where the client sends text it reads; null inherits `content.external_processor_default`.",
+        },
         "is_current": {
             "type": "boolean",
             "description": "True for the key authenticating this very session.",
@@ -68,6 +73,7 @@ def _api_key(request, instance: ApiKey) -> dict:
         "username": instance.user.username,
         "name": instance.name,
         "is_active": instance.is_active,
+        "processor": instance.processor,
         "is_current": instance.pk == _current_key_id(request),
         "last_seen_at": instance.last_seen_at.isoformat() if instance.last_seen_at else None,
         "created_at": instance.created_at.isoformat(),
@@ -148,6 +154,14 @@ def list_api_keys(request, raw_arguments: dict) -> dict:
                 **UUID_SCHEMA,
                 "description": "Owner of the key. Defaults to you; anyone else needs superuser.",
             },
+            "processor": {
+                "type": "string",
+                "enum": ["local", "external"],
+                "description": "Where the client sends the text it reads: `external` for a third-party model "
+                "provider (Claude, ChatGPT…), `local` for a model on the library's own hardware — `local` "
+                "needs superuser. Omit to inherit `content.external_processor_default`. Content policies "
+                "may give external processors less text.",
+            },
         },
         "required": ["name"],
         "additionalProperties": False,
@@ -165,7 +179,15 @@ def list_api_keys(request, raw_arguments: dict) -> dict:
 )
 @transaction.atomic
 def create_api_key(request, raw_arguments: dict) -> dict:
-    arguments = Arguments(raw_arguments, allowed=("name", "user_id"))
+    arguments = Arguments(raw_arguments, allowed=("name", "user_id", "processor"))
+    processor = arguments.enum("processor", ApiKey.Processor.values)
+    if processor == ApiKey.Processor.LOCAL and not request.user.is_superuser:
+        raise ToolError(
+            _(
+                "Only administrators may mark a key as a `local` processor: it vouches that the text never "
+                "leaves the library's hardware. Omit `processor` or pass `external`."
+            )
+        )
 
     owner_id = arguments.uuid("user_id")
     if owner_id and owner_id != str(request.user.pk):
@@ -193,7 +215,7 @@ def create_api_key(request, raw_arguments: dict) -> dict:
             _("'%(username)s' is deactivated; a key for it would never authenticate.") % {"username": owner.username}
         )
 
-    api_key = ApiKey.objects.create(user=owner, name=name)
+    api_key = ApiKey.objects.create(user=owner, name=name, processor=processor)
     token = JWTFactory(str(owner.pk)).api_key(str(api_key.pk))
 
     # Never the token itself.

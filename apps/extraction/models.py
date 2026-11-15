@@ -131,6 +131,8 @@ class Region(BaseModel):
     embedding = HalfVectorField(dimensions=EMBEDDING_DIMENSIONS, null=True)
     #: `model@revision` of `embedding`: vectors of two models are never compared.
     embedding_model = models.CharField(max_length=200, null=True)
+    #: `Locator.key` (#171): the address of this figure that survives a newer run.
+    locator_key = models.CharField(max_length=40, null=True, db_index=True)
 
 
 class Paragraph(BaseModel):
@@ -161,6 +163,52 @@ class Paragraph(BaseModel):
     bbox = models.JSONField()
     text = models.TextField()
     embedding = HalfVectorField(dimensions=EMBEDDING_DIMENSIONS, null=True)
+    #: `Locator.key` (#171): the address of this paragraph that survives a newer run.
+    locator_key = models.CharField(max_length=40, null=True, db_index=True)
+
+
+class Locator(BaseModel):
+    """A run-independent address of a paragraph, section, figure, table or equation (#171).
+
+    Runs replace each other and take their paragraphs and regions along; a citation, a section link or a graph
+    key that pointed at a row id dies with it. A locator is keyed by what the unit *is* (its page and text, its
+    heading, its caption and box: `apps.extraction.locators`), so the same paragraph in a newer run gets the same
+    key. Locators are never deleted with a run. One no longer found in the active run is marked `detached_at` and
+    still resolves, by its quote (a TextQuoteSelector: `quote_exact` with `prefix`/`suffix`) and then its page.
+
+    Named *locator*, not *anchor*: `Reference.anchor` already means the printed label.
+    """
+
+    class Meta:
+        app_label = "extraction"
+        db_table = "extraction_locator"
+        default_permissions = ()
+        constraints = [models.UniqueConstraint(fields=["entry", "key"], name="extraction_locator_key")]
+        verbose_name = _("Locator")
+        verbose_name_plural = _("Locators")
+
+    class Kind(models.TextChoices):
+        PARAGRAPH = "paragraph", _("paragraph")
+        SECTION = "section", _("section")
+        FIGURE = "figure", _("figure")
+        TABLE = "table", _("table")
+        EQUATION = "equation", _("equation")
+
+    key = models.CharField(max_length=40)
+    entry = models.ForeignKey("core.Entry", on_delete=models.CASCADE, related_name="+")
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    #: 1-based page of the original file where the unit was last seen.
+    source_page = models.PositiveIntegerField()
+    #: The unit's text (or caption, or heading), normalised, at most `locators.QUOTE_CHARS` characters.
+    quote_exact = models.TextField(blank=True, default="")
+    #: Text right before and after the quote (the neighbouring paragraphs), for a relocation that has to choose.
+    prefix = models.TextField(blank=True, default="")
+    suffix = models.TextField(blank=True, default="")
+    #: Runs the key was first and last found in. Plain ids: runs are deleted, locators are not.
+    first_run = models.UUIDField(null=True)
+    last_run = models.UUIDField(null=True)
+    #: When a newer run no longer had the key; null while the active run has it.
+    detached_at = models.DateTimeField(null=True)
 
 
 class Sentence(BaseModel):

@@ -37,6 +37,14 @@ class Arguments:
     def _present(self, name: str) -> bool:
         return name in self._raw and self._raw[name] is not None and self._raw[name] != ""
 
+    def sent(self, name: str) -> bool:
+        """Whether the caller passed `name` at all — `null` included, which some tools read as "reset"."""
+        return name in self._raw
+
+    def json(self, name: str) -> Any:
+        """The value exactly as sent, for a JSON value the handler validates against its own schema."""
+        return self._raw.get(name)
+
     def string(self, name: str, *, default: Optional[str] = None, max_length: int = 1000) -> Optional[str]:
         if not self._present(name):
             return default

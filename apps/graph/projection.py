@@ -4,7 +4,7 @@
 |---|---|---|
 | `Entry {id, title, catalog_id}` | the entry | `WRITTEN_BY → Author`, `FILED_UNDER → Subject`, `HAS_SECTION → Section` |
 | `Author {id, name}`, `Subject {id, term}` | authors, categories | — |
-| `Section {key, entry_id, run_id, title, first_page, last_page, seq}` | `outline(run)` | `NEXT → Section`, `SHOWS → Figure`, `MENTIONS {role} → Concept`, `SIMILAR_TO {weight} → Section` |
+| `Section {key, entry_id, run_id, title, first_page, last_page, seq}` (`key` run-independent, #171) | `outline(run)` | `NEXT → Section`, `SHOWS → Figure`, `MENTIONS {role} → Concept`, `SIMILAR_TO {weight} → Section` |
 | `Figure {id, entry_id, kind, page, caption}` | referenced figures and tables | — |
 | `Concept {key, term, subject}` | section summaries, `key_concepts` | — |
 
@@ -21,7 +21,6 @@ Every projection is idempotent: `project_run` deletes the entry's sections and f
 and equals the incremental result.
 """
 
-import hashlib
 import logging
 import re
 from typing import Dict, List, Optional
@@ -43,8 +42,23 @@ def available() -> bool:
     return age.available()
 
 
-def section_key(run_id, section: str) -> str:
-    return hashlib.sha1(f"{run_id}\x00{section}".encode("utf-8")).hexdigest()[:20]
+def section_key(entry_id, section: str, ordinal: int = 0) -> str:
+    """A section's key: entry, normalised heading and the heading's ordinal, never the run (#171).
+
+    The same in every run, so `/api/v1/sections/{key}/…` links and MCP graph keys survive a re-extraction. It is
+    also the section's `Locator.key` (`apps.extraction.locators`). `ordinal` tells apart headings equal after
+    normalising; `section_keys` assigns them over a whole outline.
+    """
+    from apps.extraction.locators import section_key as locator_section_key
+
+    return locator_section_key(entry_id, section, ordinal)
+
+
+def section_keys(entry_id, sections) -> Dict[str, str]:
+    """`{heading: key}` of an outline's headings in reading order."""
+    from apps.extraction.locators import section_keys as locator_section_keys
+
+    return locator_section_keys(entry_id, sections)
 
 
 def concept_key(term: str, subject: str = "") -> str:
@@ -125,9 +139,14 @@ def project_run(run) -> Dict[str, int]:
     project_entry(entry)
 
     sections = outline(run)
+    keys = section_keys(entry.pk, [section.title for section in sections])
+
+    def key_of(title: str) -> str:
+        return keys.get(title) or section_key(entry.pk, title)
+
     rows = [
         {
-            "key": section_key(run.pk, section.title),
+            "key": keys[section.title],
             "title": section.title[:300],
             "first_page": section.first_page,
             "last_page": section.last_page,
@@ -172,10 +191,7 @@ def project_run(run) -> Dict[str, int]:
             "page": page,
             "caption": (caption or "")[:CAPTION_CHARS],
         }
-        shown[(section_key(run.pk, section), str(region_id))] = {
-            "s": section_key(run.pk, section),
-            "f": str(region_id),
-        }
+        shown[(key_of(section), str(region_id))] = {"s": key_of(section), "f": str(region_id)}
     for batch in _batches(list(figures.values())):
         statements.append(
             (
@@ -222,12 +238,18 @@ def _similar_sections(run) -> List[dict]:
 
     rows = (
         SectionSimilarity.objects.filter(Q(source=run) | Q(target=run), source__is_active=True, target__is_active=True)
-        .values_list("source_id", "source_section", "target_id", "target_section", "score")
+        .values_list(
+            "source__acquisition__entry_id",
+            "source_section",
+            "target__acquisition__entry_id",
+            "target_section",
+            "score",
+        )
         .order_by("source_id", "source_section", "target_id", "target_section")
     )
     return [
-        {"a": section_key(source_run, source), "b": section_key(target_run, target), "weight": score}
-        for source_run, source, target_run, target, score in rows
+        {"a": section_key(source_entry, source), "b": section_key(target_entry, target), "weight": score}
+        for source_entry, source, target_entry, target, score in rows
     ]
 
 
@@ -246,7 +268,7 @@ def project_concepts(summary, subject: Optional[str] = None) -> int:
         seen.add(key)
         role = "defines" if item.get("role") == "defines" else "discusses"
         concepts.append({"key": key, "term": str(item["term"])[:120], "subject": subject, "role": role})
-    return replace_concepts(section_key(summary.run_id, summary.section), concepts)
+    return replace_concepts(section_key(summary.entry_id, summary.section), concepts)
 
 
 def replace_concepts(section: str, concepts: List[dict], roles=("defines", "discusses")) -> int:
@@ -285,7 +307,7 @@ def add_definitions(run_id, section: str, terms: List[str], entry) -> int:
         "MATCH (s:Section {key: $key}) UNWIND $rows AS row "
         "MERGE (c:Concept {key: row.key}) SET c.term = row.term, c.subject = row.subject "
         "MERGE (s)-[:MENTIONS {role: row.role}]->(c)",
-        {"key": section_key(run_id, section), "rows": concepts},
+        {"key": section_key(entry.pk, section), "rows": concepts},
     )
     return len(concepts)
 

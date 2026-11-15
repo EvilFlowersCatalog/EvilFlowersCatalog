@@ -92,6 +92,27 @@ def list_resource_templates(request) -> dict:
                 "mimeType": MIME,
             },
             {
+                "uriTemplate": "evilflowers://entry/{id}/outline",
+                "name": "Publication outline",
+                "title": "Publication outline",
+                "description": (
+                    "The sections of a processed publication in reading order, with pages and each section's "
+                    "locator URI. Headings are withheld for Readium LCP titles and outside the IP ranges."
+                ),
+                "mimeType": MIME,
+            },
+            {
+                "uriTemplate": "evilflowers://entry/{id}/locator/{key}",
+                "name": "Locator",
+                "title": "Locator",
+                "description": (
+                    "A paragraph, section, figure, table or equation by its run-independent key (#171): its page, "
+                    "box, `resolution` (exact | relocated | page_only) and, where the reader may read the text, "
+                    "the quote."
+                ),
+                "mimeType": MIME,
+            },
+            {
                 "uriTemplate": "evilflowers://feed/{id}",
                 "name": "Feed",
                 "title": "Feed",
@@ -121,8 +142,13 @@ def read_resource(request, uri: str) -> dict:
             }
         )
 
-    readers = {uris.CATALOG: _read_catalog, uris.ENTRY: _read_entry, uris.FEED: _read_feed}
-    payload = readers[reference.kind](request, reference.identifier)
+    if reference.part == uris.OUTLINE:
+        payload = _read_outline(request, reference.identifier)
+    elif reference.part == uris.LOCATOR:
+        payload = _read_locator(request, reference.identifier, reference.key)
+    else:
+        readers = {uris.CATALOG: _read_catalog, uris.ENTRY: _read_entry, uris.FEED: _read_feed}
+        payload = readers[reference.kind](request, reference.identifier)
 
     return {
         "contents": [
@@ -172,6 +198,58 @@ def _read_entry(request, identifier: str) -> dict:
         raise ToolNotFound("Entry", identifier)
 
     return entry_detail(entry, request, lcp_state_mapping(request.user, [entry]))
+
+
+def _visible_entry(request, identifier: str) -> Entry:
+    params = QueryDict(mutable=True)
+    params["id"] = identifier
+    entry = EntryFilter(params, queryset=Entry.objects.all(), request=request).qs.select_related("catalog").first()
+    if entry is None:
+        raise ToolNotFound("Entry", identifier)
+    return entry
+
+
+def _read_outline(request, identifier: str) -> dict:
+    """The sections of the active run, each with its run-independent key and locator URI (#171)."""
+    from apps.content import access
+    from apps.extraction.locators import active_run, section_keys
+    from apps.extraction.outline import outline
+
+    entry = _visible_entry(request, identifier)
+    run = active_run(entry.pk)
+    sections = outline(run)
+    keys = section_keys(entry.pk, [section.title for section in sections])
+    readable = access.decide(request, entry, surface=access.Surface.MCP, visible=True).allows(access.Tier.OUTLINE)
+    return {
+        "entry_id": str(entry.pk),
+        "processed": run is not None,
+        "readable": readable,
+        "sections": [
+            {
+                "key": keys[section.title],
+                "uri": uris.locator_uri(entry.pk, keys[section.title]),
+                # Readium LCP and outside the IP ranges: the structure stays, the headings do not.
+                "title": section.title if readable else None,
+                "first_page": section.first_page,
+                "last_page": section.last_page,
+                "paragraphs": section.paragraphs,
+            }
+            for section in sections
+        ],
+    }
+
+
+def _read_locator(request, identifier: str, key: str) -> dict:
+    from apps.content import access
+    from apps.extraction import locators
+    from apps.extraction.locator_views import serialize
+
+    entry = _visible_entry(request, identifier)
+    resolution = locators.resolve(entry.pk, key)
+    if resolution is None:
+        raise ToolNotFound("Locator", key)
+    decision = access.decide(request, entry, resolution, surface=access.Surface.MCP, visible=True)
+    return serialize(request, entry, resolution, decision.allows(access.Tier.SNIPPET))
 
 
 def _read_feed(request, identifier: str) -> dict:

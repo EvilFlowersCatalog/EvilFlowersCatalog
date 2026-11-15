@@ -218,7 +218,7 @@ class StudyTests(Base):
         context = self.context()
         _payload, text = tools.run(context.request, "get_entry", {"entry_id": str(self.entry.pk)})
         self.assertEqual(json.loads(text)["entry"]["sections"][1]["section"], "2 Bernoulli")
-        with mock.patch("apps.extraction.discovery._may_read_text", return_value=False):
+        with mock.patch("apps.assistant.tools._readable", return_value=False):
             _payload, text = tools.run(context.request, "get_entry", {"entry_id": str(self.entry.pk)})
         self.assertNotIn("sections", json.loads(text)["entry"])
 

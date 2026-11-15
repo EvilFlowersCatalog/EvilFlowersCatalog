@@ -12,6 +12,7 @@ import uuid
 from django.contrib.auth.models import AnonymousUser
 from django.test import override_settings
 
+from apps.content.policies import PRESETS
 from apps.core.models import ApiKey, Catalog, Category, Entry, Feed, UserCatalog
 from apps.mcp.registry import ToolAccess
 from apps.mcp.tests.test_management import ManagementTestCase
@@ -94,6 +95,10 @@ class WriteSurfaceSweepTests(ManagementTestCase):
             "update_notification_branding": {"library_name": "Sweep"},
             "send_test_notification": {"notification_type": "license_created"},
             "sync_ldap_profiles": {"dry_run": True},
+            # #20/#174: instance settings and policy documents are superuser-only; assigning needs `manage`.
+            "update_setting": {"key": "content.default_policy", "value": "open-access"},
+            "update_content_policy": {"key": "parity", "document": PRESETS["parity"]},
+            "assign_content_policy": {"key": "open-access", "catalog_id": catalog_id},
         }
 
     def test_every_write_tool_refuses_a_reader_of_the_catalog(self):

@@ -8,9 +8,13 @@ A label in the ledger is kept small: publication, page, section, and the paragra
   on a tie). This is kotaemon's "highlight the evidence unit" without asking a CPU model to copy quotes;
 - a figure, table or equation: its printed caption, its `bbox` and the crop's URL.
 
-`quote`, `caption` and `image_url` are present only where the reader may read the publication's text outside
-the viewer (`discovery._may_read_text`): never for Readium LCP, never outside the entry's IP ranges. `readable`
-says which; an unreadable passage still resolves to its page.
+A source issued since #171 also keeps the unit's `locator_key`. The citation then resolves through the locator
+(`apps.extraction.locators.resolve`), so it survives a newer extraction run: the same paragraph in the new run
+(`resolution: exact`), the edited or moved one found by its quote (`relocated`), or just its page (`page_only`).
+
+`quote`, `caption` and `image_url` are present only where the content gate allows the reader a snippet of the
+publication outside the viewer (`apps.content.access`; under `parity`: never for Readium LCP, never outside the
+entry's IP ranges). `readable` says which; an unreadable passage still resolves to its page.
 
 `Resolver` follows Onyx's streaming citation processor: it watches the chunk stream for `[E3]`, `[E3, F2]`, holds
 back a partial `[E` until it is complete (so a chip never flickers half-written) and reports each label the first
@@ -66,13 +70,16 @@ class _Access:
         self._readable: Dict[str, bool] = {}
 
     def readable(self, entry_id) -> bool:
+        from apps.content import access
         from apps.core.models import Entry
-        from apps.extraction.discovery import _may_read_text
 
         key = str(entry_id)
         if key not in self._readable:
             entry = Entry.objects.filter(pk=entry_id).first() if entry_id else None
-            self._readable[key] = bool(entry is not None and _may_read_text(self.request, entry))
+            # The source was issued to this reader in their own chat; the ACL is not re-checked for a citation.
+            self._readable[key] = bool(
+                entry is not None and access.decide(self.request, entry, visible=True).allows(access.Tier.SNIPPET)
+            )
         return self._readable[key]
 
 
@@ -93,24 +100,70 @@ def complete(label: str, source: dict, sentence: str, request) -> dict:
     readable = _access(request).readable(source.get("entry_id"))
     result["readable"] = readable
     kind = source.get("kind")
+    located = _located(source)
+    if located is not None:
+        result["resolution"] = located.resolution
     if kind in REGION_KINDS or source.get("region_id"):
-        result.update(_region(source, readable, request))
+        result.update(_region(source, readable, request, located))
     elif source.get("paragraph_id") and not str(source["paragraph_id"]).startswith("page:"):
-        result.update(_passage(source, readable, sentence))
+        result.update(_passage(source, readable, sentence, located))
     return result
 
 
-def _passage(source: dict, readable: bool, sentence: str) -> dict:
+def _located(source: dict):
+    """Where the source's locator is now (#171): the paragraph or region of the active run, or its page.
+
+    None for a source without a locator (a page read whole, a label issued before #171).
+    """
+    from apps.extraction import locators
+
+    key, entry_id = source.get("locator_key"), source.get("entry_id")
+    if not key or not entry_id:
+        return None
+    try:
+        return locators.resolve(entry_id, key)
+    except Exception:  # a citation chip must never fail an answer
+        return None
+
+
+def _offset(source: dict, fallback: int) -> Tuple[int, int]:
+    """`(file page when the label was issued, reader page minus file page)`.
+
+    A bound chat speaks the reader's page numbers (`page`), the units sit on pages of the original file
+    (`source_page`, kept only where the two differ).
+    """
+    original = int(source.get("source_page") or source.get("page") or fallback)
+    return original, int(source.get("page") or original) - original
+
+
+def _moved(source: dict, located, offset: int) -> dict:
+    """The citation's page where a relocation found the unit on another page of the file (#171)."""
+    from apps.extraction import locators
+
+    original = int(source.get("source_page") or source.get("page") or located.source_page)
+    if located.resolution == locators.EXACT or located.source_page == original:
+        return {}
+    return {"page": located.source_page + offset}
+
+
+def _passage(source: dict, readable: bool, sentence: str, located=None) -> dict:
     from apps.extraction.models import Paragraph
 
-    paragraph = Paragraph.objects.filter(pk=source["paragraph_id"]).first()
+    if located is not None:
+        paragraph = located.paragraph
+        _original, offset = _offset(source, located.locator.source_page)
+        extra = _moved(source, located, offset)
+    else:
+        paragraph = Paragraph.objects.filter(pk=source["paragraph_id"]).first()
+        extra = {}
     if paragraph is None:
-        # A newer extraction run replaced it: the page is still right.
-        return {}
-    extra = {"bbox": paragraph.bbox}
+        # A newer extraction run replaced it and nothing matched its quote: the page is still right.
+        return extra
+    extra["bbox"] = paragraph.bbox
+    if str(paragraph.pk) != str(source.get("paragraph_id")):
+        extra["paragraph_id"] = str(paragraph.pk)  # the same paragraph in the run that replaced the cited one
     chosen = best_sentence(list(paragraph.sentences.order_by("seq")), sentence)
-    # A bound chat speaks the reader's page numbers; the sentence is on a page of the original file.
-    offset = int(source.get("page") or paragraph.page) - int(source.get("source_page") or paragraph.page)
+    _original, offset = _offset(source, paragraph.page)
     if chosen is not None:
         extra["quads"] = chosen.quads
         extra["sentence_page"] = chosen.page + offset
@@ -121,15 +174,23 @@ def _passage(source: dict, readable: bool, sentence: str) -> dict:
     return extra
 
 
-def _region(source: dict, readable: bool, request) -> dict:
+def _region(source: dict, readable: bool, request, located=None) -> dict:
     from django.urls import reverse
 
     from apps.extraction.models import Region
 
-    region = Region.objects.filter(pk=source["region_id"]).select_related("run__acquisition").first()
+    if located is not None:
+        region = located.region
+        _original, offset = _offset(source, located.locator.source_page)
+        extra = _moved(source, located, offset)
+    else:
+        region = Region.objects.filter(pk=source["region_id"]).select_related("run__acquisition").first()
+        extra = {}
     if region is None:
-        return {}
-    extra = {"bbox": region.bbox}
+        return extra
+    extra["bbox"] = region.bbox
+    if str(region.pk) != str(source.get("region_id")):
+        extra["region_id"] = str(region.pk)
     if readable:
         caption = region.printed_caption or region.caption or region.description
         if caption:

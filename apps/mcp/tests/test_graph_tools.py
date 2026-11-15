@@ -28,9 +28,9 @@ class GraphToolTests(GraphFixture):
             concepts=[{"term": "Tlak", "role": "discusses"}, {"term": "Utajený pojem", "role": "defines"}]
         )
         self._project_all()
-        self.key = projection.section_key(self.run.pk, "2 Bernoulli")
-        self.other_key = projection.section_key(self.other_run.pk, "2 Bernoulli")
-        self.secret_key = projection.section_key(self.secret_run.pk, "2 Bernoulli")
+        self.key = projection.section_key(self.entry.pk, "2 Bernoulli")
+        self.other_key = projection.section_key(self.other.pk, "2 Bernoulli")
+        self.secret_key = projection.section_key(self.secret.pk, "2 Bernoulli")
         self.server = McpServer(registry)
         cache.clear()
 

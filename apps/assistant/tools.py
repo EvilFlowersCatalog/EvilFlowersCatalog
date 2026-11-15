@@ -37,6 +37,8 @@ from uuid import UUID
 from django.conf import settings
 from django.utils.translation import gettext as _
 
+from apps.content import access
+from apps.content.access import Surface
 from apps.mcp.errors import ToolError
 from apps.mcp.registry import Tool, ToolAccess, registry
 
@@ -538,11 +540,13 @@ def run(request, name: str, arguments: dict, ledger=None, reading: Optional[Read
 
 
 def _readable(request, entry_id) -> bool:
+    """Whether the model may see this entry's outline: section headings and summaries are its text."""
     from apps.core.models import Entry
-    from apps.extraction.discovery import _may_read_text
 
     entry = Entry.objects.filter(pk=entry_id).first() if _uuid(entry_id) else None
-    return bool(entry is not None and _may_read_text(request, entry))
+    return bool(
+        entry is not None and access.decide(request, entry, surface=Surface.ASSISTANT).allows(access.Tier.OUTLINE)
+    )
 
 
 # ----------------------------------------------------------------- local tools
@@ -675,7 +679,7 @@ def _search_passages(request, arguments: dict) -> dict:
             payload["figures"] = _figures(request, query, {"id": str(entry.pk)})
         return payload
 
-    result = search_passages(request, query, limit=5, per_entry=2, scope=scope)
+    result = search_passages(request, query, limit=5, per_entry=2, scope=scope, surface=Surface.ASSISTANT)
     figures = _figures(request, query, scope) if arguments.get("figures") is True else []
     if result.degraded and not result.items and not figures:
         # Search by meaning is down and no passage has the query's words (#113).
@@ -704,7 +708,7 @@ def _figures(request, query: str, scope: dict) -> List[dict]:
     from apps.core.models import Entry
     from apps.extraction.regions import search_regions
 
-    hits = search_regions(request, query, limit=FIGURES_PER_SEARCH, scope=scope or None)
+    hits = search_regions(request, query, limit=FIGURES_PER_SEARCH, scope=scope or None, surface=Surface.ASSISTANT)
     titles = dict(Entry.objects.filter(pk__in=[hit.entry_id for hit in hits]).values_list("pk", "title"))
     return [
         {
@@ -724,11 +728,19 @@ def _search_publication(request, query: str, entry) -> dict:
     from apps.extraction.discovery import search_passages
 
     entry_id = str(entry.pk)
-    result = search_passages(request, query, limit=1, per_entry=PASSAGES_PER_PUBLICATION, scope={"id": entry_id})
+    result = search_passages(
+        request,
+        query,
+        limit=1,
+        per_entry=PASSAGES_PER_PUBLICATION,
+        scope={"id": entry_id},
+        surface=Surface.ASSISTANT,
+    )
     items = _passage_items(request, result)
     if items:
         payload = {"items": items}
-        if entry.read_config("readium_enabled"):
+        decision = access.decide(request, entry, surface=Surface.ASSISTANT, visible=True)
+        if decision.reason == access.Reason.LCP:
             payload["note"] = _UNREADABLE["readium"]
         return payload
 

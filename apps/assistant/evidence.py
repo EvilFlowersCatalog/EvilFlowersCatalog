@@ -19,6 +19,7 @@ page, section); the rest is looked up when the label is cited, under the access 
 
 import re
 from typing import Dict, List, Optional, Tuple
+from uuid import UUID
 
 #: Key of the label → source map in a tool's full payload.
 EVIDENCE_KEY = "evidence"
@@ -42,6 +43,37 @@ def _key(source: dict) -> Optional[str]:
     if source.get("region_id"):
         return f"region:{source['region_id']}"
     return source.get("paragraph_id")
+
+
+def _uuid(value) -> Optional[str]:
+    try:
+        return str(UUID(str(value))) if value else None
+    except ValueError:
+        return None
+
+
+def _row_id(source: dict) -> Tuple[Optional[str], Optional[str]]:
+    """`(paragraph id, region id)` of a source; a page's `page:` pseudo id is no paragraph."""
+    return _uuid(source.get("paragraph_id")), _uuid(source.get("region_id"))
+
+
+def attach_locators(sources: List[dict]) -> None:
+    """Give each source its paragraph's or region's `locator_key` (#171), in place, one query per kind.
+
+    The key outlives the run the row belongs to: `citations.complete` resolves a label through it after a newer
+    extraction replaced the paragraph. Rows not keyed yet are left without one.
+    """
+    from apps.extraction.locators import keys_for
+
+    wanted = [source for source in sources if not source.get("locator_key")]
+    ids = [_row_id(source) for source in wanted]
+    if not any(paragraph or region for paragraph, region in ids):
+        return
+    keys = keys_for([paragraph for paragraph, _ in ids], [region for _, region in ids])
+    for source, (paragraph, region) in zip(wanted, ids):
+        key = keys.get(region or paragraph or "")
+        if key:
+            source["locator_key"] = key
 
 
 class Ledger:
@@ -92,6 +124,8 @@ class Ledger:
             label = self._by_key[key]
             self.touched.add(label)
             return label, False
+        if not source.get("locator_key"):
+            attach_locators([source])
         series = "F" if source.get("region_id") else "E"
         label = self._next(series)
         self.sources[label] = source
@@ -226,20 +260,26 @@ def label_passages(payload: dict, ledger: Ledger) -> dict:
     issued for this payload are kept under `evidence`, which `tools.slim` keeps out of the model's view.
     """
     issued: Dict[str, dict] = {}
-    for item in payload.get("items") or []:
-        for passage in item.get("passages") or []:
-            if not passage.get("text"):
-                continue
-            source = {
+    pairs = [
+        (
+            passage,
+            {
                 "kind": PASSAGE,
                 "entry_id": item.get("entry_id"),
                 "title": item.get("title"),
                 "page": passage.get("page"),
                 "section": passage.get("section"),
                 "paragraph_id": passage.get("paragraph_id"),
-            }
-            label, issued[label] = _labelled(ledger, source, passage["text"])
-            passage["label"] = label
+            },
+        )
+        for item in payload.get("items") or []
+        for passage in item.get("passages") or []
+        if passage.get("text")
+    ]
+    attach_locators([source for _passage, source in pairs])
+    for passage, source in pairs:
+        label, issued[label] = _labelled(ledger, source, passage["text"])
+        passage["label"] = label
     _keep(payload, issued)
     return payload
 
@@ -247,17 +287,23 @@ def label_passages(payload: dict, ledger: Ledger) -> dict:
 def label_figures(payload: dict, ledger: Ledger, key: str = "figures") -> dict:
     """Label the figures (tables, equations) of a payload's `figures` list, in place: `F#` labels."""
     issued: Dict[str, dict] = {}
-    for figure in payload.get(key) or []:
-        if not figure.get("region_id"):
-            continue
-        source = {
-            "kind": figure.get("kind") or "figure",
-            "entry_id": figure.get("entry_id"),
-            "title": figure.get("title"),
-            "page": figure.get("page"),
-            "region_id": figure.get("region_id"),
-            "source_page": figure.get("source_page"),
-        }
+    pairs = [
+        (
+            figure,
+            {
+                "kind": figure.get("kind") or "figure",
+                "entry_id": figure.get("entry_id"),
+                "title": figure.get("title"),
+                "page": figure.get("page"),
+                "region_id": figure.get("region_id"),
+                "source_page": figure.get("source_page"),
+            },
+        )
+        for figure in payload.get(key) or []
+        if figure.get("region_id")
+    ]
+    attach_locators([source for _figure, source in pairs])
+    for figure, source in pairs:
         label, issued[label] = _labelled(ledger, source, figure.get("caption"))
         figure["label"] = label
     _keep(payload, issued)

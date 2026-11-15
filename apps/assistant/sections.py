@@ -248,8 +248,9 @@ def outline_for_model(entry_id, table_of_contents: Optional[List[dict]], readabl
     """What `get_entry` shows of a publication's structure.
 
     The table of contents as catalogued when there is one; else the sections of its processed text, each with
-    its pages and, where generated, its summary — only when `readable` (`discovery._may_read_text` for this
-    reader): section headings are part of the text, so never for Readium LCP nor outside the IP ranges.
+    its pages and, where generated, its summary — only when `readable` (the content gate allows this reader
+    the outline): section headings are part of the text, so under `parity` never for Readium LCP nor outside
+    the IP ranges.
     """
     from apps.assistant.models import SectionSummary
     from apps.core.models import Entry
@@ -260,7 +261,7 @@ def outline_for_model(entry_id, table_of_contents: Optional[List[dict]], readabl
     if not readable:
         return shown
     entry = Entry.objects.filter(pk=entry_id).first()
-    if entry is None or entry.read_config("readium_enabled") or table_of_contents:
+    if entry is None or table_of_contents:
         return shown
     run = _entry_run(entry.pk)
     sections = outline(run)

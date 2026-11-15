@@ -23,20 +23,24 @@ from apps.mcp.protocol import (
 URL = "/mcp/v1"
 
 READ_TOOLS = {
+    "explain_access",
     "find_concept",
     "get_catalog",
     "get_category",
     "get_concept",
+    "get_content_policy",
     "get_entry",
     "get_feed",
     "get_job",
     "get_my_shelf",
     "get_notification_branding",
+    "get_setting",
     "get_user",
     "list_api_keys",
     "list_authors",
     "list_catalogs",
     "list_categories",
+    "list_content_policies",
     "list_encryption_jobs",
     "list_feeds",
     "list_job_kinds",
@@ -56,6 +60,7 @@ READ_TOOLS = {
 WRITE_TOOLS = {
     "add_entries_to_feed",
     "apply_job",
+    "assign_content_policy",
     "classify_entries",
     "create_api_key",
     "create_catalog",
@@ -78,9 +83,11 @@ WRITE_TOOLS = {
     "sync_ldap_profiles",
     "update_catalog",
     "update_category",
+    "update_content_policy",
     "update_entry",
     "update_feed",
     "update_notification_branding",
+    "update_setting",
     "update_user",
 }
 

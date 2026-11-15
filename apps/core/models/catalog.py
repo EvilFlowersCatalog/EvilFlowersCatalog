@@ -28,6 +28,9 @@ class Catalog(BaseModel):
     users = models.ManyToManyField("User", related_name="catalogs", through="UserCatalog")
     is_public = models.BooleanField(default=False)
     touched_at = models.DateTimeField(null=True, auto_now=True)
+    #: Key of a content policy (`apps.content`, #174) for the entries of this catalog; null inherits the
+    #: instance setting `content.default_policy`. A key, not a foreign key: policies are versioned rows.
+    content_policy = models.CharField(max_length=100, null=True, blank=True)
 
 
 __all__ = [

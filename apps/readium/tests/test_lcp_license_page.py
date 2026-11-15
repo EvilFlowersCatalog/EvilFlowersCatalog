@@ -27,7 +27,31 @@ def _pdf_bytes(pages: int = 2) -> bytes:
     return document.tobytes()
 
 
+def _contact(address: str):
+    """The `branding.contact_email` instance setting (#20), without the database."""
+    return patch("apps.core.settings_store.get", return_value=address)
+
+
 class LicenseCopyTests(SimpleTestCase):
+    def setUp(self):
+        patcher = _contact("kniznica@stuba.sk")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_the_contact_address_is_the_last_thing_on_the_page(self):
+        modifier = PDFModifier(context={"title": "Kniha", "authors": "Autor", "language": None}, pages=None)
+        result = fitz.open(stream=modifier.license_copy(File(io.BytesIO(_pdf_bytes(1)))).read())
+        license_text = result[1].get_text()
+        self.assertIn("Contact / Kontakt: kniznica@stuba.sk", license_text)
+        # Nothing overflowed the text box: the closing line is still there.
+        self.assertIn("part of ELVIRA project", license_text)
+
+    def test_a_placeholder_address_is_not_printed(self):
+        modifier = PDFModifier(context={"title": "Kniha", "authors": "Autor", "language": None}, pages=None)
+        with _contact("root@localhost"):
+            result = fitz.open(stream=modifier.license_copy(File(io.BytesIO(_pdf_bytes(1)))).read())
+        self.assertNotIn("Contact / Kontakt", result[1].get_text())
+
     def test_inserts_license_page_without_watermark(self):
         modifier = PDFModifier(context={"title": "Kniha", "authors": "Autor", "language": None}, pages=None)
 
@@ -67,6 +91,11 @@ class LicenseCopyTests(SimpleTestCase):
     EVILFLOWERS_MODIFIERS={"application/pdf": "apps.core.modifiers.pdf.PDFModifier"},
 )
 class EncryptionSourceTests(SimpleTestCase):
+    def setUp(self):
+        patcher = _contact("kniznica@stuba.sk")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def _make_encrypted_content(self, mime: str):
         entry = MagicMock()
         entry.title = "Kniha"

@@ -10,7 +10,6 @@ from datetime import datetime
 from http import HTTPStatus
 from uuid import UUID
 
-from django.conf import settings
 from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
@@ -21,6 +20,7 @@ from object_checker.base_object_checker import has_object_permission
 from apps import openapi
 from apps.api.response import PaginationResponse, SingleResponse
 from apps.api.serializers.entries import with_entry_graph
+from apps.core import settings_store
 from apps.core.errors import ValidationException, ProblemDetailException, DetailType
 from apps.core.views import SecuredView
 from apps.readium.enums import LicenseAction
@@ -174,7 +174,7 @@ class LicenseManagement(SecuredView):
                 additional_data={
                     "reason_code": e.reason_code,
                     "entry_id": str(form.cleaned_data["entry_id"].pk),
-                    "contact_email": settings.EVILFLOWERS_CONTACT_EMAIL,
+                    "contact_email": settings_store.get("branding.contact_email"),
                 },
                 previous=e,
             )

@@ -34,6 +34,7 @@ from django.conf import settings
 
 from apps.assistant import crossbook
 from apps.assistant.library import PASSAGE_CHARS, ToolContext, label_units
+from apps.content.access import Surface
 
 GATHER_EVIDENCE = "gather_evidence"
 
@@ -140,7 +141,9 @@ def _passages(context: ToolContext, query: str, scope, floor: float) -> List[dic
     from apps.extraction.discovery import search_passages
 
     limit = settings.EVILFLOWERS_ASSISTANT_PACK_PASSAGES
-    result = search_passages(context.request, query, limit=limit, per_entry=2, scope=scope or {})
+    result = search_passages(
+        context.request, query, limit=limit, per_entry=2, scope=scope or {}, surface=Surface.ASSISTANT
+    )
     titles = _titles(context, [hit.entry_id for hit in result.items])
     page_of = _page_mapping(context)
     passages = []
@@ -206,7 +209,7 @@ def _figures(context: ToolContext, query: str, scope, floor: float, passages: Li
         if len(figures) >= limit:
             return figures
 
-    hits = search_regions(context.request, query, limit=limit, scope=scope, min_score=floor)
+    hits = search_regions(context.request, query, limit=limit, scope=scope, min_score=floor, surface=Surface.ASSISTANT)
     hit_titles = _titles(context, [hit.entry_id for hit in hits])
     for hit in hits:
         if hit.region_id in {str(pk) for pk in seen}:

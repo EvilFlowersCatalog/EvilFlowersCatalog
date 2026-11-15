@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest import mock
 from uuid import uuid4
 
-from django.test import RequestFactory, SimpleTestCase, TestCase
+from django.test import RequestFactory, TestCase
 
 from apps.assistant import evaluation, evidence, tools, turn
 from apps.assistant.models import Chat, ChatMessage
@@ -24,7 +24,7 @@ def _passage(page, text="Bernoulli's principle relates pressure and speed.", par
     return {"paragraph_id": paragraph_id or str(uuid4()), "page": page, "section": "2.4", "score": 0.8, "text": text}
 
 
-class LedgerTests(SimpleTestCase):
+class LedgerTests(TestCase):  # labelling looks up the paragraphs' locator keys (#171)
     def test_labels_continue_and_a_known_paragraph_keeps_its_label(self):
         ledger = evidence.Ledger()
         first = _passage(47)

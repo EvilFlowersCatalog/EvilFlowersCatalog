@@ -36,6 +36,7 @@ pgvector = "^0.4"
 # IP-019: the application code (spans, metrics, log trace ids) uses the API only,
 # which is a no-op without the SDK from the `otel` group. Same release train.
 opentelemetry-api = "1.45.2"
+jsonschema = "^4.26"
 
 [tool.poetry.group.s3.dependencies]
 minio = "^7.2"

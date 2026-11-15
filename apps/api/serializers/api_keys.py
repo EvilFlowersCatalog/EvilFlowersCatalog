@@ -16,6 +16,8 @@ class ApiKeySerializer:
         user_id: UUID
         name: Optional[str]
         is_active: bool
+        #: `local` | `external`; null inherits the instance setting `content.external_processor_default` (#174).
+        processor: Optional[str] = None
         last_seen_at: Optional[datetime]
         created_at: datetime
         updated_at: datetime

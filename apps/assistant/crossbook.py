@@ -144,9 +144,22 @@ def similar_sections(
         visible = [entry_id for entry_id in visible if entry_id == str(only)]
     if not visible:
         return []
+    from apps.extraction.models import ExtractionRun
+
+    cited = list(dict.fromkeys(cited))
+    entry_of = {
+        str(pk): entry_id
+        for pk, entry_id in ExtractionRun.objects.filter(pk__in={run_id for run_id, _ in cited}).values_list(
+            "pk", "acquisition__entry_id"
+        )
+    }
     best: Dict[str, dict] = {}
-    for run_id, section in dict.fromkeys(cited):
-        for item in queries.related_sections(projection.section_key(run_id, section), visible, limit=10):
+    for run_id, section in cited:
+        if str(run_id) not in entry_of:
+            continue
+        for item in queries.related_sections(
+            projection.section_key(entry_of[str(run_id)], section), visible, limit=10
+        ):
             # SIMILAR_TO only: a shared concept alone is a topic, not the same explanation (#157).
             if "similar" not in (item.get("via") or "") or str(item["entry_id"]) in excluded:
                 continue

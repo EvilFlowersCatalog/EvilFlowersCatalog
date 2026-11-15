@@ -82,6 +82,7 @@ INSTALLED_APPS = [
     "apps.assistant",
     "apps.extraction",
     "apps.graph",
+    "apps.content",
 ]
 
 MIDDLEWARE = [

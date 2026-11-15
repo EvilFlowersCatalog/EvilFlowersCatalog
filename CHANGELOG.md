@@ -7,16 +7,24 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Added**: Extraction runs count attempts ([#140]). Every `/start` or reset starts a new `attempt`. Services send theirs as `?attempt=`, and results of an earlier one get 409 `superseded`. Long jobs poll `GET /extraction/v1/runs/<id>` and report `superseded` when they stop early. Both cases are counted in `evilflowers.extraction.jobs.superseded`. Migration `extraction.0007`
 - **Changed**: Search embeds the query while the lexical query runs (`EVILFLOWERS_SEARCH_EMBED_CONCURRENT`, [#141]). Feed parents/children load inside the feeds query. With `include=facets`, the page's LCP states reuse the availability facet's lookup. A page without LCP titles reads no licenses or reservations
 - **Added**: Off-peak beat sweeps for section summaries (`EVILFLOWERS_ASSISTANT_SUMMARISE_SCHEDULE`) and figure descriptions (`EVILFLOWERS_ASSISTANT_DESCRIBE_FIGURES_SCHEDULE`), and a nightly graph rebuild (`EVILFLOWERS_GRAPH_REBUILD_SCHEDULE`, default `50 4 * * *` UTC) ([#154]). They are the maintenance kinds `maintenance.assistant_summarise_sweep`, `maintenance.assistant_describe_figures_sweep` and `maintenance.graph_rebuild` on `/api/v1/jobs`. The sweeps take the most-read books first and yield to chats. They work in 20-minute slices and resume after a rollout. Both model sweeps are off unless scheduled
+- **Added**: Instance settings a superuser changes without a deploy ([#20]): `GET /api/v1/settings`, `GET/PUT /api/v1/settings/{key}`, MCP `get_setting` / `update_setting`. Keys are declared in code with a JSON Schema; a value resolves stored → `EVILFLOWERS_*` setting → default and is cached in Redis. First keys: `content.default_policy`, `content.cite_base_url`, `content.external_processor_default`, `branding.contact_email` (now also on the licence page), `branding.logo`. Migration `core.0051`
+- **Added**: Extraction locators ([#171]): run-independent keys for paragraphs, figures and sections that survive a re-extraction (`exact` → `relocated` by quote → `page_only`). `GET /api/v1/locators/{entry_id}/{key}` with a Readium Locator projection, MCP resources `evilflowers://entry/{id}/locator/{key}` and `/outline`, `locator_key` in the citation ledger. Graph section keys no longer contain the run id. Migration `extraction.0011`; `POST_PROCESS_VERSION` 2 backfills through the post-process sweep
+- **Added**: Content policies ([#174]): versioned rule documents (tiers per basis, caps, grants, budget, log) with five presets (`parity`, `open-access`, `licensed-standard`, `licensed-strict`, `campus-only`). REST `/api/v1/content-policies` (list, schema, versions, explain, assign) and MCP `list_content_policies`, `get_content_policy`, `update_content_policy`, `assign_content_policy`, `explain_access`. Resolution entry → catalog (`catalogs.content_policy`) → `content.default_policy` → `parity`. API keys gain `processor: local | external`. Migrations `content.0001`, `content.0002`
+- **Changed**: One content gate, `apps.content.access.decide()`, behind every surface that shows publication text ([#172]): assistant reading tools and bound chats, citations, passages, figures, locators, graph headings and MCP resources. Under `parity` every surface returns what it did before
 - **Fixed**: The library graph works under the app role without superuser rights ([#147]). AGE loads from `$libdir/plugins/age`, and `LOAD 'age'` remains only as a superuser fallback. The graph's existence is read from `pg_catalog`. `graph.0001` passes when the graph cannot be created. `graph_rebuild` names the missing piece
 
 ### Upgrade notes (0.16.0)
 
 - ⚠️ Apache AGE needs evilflowers-postgresql with `$libdir/plugins/age.so` (evilflowers-postgresql#5). A superuser runs `CREATE EXTENSION age` before the catalog migrates and grants the app role `USAGE ON SCHEMA ag_catalog` and `CREATE ON DATABASE` (knowledge#45). Then run `manage.py graph_rebuild`
 
+[#20]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/20
 [#140]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/140
 [#141]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/141
 [#147]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/147
 [#154]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/154
+[#171]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/171
+[#172]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/172
+[#174]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/174
 
 ## 0.15.0 : 2026-11-12 (The Library Reads Back)
 

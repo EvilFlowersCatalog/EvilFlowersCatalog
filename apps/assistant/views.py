@@ -30,6 +30,7 @@ from apps.assistant.serializers import (
     ChatSerializer,
     ExplanationSerializer,
 )
+from apps.content import access
 from apps.core.errors import AuthorizationException, ProblemDetailException, UnauthorizedException, ValidationException
 from apps.core.models import Annotation, UserAcquisition
 from apps.core.views import SecuredView
@@ -76,16 +77,19 @@ class AssistantView(SecuredView):
         """The publication the model may read this turn, or None.
 
         `entry` is the publication attached to this message, else the chat's.
-        Entries lent through Readium LCP are never read: the model is told to
-        send the reader to borrow them (`services.entry_note`). Otherwise the
+        Entries the content gate holds back for Readium LCP (`parity`: always)
+        are not read: the model is told to send the reader to borrow them
+        (`services.entry_note`). Otherwise the
         reader's copy the chat is bound to (opened in the viewer), or the
         entry's open-access PDF. Anything that is not readable — no PDF, an
         expired copy, an IP block — turns the reading tools off; the
         conversation itself continues.
         """
         entry = entry or chat.entry
-        if entry is not None and entry.read_config("readium_enabled"):
-            return None
+        if entry is not None:
+            decision = access.decide(request, entry, surface=access.Surface.ASSISTANT, visible=True)
+            if decision.reason == access.Reason.LCP and not decision.allows(access.Tier.FULL):
+                return None
         try:
             copy = chat.user_acquisition
             if copy is not None and (entry is None or copy.acquisition.entry_id == entry.pk):
@@ -363,7 +367,7 @@ class Capabilities(AssistantView):
     def get(self, request):
         from apps.assistant.capabilities import card
         from apps.core.models import Entry
-        from apps.extraction.discovery import _entry_run, _may_read_text, _visible
+        from apps.extraction.discovery import _entry_run
 
         readable = False
         entry_id = request.GET.get("entry_id")
@@ -372,9 +376,10 @@ class Capabilities(AssistantView):
                 entry_uuid = UUID(entry_id)
             except ValueError:
                 entry_uuid = None
-            if entry_uuid is not None and entry_uuid in _visible(request, [entry_uuid]):
-                entry = Entry.objects.get(pk=entry_uuid)
-                readable = _may_read_text(request, entry) and _entry_run(entry.pk) is not None
+            entry = Entry.objects.filter(pk=entry_uuid).first() if entry_uuid is not None else None
+            if entry is not None:
+                decision = access.decide(request, entry, surface=access.Surface.ASSISTANT)
+                readable = decision.allows(access.Tier.PASSAGE) and _entry_run(entry.pk) is not None
         data = card(
             request.GET.get("language") or getattr(request, "LANGUAGE_CODE", None),
             authenticated=request.user.is_authenticated,

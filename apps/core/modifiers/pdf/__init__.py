@@ -11,6 +11,7 @@ from django.template.loader import get_template
 from django.utils import timezone
 import xml.etree.ElementTree as ET
 
+from apps.core import settings_store
 from apps.core.modifiers import ModifierContext, InvalidPage
 from apps.core.modifiers.pdf.annotations import shape_factory
 
@@ -186,9 +187,13 @@ class PDFModifier:
         # drops empty ones, so blank lines are kept as a single space.
         margin = self.LICENSE_PAGE_MARGIN
         writer = fitz.TextWriter(license_page.rect, color=(0, 0, 0))
+        # The contact address is an instance setting (#20), editable without a deploy. An unconfigured
+        # deployment's placeholder (`root@localhost`) is not printed.
+        contact = settings_store.get("branding.contact_email") or ""
+        context = {"contact_email": "" if contact.endswith("@localhost") else contact, **self._context}
         writer.fill_textbox(
             license_page.rect + (margin, margin, -margin, -margin),
-            [line or " " for line in chosen_template.render(self._context).splitlines()],
+            [line or " " for line in chosen_template.render(context).splitlines()],
             font=fitz.Font("helv"),
             fontsize=self.LICENSE_PAGE_FONT_SIZE,
         )

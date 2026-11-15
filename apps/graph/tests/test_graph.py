@@ -113,7 +113,7 @@ class GraphTests(GraphFixture):
 
     def test_related_sections_never_surface_a_hidden_publication(self):
         self._project_all()
-        key = projection.section_key(self.run.pk, "2 Bernoulli")
+        key = projection.section_key(self.entry.pk, "2 Bernoulli")
         request = fixtures.request_for(self.reader)
         request.user = AnonymousUser()
         found = queries.related_sections(key, queries.visible_entry_ids(request))
@@ -124,7 +124,7 @@ class GraphTests(GraphFixture):
 
     def test_prerequisites_and_top_concepts(self):
         self._project_all()
-        other_key = projection.section_key(self.other_run.pk, "2 Bernoulli")
+        other_key = projection.section_key(self.other.pk, "2 Bernoulli")
         before = queries.prerequisites(other_key, [str(self.entry.pk)])
         self.assertEqual([item["entry_id"] for item in before], [str(self.entry.pk)])
         top = queries.top_concepts([str(self.entry.pk), str(self.other.pk)])
@@ -140,7 +140,7 @@ class GraphTests(GraphFixture):
         )
         self._project_all()
         self.assertEqual(projection.counts()["Concept"], 3)  # two fields, plus the hidden book's unscoped "Tlak"
-        key = projection.section_key(self.run.pk, "2 Bernoulli")
+        key = projection.section_key(self.entry.pk, "2 Bernoulli")
         related = queries.related_sections(key, [str(self.other.pk)])
         self.assertNotIn("concepts", {item["via"] for item in related})
         self.assertNotIn("concepts+similar", {item["via"] for item in related})
@@ -178,13 +178,13 @@ class GraphTests(GraphFixture):
             concepts=[{"term": "Tlak", "role": "defines"}],
         )
         self._project_all()
-        intro = projection.section_key(self.run.pk, "1 Introduction")
+        intro = projection.section_key(self.entry.pk, "1 Introduction")
         found = queries.prerequisites(intro, [str(self.entry.pk), str(self.other.pk)])
         self.assertEqual(
             [(item["entry_id"], item["title"], item["later"]) for item in found],
             [(str(self.other.pk), "1 Introduction", False), (str(self.entry.pk), "2 Bernoulli", True)],
         )
-        bernoulli = projection.section_key(self.other_run.pk, "2 Bernoulli")
+        bernoulli = projection.section_key(self.other.pk, "2 Bernoulli")
         earlier = queries.prerequisites(bernoulli, [str(self.other.pk)])
         self.assertEqual([(item["title"], item["later"]) for item in earlier], [("1 Introduction", False)])
 
@@ -192,7 +192,7 @@ class GraphTests(GraphFixture):
         self._project_all()
         hostile = "x' }) DETACH DELETE n //$$"
         projection.replace_concepts(
-            projection.section_key(self.run.pk, "2 Bernoulli"),
+            projection.section_key(self.entry.pk, "2 Bernoulli"),
             [{"key": projection.concept_key(hostile), "term": hostile, "role": "defines"}],
         )
         self.assertEqual(projection.counts()["Section"], 6)

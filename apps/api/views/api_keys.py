@@ -13,6 +13,15 @@ from apps.core.models import ApiKey
 from apps.core.views import SecuredView
 
 
+def _check_processor(request, processor):
+    """`local` claims the key's text never leaves our hardware, which can unlock more under a content
+    policy (#174); only an administrator vouches for that. Anyone may declare `external`."""
+    if processor == ApiKey.Processor.LOCAL and not request.user.is_superuser:
+        raise ProblemDetailException(
+            _("Only administrators may mark an API key as a local processor."), status=HTTPStatus.FORBIDDEN
+        )
+
+
 class ApiKeyManagement(SecuredView):
     @openapi.metadata(
         description="Generate a new API key for the authenticated user. Creates a unique API key that can be used for programmatic access to the API. Superusers can create keys for other users by specifying a user_id. Returns the generated key details including its bearer `token` — the only response that ever contains it; store it now.",
@@ -27,9 +36,11 @@ class ApiKeyManagement(SecuredView):
 
         if "user_id" in form.cleaned_data.keys() and not request.user.is_superuser:
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+        _check_processor(request, form.cleaned_data.get("processor"))
 
         api_key = ApiKey(user=request.user)
         form.populate(api_key)
+        api_key.processor = api_key.processor or None
         api_key.save()
 
         return SingleResponse(

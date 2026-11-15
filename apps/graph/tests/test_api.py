@@ -31,8 +31,8 @@ class GraphApiTests(GraphFixture):
             concepts=[{"term": "Tlak", "role": "discusses"}, {"term": "Utajený pojem", "role": "defines"}]
         )
         self._project_all()
-        self.key = projection.section_key(self.run.pk, "2 Bernoulli")
-        self.secret_key = projection.section_key(self.secret_run.pk, "2 Bernoulli")
+        self.key = projection.section_key(self.entry.pk, "2 Bernoulli")
+        self.secret_key = projection.section_key(self.secret.pk, "2 Bernoulli")
         cache.clear()
 
     def get(self, url, status=200, **headers):
@@ -53,7 +53,7 @@ class GraphApiTests(GraphFixture):
         self.get("/api/v1/sections/0000000000/related", status=404)
 
     def test_prerequisites(self):
-        other_key = projection.section_key(self.other_run.pk, "2 Bernoulli")
+        other_key = projection.section_key(self.other.pk, "2 Bernoulli")
         found = self.data(f"/api/v1/sections/{other_key}/prerequisites")
         self.assertEqual([(item["entry_id"], item["later"]) for item in found], [(str(self.entry.pk), False)])
         self.get(f"/api/v1/sections/{self.secret_key}/prerequisites", status=404)
@@ -167,7 +167,7 @@ class GraphApiTests(GraphFixture):
         self.assertEqual(sections, {str(self.entry.pk): "2 Bernoulli", str(self.other.pk): None})
         chapters = self.data(f"/api/v1/entries/{self.other.pk}/chapters")
         self.assertEqual([section["title"] for section in chapters["sections"]], [None, None])
-        self.assertEqual(chapters["sections"][1]["key"], projection.section_key(self.other_run.pk, "2 Bernoulli"))
+        self.assertEqual(chapters["sections"][1]["key"], projection.section_key(self.other.pk, "2 Bernoulli"))
 
     def test_each_route_records_a_graph_query_span(self):
         with recorded() as exporter, request_span():

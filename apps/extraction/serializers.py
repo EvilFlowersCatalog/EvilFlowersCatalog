@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from apps.api.serializers import Serializer
@@ -37,6 +37,44 @@ class ExtractionStatusSerializer(Serializer):
     tables: int = 0
     equations: int = 0
     paragraphs: int = 0
+
+
+class ReadiumLocatorSerializer(Serializer):
+    """The locator as a Readium Locator (readium/architecture `models/locators`), for a Readium-based viewer."""
+
+    #: The publication resource: the acquisition's download route.
+    href: Optional[str]
+    type: str
+    #: `{position: reader page, fragments: ["page=N"]}`.
+    locations: Dict[str, object]
+    #: `{before, highlight, after}`; empty where the reader may not read the text.
+    text: Dict[str, str]
+
+
+class LocatorSerializer(Serializer):
+    """Where a run-independent address points now (#171)."""
+
+    key: str
+    entry_id: UUID
+    #: `paragraph | section | figure | table | equation`.
+    kind: str
+    #: `exact` (the active run has the key), `relocated` (found by its quote), `page_only` (the page only).
+    resolution: str
+    #: The reader's page (the license page counted), as the viewer shows it.
+    page: int
+    #: The page of the original file.
+    source_page: int
+    #: `{x0, y0, x1, y1}` page fractions of the paragraph or region; None for `page_only` and sections.
+    bbox: Optional[Dict[str, float]] = None
+    #: Quads of the paragraph's best sentence (the one sharing most words with `?sentence=`, else the quote).
+    quads: List[Dict[str, float]] = []
+    #: Whether the text may be shown outside the viewer (never Readium LCP, never outside the IP ranges).
+    readable: bool
+    #: The paragraph's text, the caption or the heading; only where `readable`.
+    quote: Optional[str] = None
+    #: When a newer run stopped having the key; null while the active run has it.
+    detached_at: Optional[datetime] = None
+    readium: ReadiumLocatorSerializer
 
 
 class RegionSerializer(Serializer):

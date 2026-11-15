@@ -9,6 +9,7 @@ from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from apps.core import settings_store
 from apps.core.auth import JWTFactory
 from apps.notifications import branding
 from apps.notifications.attachments import EmailAttachment
@@ -164,7 +165,7 @@ class NotificationService:
         brand = brand if brand is not None else branding.resolve()
         return {
             "library_name": brand.library_name,
-            "contact_email": settings.EVILFLOWERS_CONTACT_EMAIL,
+            "contact_email": settings_store.get("branding.contact_email"),
             "portal_url": (getattr(settings, "EVILFLOWERS_PORTAL_URL", "") or "").rstrip("/"),
             "brand": brand.as_context(),
             **context,

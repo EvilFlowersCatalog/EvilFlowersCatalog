@@ -96,7 +96,13 @@ class ResourceListingTests(SurfaceTestCase):
         templates = {item["uriTemplate"] for item in result["resourceTemplates"]}
         self.assertEqual(
             templates,
-            {"evilflowers://entry/{id}", "evilflowers://feed/{id}", "evilflowers://catalog/{id}"},
+            {
+                "evilflowers://entry/{id}",
+                "evilflowers://entry/{id}/outline",
+                "evilflowers://entry/{id}/locator/{key}",
+                "evilflowers://feed/{id}",
+                "evilflowers://catalog/{id}",
+            },
         )
 
     def test_a_bad_cursor_is_reported_not_ignored(self):

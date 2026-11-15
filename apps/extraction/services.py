@@ -427,6 +427,22 @@ def _finish(run: ExtractionRun) -> None:
         folder = old.storage_dir
         old.delete()
         transaction.on_commit(lambda folder=folder: delete_files(folder))
+    _assign_locators(run)
+
+
+def _assign_locators(run: ExtractionRun) -> None:
+    """#171: the new run's units keep the addresses they had in the old one; what it lacks is detached.
+
+    In a savepoint: a failure here must not fail the ingestion. Post-processing assigns the keys again and
+    reports the step failed, so the sweep retries it.
+    """
+    from apps.extraction import locators
+
+    try:
+        with transaction.atomic():
+            locators.assign(run)
+    except Exception:
+        logger.exception("Assigning locators of run %s failed; post-processing retries it", run.pk)
 
 
 def update_embedding(run_id) -> None:

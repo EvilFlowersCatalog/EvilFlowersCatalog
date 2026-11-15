@@ -269,18 +269,19 @@ NO_PDF = "no readable PDF"
 def open_access_document(request, entry) -> ReaderDocument:
     """The entry's open-access PDF, if this reader may read it outside the viewer.
 
-    The rule a chat bound to a publication without a reader's copy has followed since IP-018, and the one the
-    plain chat's `read_pdf_page` and `search_library_text(entry_id)` follow (#127): never Readium LCP, never from
-    outside the entry's allowed IP ranges, only a stored PDF that is not lent or restricted. Visibility (the
-    catalog ACL) is the caller's check. Raises `DocumentUnavailable` with one of the reasons above.
+    What a chat bound to a publication without a reader's copy reads, and what the plain chat's `read_pdf_page`
+    and `search_library_text(entry_id)` read (#127): the whole text, so the content gate must allow `full`
+    (`apps.content.access`; under `parity`: never Readium LCP, never from outside the entry's IP ranges), and
+    then only a stored PDF that is not lent or restricted. Visibility (the catalog ACL) is the caller's check.
+    Raises `DocumentUnavailable` with one of the reasons above, or the gate's own reason.
     """
-    from apps.core.errors import ProblemDetailException
-    from apps.files.views import _check_ip_block
+    from apps.content import access
 
-    if entry.read_config("readium_enabled"):
-        raise DocumentUnavailable(READIUM)
-    try:
-        _check_ip_block(request, entry)
-    except ProblemDetailException as error:
-        raise DocumentUnavailable(IP_BLOCKED) from error
+    decision = access.decide(request, entry, surface=access.Surface.ASSISTANT, visible=True)
+    if not decision.allows(access.Tier.FULL):
+        raise DocumentUnavailable(_UNAVAILABLE.get(decision.reason, decision.reason or NO_PDF))
     return ReaderDocument.for_open_access(entry)
+
+
+#: The gate's reason → the `DocumentUnavailable` reason the assistant words its refusal by.
+_UNAVAILABLE = {"lcp": READIUM, "outside_ip": IP_BLOCKED}

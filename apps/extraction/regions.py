@@ -128,14 +128,24 @@ def search_regions(
     vector: Optional[List[float]] = None,
     min_score: Optional[float] = None,
     licensed: bool = False,
+    surface: str = "rest",
 ) -> List[FigureHit]:
     """Figures (and tables) about `text` in publications the caller may see and read, best first.
 
     `licensed` also searches publications lent through Readium LCP that the caller holds a live loan of (the
-    figure search, #159); the assistant leaves them out, as it never quotes them.
+    figure search, #159); the assistant leaves them out, as it never quotes them. `surface` is the content
+    gate's (`apps.content.access.Surface`).
     """
     return search(
-        request, text, kinds=kinds, limit=limit, scope=scope, vector=vector, min_score=min_score, licensed=licensed
+        request,
+        text,
+        kinds=kinds,
+        limit=limit,
+        scope=scope,
+        vector=vector,
+        min_score=min_score,
+        licensed=licensed,
+        surface=surface,
     ).hits
 
 
@@ -149,13 +159,15 @@ def search(
     vector: Optional[List[float]] = None,
     min_score: Optional[float] = None,
     licensed: bool = False,
+    surface: str = "rest",
 ) -> RegionSearch:
     """`search_regions`, saying also whether the query could be embedded."""
     from apps.api.filters.entries import EntryFilter
     from apps.core.models import Entry
     from apps.core.search import embeddings
     from apps.core.search.query import rrf
-    from apps.extraction.discovery import RRF_K, _document, _live_loans, _may_read_text, _tsquery
+    from apps.content import access
+    from apps.extraction.discovery import RRF_K, _document, _live_loans, _tsquery
 
     text = (text or "").strip()[:2000]
     if not text:
@@ -168,8 +180,11 @@ def search(
         )
     )
     entries = list(Entry.objects.filter(pk__in=set(runs.values())).select_related("catalog"))
-    readable = {entry.pk for entry in entries if _may_read_text(request, entry)}
+    decisions = access.decide_many(request, entries, surface, visible=True)
+    readable = {entry.pk for entry in entries if decisions[str(entry.pk)].allows(access.Tier.SNIPPET)}
     if licensed:
+        # #159, outside the content gate on purpose: a live LCP loan shows a borrower the captions and crops
+        # in the portal. `parity` grants an LCP loan no text, so this stays its own rule until a policy says.
         from apps.core.errors import ProblemDetailException
         from apps.files.views import _check_ip_block
 
