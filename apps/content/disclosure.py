@@ -65,17 +65,24 @@ def record(
     *,
     budget_left: Optional[int] = None,
     charge: bool = True,
+    in_order: bool = False,
     dry_run: bool = False,
 ) -> Charged:
     """Keep what the budget allows, log what is handed out; `Charged` says what was kept and charged.
 
     `budget_left` overrides the decision's when a caller charges several times against one decision. `charge=False`
-    logs without metering: snippets, which stay readable over budget.
+    logs without metering: snippets, which stay readable over budget. `in_order=True` is for text read in reading
+    order (MCP `read`, the assistant's passages): once one item does not fit, it and everything after it are left
+    out, so a reader never gets a later paragraph without the one before. Otherwise (search hits, packs) an item
+    that does not fit is skipped and smaller ones after it may still be kept.
     """
     metered = decision.metered and charge
     left = budget_left if budget_left is not None else decision.budget_left
     result = Charged(budget_left=left)
     for item in items:
+        if result.left_out and in_order:
+            result.left_out.append(item)
+            continue
         if metered and item.chars > 0 and item.chars > left:
             result.left_out.append(item)
             continue

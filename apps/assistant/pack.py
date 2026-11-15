@@ -138,7 +138,8 @@ def _publications(context: ToolContext, query: str, scope) -> List[dict]:
 
 
 def _passages(context: ToolContext, query: str, scope, floor: float) -> List[dict]:
-    from apps.extraction.discovery import search_passages
+    # The passage search the MCP tools use (#182).
+    from apps.content.reading import search_passages
 
     limit = settings.EVILFLOWERS_ASSISTANT_PACK_PASSAGES
     result = search_passages(

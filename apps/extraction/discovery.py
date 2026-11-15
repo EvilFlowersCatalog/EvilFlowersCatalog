@@ -88,6 +88,8 @@ class PassageSerializer(Serializer):
     snippet: Optional[str] = None
     #: How the passage matched: `semantic` (by meaning), `words` (the query's words, accents ignored), or both.
     matched: List[str] = []
+    #: The paragraph's run-independent address (#171): `GET /api/v1/locators/{entry_id}/{locator_key}`.
+    locator_key: Optional[str] = None
 
 
 class PassageHitSerializer(Serializer):
@@ -307,34 +309,11 @@ def _int_param(request, name: str, default: int, maximum: int) -> int:
         return default
 
 
-def _live_loans(request, entry_ids) -> set:
-    """Ids of these entries the caller holds a live Readium LCP loan of (`ready` or `active`): they may open it."""
-    from apps.readium.models import License
-
-    user = getattr(request, "user", None)
-    if user is None or not user.is_authenticated or not entry_ids:
-        return set()
-    return set(
-        License.objects.filter(
-            user=user,
-            entry_id__in=list(entry_ids),
-            state__in=[License.LicenseState.READY, License.LicenseState.ACTIVE],
-        ).values_list("entry_id", flat=True)
-    )
-
-
-def may_open_region(request, entry: Entry) -> bool:
-    """Whether the caller may see a figure's caption and crop outside the viewer (#159).
-
-    Open access: anyone who sees the entry, inside its IP ranges. Readium LCP: only a reader with a live loan.
-    """
-    try:
-        _check_ip_block(request, entry)
-    except ProblemDetailException:
-        return False
-    if entry.read_config("readium_enabled"):
-        return entry.pk in _live_loans(request, [entry.pk])
-    return True
+def may_open_region(request, entry: Entry, surface: str = access.Surface.REST) -> bool:
+    """Whether the caller may see a figure's caption and crop outside the viewer (#159), as the content gate
+    decides for regions (#182): a snippet. Under `parity`, as before: open access to anyone who sees the entry
+    inside its IP ranges; Readium LCP only to a reader with a live loan (`grants.regions_on_live_license`)."""
+    return access.decide(request, entry, surface=surface, visible=True, regions=True).allows(access.Tier.SNIPPET)
 
 
 def region_downloadable(entry: Entry) -> bool:
@@ -397,6 +376,7 @@ def search_passages(
     per_entry: int = DEFAULT_PER_ENTRY,
     scope=None,
     surface: str = access.Surface.REST,
+    decisions_out: Optional[dict] = None,
 ) -> PassageSearchSerializer:
     """Paragraphs closest to `text` across every processed PDF the caller may see.
 
@@ -447,7 +427,13 @@ def search_passages(
     rows = {
         row["pk"]: row
         for row in Paragraph.objects.filter(pk__in=fused).values(
-            "pk", "page", "section", "text", "run__acquisition__entry_id", "run__acquisition__entry__catalog_id"
+            "pk",
+            "page",
+            "section",
+            "text",
+            "locator_key",
+            "run__acquisition__entry_id",
+            "run__acquisition__entry__catalog_id",
         )
     }
 
@@ -468,6 +454,9 @@ def search_passages(
     # Visible already (the ACL filtered `visible` above); the gate decides how much of each to show (#172).
     entries = list(Entry.objects.filter(pk__in=entry_ids))
     decisions = access.decide_many(request, entries, surface, visible=True)
+    if decisions_out is not None:
+        # For `apps.content.reading.search_passages`, which logs what was shown without deciding again.
+        decisions_out.update(decisions)
     readable = {entry.pk: decisions[str(entry.pk)].allows(access.Tier.SNIPPET) for entry in entries}
     snippets = _snippets(
         text, [row["pk"] for entry_id in entry_ids if readable.get(entry_id) for row in hits[entry_id]]
@@ -491,6 +480,7 @@ def search_passages(
                     truncated=may_read and len(row["text"]) > PASSAGE_TEXT_CHARS,
                     snippet=snippets.get(row["pk"]) if may_read else None,
                     matched=matched,
+                    locator_key=row["locator_key"],
                 )
             )
         items.append(

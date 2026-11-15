@@ -663,7 +663,8 @@ def _read_page(request, arguments: dict, reading: Reading) -> dict:
 
 
 def _search_passages(request, arguments: dict) -> dict:
-    from apps.extraction.discovery import search_passages
+    # The passage search the MCP tools use: what is shown is logged by one rule (#182).
+    from apps.content.reading import search_passages
 
     if not str(arguments.get("query") or "").strip():
         raise ToolError("`query` is required.")
@@ -725,7 +726,7 @@ def _figures(request, query: str, scope: dict) -> List[dict]:
 
 def _search_publication(request, query: str, entry) -> dict:
     """Passages of one publication (#127); word matches by page where it has no passage index."""
-    from apps.extraction.discovery import search_passages
+    from apps.content.reading import search_passages
 
     entry_id = str(entry.pk)
     result = search_passages(

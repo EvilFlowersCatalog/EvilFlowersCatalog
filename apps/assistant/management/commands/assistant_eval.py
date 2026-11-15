@@ -31,6 +31,9 @@
     python manage.py assistant_eval calibrate --labels pairs.json                # tuning half: choose a threshold
     python manage.py assistant_eval calibrate --labels pairs.json --threshold 60 # held-out half: the verdict
 
+    # an MCP agent's answer against the `content_pack` it cites (#182); labels re-read with the checker's access
+    python manage.py assistant_eval verify-pack --username reader@stuba.sk --pack <pack_id> --answer answer.md
+
 Every `run` case is a real turn: it calls the model, runs the tools against
 this catalog's database and counts against the user's daily quota. The
 throw-away chats are deleted afterwards.
@@ -104,6 +107,16 @@ class Command(TracedCommandMixin, BaseCommand):
         calibrate.add_argument("--model", help="Override EVILFLOWERS_ASSISTANT_OLLAMA_MODEL.")
         calibrate.add_argument("--endpoint", help="Override EVILFLOWERS_ASSISTANT_OLLAMA_ENDPOINT.")
 
+        verify_pack = sub.add_parser(
+            "verify-pack", help="Check an MCP agent's answer against the content_pack it cites (#182)."
+        )
+        verify_pack.add_argument("--username", required=True, help="Checker: the labels are re-read with this access.")
+        verify_pack.add_argument("--pack", required=True, help="`pack_id` from the agent's `content_pack` call.")
+        verify_pack.add_argument("--answer", required=True, help="Text file with the answer citing [E1], [E2], …")
+        verify_pack.add_argument("--model", help="Override EVILFLOWERS_ASSISTANT_OLLAMA_MODEL.")
+        verify_pack.add_argument("--endpoint", help="Override EVILFLOWERS_ASSISTANT_OLLAMA_ENDPOINT.")
+        verify_pack.add_argument("--output", help="Write the verdicts as JSON here.")
+
     def _print(self, data):
         json.dump(data, sys.stdout, ensure_ascii=False, indent=2)
         sys.stdout.write("\n")
@@ -145,7 +158,27 @@ class Command(TracedCommandMixin, BaseCommand):
             if action == "calibrate":
                 result = evaluation.calibrate(_read_json(options["labels"], "labels"), options.get("threshold"))
                 return self._print(result)
+            if action == "verify-pack":
+                return self._verify_pack(options)
             self._run(options)
+
+    def _verify_pack(self, options):
+        from apps.assistant import support
+
+        try:
+            answer = Path(options["answer"]).read_text(encoding="utf-8")
+        except OSError as error:
+            raise CommandError(f"Cannot read the answer: {error}")
+        request = evaluation.evaluation_request("get")
+        request.user = self._user(options["username"])
+        try:
+            verdicts = support.verify_pack(request, options["pack"], answer)
+        except support.UnknownPack:
+            raise CommandError(f"No content pack {options['pack']!r}.")
+        report = {"summary": support.summarise(verdicts), "verdicts": support.as_dicts(verdicts)}
+        self._print(report)
+        if options.get("output"):
+            Path(options["output"]).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _gold(self, options):
         path = Path(options["output"])

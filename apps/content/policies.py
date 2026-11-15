@@ -124,6 +124,13 @@ SCHEMA: Dict[str, Any] = {
                     "type": "boolean",
                     "description": "A member of the entry's catalog is treated as inside its IP ranges.",
                 },
+                "regions_on_live_license": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "A live Readium LCP licence (`ready`/`active`) shows the borrower the figures' "
+                    "and tables' captions and crops (a snippet), whatever `license_states` says about text "
+                    "(#159). Optional; missing means true.",
+                },
             },
         },
         "budget": {

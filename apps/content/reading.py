@@ -307,19 +307,11 @@ def read(request, value: str, *, context: int = 0, cursor: Optional[str] = None,
         used += len(paragraph.text)
 
     # Reading order: a passage is never cut, and once one does not fit what is left of the budget, neither it nor
-    # anything after it is returned (or charged); they are listed in `left_out`.
-    left_out = []
-    if decision.metered:
-        left = decision.budget_left
-        for index, paragraph in enumerate(chosen):
-            if len(paragraph.text) > left:
-                chosen, left_out = chosen[:index], chosen[index:]
-                break
-            left -= len(paragraph.text)
+    # anything after it is returned (or charged); they are listed in `left_out`. The assistant's `Text.passage`
+    # applies the same rule (#182).
     items = [disclosure.Item(chars=len(p.text), locator=p.locator_key, payload=p) for p in chosen]
-    charged = disclosure.record(request, decision, items)
+    charged = disclosure.record(request, decision, items, in_order=True)
     kept = [item.payload for item in charged.kept]
-    charged.left_out = [disclosure.Item(chars=len(p.text), locator=p.locator_key, payload=p) for p in left_out]
 
     paragraphs = []
     for paragraph in kept:
@@ -439,12 +431,36 @@ def _scope(entry_ids: Sequence[str], catalog_id: Optional[str]) -> QueryDict:
     return scope
 
 
+def search_passages(request, query: str, *, limit: int, per_entry: int, scope=None, surface: str = Surface.MCP):
+    """Passage search for every surface that hands passages to a model (#182): the in-app assistant
+    (`search_library_text`, the evidence pack, study mode) and the MCP tools.
+
+    `apps.extraction.discovery.search_passages` with what is shown logged by one rule (`disclosure.record`, as
+    snippets: never charged to a budget). Each passage carries its `locator_key`. Returns the same result object.
+    """
+    from apps.extraction.discovery import search_passages as discover
+
+    decisions: dict = {}
+    found = discover(
+        request, query, limit=limit, per_entry=per_entry, scope=scope, surface=surface, decisions_out=decisions
+    )
+    for item in found.items:
+        decision = decisions.get(str(item.entry_id))
+        shown = [
+            disclosure.Item(chars=len(passage.text), locator=getattr(passage, "locator_key", None))
+            for passage in item.passages
+            if passage.text
+        ]
+        if decision is not None and shown:
+            disclosure.record(request, decision, shown, charge=False)
+    return found
+
+
 def search(request, query: str, *, entry_ids=(), catalog_id=None, kinds=KINDS, limit: int = 8) -> dict:
     """Passages and regions about `query` as addresses with a snippet and score; Anthropic `search_result`-shaped
     (`source` is the `/cite` link, `title`, `content`)."""
     from apps.core.models import Entry
     from apps.extraction import locators, regions as region_search
-    from apps.extraction.discovery import search_passages
     from apps.mcp import uris
 
     limit = max(1, min(limit, 20))
@@ -454,10 +470,9 @@ def search(request, query: str, *, entry_ids=(), catalog_id=None, kinds=KINDS, l
     if "passage" in kinds:
         found = search_passages(request, query, limit=limit, per_entry=2, scope=scope, surface=Surface.MCP)
         degraded = found.degraded
-        keys = locators.keys_for(paragraph_ids=[p.paragraph_id for item in found.items for p in item.passages])
         for item in found.items:
             for passage in item.passages:
-                key = keys.get(str(passage.paragraph_id))
+                key = passage.locator_key
                 if key is None:
                     continue
                 hits.append(
@@ -470,6 +485,8 @@ def search(request, query: str, *, entry_ids=(), catalog_id=None, kinds=KINDS, l
                         "score": passage.score,
                         "matched": passage.matched,
                         "text": passage.text,
+                        # Logged by `search_passages` already.
+                        "logged": True,
                     }
                 )
     region_kinds = tuple(kind for kind in kinds if kind in ("figure", "table"))
@@ -506,11 +523,13 @@ def search(request, query: str, *, entry_ids=(), catalog_id=None, kinds=KINDS, l
             continue
         decision = decisions[hit["entry_id"]]
         text = hit.pop("text")
+        already_logged = hit.pop("logged", False)
         if not decision.allows(Tier.SNIPPET):
             text = None
         elif text:
             text = text[:SNIPPET_CHARS]
-            logged.setdefault(hit["entry_id"], []).append(disclosure.Item(chars=len(text), locator=hit["key"]))
+            if not already_logged:
+                logged.setdefault(hit["entry_id"], []).append(disclosure.Item(chars=len(text), locator=hit["key"]))
         url = citation.cite_url(entry.pk, hit["key"])
         results.append(
             {
@@ -538,7 +557,6 @@ def pack(
     """Labelled passages `[E1]`, `[E2]`… for `query` within `budget_chars`, stored under a hash id (`pack_id`)."""
     from apps.content.models import ContentPack
     from apps.core.models import Entry
-    from apps.extraction import locators
     from apps.extraction.discovery import search_passages
     from apps.extraction.models import Paragraph
     from apps.mcp import uris

@@ -311,6 +311,17 @@ def _grants(entry, policy: policies.Policy, facts: _Facts) -> List[str]:
     return found
 
 
+def _region_loan(entry, policy: policies.Policy, facts: _Facts) -> bool:
+    """Whether the caller holds a live LCP licence of `entry` and the policy lets it show figures (#159, #182).
+
+    `grants.regions_on_live_license` (default true: today's rule) is independent of `grants.license_states`, so
+    `parity`, whose LCP loans grant no text, still shows a borrower the captions and crops they see in the portal.
+    """
+    if not policy.grants.get("regions_on_live_license", True):
+        return False
+    return any(state in LIVE_LICENSE_STATES for state, _opened in facts.licenses(entry))
+
+
 def _decide_one(
     entry,
     visible: bool,
@@ -319,6 +330,7 @@ def _decide_one(
     processor: Optional[str],
     generated: bool,
     override: Optional[policies.Policy] = None,
+    regions: bool = False,
 ) -> Disclosure:
     if override is not None:
         resolution = policies.Resolution(override, "override")
@@ -328,12 +340,17 @@ def _decide_one(
     lcp = bool(entry.read_config("readium_enabled"))
 
     granted = _grants(entry, policy, facts)
-    if not visible and not (granted and policy.grants["survive_hidden"]):
+    region_loan = regions and lcp and _region_loan(entry, policy, facts)
+    if not visible and not ((granted or region_loan) and policy.grants["survive_hidden"]):
         return _hidden(entry.pk)
 
-    bases = granted + [Basis.NONE if lcp else Basis.OPEN]
-    basis = max(bases, key=lambda name: rank(policy.tier(name)))
-    tier = policy.tier(basis)
+    candidates = [(name, policy.tier(name)) for name in granted + [Basis.NONE if lcp else Basis.OPEN]]
+    if region_loan:
+        # A live LCP licence shows the borrower the figures' captions and crops (#159), however the policy rates
+        # the loan for text: a snippet, never more than the loan tier allows.
+        loan_tier = policy.tier(Basis.LOAN)
+        candidates.append((Basis.LOAN, Tier.SNIPPET if rank(loan_tier) >= rank(Tier.SNIPPET) else loan_tier))
+    basis, tier = max(candidates, key=lambda candidate: rank(candidate[1]))
     reason = Reason.LCP if lcp and basis == Basis.NONE else ""
     how_to_unlock = []
     if lcp and basis == Basis.NONE and rank(policy.tier(Basis.LOAN)) > rank(tier):
@@ -413,12 +430,14 @@ def decide_many(
     processor: Optional[str] = None,
     generated: bool = False,
     policy: Optional[policies.Policy] = None,
+    regions: bool = False,
 ) -> Dict[str, Disclosure]:
     """`decide` for several entries with shared lookups; keyed by entry id (str).
 
     `visible=True` skips the ACL query when the caller has already established that the reader may see
     these entries by another path — a reader's copy whose download checks it passed. `processor` and
     `policy` override the caller's own processor and the resolved policy (`explain` uses both).
+    `regions=True` decides for figures and tables: a live LCP licence then grants a snippet (#159).
     """
     entries = [entry for entry in entries if entry is not None]
     if not entries:
@@ -431,7 +450,14 @@ def decide_many(
     ) as span:
         decisions = {
             str(entry.pk): _decide_one(
-                entry, str(entry.pk) in visible_ids, facts, surface, processor, generated, override=policy
+                entry,
+                str(entry.pk) in visible_ids,
+                facts,
+                surface,
+                processor,
+                generated,
+                override=policy,
+                regions=regions,
             )
             for entry in entries
         }
@@ -454,11 +480,19 @@ def decide(
     processor: Optional[str] = None,
     generated: bool = False,
     policy: Optional[policies.Policy] = None,
+    regions: bool = False,
 ) -> Disclosure:
     """How much of `entry` this caller may see on `surface`. `locator` is accepted for the locator
-    surfaces (#171); today a locator is disclosed exactly like its entry."""
+    surfaces (#171); today a locator is disclosed exactly like its entry. `regions` as in `decide_many`."""
     decisions = decide_many(
-        request, [entry], surface, visible=visible, processor=processor, generated=generated, policy=policy
+        request,
+        [entry],
+        surface,
+        visible=visible,
+        processor=processor,
+        generated=generated,
+        policy=policy,
+        regions=regions,
     )
     return decisions[str(entry.pk)]
 

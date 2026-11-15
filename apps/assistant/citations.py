@@ -11,6 +11,8 @@ A label in the ledger is kept small: publication, page, section, and the paragra
 A source issued since #171 also keeps the unit's `locator_key`. The citation then resolves through the locator
 (`apps.extraction.locators.resolve`), so it survives a newer extraction run: the same paragraph in the new run
 (`resolution: exact`), the edited or moved one found by its quote (`relocated`), or just its page (`page_only`).
+Such a citation also carries the citation object's address (#176, #182): `uri` (`evilflowers://entry/…/locator/…`,
+what an MCP agent resolves) and `url` (the portal's `/cite` link).
 
 `quote`, `caption` and `image_url` are present only where the content gate allows the reader a snippet of the
 publication outside the viewer (`apps.content.access`; under `parity`: never for Readium LCP, never outside the
@@ -99,6 +101,14 @@ def complete(label: str, source: dict, sentence: str, request) -> dict:
     result = citation(label, source)
     readable = _access(request).readable(source.get("entry_id"))
     result["readable"] = readable
+    if source.get("locator_key") and source.get("entry_id"):
+        # The citation object's address (#176, #182): durable across re-extraction, and a `/cite` link that opens
+        # the viewer at the passage from any chat, e-mail or agent transcript.
+        from apps.content.citation import cite_url
+        from apps.mcp.uris import locator_uri
+
+        result["uri"] = locator_uri(source["entry_id"], source["locator_key"])
+        result["url"] = cite_url(source["entry_id"], source["locator_key"])
     kind = source.get("kind")
     located = _located(source)
     if located is not None:

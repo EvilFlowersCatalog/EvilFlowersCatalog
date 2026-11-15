@@ -198,6 +198,62 @@ def as_dicts(verdicts: Iterable[Verdict]) -> List[dict]:
     return [asdict(verdict) for verdict in verdicts]
 
 
+# ----------------------------------------------------------------- MCP content packs (#182)
+
+
+class UnknownPack(LookupError):
+    pass
+
+
+def ledger_for_pack(request, pack_id: str) -> Ledger:
+    """A ledger of the labels of an MCP `content_pack` (#176), to check an agent's answer that cites them.
+
+    The pack keeps addresses only. Each label is resolved again through its locator, and through the content
+    gate under the *checker's* access (the request's user, as the local model: `Surface.ASSISTANT`): a label the
+    checker may not read at `passage` keeps its source but no text, so `pairs` leaves its sentences unverified
+    rather than judging them against nothing.
+    """
+    from apps.api.filters.entries import EntryFilter
+    from apps.content import access
+    from apps.content.models import ContentPack
+    from apps.core.models import Entry
+    from apps.extraction import locators
+
+    pack = ContentPack.objects.filter(key=pack_id).first()
+    if pack is None:
+        raise UnknownPack(pack_id)
+    entry_ids = {item["entry_id"] for item in pack.items}
+    entries = list(EntryFilter({}, queryset=Entry.objects.filter(pk__in=entry_ids), request=request).qs)
+    decisions = access.decide_many(request, entries, access.Surface.ASSISTANT, visible=True)
+    titles = {str(entry.pk): entry.title for entry in entries}
+
+    sources: Dict[str, dict] = {}
+    texts: Dict[str, str] = {}
+    for item in pack.items:
+        entry_id, key, label = str(item["entry_id"]), item["locator_key"], item["label"]
+        decision = decisions.get(entry_id)
+        if decision is None:
+            continue  # hidden from the checker: not a label they may resolve
+        resolution = locators.resolve(entry_id, key)
+        paragraph = resolution.paragraph if resolution is not None else None
+        sources[label] = {
+            "kind": "passage",
+            "entry_id": entry_id,
+            "title": titles.get(entry_id),
+            "page": resolution.source_page if resolution is not None else item.get("page"),
+            "paragraph_id": str(paragraph.pk) if paragraph is not None else None,
+            "locator_key": key,
+        }
+        if paragraph is not None and decision.allows(access.Tier.PASSAGE):
+            texts[label] = paragraph.text
+    return Ledger(sources, texts)
+
+
+def verify_pack(request, pack_id: str, text: str, client=None) -> List[Verdict]:
+    """`verify` for an MCP agent's answer against the `content_pack` it cites (`[E1]`, …)."""
+    return verify(text, ledger_for_pack(request, pack_id), client)
+
+
 # ----------------------------------------------------------------- calibration
 
 

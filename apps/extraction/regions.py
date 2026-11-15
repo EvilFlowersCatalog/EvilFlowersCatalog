@@ -167,7 +167,7 @@ def search(
     from apps.core.search import embeddings
     from apps.core.search.query import rrf
     from apps.content import access
-    from apps.extraction.discovery import RRF_K, _document, _live_loans, _tsquery
+    from apps.extraction.discovery import RRF_K, _document, _tsquery
 
     text = (text or "").strip()[:2000]
     if not text:
@@ -180,24 +180,10 @@ def search(
         )
     )
     entries = list(Entry.objects.filter(pk__in=set(runs.values())).select_related("catalog"))
-    decisions = access.decide_many(request, entries, surface, visible=True)
+    # `licensed`: decided for regions, where a live LCP loan shows the borrower captions and crops (#159), as the
+    # policy's `grants.regions_on_live_license` allows (#182). The assistant passes False: it never quotes them.
+    decisions = access.decide_many(request, entries, surface, visible=True, regions=licensed)
     readable = {entry.pk for entry in entries if decisions[str(entry.pk)].allows(access.Tier.SNIPPET)}
-    if licensed:
-        # #159, outside the content gate on purpose: a live LCP loan shows a borrower the captions and crops
-        # in the portal. `parity` grants an LCP loan no text, so this stays its own rule until a policy says.
-        from apps.core.errors import ProblemDetailException
-        from apps.files.views import _check_ip_block
-
-        lcp = [entry for entry in entries if entry.read_config("readium_enabled")]
-        loans = _live_loans(request, [entry.pk for entry in lcp])
-        for entry in lcp:
-            if entry.pk not in loans:
-                continue
-            try:
-                _check_ip_block(request, entry)
-            except ProblemDetailException:
-                continue
-            readable.add(entry.pk)
     runs = {run_id: entry_id for run_id, entry_id in runs.items() if entry_id in readable}
     if not runs:
         return RegionSearch()

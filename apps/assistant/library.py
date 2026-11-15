@@ -71,6 +71,7 @@ class Text:
 
     def __post_init__(self):
         self._budget_left = self.decision.budget_left if self.decision is not None else None
+        self._stopped = False
 
     @classmethod
     def of(cls, context: ToolContext, entry) -> "Text":
@@ -98,9 +99,10 @@ class Text:
     def passage(self, paragraph, chars: int = PASSAGE_CHARS) -> Optional[dict]:
         """A paragraph as a labelled-to-be passage; None when its page is outside the reader's copy.
 
-        Under a metered basis (#175) the passage is charged to the reader's budget. A passage is never cut to fit:
-        one that does not fit in what is left is withheld (None), and once the budget is spent the next tool
-        call's decision drops to `snippet` and refuses.
+        Under a metered basis (#175) the passage is charged to the reader's budget by the rule MCP `read` uses
+        (`disclosure.record(in_order=True)`, #182): a passage is never cut to fit, one that does not fit is withheld
+        (None) and so is every passage after it from this publication in this call. Once the budget is spent the
+        next tool call's decision drops to `snippet` and refuses.
         """
         page = self.page_of(paragraph.page)
         if page is None:
@@ -109,14 +111,18 @@ class Text:
         if self.decision is not None:
             from apps.content import disclosure
 
+            if self._stopped:
+                return None
             charged = disclosure.record(
                 self.request,
                 self.decision,
                 [disclosure.Item(chars=len(text), locator=getattr(paragraph, "locator_key", None))],
                 budget_left=self._budget_left,
+                in_order=True,
             )
             self._budget_left = charged.budget_left
             if charged.left_out:
+                self._stopped = True
                 return None
         return {
             "kind": "passage",
