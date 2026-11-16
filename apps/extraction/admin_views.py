@@ -208,6 +208,9 @@ class AdminRegionSerializer(Serializer):
     decision: Optional[str] = None
     decider_model: Optional[str] = None
     decision_signals: dict = {}
+    #: The region's run-independent address (#171), as in `evilflowers://entry/<id>/locator/<key>` (#201): labels
+    #: keyed by it survive a re-run, which mints new region ids. Null until the run's locators are minted.
+    locator_key: Optional[str] = None
 
 
 class AdminParagraphSerializer(Serializer):
@@ -549,6 +552,7 @@ class EntryExtractionRegions(EntryExtractionView):
                     decision=region.decision,
                     decider_model=region.decider_model,
                     decision_signals=region.decision_signals or {},
+                    locator_key=region.locator_key,
                 ).model_dump(mode="json")
             )
         return SingleResponse(request, data={"run_id": str(run.pk), "items": items})

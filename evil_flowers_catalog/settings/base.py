@@ -31,6 +31,13 @@ if os.path.exists(ENV_FILE):
     load_dotenv(dotenv_path=ENV_FILE, verbose=True)
 
 INSTANCE_NAME = os.getenv("INSTANCE_NAME", "evilflowers.local")
+# `/api/v1/status` (#195): ask supervisord for its process states and fail with 503 unless all are RUNNING. On for the
+# Compose image (one container under supervisord); the k8s split (gunicorn as PID 1, Celery in their own pods)
+# sets `false`, and the endpoint then checks only the database, the broker and storage.
+EVILFLOWERS_STATUS_SUPERVISOR = os.getenv("EVILFLOWERS_STATUS_SUPERVISOR", "true").lower() in ("true", "1")
+EVILFLOWERS_STATUS_SUPERVISOR_SOCKET = os.getenv("EVILFLOWERS_STATUS_SUPERVISOR_SOCKET", "/tmp/supervisor.sock")
+# Seconds the broker check of `/api/v1/status` waits for a connection.
+EVILFLOWERS_STATUS_TIMEOUT = float(os.getenv("EVILFLOWERS_STATUS_TIMEOUT", 2.0))
 
 if BUILD_FILE.exists():
     with open(BUILD_FILE) as f:
@@ -764,6 +771,18 @@ EVILFLOWERS_SEARCH_VECTOR_WEIGHT = float(os.getenv("EVILFLOWERS_SEARCH_VECTOR_WE
 # Search inside publications (`GET /api/v1/entries/passages`, #60): paragraphs at least this similar
 # to the query. Uncalibrated, starts at the entry threshold; calibrate with VECTOR_MIN_SCORE on dev.
 EVILFLOWERS_SEARCH_PASSAGE_MIN_SCORE = float(os.getenv("EVILFLOWERS_SEARCH_PASSAGE_MIN_SCORE", 0.8))
+# Cross-lingual passage search (#188), both off by default until `assistant_eval retrieval --variant` has measured
+# them on the gold set. Weight of the word channel in the passage fusion (the vectors weigh 1.0); option C.
+EVILFLOWERS_SEARCH_PASSAGE_WORD_WEIGHT = float(os.getenv("EVILFLOWERS_SEARCH_PASSAGE_WORD_WEIGHT", 1.0))
+# Option B: the shared tei-rerank (bge-reranker-v2-m3) reorders the best fused paragraphs. Empty URL = off.
+# k8s: http://tei-rerank.shared.svc.cluster.local; key as for tei-embed unless set.
+EVILFLOWERS_SEARCH_PASSAGE_RERANK_URL = os.getenv("EVILFLOWERS_SEARCH_PASSAGE_RERANK_URL", "")
+EVILFLOWERS_SEARCH_PASSAGE_RERANK_API_KEY = os.getenv("EVILFLOWERS_SEARCH_PASSAGE_RERANK_API_KEY", "")
+EVILFLOWERS_SEARCH_PASSAGE_RERANK_HOST = os.getenv("EVILFLOWERS_SEARCH_PASSAGE_RERANK_HOST", "")
+# Fused paragraphs given to the reranker (one batch per search, CPU), and seconds it may take before the fused order
+# stands.
+EVILFLOWERS_SEARCH_PASSAGE_RERANK_CANDIDATES = int(os.getenv("EVILFLOWERS_SEARCH_PASSAGE_RERANK_CANDIDATES", 30))
+EVILFLOWERS_SEARCH_PASSAGE_RERANK_TIMEOUT = float(os.getenv("EVILFLOWERS_SEARCH_PASSAGE_RERANK_TIMEOUT", 3.0))
 
 
 # Dataverse integration
@@ -937,6 +956,10 @@ EVILFLOWERS_BACKUP_EXCLUDE_TABLE_DATA = [
     pattern.strip() for pattern in os.getenv("EVILFLOWERS_BACKUP_EXCLUDE_TABLE_DATA", "").split(",") if pattern.strip()
 ]
 EVILFLOWERS_BACKUP_SCHEDULE = os.getenv("EVILFLOWERS_BACKUP_SCHEDULE")
+# Hard limit (seconds) of the `backup` task (#197); its job kind uses it as the sweeper's `lost` threshold too. The
+# task-level limit overrides CELERY_TASK_TIME_LIMIT, so this is the only knob. Dev takes ~11 min (2 GiB); prod
+# (~26 GiB of PDFs) needs hours and sets 21600.
+EVILFLOWERS_BACKUP_TIME_LIMIT = int(os.getenv("EVILFLOWERS_BACKUP_TIME_LIMIT", 3 * 60 * 60))
 EVILFLOWERS_BACKUP_DESTINATION = os.getenv("EVILFLOWERS_BACKUP_DESTINATION")
 EVILFLOWERS_BACKUP_S3_HOST = os.environ.get("EVILFLOWERS_BACKUP_S3_HOST")
 EVILFLOWERS_BACKUP_S3_ACCESS_KEY = os.environ.get("EVILFLOWERS_BACKUP_S3_ACCESS_KEY")

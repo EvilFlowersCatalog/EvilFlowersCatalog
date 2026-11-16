@@ -54,6 +54,7 @@ def catalog(instance: Catalog) -> dict:
             "title": instance.title,
             "url_name": instance.url_name,
             "is_public": instance.is_public,
+            "harvestable": instance.harvestable,
             "resource_uri": uris.catalog_uri(instance.pk),
         }
     )

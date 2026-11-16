@@ -97,6 +97,19 @@ class Command(TracedCommandMixin, BaseCommand):
         retrieval.add_argument("--username", required=True, help="User the searches run as (scopes the catalog).")
         retrieval.add_argument("--gold", default=str(DEFAULT_GOLD), help="JSON file with gold questions.")
         retrieval.add_argument("--output", help="Write the full JSON report here.")
+        # #188: one deploy measures every option against the same gold file.
+        retrieval.add_argument(
+            "--word-weight", type=float, help="Override EVILFLOWERS_SEARCH_PASSAGE_WORD_WEIGHT (option C)."
+        )
+        retrieval.add_argument(
+            "--rerank-url", help="Override EVILFLOWERS_SEARCH_PASSAGE_RERANK_URL (option B; '' turns it off)."
+        )
+        retrieval.add_argument(
+            "--rerank-candidates", type=int, help="Override EVILFLOWERS_SEARCH_PASSAGE_RERANK_CANDIDATES."
+        )
+        retrieval.add_argument(
+            "--rerank-timeout", type=float, help="Override EVILFLOWERS_SEARCH_PASSAGE_RERANK_TIMEOUT (seconds)."
+        )
 
         pairs = sub.add_parser("pairs", help="Print (sentence, passage) pairs from real answers to label.")
         pairs.add_argument("--limit", type=int, default=300)
@@ -200,20 +213,50 @@ class Command(TracedCommandMixin, BaseCommand):
             )
         request = evaluation.evaluation_request("get")
         request.user = self._user(options["username"])
+        overrides = {
+            name: options[key]
+            for key, name in (
+                ("word_weight", "EVILFLOWERS_SEARCH_PASSAGE_WORD_WEIGHT"),
+                ("rerank_url", "EVILFLOWERS_SEARCH_PASSAGE_RERANK_URL"),
+                ("rerank_candidates", "EVILFLOWERS_SEARCH_PASSAGE_RERANK_CANDIDATES"),
+                ("rerank_timeout", "EVILFLOWERS_SEARCH_PASSAGE_RERANK_TIMEOUT"),
+            )
+            if options.get(key) is not None
+        }
 
         results = []
-        for case in gold:
-            result = retrieval_bench.run_case(request, case)
-            results.append(result)
-            if result.degraded:
-                self.stdout.write(self.style.ERROR(f"DEGRADED {result.id} (no query embedding)"))
-            else:
-                self.stdout.write(
-                    f"{result.id:<28} entry R@5 {result.entry_recall_5:.2f} nDCG@10 {result.entry_ndcg_10:.2f}"
-                    f"  page R@5 {result.page_recall_5:.2f} nDCG@10 {result.page_ndcg_10:.2f}"
-                )
+        with override_settings(**overrides):
+            for case in gold:
+                result = retrieval_bench.run_case(request, case)
+                results.append(result)
+                if result.degraded:
+                    self.stdout.write(self.style.ERROR(f"DEGRADED {result.id} (no query embedding)"))
+                else:
+                    self.stdout.write(
+                        f"{result.id:<28} entry R@5 {result.entry_recall_5:.2f} nDCG@10 {result.entry_ndcg_10:.2f}"
+                        f"  page R@5 {result.page_recall_5:.2f} nDCG@10 {result.page_ndcg_10:.2f}"
+                    )
         report = retrieval_bench.report(results, retrieval_bench.PREREGISTERED)
-        self._print({"summary": report["summary"], "thresholds": report["thresholds"]})
+        report["variant"] = overrides
+        report["groups"] = retrieval_bench.by_language(gold, results)
+        if overrides.get("EVILFLOWERS_SEARCH_PASSAGE_RERANK_URL"):
+            # A failed rerank falls back to the fused order silently: without this, a "B" run could be the baseline.
+            missed = sum(1 for result in results if not result.degraded and not result.reranked)
+            if missed:
+                self.stderr.write(
+                    self.style.WARNING(
+                        f"Reranking fell back on {missed} of {len(results)} cases (see search.rerank_failed in the "
+                        "log; raise --rerank-timeout or lower --rerank-candidates)."
+                    )
+                )
+        self._print(
+            {
+                "variant": overrides,
+                "summary": report["summary"],
+                "groups": report["groups"],
+                "thresholds": report["thresholds"],
+            }
+        )
         if options.get("output"):
             Path(options["output"]).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
             self.stderr.write(f"Report written to {options['output']}")

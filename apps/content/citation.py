@@ -73,7 +73,7 @@ def work(entry) -> dict:
         "author": [{"family": item.author.surname, "given": item.author.name} for item in authors],
         "publisher": entry.publisher or None,
         "issued": _issued(entry),
-        "ISBN": identifiers.get("isbn") or None,
+        "ISBN": _isbn(identifiers.get("isbn")),
         "DOI": _doi(identifiers.get("doi")),
         "language": entry.language.alpha2 if entry.language_id and entry.language else None,
         "number-of-pages": entry.page_count or None,
@@ -81,13 +81,42 @@ def work(entry) -> dict:
     return {key: value for key, value in csl.items() if value not in (None, [], "")}
 
 
+def _isbn(value: Optional[str]) -> Optional[str]:
+    """The ISBN as printed in a reference: hyphenated ISBN-13 (`978-3-319-29792-7`), never the stored URN (#186).
+
+    An ISBN that fails its checksum is kept as stored, only without a `urn:isbn:` / `ISBN` prefix.
+    """
+    from apps.harvest.records import _ISBN_PREFIX, normalize_isbn
+
+    if not value or not value.strip():
+        return None
+    digits = normalize_isbn(value)
+    if digits is None:
+        return _ISBN_PREFIX.sub("", value.strip()) or None
+    try:
+        import isbnlib
+
+        return isbnlib.mask(digits) or digits
+    except Exception:  # noqa: BLE001 - a range the bundled table does not know: the bare digits
+        return digits
+
+
 def _doi(value: Optional[str]) -> Optional[str]:
+    """The bare DOI (`10.1007/…`), without `doi:`, `urn:doi:` or a resolver URL (#186)."""
     if not value:
         return None
     value = value.strip()
-    for prefix in ("doi:", "https://doi.org/", "http://doi.org/"):
+    for prefix in (
+        "urn:doi:",
+        "doi:",
+        "https://doi.org/",
+        "http://doi.org/",
+        "https://dx.doi.org/",
+        "http://dx.doi.org/",
+    ):
         if value.lower().startswith(prefix):
-            value = value[len(prefix) :]
+            value = value[len(prefix) :].strip()
+            break
     return value or None
 
 
@@ -240,6 +269,9 @@ def apa(citation: dict) -> str:
     return " ".join(parts)
 
 
+_KEY_STOPWORDS = {"a", "an", "the", "on", "of", "to", "and", "o", "na", "v", "k", "der", "die", "das"}
+
+
 def _bibtex_escape(value: str) -> str:
     return str(value).replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
 
@@ -249,7 +281,10 @@ def bibtex(citation: dict) -> str:
     authors = " and ".join(
         f"{author.get('family', '')}, {author.get('given', '')}".strip(", ") for author in csl.get("author") or []
     )
-    first = (csl.get("author") or [{}])[0].get("family") or "anon"
+    # No author: the title's first word (BibTeX's own convention), not "anon" (#186).
+    first = (csl.get("author") or [{}])[0].get("family") or next(
+        (word for word in re.findall(r"\w+", csl.get("title") or "") if word.lower() not in _KEY_STOPWORDS), "anon"
+    )
     key = re.sub(r"[^A-Za-z0-9]", "", first) + (_year(csl) or "") + citation["uri"].rsplit("/", 1)[-1][:6]
     fields = {
         "title": csl.get("title"),

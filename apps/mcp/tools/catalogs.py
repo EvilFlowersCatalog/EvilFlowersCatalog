@@ -69,6 +69,15 @@ CATALOG_FIELDS = {
             "on the public OPDS feeds. Changing it re-scopes the whole collection at once."
         ),
     },
+    "harvestable": {
+        "type": "boolean",
+        "description": (
+            "True serves the catalog's records over OAI-PMH at /oai (IP-033): library discovery systems and "
+            "aggregators harvest their metadata (title, authors, identifiers, subjects, a link back), whether or "
+            "not the catalog is public. Turning it off leaves deleted-record tombstones, never silence. Exposure "
+            "is a library decision: confirm with the user before switching it."
+        ),
+    },
 }
 
 
@@ -229,6 +238,7 @@ def get_catalog(request, raw_arguments: dict) -> dict:
             "title": CATALOG_FIELDS["title"],
             "url_name": CATALOG_FIELDS["url_name"],
             "is_public": CATALOG_FIELDS["is_public"],
+            "harvestable": CATALOG_FIELDS["harvestable"],
         },
         "required": ["title", "url_name"],
         "additionalProperties": False,
@@ -239,7 +249,7 @@ def get_catalog(request, raw_arguments: dict) -> dict:
 )
 @transaction.atomic
 def create_catalog(request, raw_arguments: dict) -> dict:
-    arguments = Arguments(raw_arguments, allowed=("title", "url_name", "is_public"))
+    arguments = Arguments(raw_arguments, allowed=("title", "url_name", "is_public", "harvestable"))
 
     # Same gate as `POST /api/v1/catalogs`. With `default_permissions = ()` on
     # the model this is a superuser check in all but name.
@@ -257,6 +267,7 @@ def create_catalog(request, raw_arguments: dict) -> dict:
             "title": arguments.string("title", max_length=100),
             "url_name": arguments.string("url_name", max_length=50),
             "is_public": arguments.boolean("is_public", default=False),
+            "harvestable": arguments.boolean("harvestable", default=False),
         }
     )
 
@@ -278,9 +289,10 @@ def create_catalog(request, raw_arguments: dict) -> dict:
     name="update_catalog",
     title="Update a catalog",
     description=(
-        "Rename a catalog, change its slug, or switch it between public and private. Requires "
-        "`manage` access. Only the arguments you pass are changed. Setting `is_public` re-scopes "
-        "every publication in the collection at once — confirm with the user before flipping it."
+        "Rename a catalog, change its slug, switch it between public and private, or expose it over "
+        "OAI-PMH (`harvestable`). Requires `manage` access. Only the arguments you pass are changed. "
+        "Setting `is_public` re-scopes every publication in the collection at once, and `harvestable` "
+        "hands its metadata to outside harvesters — confirm with the user before flipping either."
     ),
     input_schema={
         "type": "object",
@@ -289,6 +301,7 @@ def create_catalog(request, raw_arguments: dict) -> dict:
             "title": CATALOG_FIELDS["title"],
             "url_name": CATALOG_FIELDS["url_name"],
             "is_public": CATALOG_FIELDS["is_public"],
+            "harvestable": CATALOG_FIELDS["harvestable"],
         },
         "required": ["catalog_id"],
         "additionalProperties": False,
@@ -299,7 +312,7 @@ def create_catalog(request, raw_arguments: dict) -> dict:
 )
 @transaction.atomic
 def update_catalog(request, raw_arguments: dict) -> dict:
-    arguments = Arguments(raw_arguments, allowed=("catalog_id", "title", "url_name", "is_public"))
+    arguments = Arguments(raw_arguments, allowed=("catalog_id", "title", "url_name", "is_public", "harvestable"))
 
     instance = resolve_catalog_for_management(request, arguments.uuid("catalog_id", required=True), "update")
 
@@ -308,6 +321,7 @@ def update_catalog(request, raw_arguments: dict) -> dict:
             "title": arguments.string("title", max_length=100) or instance.title,
             "url_name": arguments.string("url_name", max_length=50) or instance.url_name,
             "is_public": arguments.boolean("is_public", default=instance.is_public),
+            "harvestable": arguments.boolean("harvestable", default=instance.harvestable),
         }
     )
 

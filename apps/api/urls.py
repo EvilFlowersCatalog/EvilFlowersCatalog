@@ -32,6 +32,7 @@ from apps.api.views import (
 # silently 404ing.
 from apps.content import views as content_views
 from apps.dataverse.views import PrepublishView as _DataversePrepublishView
+from apps.decider import views as decider_views
 from apps.extraction import admin_views as extraction_admin
 from apps.extraction import discovery as extraction_discovery
 from apps.extraction import figure_search as extraction_figure_search
@@ -101,6 +102,9 @@ urlpatterns = [
     path("concepts", graph_views.ConceptList.as_view(), name="concept-list"),
     path("concepts/<str:key>", graph_views.ConceptDetail.as_view(), name="concept-detail"),
     path("graph/overview", graph_views.GraphOverview.as_view(), name="graph-overview"),
+    # Labelling the decision model's calibration cases (#201)
+    path("sections/<str:key>/text", decider_views.SectionText.as_view(), name="section-text"),
+    path("decider/section-pairs", decider_views.SectionPairs.as_view(), name="decider-section-pairs"),
     # Run-independent addresses of paragraphs, sections and figures (#171)
     path("locators/<uuid:entry_id>/<str:key>", extraction_locators.EntryLocator.as_view(), name="entry-locator"),
     # Recommendations and figures from the extraction index (IP-018 Phase 8)

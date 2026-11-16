@@ -2,15 +2,16 @@
 
 from datetime import timedelta
 
+from django.conf import settings
+
 from apps.tasks.contract import maintenance
-from apps.tasks.tasks import BACKUP_TIME_LIMIT
 
 maintenance(
     "maintenance.backup",
     "apps.tasks.tasks.backup",
     "Backup",
     "PostgreSQL dump and per-catalog archives to EVILFLOWERS_BACKUP_DESTINATION.",
-    time_limit=timedelta(seconds=BACKUP_TIME_LIMIT),
+    time_limit=timedelta(seconds=settings.EVILFLOWERS_BACKUP_TIME_LIMIT),
 )
 maintenance(
     "maintenance.cleanup_orphans",

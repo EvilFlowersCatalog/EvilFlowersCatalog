@@ -122,6 +122,7 @@ CATALOG_SCHEMA = {
         "title": {"type": "string"},
         "url_name": {"type": "string"},
         "is_public": {"type": "boolean"},
+        "harvestable": {"type": "boolean", "description": "Served over OAI-PMH at /oai (IP-033)."},
         "resource_uri": {"type": "string"},
     },
     "required": ["id", "title", "url_name"],

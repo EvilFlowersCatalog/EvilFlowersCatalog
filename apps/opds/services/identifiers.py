@@ -8,7 +8,14 @@ from apps.core.models import Entry
 # Imported data sometimes stores the identifier already as a URI; without
 # stripping, the feeds and the package manifest said `urn:isbn:urn:isbn:…`.
 _ISBN_PREFIXES = ("urn:isbn:", "isbn:")
-_DOI_PREFIXES = ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:")
+_DOI_PREFIXES = (
+    "https://doi.org/",
+    "http://doi.org/",
+    "https://dx.doi.org/",
+    "http://dx.doi.org/",
+    "urn:doi:",
+    "doi:",
+)
 
 
 def _strip_prefix(value: str, prefixes) -> str:

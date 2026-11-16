@@ -21,6 +21,8 @@ class StatusSerializer(Serializer):
     timestamp: datetime
     instance: str
     stats: StatusStatistics
+    #: Dependency name (`database`, `broker`, `storage`) -> `ok`, or the error that failed it (#195).
+    checks: dict[str, str]
     build: Optional[str] = None
     version: Optional[str] = None
     python: Optional[str] = None

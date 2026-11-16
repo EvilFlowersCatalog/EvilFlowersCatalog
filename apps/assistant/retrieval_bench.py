@@ -67,6 +67,8 @@ class CaseResult:
     page_recall_5: float = 0.0
     page_ndcg_10: float = 0.0
     page_rr: float = 0.0
+    #: #188: the cross-encoder reordered this case's passages (False with reranking off, or when it fell back).
+    reranked: bool = False
 
 
 def gold_sets(case: dict) -> Tuple[Set[str], Set[Tuple[str, int]]]:
@@ -94,11 +96,23 @@ def score_case(case: dict, entries: List[str], passages: List[Tuple[str, int]]) 
 
 
 def rankings(result) -> Tuple[List[str], List[Tuple[str, int]]]:
-    """Publications in rank order, and (publication, page) of every passage by descending score."""
+    """Publications in rank order, and (publication, page) of every passage in the search's own ranking.
+
+    #188: by the passage's `rank` (fused or reranked order), not its `score`. Scores mix scales (cosine, word rank,
+    reranker), and a change of fusion weights never moves a score, so ranking by score hid option C entirely.
+    """
     entries = [str(item.entry_id) for item in result.items]
-    scored = [(passage.score, str(item.entry_id), passage.page) for item in result.items for passage in item.passages]
+    ranked = [
+        (
+            getattr(passage, "rank", None) if getattr(passage, "rank", None) is not None else -passage.score,
+            str(item.entry_id),
+            passage.page,
+        )
+        for item in result.items
+        for passage in item.passages
+    ]
     passages = []
-    for _score, entry_id, page in sorted(scored, key=lambda row: -row[0]):
+    for _rank, entry_id, page in sorted(ranked, key=lambda row: row[0]):
         if (entry_id, page) not in passages:
             passages.append((entry_id, page))
     return entries, passages
@@ -116,6 +130,9 @@ def run_case(request, case: dict) -> CaseResult:
     entries, passages = rankings(result)
     scored = score_case(case, entries, passages)
     scored.synthetic = bool(case.get("synthetic"))
+    scored.reranked = any(
+        "rerank" in (getattr(passage, "matched", None) or []) for item in result.items for passage in item.passages
+    )
     return scored
 
 
@@ -131,6 +148,7 @@ def summary(results: Iterable[CaseResult]) -> dict:
     return {
         "cases": len(results),
         "degraded": len(results) - len(scored),
+        "reranked": sum(1 for r in scored if r.reranked),
         "entry_recall_5": mean(r.entry_recall_5 for r in scored),
         "entry_ndcg_10": mean(r.entry_ndcg_10 for r in scored),
         "entry_mrr": mean(r.entry_rr for r in scored),
@@ -138,6 +156,29 @@ def summary(results: Iterable[CaseResult]) -> dict:
         "page_ndcg_10": mean(r.page_ndcg_10 for r in paged),
         "page_mrr": mean(r.page_rr for r in paged),
     }
+
+
+def by_language(gold: List[dict], results: List[CaseResult]) -> dict:
+    """The summary per `question language→book language` (#188): `sk→en` is the row cross-lingual changes target.
+
+    The book's language is the first gold publication's catalogue language (`?` when unset); synthetic and
+    librarian questions together, since the groups compare variants, not bars.
+    """
+    from apps.core.models import Entry
+
+    first_entry = {str(case.get("id")): next(iter(gold_sets(case)[0]), None) for case in gold}
+    languages = {
+        str(pk): alpha2
+        for pk, alpha2 in Entry.objects.filter(pk__in=[pk for pk in first_entry.values() if pk]).values_list(
+            "pk", "language__alpha2"
+        )
+    }
+    question_language = {str(case.get("id")): case.get("language") or "?" for case in gold}
+    groups: dict = {}
+    for result in results:
+        book = languages.get(first_entry.get(result.id) or "", None) or "?"
+        groups.setdefault(f"{question_language.get(result.id, '?')}→{book}", []).append(result)
+    return {name: summary(members) for name, members in sorted(groups.items())}
 
 
 def report(results: List[CaseResult], thresholds: Optional[dict] = None) -> dict:

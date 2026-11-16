@@ -174,3 +174,45 @@ class PassageSearchTests(SearchFixtureMixin, TestCase):
     def test_hidden_catalogs_stay_hidden_from_words_too(self):
         result = self.search(vector=None, query="Secret")
         self.assertEqual(result["items"], [])
+
+    # -- #188: cross-lingual options, off by default ---------------------------------------------------------
+
+    @staticmethod
+    def rerank_reply(order_by_text):
+        """A fake TEI `/rerank`: relevance from `order_by_text`, answered best first like TEI."""
+
+        def post(url, headers, json, timeout):
+            assert url == "http://rerank.test/rerank"
+            scored = [{"index": i, "score": order_by_text.get(text, 0.01)} for i, text in enumerate(json["texts"])]
+            response = mock.Mock()
+            response.raise_for_status.return_value = None
+            response.json.return_value = sorted(scored, key=lambda item: -item["score"])
+            return response
+
+        return post
+
+    @override_settings(EVILFLOWERS_SEARCH_PASSAGE_RERANK_URL="http://rerank.test")
+    def test_the_reranker_reorders_pages(self):
+        # By vectors `ml` p.3 is first; the cross-encoder prefers strojove's "Viac." on p.8.
+        reply = self.rerank_reply({"Viac.": 0.97, "Učenie z dát.": 0.4, "Neural networks learn from data.": 0.2})
+        with mock.patch("apps.core.search.rerank.requests.post", side_effect=reply):
+            result = self.search(per_entry=3)
+        self.assertEqual(result["items"][0]["entry_id"], str(self.keys["strojove"]))
+        first = result["items"][0]["passages"]
+        self.assertEqual([passage["page"] for passage in first], [8, 7])
+        self.assertEqual(first[0]["score"], 0.97)
+        self.assertIn("rerank", first[0]["matched"])
+
+    @override_settings(EVILFLOWERS_SEARCH_PASSAGE_RERANK_URL="http://rerank.test")
+    def test_a_failing_reranker_leaves_the_fused_order(self):
+        import requests
+
+        with mock.patch("apps.core.search.rerank.requests.post", side_effect=requests.Timeout("slow")):
+            result = self.search()
+        self.assertEqual(result["items"][0]["entry_id"], str(self.keys["ml"]))
+        self.assertNotIn("rerank", result["items"][0]["passages"][0]["matched"])
+
+    def test_the_reranker_is_off_by_default(self):
+        with mock.patch("apps.core.search.rerank.requests.post") as post:
+            self.search()
+        post.assert_not_called()

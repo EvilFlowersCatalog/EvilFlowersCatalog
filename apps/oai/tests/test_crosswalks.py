@@ -132,6 +132,21 @@ class CrosswalkTests(ProtocolTestCase):
         identifiers = self.metadata("oai_dc").xpath("dc:identifier/text()", namespaces=NS)
         self.assertFalse([value for value in identifiers if value.startswith(PORTAL)])
 
+    def test_an_isbn_stored_as_urn_is_not_prefixed_twice(self):
+        """Dev on 2026-11-16: 350 of 386 entries store `urn:isbn:…`; oai_dc said `urn:isbn:urn:isbn:…` (#186/#196)."""
+        stored = self.entry(title="Lexis", identifiers={"isbn": "urn:isbn:9783319648187", "doi": "urn:doi:10.1/x"})
+        self.sync(stored)
+        root = self.oai(verb="GetRecord", identifier=f"{ID}{stored.pk}", metadataPrefix="oai_dc")
+        identifiers = root.find("oai:GetRecord/oai:record/oai:metadata", NS)[0].xpath(
+            "dc:identifier/text()", namespaces=NS
+        )
+        self.assertIn("urn:isbn:9783319648187", identifiers)
+        self.assertIn("https://doi.org/10.1/x", identifiers)
+        self.assertFalse([value for value in identifiers if value.count("urn:") > 1])
+        # The resolver matches it too.
+        response = self.client.get("/resolve/isbn/978-3-319-64818-7")
+        self.assertEqual(response.status_code, 302)
+
     def test_a_minimal_record_is_valid(self):
         bare = self.entry(title="Bez autora", authors=(), language=None)
         self.sync(bare)

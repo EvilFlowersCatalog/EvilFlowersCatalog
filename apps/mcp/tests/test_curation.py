@@ -185,6 +185,27 @@ class CatalogManagementTests(ManagementTestCase):
 
         self.assertTrue(UserCatalog.objects.filter(catalog=self.catalog, user=self.reader).exists())
 
+    def test_a_manager_can_expose_the_catalog_over_oai(self):
+        payload = self.ok("update_catalog", {"catalog_id": str(self.catalog.pk), "harvestable": True}, self.manager)
+
+        self.assertTrue(payload["catalog"]["harvestable"])
+        self.catalog.refresh_from_db()
+        self.assertTrue(self.catalog.harvestable)
+
+    def test_a_rename_keeps_the_catalog_harvestable(self):
+        Catalog.objects.filter(pk=self.catalog.pk).update(harvestable=True)
+
+        self.ok("update_catalog", {"catalog_id": str(self.catalog.pk), "title": "Renamed"}, self.manager)
+
+        self.catalog.refresh_from_db()
+        self.assertTrue(self.catalog.harvestable)
+
+    def test_a_new_catalog_can_be_harvestable(self):
+        payload = self.ok(
+            "create_catalog", {"title": "Open", "url_name": "open-oai", "harvestable": True}, self.superuser
+        )
+        self.assertTrue(Catalog.objects.get(pk=payload["catalog"]["id"]).harvestable)
+
     def test_a_reader_cannot_update_the_catalog(self):
         message = self.refused("update_catalog", {"catalog_id": str(self.catalog.pk), "title": "Nope"}, self.reader)
         self.assertIn("Insufficient permissions", message)

@@ -90,6 +90,9 @@ class PassageSerializer(Serializer):
     matched: List[str] = []
     #: The paragraph's run-independent address (#171): `GET /api/v1/locators/{entry_id}/{locator_key}`.
     locator_key: Optional[str] = None
+    #: 1-based position in the search's own ranking across all publications (fused, or reranked): `score` mixes
+    #: scales (cosine, word rank, reranker), so compare passages of different publications by this (#188).
+    rank: Optional[int] = None
 
 
 class PassageHitSerializer(Serializer):
@@ -424,8 +427,11 @@ def search_passages(
         }
     by_words = _word_matches(active, text) if text else {}
 
-    # Reciprocal rank fusion (IP-021's k): a passage both channels rank high comes first.
-    fused = [pk for pk, _score in rrf([list(by_meaning), list(by_words)], k=RRF_K)][:PASSAGE_PARAGRAPHS]
+    # Reciprocal rank fusion (IP-021's k): a passage both channels rank high comes first. The word channel's weight
+    # is `EVILFLOWERS_SEARCH_PASSAGE_WORD_WEIGHT` (#188 option C; 1.0 = plain RRF).
+    weights = [1.0, settings.EVILFLOWERS_SEARCH_PASSAGE_WORD_WEIGHT]
+    fused = [pk for pk, _score in rrf([list(by_meaning), list(by_words)], k=RRF_K, weights=weights)]
+    fused = fused[:PASSAGE_PARAGRAPHS]
     rows = {
         row["pk"]: row
         for row in Paragraph.objects.filter(pk__in=fused).values(
@@ -441,15 +447,15 @@ def search_passages(
 
     from apps.extraction.bibliography import looks_like_references
 
+    # A reference list matches every topic it lists and says nothing about it (#187).
+    ordered = [pk for pk in fused if pk in rows and not looks_like_references(rows[pk]["text"], rows[pk]["section"])]
+    ordered, reranked = _rerank(text, ordered, rows)
+    position = {pk: index for index, pk in enumerate(ordered, start=1)}
+
     hits: Dict = {}
     catalogs: Dict = {}
-    for pk in fused:
-        row = rows.get(pk)
-        if row is None:
-            continue
-        if looks_like_references(row["text"], row["section"]):
-            # A reference list matches every topic it lists and says nothing about it (#187).
-            continue
+    for pk in ordered:
+        row = rows[pk]
         entry_id = row["run__acquisition__entry_id"]
         catalogs[entry_id] = row["run__acquisition__entry__catalog_id"]
         passages = hits.setdefault(entry_id, [])
@@ -477,6 +483,10 @@ def search_passages(
             distance = by_meaning.get(row["pk"])
             matched = (["semantic"] if distance is not None else []) + (["words"] if row["pk"] in by_words else [])
             score = 1 - distance if distance is not None else by_words.get(row["pk"], 0.0)
+            if reranked:
+                # #188 option B: the cross-encoder's relevance; paragraphs past the reranked head rank below it.
+                matched.append("rerank")
+                score = reranked.get(row["pk"], min(reranked.values()) * min(score, 1.0))
             passages.append(
                 PassageSerializer(
                     paragraph_id=row["pk"],
@@ -488,6 +498,7 @@ def search_passages(
                     snippet=snippets.get(row["pk"]) if may_read else None,
                     matched=matched,
                     locator_key=row["locator_key"],
+                    rank=position[row["pk"]],
                 )
             )
         items.append(
@@ -502,6 +513,24 @@ def search_passages(
 
 #: Fusion constant of the two passage rankings (the usual 60, as in entry search).
 RRF_K = 60
+
+
+def _rerank(text: str, ordered: List, rows: Dict) -> tuple:
+    """`(order, {pk: relevance})`: the first `EVILFLOWERS_SEARCH_PASSAGE_RERANK_CANDIDATES` paragraphs reordered by
+    the cross-encoder (#188 option B), the rest after them in fused order. Unchanged with `{}` when reranking is off
+    or did not answer in time."""
+    from apps.core.search import rerank
+
+    if not rerank.enabled() or not ordered:
+        return ordered, {}
+    head = ordered[: settings.EVILFLOWERS_SEARCH_PASSAGE_RERANK_CANDIDATES]
+    scores = rerank.scores(text, [rows[pk]["text"] for pk in head])
+    if scores is None:
+        return ordered, {}
+    relevance = dict(zip(head, scores))
+    head = sorted(head, key=lambda pk: -relevance[pk])
+    return head + ordered[len(head) :], relevance
+
 
 #: `ts_headline` options of a passage snippet: up to two fragments around the query's words.
 SNIPPET_OPTIONS = 'MaxFragments=2, MinWords=8, MaxWords=30, FragmentDelimiter=" … ", StartSel=<mark>, StopSel=</mark>'

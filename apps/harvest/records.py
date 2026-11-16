@@ -105,6 +105,7 @@ class SourceRecord:
 # -- identifiers ---------------------------------------------------------------------------------------------
 
 _ISBN_CHARS = re.compile(r"[^0-9Xx]")
+_ISBN_PREFIX = re.compile(r"^(?:urn:isbn:|isbn(?:-1[03])?\s*:?\s*)", re.IGNORECASE)
 
 
 def _isbn10_valid(digits: str) -> bool:
@@ -126,9 +127,12 @@ def normalize_isbn(value: Optional[str]) -> Optional[str]:
     """ISBN-13 digits (978-prefixed from a valid ISBN-10), or None when the checksum fails.
 
     MARC 020 $a often carries a qualifier ("80-227-1234-5 (brož.)"); only the leading ISBN is read.
+    Imported records also store it as a URN ("urn:isbn:978…") or with a label ("ISBN 978…"); before the prefix
+    was stripped, the split on `:` left "urn" and such an ISBN normalised to None (#186).
     """
     if not value:
         return None
+    value = _ISBN_PREFIX.sub("", value.strip())
     head = re.split(r"[\s(:;]", value.strip(), maxsplit=1)[0] if value.strip() else ""
     digits = _ISBN_CHARS.sub("", head or value)
     if len(digits) == 10 and _isbn10_valid(digits):
@@ -161,7 +165,7 @@ def normalize_doi(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
     value = value.strip()
-    value = re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"^(https?://(dx\.)?doi\.org/|urn:doi:|doi:\s*)", "", value, flags=re.IGNORECASE)
     return value.lower() if value.startswith("10.") else None
 
 
