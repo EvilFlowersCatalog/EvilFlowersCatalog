@@ -1,0 +1,73 @@
+@startuml sequence-ocr-job-lifecycle
+!include elvira.iuml
+' =============================================================================
+' What: a client only declares (apply a spec, set desired = cancelled); the
+'       facade's reconciler takes the transitions the job state machine allows,
+'       runs report facts, and a provider's report or domain change is turned
+'       into further declarations (follow-up jobs) — nothing calls retry/revoke.
+' Kind: UML sequence diagram, proposal (IP-031 rev. 2). Scope: one OCR job
+'       (#146) applied, run, reported; a blocked LCP follow-up that proceeds on
+'       its own; cancel; a domain change observed. Omitted: auth, telemetry.
+' Source: EvilFlowersCatalog IP-031 rev. 2; diagrams state-job, state-job-run
+'         (2026-11-14).
+' =============================================================================
+
+title One OCR job, declaratively: apply, reconcile, facts, follow-ups, cancel (proposal rev. 2, 2026-11-14)
+
+actor "Admin\nelvira-portal" as admin
+participant "REST\n/api/v1/jobs" as api
+participant "JobFacade\n+ Reconciler" as facade
+participant "Definition\n(provider)" as definition
+database "Ledger\nJob · JobRun" as ledger
+queue "Redis db 7" as redis
+participant "ocr worker" as worker
+
+== apply (declare) ==
+admin -[$accent_msg()]> api : <b>POST /api/v1/jobs</b>\n{kind: files.ocr, subject_id, spec: {redo: false}}
+api -> facade : apply(kind, subject, spec, desired = completed)
+facade -> definition : spec model validates spec
+facade -> ledger : upsert Job(kind, subject):\nspec, generation + 1, state pending
+api --> admin : 201 {state: pending, generation: 1}
+facade -[$accent_msg()]> facade : <b>reconcile(job)</b> (on commit)
+facade -> definition : check(subject, spec) → ok
+facade -> ledger : JobRun(queued); Job: queued,\nobserved_generation = generation
+facade -> definition : dispatch(run)
+definition -> redis : send_task(task_id = run id)
+
+== facts ==
+redis -> worker : consume
+worker -> redis : task-received · task-started
+redis -> facade : events (via celery_event_handler)
+facade -> ledger : run: started → Job: running
+
+== report → follow-ups are declared too ==
+worker -[$accent_msg()]> api : <b>PUT /api/v1/jobs/runs/{run}/report</b>\n{status: done, output, pages}
+api -> facade : report(run, payload)
+facade -> definition : on_report(subject, payload)\n→ file replaced, checksum cleared
+definition -> facade : apply(readium.encrypt, subject,\n{reencrypt: true}, cause = job)
+facade -> definition : check(…) → refused: 2 active loans
+facade -> ledger : child Job: blocked (reason: active loans)
+worker -> redis : task-succeeded
+redis -> facade : event (via celery_event_handler)
+facade -> ledger : run: succeeded → Job: succeeded
+
+== later: the blocked job proceeds by itself ==
+facade -> facade : reconcile tick (beat)
+facade -> definition : check(…) → ok (loans ended)
+facade -> ledger : child JobRun(queued); child Job: queued
+facade -> definition : dispatch(run) → lcpencrypt
+
+== cancel (declare) ==
+admin -> api : PATCH /api/v1/jobs/{id}\n{desired_state: cancelled}
+api -> facade : patch(job, desired = cancelled)
+facade -> facade : reconcile: queued → revoke\n(running → cancelling until the run ends)
+facade -> redis : control.revoke(run id)
+facade -> ledger : run: revoked · Job: cancelled
+
+== domain change observed ==
+definition -> facade : observe(subject) on EncryptedContent\nsaved (webhook: registered)
+facade -> ledger : Job: succeeded (observed),\nlisted even if nobody applied it
+
+caption The only client inputs are POST (apply a spec) and PATCH (change spec or desired state); retry = apply again (generation + 1).\nThe reconciler decides: dispatch, block (re-checked later), revoke. Runs and domain changes are facts that move the state machine.\nA provider's consequences (re-encrypt after OCR) are declarations through the same facade, never direct task sends.
+footer ELVIRA · FIIT STU · EvilFlowersCatalog · docs/diagrams/sequence-ocr-job-lifecycle.puml
+@enduml

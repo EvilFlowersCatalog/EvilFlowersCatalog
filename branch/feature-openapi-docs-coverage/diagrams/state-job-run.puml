@@ -1,0 +1,52 @@
+@startuml state-job-run
+!include elvira.iuml
+' =============================================================================
+' What: a run is one Celery task execution of a job; its state comes only from
+'       facts (the publish hook, Celery events, the sweeper), never from a client,
+'       and one precedence rule keeps late or duplicate events from moving it back.
+' Kind: UML state machine diagram, proposal (IP-031 rev. 2). Scope: JobRun (table
+'       job_protocols). Omitted: how a run's outcome moves its job (state-job).
+' Source: apps/tasks/ledger.py, apps/tasks/maintenance.py (2026-11-14).
+' =============================================================================
+
+title Job run state machine: facts only, one precedence rule (proposal, 2026-11-14)
+
+state "queued" as queued : written before the send\n(publish hook / dispatcher)
+state "received" as received : task-received
+state "started" as started : task-started\nattempts + 1
+state "retrying" as retrying : task-retried\n(Celery self.retry)
+state "succeeded" as succeeded : task-succeeded\nresult, runtime
+state "failed" as failed : task-failed\nerror, traceback
+state "revoked" as revoked : task-revoked, or cancelled\nbefore a worker took it\n<b>final</b>
+state "rejected" as rejected : task-rejected
+state "lost" as lost : sweeper: no event past\nthe time limit (+ grace)
+
+[*] -[$accent()]-> queued : <b>before_task_publish</b>
+queued -[$accent()]-> received : <b>task-received</b>
+received -[$accent()]-> started : <b>task-started</b>
+started -[$accent()]-> succeeded : <b>task-succeeded</b>
+started --> failed : task-failed
+started --> retrying : task-retried
+retrying --> received : task-received\n(retry delivered)
+received --> rejected : task-rejected
+queued --> revoked : job cancelled\n(revoke)
+received --> revoked : task-revoked
+started --> revoked : task-revoked\n(terminated)
+queued --> lost : sweeper:\nno event for 48 h
+started --> lost : sweeper:\nno event past time limit
+received --> lost : sweeper
+succeeded --> received : newer task-received\n(redelivery, stable task id)
+failed --> received : newer task-received
+lost --> started : newer task-started\n(the event was only late)
+
+legend bottom left
+  |= Rule |= |
+  | older than last_event_at | event is history only (job_events), no state change |
+  | revoked | final: nothing moves it |
+  | other final states | reopen only on a newer task-received / task-started |
+  | queued | only from nothing; a late task-sent never moves a run back |
+endlegend
+
+caption Runs are facts. They feed their job's state machine: queued/received → job queued, started/retrying → running,\nsucceeded → succeeded, failed/lost/rejected → failed or pending (retry policy), revoked → cancelled.
+footer ELVIRA · FIIT STU · EvilFlowersCatalog · docs/diagrams/state-job-run.puml
+@enduml

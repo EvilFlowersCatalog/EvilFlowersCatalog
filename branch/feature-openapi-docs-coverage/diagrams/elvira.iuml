@@ -1,0 +1,193 @@
+' =============================================================================
+' ELVIRA · FIIT STU — the one PlantUML theme for this repository.
+'
+' Include it as the first line after @startuml:
+'     !include ../../../tools/diagrams/elvira.iuml        (path relative to the .puml)
+'
+' In another repository this file is a verbatim copy beside the diagrams
+' (docs/diagrams/elvira.iuml, `!include elvira.iuml`), fetched from the
+' evilflowers-knowledge MCP resource evilflowers://diagram-kit/theme. Never edit a
+' copy: change the original in evilflowers-knowledge and fetch it again.
+'
+' Diagram files never set colours, fonts or skinparams themselves; tools/diagrams/
+' render.py and check_diagram reject them. Everything visual lives here.
+'
+' Tokens come from elvira-portal src/main.css, theme "fiit" (the default theme):
+'   PRIMARY       #01a9e0  --color-primary          (large marks only, never text)
+'   ACCENT        #0077A3  --color-primary-text     (AA on white: accent lines, text)
+'   ACCENT_FILL   #E6F3FF  --color-primary-light    (fill of the element the figure argues for)
+'   NAVY          #15384E  --color-secondary        (node borders, titles)
+'   NAVY_LIGHT    #A8D0E6  --color-secondary-light  (zone frames)
+'   INK           #333333  --color-dark-gray        (all body text)
+'   SURFACE       #F5F7FA  --color-light-gray       (nested execution environments)
+'   MUTED         #6B7785  derived: secondary text, non-accent edges (4.6:1 on white)
+' Font: the portal uses Inter. Arial is used here because it is on every macOS and
+' Linux renderer; switch $FONT to "Inter" once it is installed everywhere.
+' =============================================================================
+
+!$FONT = "Arial"
+!$PRIMARY = "#01a9e0"
+!$ACCENT = "#0077A3"
+!$ACCENT_FILL = "#E6F3FF"
+!$NAVY = "#15384E"
+!$NAVY_LIGHT = "#A8D0E6"
+!$INK = "#333333"
+!$SURFACE = "#F5F7FA"
+!$MUTED = "#6B7785"
+
+skinparam dpi 200
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 0
+skinparam defaultFontName $FONT
+skinparam defaultFontSize 12
+skinparam defaultFontColor $INK
+skinparam nodesep 22
+skinparam ranksep 45
+skinparam padding 2
+skinparam wrapWidth 260
+skinparam maxMessageSize 220
+' polyline: straight technical segments; ortho collides edge labels in Graphviz.
+skinparam linetype polyline
+skinparam arrowThickness 1
+skinparam stereotypeFontSize 10
+skinparam stereotypeFontColor $MUTED
+
+<style>
+root {
+  FontName $FONT
+  FontColor $INK
+  FontSize 12
+  LineColor $NAVY
+  LineThickness 1
+  BackGroundColor #FFFFFF
+  RoundCorner 0
+  Shadowing 0
+}
+title {
+  FontSize 16
+  FontStyle bold
+  FontColor $NAVY
+  LineThickness 0
+  LineColor #FFFFFF
+  Margin 4 4 12 4
+  HorizontalAlignment left
+}
+caption {
+  FontSize 11
+  FontColor $INK
+  LineThickness 0
+  LineColor #FFFFFF
+  HorizontalAlignment left
+  Margin 12 4 4 4
+}
+footer {
+  FontSize 9
+  FontColor $MUTED
+  LineThickness 0
+  LineColor #FFFFFF
+  HorizontalAlignment left
+}
+legend {
+  FontSize 10
+  FontColor $INK
+  BackGroundColor #FFFFFF
+  LineColor $NAVY_LIGHT
+  LineThickness 1
+}
+arrow {
+  LineColor $MUTED
+  FontColor $INK
+  FontSize 10
+  LineThickness 1
+}
+element {
+  LineColor $NAVY
+  BackGroundColor #FFFFFF
+  Padding 6
+}
+' One block per selector: a repeated selector replaces the earlier block, and a
+' leaf node then loses its stroke (seen 2026-11-04 with PlantUML 1.2026.9).
+node {
+  LineColor $NAVY
+  LineThickness 1
+  BackGroundColor #FFFFFF
+  FontStyle normal
+}
+artifact {
+  LineColor $NAVY
+  LineThickness 1
+  BackGroundColor #FFFFFF
+  FontSize 11
+}
+database {
+  LineColor $NAVY
+  LineThickness 1
+  BackGroundColor #FFFFFF
+}
+frame {
+  LineColor $NAVY_LIGHT
+  BackGroundColor #FFFFFF
+  FontColor $NAVY
+  FontStyle bold
+}
+rectangle {
+  LineColor $NAVY
+  BackGroundColor #FFFFFF
+}
+' ---- semantic stereotypes (the only way a diagram changes a look) ----------
+' «executionEnvironment» and its kinds sit inside a device or VM: one shade darker.
+.executionEnvironment, .OS, .webServer {
+  BackGroundColor $SURFACE
+  LineColor $NAVY
+}
+' Leaf containers sit inside the grey engine: white again, so nesting alternates.
+.container, .volume {
+  BackGroundColor #FFFFFF
+  LineColor $NAVY
+  LineThickness 1
+}
+' «virtualMachine» and «device» stay white so nesting alternates white / grey.
+.device, .virtualMachine {
+  BackGroundColor #FFFFFF
+  LineColor $NAVY
+  LineThickness 1.5
+}
+' «proposed»: not live yet (baseline-not-roadmap). Dashed outline, same colour.
+.proposed {
+  LineColor $NAVY
+  LineThickness 1
+  LineStyle 6-4
+}
+' «focus»: the element the figure argues for. One per figure, maybe two.
+.focus {
+  BackGroundColor $ACCENT_FILL
+  LineColor $ACCENT
+  LineThickness 2
+}
+</style>
+
+' The figure's load-bearing edge: write  A -[$accent()]-> B : label
+!function $accent()
+!return "#0077A3,thickness=2"
+!endfunction
+
+' The same accent for sequence-diagram messages (they reject thickness=):
+'     A -[$accent_msg()]> B : <b>label</b>
+!function $accent_msg()
+!return "#0077A3"
+!endfunction
+
+' Standard key for diagrams that mix live and proposed elements.
+!procedure $legend_live_proposed()
+legend bottom left
+  |= Notation |= Meaning |
+  | solid box | runs on the host today (per the Source line of this diagram) |
+  | dashed box, «proposed» | not deployed; part of the proposal |
+  | blue fill, «focus» | the element this figure is about |
+  | solid arrow | communication path; arrow points from the side that opens the connection |
+  | dashed arrow | dependency («mount», «manifest», «deploy») |
+  | «…» | UML keyword (stereotype): «device», «virtualMachine», «executionEnvironment», «container», «volume» |
+  | text inside a node | artifacts deployed to that node (UML textual notation) |
+endlegend
+!endprocedure
