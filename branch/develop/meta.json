@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "88054963e884e056bdeda5bb45839a475db847c0",
-    "short": "8805496",
-    "message": "OCR issues (#169, #156, #146)",
+    "sha": "4509efdebebaef4f713fe19375b7e1dadafe7706",
+    "short": "4509efd",
+    "message": "Extending AI assistant capabilities (content layer and figures in answers)",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/88054963e884e056bdeda5bb45839a475db847c0"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/4509efdebebaef4f713fe19375b7e1dadafe7706"
   },
-  "deployed_at": "2026-11-15T19:27:39Z",
+  "deployed_at": "2026-11-16T09:15:28Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
