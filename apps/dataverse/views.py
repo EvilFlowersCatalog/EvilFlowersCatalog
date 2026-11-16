@@ -87,7 +87,10 @@ class PrepublishView(View):
             "`invocation_id` and `title`."
         ),
         tags=["Dataverse"],
+        summary="Apply a published dataset (workflow callback)",
     )
+    @openapi.response(HTTPStatus.BAD_REQUEST, "The body is not the JSON a workflow step sends")
+    @openapi.response(HTTPStatus.FORBIDDEN, "The workflow secret is missing or wrong")
     def post(self, request, invocation_id=None):
         payload = _workflow_payload(request, "prepublish")
 
@@ -171,7 +174,10 @@ class ValidateView(View):
             "could not read), which fails the step and stops the publish. Datasets of other types answer `OK`."
         ),
         tags=["Dataverse"],
+        summary="Validate a dataset before publishing",
     )
+    @openapi.response(HTTPStatus.BAD_REQUEST, "The body is not the JSON a workflow step sends")
+    @openapi.response(HTTPStatus.FORBIDDEN, "The workflow secret is missing or wrong")
     def post(self, request):
         payload = _workflow_payload(request, "validate")
         try:

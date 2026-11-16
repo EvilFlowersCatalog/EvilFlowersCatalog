@@ -58,6 +58,7 @@ class OaiPmhView(View):
         tags=["OAI-PMH"],
         summary="OAI-PMH request",
     )
+    @openapi.response(HTTPStatus.NOT_FOUND, "OAI-PMH is turned off on this instance (`EVILFLOWERS_OAI_ENABLED`)")
     def get(self, request):
         return self._respond(request.GET)
 
@@ -66,6 +67,7 @@ class OaiPmhView(View):
         tags=["OAI-PMH"],
         summary="OAI-PMH request (form POST)",
     )
+    @openapi.response(HTTPStatus.NOT_FOUND, "OAI-PMH is turned off on this instance (`EVILFLOWERS_OAI_ENABLED`)")
     def post(self, request):
         # §3.1.1.2: arguments in an application/x-www-form-urlencoded body.
         return self._respond(request.POST)
@@ -101,6 +103,7 @@ class IsbnResolveView(SecuredView):
         tags=["OAI-PMH"],
         summary="Resolve an ISBN to the portal",
     )
+    @openapi.response(HTTPStatus.NOT_FOUND, "Unknown or invalid ISBN, not harvestable, or no portal URL configured")
     def get(self, request, isbn: str):
         _enabled()
         records, _normalized = _live_records(isbn)

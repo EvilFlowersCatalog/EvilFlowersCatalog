@@ -907,7 +907,21 @@ EVILFLOWERS_UMAMI_PASSWORD = os.getenv("EVILFLOWERS_UMAMI_PASSWORD", "")
 EVILFLOWERS_UMAMI_TIMEOUT = float(os.getenv("EVILFLOWERS_UMAMI_TIMEOUT", 2.0))
 
 # OpenAPI
-EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium", "assistant", "extraction"]
+# URL namespaces (`include(..., app_name)`) documented in the API reference; routes outside any include always are.
+EVILFLOWERS_OPENAPI_APPS = [
+    "api",
+    "files",
+    "readium",
+    "assistant",
+    "extraction",
+    "harvest",
+    "harvest-public",
+    "oai",
+    "dataverse",
+    "opds",
+    "opds2",
+    "mcp",
+]
 
 # Backups
 EVILFLOWERS_BACKUP_PGDUMP_BIN = os.getenv("EVILFLOWERS_BACKUP_PGDUMP_BIN", "pg_dump")

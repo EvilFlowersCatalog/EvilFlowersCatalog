@@ -1,7 +1,7 @@
 import traceback
 from enum import Enum
 from http import HTTPStatus
-from typing import Tuple, Optional, List, Any
+from typing import Any
 
 from django.conf import settings
 from django.utils.text import slugify
@@ -28,20 +28,20 @@ class DetailType(Enum):
 
 class ProblemDetail(Serializer):
     title: str
-    type: Optional[DetailType] = None
-    detail: Optional[str] = None
-    trace: Optional[List[str]] = None
-    additional_data: Optional[Any] = None
+    type: DetailType | None = None
+    detail: str | None = None
+    trace: list[str] | None = None
+    additional_data: dict[str, Any] | None = None
 
 
 class ValidationErrorItem(Serializer):
-    code: Optional[str] = None
+    code: str | None = None
     message: str
-    path: Optional[List[str]] = None
+    path: list[str] | None = None
 
 
 class ValidationError(ProblemDetail):
-    validation_errors: List[ValidationErrorItem]
+    validation_errors: list[ValidationErrorItem]
 
 
 class ProblemDetailException(Exception):
@@ -50,12 +50,12 @@ class ProblemDetailException(Exception):
         title: str,
         *,
         status: int = HTTPStatus.INTERNAL_SERVER_ERROR,
-        previous: Optional[BaseException] = None,
-        additional_data: Optional[dict] = None,
-        detail_type: Optional[DetailType] = None,
-        detail: Optional[str] = None,
-        extra_headers: Optional[Tuple[Tuple]] = (),
-    ):
+        previous: BaseException | None = None,
+        additional_data: dict[str, Any] | None = None,
+        detail_type: DetailType | None = None,
+        detail: str | None = None,
+        extra_headers: tuple[tuple[str, str], ...] = (),
+    ) -> None:
         super().__init__(title)
 
         self._status_code = status
@@ -79,19 +79,19 @@ class ProblemDetailException(Exception):
         return self._title
 
     @property
-    def detail(self) -> str:
+    def detail(self) -> str | None:
         return self._detail
 
     @property
-    def type(self) -> DetailType:
+    def type(self) -> DetailType | None:
         return self._type
 
     @property
-    def previous(self) -> BaseException:
+    def previous(self) -> BaseException | None:
         return self._previous
 
     @property
-    def extra_headers(self) -> Tuple[Tuple]:
+    def extra_headers(self) -> tuple[tuple[str, str], ...]:
         return self._extra_headers
 
     @property
@@ -106,7 +106,7 @@ class ProblemDetailException(Exception):
 
 
 class AuthorizationException(ProblemDetailException):
-    def __init__(self, request, detail: Optional[str] = None, previous: Optional[BaseException] = None):
+    def __init__(self, request, detail: str | None = None, previous: BaseException | None = None):
         if request.user.is_authenticated:
             super().__init__(
                 _("Insufficient permissions"), status=HTTPStatus.FORBIDDEN, detail=detail, previous=previous
@@ -128,7 +128,7 @@ class AuthorizationException(ProblemDetailException):
 
 
 class UnauthorizedException(ProblemDetailException):
-    def __init__(self, detail: Optional[str] = None, previous: Optional[BaseException] = None):
+    def __init__(self, detail: str | None = None, previous: BaseException | None = None):
         super().__init__(
             _("Unauthorized"),
             status=HTTPStatus.UNAUTHORIZED,

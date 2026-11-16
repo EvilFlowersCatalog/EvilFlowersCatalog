@@ -102,14 +102,26 @@ jobs:
           pipx install poetry
           pipx inject poetry poetry-plugin-export
           poetry install --no-root --no-interaction
-          npm install -D @redocly/cli
+          # Pinned: build-docs moved to Redoc 3 and .github/docs/redoc.hbs relies on its design tokens.
+          npm install -D @redocly/cli@2.79.0
 
       - name: Generate OpenAPI & Redoc HTML
         if: steps.target.outputs.action == 'deploy'
+        env:
+          REF_NAME: ${{ steps.target.outputs.raw_ref }}
+          REF_KIND: ${{ steps.target.outputs.kind }}
         run: |
           set -euo pipefail
-          poetry run python manage.py openapi > "${PUBLISH_DIR}/openapi.yaml"
-          npx @redocly/cli build-docs -o "${PUBLISH_DIR}/index.html" "${PUBLISH_DIR}/openapi.yaml"
+          # `-o`, not a stdout redirect: nothing the command logs can end up inside the document.
+          poetry run python manage.py openapi -o "${PUBLISH_DIR}/openapi.yaml"
+          # redocly.yaml + .redocly.lint-ignore.yaml: a new lint error fails the build before anything is published.
+          npx @redocly/cli lint "${PUBLISH_DIR}/openapi.yaml" --format=github-actions
+          cp .github/docs/elvira.css "${PUBLISH_DIR}/elvira.css"
+          npx @redocly/cli build-docs "${PUBLISH_DIR}/openapi.yaml" \
+            -o "${PUBLISH_DIR}/index.html" \
+            -t .github/docs/redoc.hbs \
+            --templateOptions.ref="$REF_NAME" \
+            --templateOptions.kind="$REF_KIND"
 
       - name: Write deploy metadata sidecar
         if: steps.target.outputs.action == 'deploy'

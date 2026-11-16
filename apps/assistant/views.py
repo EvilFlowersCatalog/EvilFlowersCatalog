@@ -553,6 +553,9 @@ class Highlights(AssistantView):
 
 
 class HighlightDetail(Highlights):
+    # Read-only: the inherited `post` would get an `annotation_id` it does not take and answer 500, not 405.
+    http_method_names = ["get", "head", "options"]
+
     @openapi.metadata(
         description="One agent annotation with its highlights; poll it while its status is `pending`.",
         tags=["Assistant"],

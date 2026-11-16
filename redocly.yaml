@@ -1,0 +1,11 @@
+# Redocly CLI configuration for the generated OpenAPI document (`manage.py openapi`).
+# CI (.github/workflows/docs.yml) lints every build with it; a new error fails the docs build.
+# Deliberate exceptions for single operations live in .redocly.lint-ignore.yaml, each with its reason.
+
+extends:
+  - recommended
+
+rules:
+  # Every Serializer and Form is published, used by an operation or not: evilflowers-protocol-python builds its
+  # pydantic models from `components`, including responses built by helpers the source analysis does not follow.
+  no-unused-components: off

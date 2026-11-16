@@ -40,6 +40,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from object_checker.base_object_checker import has_object_permission
 
+from apps import openapi
 from apps.api.services.entry import attach_acquisition
 from apps.core.models import Acquisition, Entry, User
 
@@ -145,6 +146,13 @@ def _encryption(acquisition: Acquisition) -> Optional[dict]:
 class McpUploadEndpoint(View):
     http_method_names = ["post", "options"]
 
+    @openapi.response(HTTPStatus.CREATED, "The file is attached; the body names what was created")
+    @openapi.response(HTTPStatus.BAD_REQUEST, "No multipart `content` field")
+    @openapi.response(HTTPStatus.FORBIDDEN, "The user who requested the link can no longer manage the entry")
+    @openapi.response(HTTPStatus.NOT_FOUND, "Unknown upload link, user or entry")
+    @openapi.response(HTTPStatus.GONE, "The link has expired or was already used")
+    @openapi.response(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "The file is larger than the link allows")
+    @openapi.response(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "The file is not of the type the link was issued for")
     def post(self, request, token: str):
         try:
             return self._accept(request, token)

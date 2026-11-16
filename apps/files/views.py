@@ -78,6 +78,7 @@ def _check_ip_block(request, entry: Entry):
 
 class AcquisitionDownload(SecuredView):
     @openapi.metadata(description="Download Acquisition content", tags=["Files"])
+    @openapi.response(HTTPStatus.OK, "The file, from local storage (external storage answers 303 instead)")
     def get(self, request, acquisition_id: uuid.UUID):
         try:
             acquisition = Acquisition.objects.get(pk=acquisition_id)
@@ -395,6 +396,9 @@ class EntryImageDownload(SecuredView):
     rate_limited = False
 
     @openapi.metadata(description="Download Entry cover image", tags=["Files"])
+    @openapi.response(HTTPStatus.OK, "The cover image")
+    @openapi.response(HTTPStatus.NOT_MODIFIED, "Unchanged since the `ETag` sent in `If-None-Match`")
+    @openapi.response(HTTPStatus.NOT_FOUND, "No such entry, or it has no cover")
     def get(self, request, entry_id: uuid.UUID):
         entry = _cover_entry(entry_id, "image", _("Entry image not found"))
         sanitized_filename = f"{slugify(entry.title.lower())}{guess_extension(entry.image_mime or '') or ''}"
@@ -407,6 +411,9 @@ class EntryThumbnailDownload(SecuredView):
     rate_limited = False
 
     @openapi.metadata(description="Download Entry thumbnail", tags=["Files"])
+    @openapi.response(HTTPStatus.OK, "The thumbnail")
+    @openapi.response(HTTPStatus.NOT_MODIFIED, "Unchanged since the `ETag` sent in `If-None-Match`")
+    @openapi.response(HTTPStatus.NOT_FOUND, "No such entry, or it has no thumbnail")
     def get(self, request, entry_id: uuid.UUID):
         entry = _cover_entry(entry_id, "thumbnail", _("Entry thumbnail not found"))
 
