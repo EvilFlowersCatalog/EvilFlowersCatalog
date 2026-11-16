@@ -3162,7 +3162,7 @@
         },
         "operationId": "FigureSearch.get",
         "summary": "Search figures and tables",
-        "description": "Find figures and tables across the library (#159): returns regions, not entries. `q` is matched by meaning (the region's caption, referring paragraph and description embedded with multilingual-e5) and by words (accents ignored), fused by reciprocal rank. `kind` is `figure`, `table` or both (`figure,table`, the default); equations are not searchable. Only publications the caller may see, inside their allowed IP ranges; of those lent through Readium LCP only the ones the caller has a live loan of. Each hit has a `crop_url` (the region as an image, same access check) and `downloadable`, whether a client may offer it for download (open access, printing and sharing allowed). Other parameters of `GET /api/v1/entries` (e.g. `catalog_id`, `category_id`) narrow the publications searched. `limit` hits, at most 50.",
+        "description": "Find figures and tables across the library (#159): returns regions, not entries. `q` is matched by meaning (the region's caption, referring paragraph and description embedded with multilingual-e5) and by words (accents ignored), fused by reciprocal rank. `kind` is `figure`, `table` or both (`figure,table`, the default); equations are not searchable. `kind` also takes the decision model's label of a region, `chart`, `diagram`, `photo`, `map`, `table` or `formula` (comma-separated, #205): only regions with that label (and every table for `table`). Each hit carries `decision` and `decision_p`, null when undecided; labels are uncalibrated until thresholds are set. Where a kind has thresholds, regions in review sort after kept ones. Only publications the caller may see, inside their allowed IP ranges; of those lent through Readium LCP only the ones the caller has a live loan of. Each hit has a `crop_url` (the region as an image, same access check) and `downloadable`, whether a client may offer it for download (open access, printing and sharing allowed). Other parameters of `GET /api/v1/entries` (e.g. `catalog_id`, `category_id`) narrow the publications searched. `limit` hits, at most 50.",
         "tags": [
           "Entries"
         ]
@@ -3339,7 +3339,51 @@
         },
         "operationId": "SectionPrerequisites.get",
         "summary": "List a section's prerequisites",
-        "description": "Sections that define a concept this one only discusses: what to read before it. Earlier sections of the same book and other books first; a section further on in the same book comes last with `later: true` (#153). Only publications the caller may see; 404 for a hidden section. A `title` is null for publications lent through Readium LCP or outside their allowed IP ranges.",
+        "description": "What to read before a section. First the sections the decision model typed as its prerequisites (`via: relation`, `PREREQUISITE_OF`, up to two steps back, `depth`; #203), then sections that define a concept this one only discusses (`via: concepts`): earlier sections of the same book and other books first; a section further on in the same book comes last with `later: true` (#153). Only publications the caller may see; 404 for a hidden section. A `title` is null for publications lent through Readium LCP or outside their allowed IP ranges.",
+        "tags": [
+          "Graph"
+        ]
+      }
+    },
+    "/api/v1/sections/{key}/examples": {
+      "parameters": [
+        {
+          "name": "key",
+          "in": "path",
+          "description": "",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Examples"
+          },
+          "401": {
+            "description": "The credentials sent are missing, expired or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "SectionExamples.get",
+        "summary": "List examples of a section",
+        "description": "Sections the decision model typed as examples of this one (`EXAMPLE_OF`, #190, #203), most certain first; `score` is the model's probability. Empty until the night sweep has typed the section's pairs. Only publications the caller may see; 404 for a hidden section. A `title` is null for publications lent through Readium LCP or outside their allowed IP ranges.",
         "tags": [
           "Graph"
         ]
@@ -8127,6 +8171,7 @@
                   "enriched",
                   "ambiguous",
                   "unmatched",
+                  "suggested",
                   "skipped",
                   "failed",
                   "deleted"
@@ -8365,6 +8410,149 @@
         "operationId": "ConflictAcknowledge.post",
         "summary": "Acknowledge sync conflict",
         "description": "Mark a sync conflict as seen. Requires `manage` on the source's catalog.",
+        "tags": [
+          "Harvest"
+        ]
+      }
+    },
+    "/api/v1/harvest/match-suggestions": {
+      "parameters": [],
+      "get": {
+        "parameters": [],
+        "responses": {
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
+                }
+              }
+            },
+            "description": "_('Invalid %s') % 'status'"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "metadata": {
+                      "$ref": "#/components/schemas/apps__api__response__PaginationModel"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {}
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "The credentials sent are missing, expired or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "MatchSuggestionManagement.get",
+        "summary": "List match suggestions",
+        "description": "#207: harvested records no identifier matched, for which the decision model suggested an entry the catalog already holds. Nothing is linked until a librarian accepts (link) or rejects (create as new). Filters: `source_id`, `status` (`pending` by default; `accepted`, `rejected`, `superseded`, `all`); `page`, `limit`. Only suggestions of sources whose catalog the caller manages.",
+        "tags": [
+          "Harvest"
+        ]
+      }
+    },
+    "/api/v1/harvest/match-suggestions/{suggestion_id}/accept": {
+      "parameters": [
+        {
+          "name": "suggestion_id",
+          "in": "path",
+          "description": "",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "parameters": [],
+        "responses": {
+          "401": {
+            "description": "The credentials sent are missing, expired or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "MatchSuggestionAccept.post",
+        "summary": "Accept match suggestion",
+        "description": "Accept a match suggestion: the record is linked to the suggested entry as a match of the source's mode (`link_only` sets the `system_key`, `enrich` and `create` also apply fields per `field_policy`). 409 when it was already decided, the entry holds another record of the source, or a run holds the source.",
+        "tags": [
+          "Harvest"
+        ]
+      }
+    },
+    "/api/v1/harvest/match-suggestions/{suggestion_id}/reject": {
+      "parameters": [
+        {
+          "name": "suggestion_id",
+          "in": "path",
+          "description": "",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "parameters": [],
+        "responses": {
+          "401": {
+            "description": "The credentials sent are missing, expired or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "MatchSuggestionReject.post",
+        "summary": "Reject match suggestion",
+        "description": "Reject a match suggestion: a `create` source creates the record as a new entry now (its mirror row shows the outcome); other modes leave it `unmatched`. The record is not suggested again.",
         "tags": [
           "Harvest"
         ]
@@ -20462,6 +20650,30 @@
             "default": false,
             "title": "Downloadable",
             "type": "boolean"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Decision"
+          },
+          "decision_p": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Decision P"
           }
         },
         "required": [
@@ -21195,6 +21407,55 @@
         "title": "ConceptSummarySerializer",
         "type": "object"
       },
+      "apps__graph__views__ExampleSerializer": {
+        "description": "#203: a section the decision model typed as an example of the one asked about; `score` is its p.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "entry_id": {
+            "format": "uuid",
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          },
+          "first_page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "First Page"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "key",
+          "entry_id",
+          "score"
+        ],
+        "title": "ExampleSerializer",
+        "type": "object"
+      },
       "apps__graph__views__GraphSectionSerializer": {
         "properties": {
           "key": {
@@ -21460,6 +21721,23 @@
           "later": {
             "title": "Later",
             "type": "boolean"
+          },
+          "via": {
+            "default": "concepts",
+            "title": "Via",
+            "type": "string"
+          },
+          "depth": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Depth"
           }
         },
         "required": [
@@ -21594,6 +21872,14 @@
           "runnable": {
             "title": "Runnable",
             "type": "boolean"
+          },
+          "system_keys": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "System Keys",
+            "type": "array"
           }
         },
         "required": [
@@ -21910,6 +22196,7 @@
           "enriched",
           "ambiguous",
           "unmatched",
+          "suggested",
           "skipped",
           "failed",
           "deleted"
@@ -22438,6 +22725,117 @@
           "updated_at"
         ],
         "title": "HarvestSourceSerializer.Detailed",
+        "type": "object"
+      },
+      "apps__harvest__serializers__MatchSuggestionSerializer": {
+        "description": "#207: the decider's suggested entry for a record no identifier matched; a librarian accepts or rejects.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "record_id": {
+            "format": "uuid",
+            "title": "Record Id",
+            "type": "string"
+          },
+          "source_record_id": {
+            "title": "Source Record Id",
+            "type": "string"
+          },
+          "source_record": {
+            "additionalProperties": true,
+            "title": "Source Record",
+            "type": "object"
+          },
+          "entry_id": {
+            "format": "uuid",
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "entry_title": {
+            "title": "Entry Title",
+            "type": "string"
+          },
+          "p": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "P"
+          },
+          "candidates": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "decider_model": {
+            "title": "Decider Model",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "decided_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Decided By Id"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Decided At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_id",
+          "record_id",
+          "source_record_id",
+          "source_record",
+          "entry_id",
+          "entry_title",
+          "decider_model",
+          "status",
+          "created_at"
+        ],
+        "title": "MatchSuggestionSerializer",
         "type": "object"
       },
       "apps__harvest__serializers__SourceProbeSerializer": {
@@ -24808,6 +25206,24 @@
             "items": {
               "$ref": "#/components/schemas/SentenceForm"
             }
+          },
+          "decision": {
+            "title": "decision",
+            "description": "",
+            "type": "string",
+            "maxLength": 50
+          },
+          "p": {
+            "title": "p",
+            "description": "",
+            "type": "integer",
+            "maximum": 1
+          },
+          "decider_model": {
+            "title": "decider_model",
+            "description": "",
+            "type": "string",
+            "maxLength": 200
           }
         },
         "required": [
