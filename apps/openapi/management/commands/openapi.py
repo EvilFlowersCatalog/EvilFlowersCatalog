@@ -1,9 +1,7 @@
 import json
-import os
 from pathlib import Path
 
 from django.core.management import BaseCommand
-from django.conf import settings
 
 from apps.openapi.services import OpenApiService
 
@@ -60,7 +58,11 @@ class Command(BaseCommand):
                 try:
                     import yaml
 
-                    output = yaml.dump(spec, default_flow_style=False)
+                    # Through JSON first: response codes are `HTTPStatus` members, which `yaml.dump` writes as
+                    # Python objects no other YAML reader can load.
+                    output = yaml.safe_dump(
+                        json.loads(json.dumps(spec)), default_flow_style=False, sort_keys=False, allow_unicode=True
+                    )
                 except ImportError:
                     self.stdout.write(
                         self.style.ERROR("PyYAML is required for YAML output. Install it with: pip install PyYAML")
@@ -91,7 +93,7 @@ class Command(BaseCommand):
 
         operations = []
         for path, methods in paths.items():
-            for method, operation in methods.items():
+            for method in methods:
                 if method != "parameters":  # Skip parameters key
                     operations.append(f"{method.upper()} {path}")
 

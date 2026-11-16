@@ -1,0 +1,18 @@
+# Deliberate exceptions to redocly.yaml for single operations of the generated document; each one is true of
+# the code, so the rule, not the document, is wrong here. Keyed by the path CI lints (docs.yml).
+# See https://redocly.com/docs/cli/ for the format.
+docs/openapi.yaml:
+  # These never answer 4xx: the status check fails with 503, the others are public, static documents.
+  operation-4xx-response:
+    - '#/paths/~1api~1v1~1status/get/responses'
+    - '#/paths/~1opds~1v2~1auth/get/responses'
+    - '#/paths/~1.well-known~1tdmrep.json/get/responses'
+    - '#/paths/~1.well-known~1oauth-protected-resource~1mcp~1v1/get/responses'
+    - '#/paths/~1.well-known~1oauth-protected-resource/get/responses'
+  # Resolvers only redirect (302) or answer 404; there is no 2xx to document.
+  operation-2xx-response:
+    - '#/paths/~1resolve~1isbn~1{isbn}/get/responses'
+    - '#/paths/~1resolve~1{source_slug}/get/responses'
+  # The route is `opds/v2/<catalog_name>/`; reading apps have stored it with the slash.
+  no-path-trailing-slash:
+    - '#/paths/~1opds~1v2~1{catalog_name}~1'

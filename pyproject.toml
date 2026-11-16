@@ -72,12 +72,22 @@ wheel = "*"
 [tool.poetry.group.dev.dependencies]
 black = "^26.1.0"
 datamodel-code-generator = { version = "^0.25.2", extras = ["http"] }
+django-stubs = {extras = ["compatible-mypy"], version = "^6.1.2"}
 
 
 [tool.poetry.group.kafka.dependencies]
 kafka-python = "^2.1.5"
 # Used only when the Kafka event executor is configured (IP-019).
 opentelemetry-instrumentation-kafka-python = "0.66b2"
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main"]
+# Packages without type information (django-api-forms, django-filter, object-checker, ...).
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "evil_flowers_catalog.settings.development"
 
 [tool.black]
 line-length = 119

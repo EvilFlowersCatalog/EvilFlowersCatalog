@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{title}} · API reference · ELVIRA</title>
+  <meta name="description" content="OpenAPI reference of the EvilFlowers Catalog, the server behind ELVIRA ({{templateOptions.kind}} {{templateOptions.ref}}).">
+  <link rel="icon" href="https://elvira.digital/img/favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Literata:opsz,wght@7..72,500..700&display=swap">
+  <link rel="stylesheet" href="elvira.css">
+  <script>
+    // Colour mode before paint, shared with the landing page and elvira.digital (Docusaurus `theme`).
+    (function () {
+      try {
+        var mode = localStorage.getItem("redoc.colorMode") || localStorage.getItem("theme");
+      } catch (_) {}
+      // Always a class: Redoc's own `:root.dark` tokens and ours then agree.
+      if (mode !== "light" && mode !== "dark") {
+        mode = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      }
+      document.documentElement.classList.add(mode);
+    })();
+  </script>
+  {{{redocHead}}}
+  <style>
+    /* Redoc 3 reads its design tokens from :root and :root.dark; `html:root` outranks both. */
+    html:root {
+      --navbar-height: var(--e-bar-height);
+      --font-family-base: var(--e-font-text);
+      --heading-font-family: var(--e-font-display);
+      --heading-font-weight: 600;
+      --font-family-monospaced: var(--e-font-mono);
+      --code-font-family: var(--e-font-mono);
+      --code-block-font-family: var(--e-font-mono);
+      --http-tag-font-family: var(--e-font-mono);
+      --border-radius: var(--e-radius);
+      --border-radius-md: var(--e-radius);
+      --border-radius-lg: var(--e-radius);
+
+      --bg-color: var(--e-paper);
+      --bg-color-raised: var(--e-paper);
+      --text-color: var(--e-ink);
+      --text-color-primary: var(--e-ink);
+      --text-color-secondary: var(--e-muted);
+      --text-color-description: var(--e-muted);
+      --heading-text-color: var(--e-ink);
+      --border-color-primary: var(--e-rule);
+      --border-color-secondary: var(--e-rule-strong);
+
+      --color-primary-base: var(--e-accent);
+      --color-primary-hover: var(--e-accent-hover);
+      --color-primary-active: var(--e-accent-hover);
+      --color-primary-text: var(--e-accent);
+      --color-primary-text-hover: var(--e-accent-hover);
+      --color-primary-text-active: var(--e-accent-hover);
+      --color-primary-bg: var(--e-accent-wash);
+      --color-primary-bg-hover: var(--e-accent-wash);
+      --color-primary-border: var(--e-accent);
+      --color-primary-border-hover: var(--e-accent-hover);
+      --link-color-primary: var(--e-accent);
+      --link-color-primary-hover: var(--e-ink);
+      --link-color-primary-pressed: var(--e-ink);
+      --link-color-visited: var(--e-accent);
+
+      --sidebar-bg-color: var(--e-wash);
+      --sidebar-border-color: var(--e-rule);
+      --sidebar-text-color: var(--e-ink);
+      --sidebar-font-family: var(--e-font-text);
+      --menu-item-text-color: var(--e-muted);
+      --menu-item-color-hover: var(--e-ink);
+      --menu-item-color-active: var(--e-accent);
+      --menu-item-bg-color-hover: transparent;
+      --menu-item-bg-color-active: var(--e-accent-wash);
+      --menu-content-title-color: var(--e-ink);
+    }
+    html:root.dark {
+      --bg-color: var(--e-paper);
+      --bg-color-raised: var(--e-wash);
+      --layer-color: var(--e-wash);
+      --layer-color-raised: var(--e-wash);
+      --code-panel-bg-color: var(--e-wash);
+      --sidebar-bg-color: var(--e-wash);
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--e-paper);
+      color: var(--e-ink);
+    }
+  </style>
+</head>
+<body>
+  <header class="e-bar">
+    <a class="e-brand" href="https://elvira.digital/" aria-label="ELVIRA, home">
+      <span class="e-wordmark">ELVIRA</span>
+      <span class="e-org">Slovak University of Technology</span>
+    </a>
+    <span class="e-crumb">
+      <a href="/EvilFlowersCatalog/">API reference</a> / <code>{{templateOptions.ref}}</code>
+    </span>
+    <nav class="e-nav" aria-label="ELVIRA">
+      <a class="e-site" href="https://elvira.digital/docs/intro">Docs</a>
+      <a class="e-site" href="https://elvira.digital/how-it-works">How it works</a>
+      <a class="e-site" href="https://elvira.digital/news">News</a>
+      <a class="e-site" href="https://elvira.digital/releases">Releases</a>
+      <a href="/EvilFlowersCatalog/" aria-current="page">API</a>
+      <a href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog">GitHub</a>
+      <button type="button" class="e-mode" aria-label="Switch colour mode" data-mode-toggle>
+        <svg class="e-moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 .278a.77.77 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277q.792-.001 1.533-.16a.79.79 0 0 1 .81.316.73.73 0 0 1-.031.893A8.35 8.35 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.75.75 0 0 1 6 .278"/></svg>
+        <svg class="e-sun" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0m0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13m8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5M3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8m10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0m-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0m9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707M4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708"/></svg>
+      </button>
+    </nav>
+  </header>
+  {{{redocHTML}}}
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var button = document.querySelector("[data-mode-toggle]");
+      button && button.addEventListener("click", function () {
+        var dark = root.classList.contains("dark")
+          || (!root.classList.contains("light") && matchMedia("(prefers-color-scheme: dark)").matches);
+        var next = dark ? "light" : "dark";
+        root.classList.remove("light", "dark");
+        root.classList.add(next);  // Redoc watches this class and follows.
+        try { localStorage.setItem("redoc.colorMode", next); } catch (_) {}
+      });
+    })();
+  </script>
+</body>
+</html>

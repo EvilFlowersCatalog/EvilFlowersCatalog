@@ -1,31 +1,34 @@
-from enum import Enum
-from typing import Dict, TypedDict, NamedTuple, List, Optional, Any
+from enum import StrEnum
+from typing import TYPE_CHECKING, Any, NamedTuple, TypedDict
+
+if TYPE_CHECKING:
+    from django_api_forms import Form
+    from django_filters import FilterSet
 
 
 class InstanceDetails(TypedDict):
-    constructor: str
+    """A `return X(...)` / `raise X(...)` as written: the callee and its arguments as source text."""
+
+    constructor: str | None  # None: not a call (`return response`, `raise`)
     kwargs: dict[str, str]
     args: list[str]
 
 
-class ParameterLocation(str, Enum):
+class ParameterLocation(StrEnum):
     PATH = "path"
     QUERY = "query"
     HEADER = "header"
     COOKIE = "cookie"
 
 
-ExtractionResult = NamedTuple(
-    "ExtractionResult",
-    [
-        ("returns", List[InstanceDetails]),
-        ("raises", List[InstanceDetails]),
-        ("filters", List[str]),
-        ("form", Optional[str]),
-    ],
-)
+class ExtractionResult(NamedTuple):
+    returns: list[InstanceDetails]
+    raises: list[InstanceDetails]
+    filters: list["type[FilterSet]"]
+    form: "type[Form] | None"
 
-OPENAPI_TYPES: Dict[str, Dict[str, str]] = {
+
+OPENAPI_TYPES: dict[str, dict[str, str]] = {
     "str": {"type": "string"},
     "string": {"type": "string"},
     "bool": {"type": "boolean"},
@@ -55,7 +58,7 @@ OPENAPI_TYPES: Dict[str, Dict[str, str]] = {
 
 
 # Enhanced schema templates for common use cases
-COMMON_SCHEMAS: Dict[str, Dict[str, Any]] = {
+COMMON_SCHEMAS: dict[str, dict[str, Any]] = {
     "Error": {
         "type": "object",
         "properties": {
@@ -103,7 +106,7 @@ COMMON_SCHEMAS: Dict[str, Dict[str, Any]] = {
 
 
 # HTTP Status code descriptions
-HTTP_STATUS_DESCRIPTIONS: Dict[int, str] = {
+HTTP_STATUS_DESCRIPTIONS: dict[int, str] = {
     200: "Success",
     201: "Created",
     202: "Accepted",
@@ -122,9 +125,17 @@ HTTP_STATUS_DESCRIPTIONS: Dict[int, str] = {
 
 
 # Content type mappings
-CONTENT_TYPE_MAPPINGS: Dict[str, Dict[str, Any]] = {
+CONTENT_TYPE_MAPPINGS: dict[str, dict[str, Any]] = {
     "application/json": {"schema": {"type": "object"}},
     "application/xml": {"schema": {"type": "string"}},
+    "text/xml": {"schema": {"type": "string"}},
+    "application/atom+xml": {"schema": {"type": "string"}},
+    "application/opds+json": {"schema": {"type": "object"}},
+    "application/webpub+json": {"schema": {"type": "object"}},
+    "application/vnd.readium.license.status.v1.0+json": {"schema": {"type": "object"}},
+    "application/vnd.readium.lcp.license.v1.0+json": {"schema": {"type": "object"}},
+    "image/*": {"schema": {"type": "string", "format": "binary"}},
+    "text/event-stream": {"schema": {"type": "string"}},
     "text/plain": {"schema": {"type": "string"}},
     "text/html": {"schema": {"type": "string"}},
     "application/pdf": {"schema": {"type": "string", "format": "binary"}},
