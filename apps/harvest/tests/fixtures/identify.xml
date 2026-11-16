@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <responseDate>2026-11-16T10:00:00Z</responseDate>
+  <request verb="Identify">https://kis.example.org/oai</request>
+  <Identify>
+    <repositoryName>Example ARL catalogue</repositoryName>
+    <baseURL>https://kis.example.org/oai</baseURL>
+    <protocolVersion>2.0</protocolVersion>
+    <adminEmail>operator@example.org</adminEmail>
+    <earliestDatestamp>2001-01-01T00:00:00Z</earliestDatestamp>
+    <deletedRecord>transient</deletedRecord>
+    <granularity>YYYY-MM-DDThh:mm:ssZ</granularity>
+  </Identify>
+</OAI-PMH>

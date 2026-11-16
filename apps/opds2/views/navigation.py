@@ -28,7 +28,7 @@ class FeedView(Opds2CatalogView):
             children = custom_feed.children.all()
             feed = FeedBuilder.build_navigation_feed(children, self.catalog, request)
         else:
-            entries = custom_feed.entries.order_by("-created_at")
+            entries = custom_feed.entries.listed().order_by("-created_at")
             page = parse_int_query(request, "page", default=1, min_value=1)
             feed = FeedBuilder.build_publication_feed(
                 entries, self.catalog, request, page=page, title=localize(custom_feed.title, request_language(request))
@@ -39,7 +39,7 @@ class FeedView(Opds2CatalogView):
 
 class NewView(Opds2CatalogView):
     def get(self, request, catalog_name: str):
-        entries = Entry.objects.filter(catalog=self.catalog).order_by("-created_at")
+        entries = Entry.objects.listed().filter(catalog=self.catalog).order_by("-created_at")
         page = parse_int_query(request, "page", default=1, min_value=1)
         feed = FeedBuilder.build_publication_feed(entries, self.catalog, request, page=page, title="New Publications")
         return self.opds_response(feed.model_dump(exclude_none=True, by_alias=True))
@@ -47,7 +47,7 @@ class NewView(Opds2CatalogView):
 
 class PopularView(Opds2CatalogView):
     def get(self, request, catalog_name: str):
-        entries = Entry.objects.filter(catalog=self.catalog).order_by("-popularity")
+        entries = Entry.objects.listed().filter(catalog=self.catalog).order_by("-popularity")
         page = parse_int_query(request, "page", default=1, min_value=1)
         feed = FeedBuilder.build_publication_feed(
             entries, self.catalog, request, page=page, title="Popular Publications"

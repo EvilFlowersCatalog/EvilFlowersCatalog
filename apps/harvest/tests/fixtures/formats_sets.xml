@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <responseDate>2026-11-16T10:00:01Z</responseDate>
+  <request>https://kis.example.org/oai</request>
+  <ListMetadataFormats>
+    <metadataFormat>
+      <metadataPrefix>marc21</metadataPrefix>
+      <schema>http://www.loc.gov/standards/marcxml/schema/MARC21slim.xsd</schema>
+      <metadataNamespace>http://www.loc.gov/MARC21/slim</metadataNamespace>
+    </metadataFormat>
+    <metadataFormat>
+      <metadataPrefix>oai_dc</metadataPrefix>
+      <schema>http://www.openarchives.org/OAI/2.0/oai_dc.xsd</schema>
+      <metadataNamespace>http://www.openarchives.org/OAI/2.0/oai_dc/</metadataNamespace>
+    </metadataFormat>
+  </ListMetadataFormats>
+  <ListSets>
+    <set><setSpec>STU_US_CAT</setSpec><setName>STU union catalogue</setName></set>
+  </ListSets>
+</OAI-PMH>

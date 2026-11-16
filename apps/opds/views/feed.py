@@ -61,7 +61,7 @@ class FeedView(OpdsCatalogView):
         if feed.kind == Feed.FeedKind.ACQUISITION:
             page = FeedPage.resolve(
                 request,
-                feed.entries.order_by(*NEWEST_FIRST),
+                feed.entries.listed().order_by(*NEWEST_FIRST),
                 max(feed.per_page or settings.EVILFLOWERS_OPDS_PAGE_SIZE, 1),
             )
             parents = list(feed.parents.order_by("pk"))
@@ -165,7 +165,7 @@ class CompleteFeedView(OpdsCatalogView):
     def get(self, request, catalog_name: str):
         page = FeedPage.resolve(
             request,
-            self.catalog.entries.order_by("-updated_at", "-pk"),
+            self.catalog.entries.listed().order_by("-updated_at", "-pk"),
             settings.EVILFLOWERS_OPDS_COMPLETE_FEED_MAX_ENTRIES,
         )
         etag = feed_etag(
@@ -215,7 +215,7 @@ class _TopEntriesFeedView(OpdsCatalogView):
 
     def get(self, request, catalog_name: str):
         page = FeedPage.whole(
-            Entry.objects.filter(catalog=self.catalog).order_by(*self.ordering),
+            Entry.objects.listed().filter(catalog=self.catalog).order_by(*self.ordering),
             limit=settings.EVILFLOWERS_FEEDS_NEW_LIMIT,
         )
         etag = feed_etag(

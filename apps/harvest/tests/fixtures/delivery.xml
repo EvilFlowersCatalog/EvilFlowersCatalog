@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<collection xmlns="http://www.loc.gov/MARC21/slim">
+  <record>
+    <leader>00700nam a2200200 i 4500</leader>
+    <controlfield tag="001">P-1</controlfield>
+    <datafield tag="020" ind1=" " ind2=" "><subfield code="a">978-80-227-9999-7</subfield></datafield>
+    <datafield tag="041" ind1="0" ind2=" "><subfield code="a">cze</subfield></datafield>
+    <datafield tag="100" ind1="1" ind2=" "><subfield code="a">Dvořák, Petr</subfield></datafield>
+    <datafield tag="245" ind1="1" ind2="0"><subfield code="a">Partnerská kniha</subfield></datafield>
+  </record>
+  <record>
+    <leader>00700nam a2200200 i 4500</leader>
+    <datafield tag="020" ind1=" " ind2=" "><subfield code="a">978-80-227-3333-5</subfield></datafield>
+    <datafield tag="041" ind1="0" ind2=" "><subfield code="a">slo</subfield></datafield>
+    <datafield tag="245" ind1="1" ind2="0"><subfield code="a">Kniha bez čísla záznamu</subfield></datafield>
+  </record>
+</collection>

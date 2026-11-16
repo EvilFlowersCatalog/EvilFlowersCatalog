@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <responseDate>2026-11-16T10:00:09Z</responseDate>
+  <request verb="ListRecords" resumptionToken="page-2">https://kis.example.org/oai</request>
+  <ListRecords>
+    <record>
+      <header>
+        <identifier>oai:kis.example.org:STU_US_CAT*0000103</identifier>
+        <datestamp>2026-11-12T08:00:00Z</datestamp>
+      </header>
+      <metadata>
+        <marc:record xmlns:marc="http://www.loc.gov/MARC21/slim">
+          <marc:leader>00700nam a2200200 i 4500</marc:leader>
+          <marc:controlfield tag="001">0000103</marc:controlfield>
+          <marc:datafield tag="020" ind1=" " ind2=" "><marc:subfield code="a">978-80-227-6666-1</marc:subfield></marc:datafield>
+          <marc:datafield tag="041" ind1="0" ind2=" "><marc:subfield code="a">slo</marc:subfield></marc:datafield>
+          <marc:datafield tag="100" ind1="1" ind2=" "><marc:subfield code="a">Novák, Ján</marc:subfield></marc:datafield>
+          <marc:datafield tag="245" ind1="1" ind2="0"><marc:subfield code="a">Kniha, ktorú katalóg ešte nemá</marc:subfield></marc:datafield>
+          <marc:datafield tag="264" ind1=" " ind2="1"><marc:subfield code="c">2021</marc:subfield></marc:datafield>
+        </marc:record>
+      </metadata>
+    </record>
+    <record>
+      <header status="deleted">
+        <identifier>oai:kis.example.org:STU_US_CAT*0000099</identifier>
+        <datestamp>2026-11-13T08:00:00Z</datestamp>
+      </header>
+    </record>
+    <resumptionToken completeListSize="4" cursor="2"/>
+  </ListRecords>
+</OAI-PMH>

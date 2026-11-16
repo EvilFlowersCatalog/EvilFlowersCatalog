@@ -31,6 +31,8 @@ class Catalog(BaseModel):
     #: Key of a content policy (`apps.content`, #174) for the entries of this catalog; null inherits the
     #: instance setting `content.default_policy`. A key, not a foreign key: policies are versioned rows.
     content_policy = models.CharField(max_length=100, null=True, blank=True)
+    #: IP-033 Q1: the catalog's entries are served over OAI-PMH (`/oai`). Off by default.
+    harvestable = models.BooleanField(default=False)
 
 
 __all__ = [

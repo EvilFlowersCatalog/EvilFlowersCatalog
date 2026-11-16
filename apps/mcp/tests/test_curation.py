@@ -14,6 +14,7 @@ from django.test import override_settings
 
 from apps.content.policies import PRESETS
 from apps.core.models import ApiKey, Catalog, Category, Entry, Feed, UserCatalog
+from apps.harvest.models import HarvestSource
 from apps.mcp.registry import ToolAccess
 from apps.mcp.tests.test_management import ManagementTestCase
 from apps.mcp.tools import registry
@@ -99,6 +100,20 @@ class WriteSurfaceSweepTests(ManagementTestCase):
             "update_setting": {"key": "content.default_policy", "value": "open-access"},
             "update_content_policy": {"key": "parity", "document": PRESETS["parity"]},
             "assign_content_policy": {"key": "open-access", "catalog_id": catalog_id},
+            # IP-034: running a harvest source and pushing an entry need `manage` on the catalog.
+            "run_harvest": {
+                "source_id": str(
+                    HarvestSource.objects.create(
+                        slug="sweep",
+                        name="Sweep",
+                        adapter="oai_pmh",
+                        base_url="https://x.example/oai",
+                        system_key="dataverse_pid",
+                        target_catalog=self.catalog,
+                    ).pk
+                )
+            },
+            "push_entry": {"entry_id": entry_ids[0]},
         }
 
     def test_every_write_tool_refuses_a_reader_of_the_catalog(self):

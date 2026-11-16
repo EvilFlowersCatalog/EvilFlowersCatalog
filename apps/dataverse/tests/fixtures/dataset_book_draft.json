@@ -1,0 +1,48 @@
+{
+  "status": "OK",
+  "data": {
+    "id": 42,
+    "identifier": "FK2/BOOK42",
+    "persistentUrl": "https://doi.org/10.5072/FK2/BOOK42",
+    "protocol": "doi",
+    "authority": "10.5072",
+    "publisher": "Elvira dev Dataverse",
+    "storageIdentifier": "file://10.5072/FK2/BOOK42",
+    "datasetType": "book",
+    "latestVersion": {
+      "id": 102,
+      "datasetId": 42,
+      "datasetPersistentId": "doi:10.5072/FK2/BOOK42",
+      "versionState": "DRAFT",
+      "lastUpdateTime": "2026-11-16T11:00:00Z",
+      "createTime": "2026-11-16T09:00:00Z",
+      "license": {"name": "CC BY 4.0", "uri": "http://creativecommons.org/licenses/by/4.0"},
+      "metadataBlocks": {
+        "citation": {
+          "name": "citation",
+          "fields": [
+            {"typeName": "title", "multiple": false, "typeClass": "primitive", "value": "Mechanika tekutín"},
+            {
+              "typeName": "otherId",
+              "multiple": true,
+              "typeClass": "compound",
+              "value": [
+                {
+                  "otherIdAgency": {"typeName": "otherIdAgency", "multiple": false, "typeClass": "primitive", "value": "ISBN"},
+                  "otherIdValue": {"typeName": "otherIdValue", "multiple": false, "typeClass": "primitive", "value": "978-80-227-5000-4"}
+                }
+              ]
+            }
+          ]
+        },
+        "elvira_book": {
+          "name": "elvira_book",
+          "fields": [
+            {"typeName": "isbn", "multiple": true, "typeClass": "primitive", "value": ["80-227-1234-5"]},
+            {"typeName": "udc", "multiple": true, "typeClass": "primitive", "value": ["532"]}
+          ]
+        }
+      }
+    }
+  }
+}

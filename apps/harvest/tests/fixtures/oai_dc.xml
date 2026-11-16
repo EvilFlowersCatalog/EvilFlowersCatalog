@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <responseDate>2026-11-16T11:00:00Z</responseDate>
+  <request verb="ListRecords" metadataPrefix="oai_dc">https://repo.example.org/oai</request>
+  <ListRecords>
+    <record>
+      <header>
+        <identifier>oai:repo.example.org:42</identifier>
+        <datestamp>2026-10-01</datestamp>
+      </header>
+      <metadata>
+        <oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+          <dc:title>Dublin Core Book : a subtitle</dc:title>
+          <dc:creator>Smith, Anna</dc:creator>
+          <dc:subject>Physics</dc:subject>
+          <dc:subject>Physics</dc:subject>
+          <dc:description>An open textbook.</dc:description>
+          <dc:publisher>Repo Press</dc:publisher>
+          <dc:date>2019-05-01</dc:date>
+          <dc:identifier>urn:isbn:978-80-227-3333-5</dc:identifier>
+          <dc:identifier>https://doi.org/10.5555/XYZ</dc:identifier>
+          <dc:identifier>https://repo.example.org/record/42</dc:identifier>
+          <dc:language>en</dc:language>
+          <dc:rights>https://creativecommons.org/licenses/by/4.0/</dc:rights>
+        </oai_dc:dc>
+      </metadata>
+    </record>
+  </ListRecords>
+</OAI-PMH>

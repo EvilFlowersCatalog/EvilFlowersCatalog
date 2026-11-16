@@ -18,6 +18,7 @@ from apps.mcp.tools import (  # noqa: F401  (registration side effect)
     feeds,
     figures,
     graph,
+    harvest,
     instance_settings,
     jobs,
     library,

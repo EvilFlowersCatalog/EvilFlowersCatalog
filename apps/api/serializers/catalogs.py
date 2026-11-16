@@ -21,6 +21,8 @@ class CatalogSerializer:
         url_name: str
         title: str
         is_public: bool
+        # IP-033 Q1
+        harvestable: bool = False
         touched_at: datetime
         created_at: datetime
         updated_at: datetime

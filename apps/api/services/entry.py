@@ -281,18 +281,33 @@ class EntryService:
         self._catalog = catalog
         self._creator = creator
 
-    def populate(self, entry: Entry, form: EntryForm) -> Entry:
+    def populate(self, entry: Entry, form: EntryForm, *, import_mode: bool = False) -> Entry:
+        """Write a validated form into `entry`.
+
+        `import_mode` (IP-034 Q2, harvesting only): an equal title is not a conflict when the record carries an
+        ISBN or DOI, because imported editions and volumes share titles and differ by identifier and `edition`.
+        Equal ISBN or DOI still is. The librarian paths (REST, MCP) keep the title rule.
+        """
         form.populate(entry)
+        form.apply_withdrawn(entry)
 
         # Conflicts
         # TODO: this is suppose to be some kind of a setting
         identifiers = entry.identifiers or {}
-        conditions = [Q(title=entry.title)]
+        conditions = []
+        if not (import_mode and (identifiers.get("isbn") or identifiers.get("doi"))):
+            conditions.append(Q(title=entry.title))
         if identifiers.get("isbn"):
             conditions.append(Q(identifiers__isbn=identifiers.get("isbn")))
         if identifiers.get("doi"):
             conditions.append(Q(identifiers__doi=identifiers.get("doi")))
-        if Entry.objects.exclude(pk=entry.pk).filter(catalog=self._catalog).filter(reduce(or_, conditions)).exists():
+        if (
+            conditions
+            and Entry.objects.exclude(pk=entry.pk)
+            .filter(catalog=self._catalog)
+            .filter(reduce(or_, conditions))
+            .exists()
+        ):
             raise self.AlreadyExists()
 
         # TODO: implement these meta downloaders for real

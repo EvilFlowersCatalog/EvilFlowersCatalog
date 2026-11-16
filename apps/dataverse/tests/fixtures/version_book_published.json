@@ -1,0 +1,114 @@
+{
+  "status": "OK",
+  "data": {
+    "id": 101,
+    "datasetId": 42,
+    "datasetPersistentId": "doi:10.5072/FK2/BOOK42",
+    "storageIdentifier": "file://10.5072/FK2/BOOK42",
+    "versionNumber": 1,
+    "versionMinorNumber": 0,
+    "versionState": "RELEASED",
+    "latestVersionPublishingState": "RELEASED",
+    "lastUpdateTime": "2026-11-16T10:15:30Z",
+    "releaseTime": "2026-11-16T10:15:30Z",
+    "createTime": "2026-11-16T09:00:00Z",
+    "license": {"name": "CC BY 4.0", "uri": "http://creativecommons.org/licenses/by/4.0"},
+    "fileAccessRequest": false,
+    "metadataBlocks": {
+      "citation": {
+        "displayName": "Citation Metadata",
+        "name": "citation",
+        "fields": [
+          {"typeName": "title", "multiple": false, "typeClass": "primitive", "value": "Mechanika  tekutín"},
+          {
+            "typeName": "author",
+            "multiple": true,
+            "typeClass": "compound",
+            "value": [
+              {
+                "authorName": {"typeName": "authorName", "multiple": false, "typeClass": "primitive", "value": "Novák, Ján"},
+                "authorAffiliation": {"typeName": "authorAffiliation", "multiple": false, "typeClass": "primitive", "value": "STU"}
+              },
+              {
+                "authorName": {"typeName": "authorName", "multiple": false, "typeClass": "primitive", "value": "Kováčová, Eva"}
+              }
+            ]
+          },
+          {
+            "typeName": "datasetContact",
+            "multiple": true,
+            "typeClass": "compound",
+            "value": [
+              {
+                "datasetContactName": {"typeName": "datasetContactName", "multiple": false, "typeClass": "primitive", "value": "Knižnica STU"},
+                "datasetContactEmail": {"typeName": "datasetContactEmail", "multiple": false, "typeClass": "primitive", "value": "kniznica@example.org"}
+              }
+            ]
+          },
+          {
+            "typeName": "dsDescription",
+            "multiple": true,
+            "typeClass": "compound",
+            "value": [
+              {"dsDescriptionValue": {"typeName": "dsDescriptionValue", "multiple": false, "typeClass": "primitive", "value": "Učebnica mechaniky tekutín."}}
+            ]
+          },
+          {"typeName": "subject", "multiple": true, "typeClass": "controlledVocabulary", "value": ["Engineering"]},
+          {
+            "typeName": "keyword",
+            "multiple": true,
+            "typeClass": "compound",
+            "value": [
+              {"keywordValue": {"typeName": "keywordValue", "multiple": false, "typeClass": "primitive", "value": "hydraulika"}},
+              {"keywordValue": {"typeName": "keywordValue", "multiple": false, "typeClass": "primitive", "value": "prúdenie"}}
+            ]
+          },
+          {
+            "typeName": "otherId",
+            "multiple": true,
+            "typeClass": "compound",
+            "value": [
+              {
+                "otherIdAgency": {"typeName": "otherIdAgency", "multiple": false, "typeClass": "primitive", "value": "ISBN"},
+                "otherIdValue": {"typeName": "otherIdValue", "multiple": false, "typeClass": "primitive", "value": "978-80-227-5000-4"}
+              },
+              {
+                "otherIdAgency": {"typeName": "otherIdAgency", "multiple": false, "typeClass": "primitive", "value": "DOI"},
+                "otherIdValue": {"typeName": "otherIdValue", "multiple": false, "typeClass": "primitive", "value": "https://doi.org/10.1234/Fluids.2024"}
+              },
+              {
+                "otherIdAgency": {"typeName": "otherIdAgency", "multiple": false, "typeClass": "primitive", "value": "ARL"},
+                "otherIdValue": {"typeName": "otherIdValue", "multiple": false, "typeClass": "primitive", "value": "stu_us_cat*0001"}
+              }
+            ]
+          },
+          {
+            "typeName": "distributor",
+            "multiple": true,
+            "typeClass": "compound",
+            "value": [
+              {"distributorName": {"typeName": "distributorName", "multiple": false, "typeClass": "primitive", "value": "Spektrum STU"}}
+            ]
+          },
+          {"typeName": "distributionDate", "multiple": false, "typeClass": "primitive", "value": "2024-03"},
+          {"typeName": "language", "multiple": true, "typeClass": "controlledVocabulary", "value": ["Slovak"]},
+          {"typeName": "relatedMaterial", "multiple": true, "typeClass": "primitive", "value": ["https://example.org/errata"]}
+        ]
+      },
+      "elvira_book": {
+        "displayName": "Elvira book",
+        "name": "elvira_book",
+        "fields": [
+          {"typeName": "isbn", "multiple": true, "typeClass": "primitive", "value": ["80-227-1234-5"]},
+          {"typeName": "edition", "multiple": false, "typeClass": "primitive", "value": "2. vydanie"},
+          {"typeName": "seriesTitle", "multiple": false, "typeClass": "primitive", "value": "Edícia učebníc"},
+          {"typeName": "seriesNumber", "multiple": false, "typeClass": "primitive", "value": "12"},
+          {"typeName": "pageCount", "multiple": false, "typeClass": "primitive", "value": "320"},
+          {"typeName": "udc", "multiple": true, "typeClass": "primitive", "value": ["532", "621.22"]},
+          {"typeName": "lending", "multiple": false, "typeClass": "primitive", "value": "open"}
+        ]
+      }
+    },
+    "files": []
+  }
+}

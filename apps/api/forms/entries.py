@@ -22,7 +22,7 @@ from apps.api.forms.category import CategoryForm
 from apps.core.fields.partial_date import PartialDateFormField
 from apps.core.models import Language, Author, Category, Currency, Feed, Catalog
 from apps.core.models import Acquisition
-from apps.core.validators import AvailableKeysValidator
+from apps.core.validators import IdentifierKeysValidator
 
 
 class AuthorForm(Form):
@@ -77,6 +77,8 @@ class EntryForm(Form):
         field_strategy = {
             "config": "django_api_forms.population_strategies.BaseStrategy",
             "language_code": AliasStrategy("language"),
+            # Applied by `populate_withdrawn` below (a flag in, a timestamp stored).
+            "withdrawn": "django_api_forms.population_strategies.IgnoreStrategy",
         }
 
     id = forms.UUIDField(required=False)
@@ -94,7 +96,8 @@ class EntryForm(Form):
     acquisitions = FormFieldList(AcquisitionForm, required=False)
     identifiers = DictionaryField(
         required=False,
-        validators=[AvailableKeysValidator(keys=settings.EVILFLOWERS_IDENTIFIERS)],
+        # IP-033 Q8: bibliographic keys plus one key per configured external system.
+        validators=[IdentifierKeysValidator()],
         value_field=forms.CharField(max_length=100, required=False, empty_value=None),
     )
     image = ImageField(
@@ -104,6 +107,10 @@ class EntryForm(Form):
     )
     config = FormField(EntryConfigForm, required=False)
     citation = forms.CharField(required=False)
+    # IP-034 Q2: edition statement; editions with equal titles are told apart by it.
+    edition = forms.CharField(max_length=255, required=False, empty_value=None)
+    # IP-034 Q6: true withdraws the entry (hidden, not borrowable), false restores it; absent leaves it.
+    withdrawn = BooleanField(required=False)
     # #177: `{license_url, license_name, tdm_reservation, tdm_policy_url, ai_use}`; stored with `source: manual`.
     rights = forms.JSONField(required=False)
 
@@ -157,6 +164,17 @@ class EntryForm(Form):
             )
 
         return self.cleaned_data
+
+    def apply_withdrawn(self, entry) -> None:
+        """IP-034 Q6: `withdrawn: true` stamps `withdrawn_at` (once), `false` clears it, absent keeps it."""
+        if "withdrawn" not in self.cleaned_data or self.cleaned_data["withdrawn"] is None:
+            return
+        from django.utils import timezone
+
+        if self.cleaned_data["withdrawn"]:
+            entry.withdrawn_at = entry.withdrawn_at or timezone.now()
+        else:
+            entry.withdrawn_at = None
 
     def populate_config(self, obj, value):
         # IP-004 Q1: partial-update merge for `config`. The django_api_forms

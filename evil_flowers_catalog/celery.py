@@ -207,6 +207,19 @@ if settings.EVILFLOWERS_GRAPH_REBUILD_SCHEDULE:
         "task": "apps.graph.tasks.rebuild_graph",
         "schedule": _cron(settings.EVILFLOWERS_GRAPH_REBUILD_SCHEDULE),
     }
+# IP-033: oai_records re-projected nightly (QuerySet.update(), bulk changes, crosswalk upgrades).
+if settings.EVILFLOWERS_OAI_ENABLED and settings.EVILFLOWERS_OAI_RECONCILE_SCHEDULE:
+    app.conf.beat_schedule["oai-reconcile"] = {
+        "task": "apps.oai.tasks.reconcile",
+        "schedule": _cron(settings.EVILFLOWERS_OAI_RECONCILE_SCHEDULE),
+    }
+# IP-034: due sources get a `harvest.run` job. A two-way source's reconcile (changes and deletions no webhook
+# reports, e.g. Dataverse deaccessions) is that source's own schedule, not a beat entry of its connector.
+if settings.EVILFLOWERS_HARVEST_TICK_SCHEDULE:
+    app.conf.beat_schedule["harvest-tick"] = {
+        "task": "apps.harvest.tasks.tick",
+        "schedule": _cron(settings.EVILFLOWERS_HARVEST_TICK_SCHEDULE),
+    }
 # IP-016: drop personal activity history older than the retention window.
 app.conf.beat_schedule["core-prune-user-activity"] = {
     "task": "apps.tasks.tasks.prune_user_activity",

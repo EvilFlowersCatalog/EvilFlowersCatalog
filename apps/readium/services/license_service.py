@@ -338,7 +338,10 @@ class LicenseService:
             # of THIS entry block on this row lock; the per-entry cap is
             # checked under the lock so two parallel callers cannot both
             # see "1 slot free" and create two licenses.
-            Entry.objects.select_for_update().get(pk=entry.pk)
+            locked = Entry.objects.select_for_update().only("pk", "withdrawn_at").get(pk=entry.pk)
+            # IP-034 Q6: a withdrawn entry lends no new copies; licences already issued run to their end.
+            if locked.withdrawn_at is not None:
+                raise NotLendableError("Entry is withdrawn")
 
             # Re-check availability with the lock held.
             availability = LicenseService.can_user_borrow(entry, user, start_date, end_date)

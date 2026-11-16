@@ -22,7 +22,7 @@ from apps.core.models.category import Category
 from apps.core.models.user import User
 from apps.core.models.catalog import Catalog
 from apps.core.models.base import BaseModel
-from apps.core.validators import AvailableKeysValidator
+from apps.core.validators import IdentifierKeysValidator
 from apps.files.storage import get_storage
 
 
@@ -96,7 +96,19 @@ def cover_content_hash(file) -> Optional[str]:
     return digest.hexdigest()[:16]
 
 
-class EntryManager(models.Manager):
+#: `Entry.origin` values (IP-034): `elvira`, or `harvest:<source slug>`.
+ORIGIN_ELVIRA = "elvira"
+ORIGIN_HARVEST_PREFIX = "harvest:"
+
+
+class EntryQuerySet(models.QuerySet):
+    def listed(self):
+        """Entries a reader may find: not withdrawn (IP-034 Q6). Apply it at reader-facing surfaces only;
+        lookups by id for loans, returns and files must keep seeing withdrawn entries."""
+        return self.filter(withdrawn_at__isnull=True)
+
+
+class EntryManager(models.Manager.from_queryset(EntryQuerySet)):
     def get_queryset(self):
         # The search columns are only read in SQL. Deferring them keeps them out of every entry
         # query, and `save()` on a deferred instance never writes back a stale value.
@@ -144,8 +156,17 @@ class Entry(BaseModel):
     language = models.ForeignKey(Language, on_delete=models.CASCADE, related_name="entries", null=True)
     identifiers = HStoreField(
         null=True,
-        validators=[AvailableKeysValidator(keys=settings.EVILFLOWERS_IDENTIFIERS)],
+        validators=[IdentifierKeysValidator()],
     )
+    #: IP-034: where the entry came from: `elvira` (catalogued here) or `harvest:<source slug>` (imported by a
+    #: harvest source; IP-033 Q7 keeps entries of sources that are OAI providers themselves out of OAI-PMH).
+    origin = models.CharField(max_length=80, default=ORIGIN_ELVIRA, db_index=True)
+    #: IP-034 Q2: edition statement (MARC 250); editions with equal titles are told apart by it.
+    edition = models.CharField(max_length=255, null=True, blank=True)
+    #: IP-034 Q6: set when the entry is withdrawn (its Dataverse dataset was deaccessioned, or by hand). A
+    #: withdrawn entry is hidden from every reader-facing list (`Entry.objects.listed()`) and cannot be borrowed;
+    #: running loans end normally, because loan and file paths look entries up by id.
+    withdrawn_at = models.DateTimeField(null=True, blank=True, db_index=True)
     title = models.CharField(max_length=255)
     published_at = PartialDateField(null=True)
     publisher = models.CharField(max_length=255, null=True)

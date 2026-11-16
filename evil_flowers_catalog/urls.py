@@ -27,6 +27,14 @@ urlpatterns = [
     # IP-025: images for notification e-mails (STU logo), from the IaC-mounted overrides volume.
     path("notifications/v1/assets/<str:name>", NotificationAsset.as_view(), name="notification-asset"),
     path("api/v1/", include(("apps.api.urls", "api"), namespace="api")),
+    # IP-034: the harvesting client's admin API (`/api/v1/harvest/…`, `/api/v1/external-systems`).
+    path("api/v1/", include(("apps.harvest.urls", "harvest"), namespace="harvest")),
+    # IP-033: OAI-PMH (`/oai`), the ISBN resolver and availability, `/api/v1/oai/status`.
+    path("", include(("apps.oai.urls", "oai"), namespace="oai")),
+    # IP-034: the generic resolver `/resolve/<source slug>?id=` (harvest sources).
+    path("", include(("apps.harvest.public_urls", "harvest-public"), namespace="harvest-public")),
+    # IP-034: the Dataverse connector's pre-publish validation hook.
+    path("", include(("apps.dataverse.urls", "dataverse"), namespace="dataverse")),
     path("opds/v1.2/", include(("apps.opds.urls", "opds"), namespace="opds")),
     path("opds/v2/", include(("apps.opds2.urls", "opds2"), namespace="opds2")),
     path("readium/v1/", include(("apps.readium.urls", "readium"), namespace="readium")),

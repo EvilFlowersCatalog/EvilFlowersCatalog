@@ -84,6 +84,8 @@ INSTALLED_APPS = [
     "apps.graph",
     "apps.content",
     "apps.decider",
+    "apps.oai",
+    "apps.harvest",
 ]
 
 MIDDLEWARE = [
@@ -328,7 +330,24 @@ EVILFLOWERS_SEARCH_TRIGRAM_THRESHOLD = float(os.getenv("EVILFLOWERS_SEARCH_TRIGR
 # Minimum trigram similarity of a title word / author name offered as `did_you_mean`.
 EVILFLOWERS_SEARCH_SUGGEST_THRESHOLD = float(os.getenv("EVILFLOWERS_SEARCH_SUGGEST_THRESHOLD", 0.3))
 
-EVILFLOWERS_IDENTIFIERS = ["isbn", "google", "doi", "dataverse_pid", "dataverse_dataset_id"]
+EVILFLOWERS_IDENTIFIERS = ["isbn", "issn", "ccnb", "google", "doi", "dataverse_pid", "dataverse_dataset_id"]
+
+# IP-033 Q8: external systems an entry can be linked to, one `Entry.identifiers` key each (apps.core.identifiers).
+# JSON list of {"key", "name", "kind", "marc_org_code", "record_url_template"}; e.g. the STU library's ARL.
+EVILFLOWERS_EXTERNAL_SYSTEMS = json.loads(os.getenv("EVILFLOWERS_EXTERNAL_SYSTEMS") or "[]")
+
+# IP-033 Q9: prefix of Elvira's own MARC 035 control number; "ELVIRA" until STU agrees a code with CVT.
+EVILFLOWERS_MARC_ORG_CODE = os.getenv("EVILFLOWERS_MARC_ORG_CODE", "ELVIRA")
+
+# IP-033: the OAI-PMH data provider at /oai. Identifiers are oai:<repository identifier>:<entry uuid>.
+EVILFLOWERS_OAI_ENABLED = bool(int(os.getenv("EVILFLOWERS_OAI_ENABLED", "1")))
+EVILFLOWERS_OAI_REPOSITORY_IDENTIFIER = os.getenv(
+    "EVILFLOWERS_OAI_REPOSITORY_IDENTIFIER", "evilflowers.elvira.stuba.sk"
+)
+EVILFLOWERS_OAI_REPOSITORY_NAME = os.getenv("EVILFLOWERS_OAI_REPOSITORY_NAME", "Elvira digital library")
+EVILFLOWERS_OAI_PAGE_SIZE = int(os.getenv("EVILFLOWERS_OAI_PAGE_SIZE", 100))
+# Nightly reconcile of oai_records (catches QuerySet.update() and bulk changes); empty disables.
+EVILFLOWERS_OAI_RECONCILE_SCHEDULE = os.getenv("EVILFLOWERS_OAI_RECONCILE_SCHEDULE", "40 2 * * *")
 
 EVILFLOWERS_ENFORCE_USER_ACQUISITIONS = bool(int(os.getenv("EVILFLOWERS_ENFORCE_USER_ACQUISITIONS", "0")))
 
@@ -694,6 +713,10 @@ EVILFLOWERS_READIUM_EXPIRY_REMINDER_DAYS = int(os.getenv("EVILFLOWERS_READIUM_EX
 _max_renewals = os.getenv("EVILFLOWERS_READIUM_MAX_RENEWALS")
 EVILFLOWERS_READIUM_MAX_RENEWALS = int(_max_renewals) if _max_renewals else None
 
+# #198: shortest LCP passphrase a user may set. The passphrase is the only secret protecting a downloaded
+# .lcpl, so it follows the password minimum (MCP accounts: 8) rather than the old 4. Existing hashes stay valid.
+EVILFLOWERS_LCP_PASSPHRASE_MIN_LENGTH = int(os.getenv("EVILFLOWERS_LCP_PASSPHRASE_MIN_LENGTH", 8))
+
 # IP-009 Phase 4: capability-token TTLs (seconds). `LCPL_TTL` covers
 # single-use download tokens minted from `POST /licenses/{id}/download-tokens`.
 # `LCPL_FEED_TTL` covers multi-use tokens embedded in OPDS feed
@@ -771,6 +794,17 @@ EVILFLOWERS_DATAVERSE_RESUME_WORKFLOW_INITIAL_DELAY = float(os.getenv("DATAVERSE
 EVILFLOWERS_DATAVERSE_AUTO_WHITELIST_WORKFLOW_RESUME = _bool_env(
     "DATAVERSE_AUTO_WHITELIST_WORKFLOW_RESUME", default=False
 )
+# IP-034 Q5: superuser token for outbound writes (`publish?type=updatecurrent`, dataset creation). Environment
+# only — never the settings store, which MCP `get_setting` can read. Empty: outbound sync is off.
+EVILFLOWERS_DATAVERSE_SUPERUSER_TOKEN = (os.getenv("EVILFLOWERS_DATAVERSE_SUPERUSER_TOKEN") or "").strip()
+# Contact of datasets the catalog creates (citation `datasetContact` is required); empty: EVILFLOWERS_CONTACT_EMAIL.
+EVILFLOWERS_DATAVERSE_CONTACT_EMAIL = os.getenv("EVILFLOWERS_DATAVERSE_CONTACT_EMAIL", "")
+
+# IP-034: the harvesting client. The tick applies a `harvest.run` job for every enabled source whose own cron
+# schedule is due; empty disables scheduled harvests (manual runs still work).
+EVILFLOWERS_HARVEST_TICK_SCHEDULE = os.getenv("EVILFLOWERS_HARVEST_TICK_SCHEDULE", "*/5 * * * *")
+EVILFLOWERS_HARVEST_HTTP_TIMEOUT = int(os.getenv("EVILFLOWERS_HARVEST_HTTP_TIMEOUT", 60))
+EVILFLOWERS_HARVEST_BATCH_SIZE = int(os.getenv("EVILFLOWERS_HARVEST_BATCH_SIZE", 100))
 
 # Cache
 EVILFLOWERS_CACHE_SERVER_HASHES = timedelta(minutes=int(os.getenv("EVILFLOWERS_CACHE_HASHES", 7 * 24 * 60)))
@@ -1070,6 +1104,7 @@ EVILFLOWERS_MAINTENANCE_TASKS = (
     "apps.graph.tasks.rebuild_graph",
     "apps.decider.tasks.edge_sweep",
     "apps.decider.tasks.subject_sweep",
+    "apps.oai.tasks.reconcile",
 )
 CELERY_TASK_ROUTES = {
     "evilflowers_ocr_worker.*": {"queue": "evilflowers_ocr_worker"},

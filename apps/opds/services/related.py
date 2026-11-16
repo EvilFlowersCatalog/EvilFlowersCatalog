@@ -37,7 +37,10 @@ class RelatedEntries:
                 logger.exception("Related publications of catalog %s could not be computed", key)
                 neighbours = {}
             ids = {other for items in neighbours.values() for other, _score in items[:MAX_RELATED]}
-            titles = {str(pk): title for pk, title in Entry.objects.filter(pk__in=ids).values_list("pk", "title")}
+            # IP-034 Q6: a withdrawn neighbour is not linked.
+            titles = {
+                str(pk): title for pk, title in Entry.objects.listed().filter(pk__in=ids).values_list("pk", "title")
+            }
             self._catalogs[key] = (neighbours, titles)
         return self._catalogs[key]
 

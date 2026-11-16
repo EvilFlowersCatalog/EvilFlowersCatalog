@@ -13,6 +13,8 @@ class CatalogForm(Form):
     url_name = forms.SlugField()
     title = forms.CharField(max_length=100)
     is_public = BooleanField(required=False)
+    # IP-033 Q1: served over OAI-PMH.
+    harvestable = BooleanField(required=False)
     users = FormFieldList(UserCatalogForm, required=False)
 
     def clean_url_name(self) -> str:

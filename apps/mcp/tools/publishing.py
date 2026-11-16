@@ -42,6 +42,7 @@ from apps.api.forms.entries import EntryForm
 from apps.api.services.entry import EntryService
 from apps.content.rights import SCHEMA as RIGHTS_SCHEMA
 from apps.api.views.entries import _assert_readium_amount_above_active, shelf_record_mapping
+from apps.core.identifiers import allowed_identifier_keys
 from apps.core.models import Acquisition, Entry
 from apps.files.signals import entry_folder
 from apps.mcp import uploads
@@ -94,9 +95,13 @@ ENTRY_FIELDS = {
     "summary": {"type": "string", "description": "Abstract or blurb shown to readers."},
     "identifiers": {
         "type": "object",
-        "properties": {key: {"type": ["string", "null"]} for key in settings.EVILFLOWERS_IDENTIFIERS},
+        # IP-033 Q8: bibliographic keys plus one key per configured external system (e.g. `arl_stu`).
+        "properties": {key: {"type": ["string", "null"]} for key in sorted(allowed_identifier_keys())},
         "additionalProperties": False,
-        "description": "Identifiers such as `isbn` and `doi`. On update, keys you pass are merged; null removes one.",
+        "description": (
+            "Identifiers such as `isbn` and `doi`, and record ids in linked catalogues (one key per external "
+            "system). On update, keys you pass are merged; null removes one."
+        ),
     },
     "category_ids": {
         "type": "array",

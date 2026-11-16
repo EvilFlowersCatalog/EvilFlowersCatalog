@@ -1,4 +1,5 @@
 from django import forms
+from django.conf import settings
 from django_api_forms import Form, BooleanField
 
 
@@ -19,7 +20,10 @@ class UserForm(Form):
     is_active = BooleanField(required=False)
     is_superuser = BooleanField(required=False)
     password_change_required = BooleanField(required=False)
-    lcp_passphrase = forms.CharField(required=False, min_length=4, max_length=255)
+    # #198: was 4 characters; the minimum is a setting, default 8.
+    lcp_passphrase = forms.CharField(
+        required=False, min_length=settings.EVILFLOWERS_LCP_PASSPHRASE_MIN_LENGTH, max_length=255
+    )
     lcp_passphrase_hint = forms.CharField(required=False, max_length=255)
 
 

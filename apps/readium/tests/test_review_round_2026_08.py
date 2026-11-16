@@ -235,7 +235,8 @@ class NotLendableErrorTests(SimpleTestCase):
         from apps.readium.services.license_service import LicenseService
 
         src = inspect.getsource(LicenseService.create_license)
-        self.assertEqual(src.count("raise NotLendableError("), 3)
+        # Three readiness problems, plus a withdrawn entry (IP-034 Q6).
+        self.assertEqual(src.count("raise NotLendableError("), 4)
         self.assertIn("readium_print_limit", src)
         self.assertIn("EVILFLOWERS_READIUM_PRINT_LIMIT_PAGES", src)
 

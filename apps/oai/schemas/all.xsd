@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- IP-033: the vendored schemas in one set, so tests validate whole responses (metadata included) offline.
+     Imports point at local copies; oai_dc.xsd and simpledc20021212.xsd were changed only in their
+     schemaLocation, xml.xsd only lost its DOCTYPE. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:evilflowers:oai:schemas">
+  <xs:import namespace="http://www.openarchives.org/OAI/2.0/" schemaLocation="OAI-PMH.xsd"/>
+  <xs:import namespace="http://www.openarchives.org/OAI/2.0/oai_dc/" schemaLocation="oai_dc.xsd"/>
+  <xs:import namespace="http://www.openarchives.org/OAI/2.0/oai-identifier" schemaLocation="oai-identifier.xsd"/>
+  <xs:import namespace="http://www.loc.gov/MARC21/slim" schemaLocation="MARC21slim.xsd"/>
+</xs:schema>

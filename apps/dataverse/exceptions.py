@@ -18,3 +18,12 @@ class DataverseAuthError(DataverseError):
 
 class DataverseConfigError(DataverseError):
     """Misconfiguration (missing env var, malformed setting)."""
+
+
+class DataverseNotFoundError(DataverseError):
+    """The dataset or version does not exist (HTTP 404). Only this, never a network or 5xx failure, may count as
+    "gone" for the reconcile (IP-034 Q6)."""
+
+
+class DataverseStaleError(DataverseError):
+    """`editMetadata` refused `sourceLastUpdateTime`: the dataset changed since it was read (IP-034 push)."""

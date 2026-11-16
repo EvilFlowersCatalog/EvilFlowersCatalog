@@ -9,7 +9,7 @@ from django.db.models.functions import Concat
 from django.utils.translation import gettext as _
 from partial_date import PartialDate
 
-from apps.core.models import Acquisition, Entry
+from apps.core.models import Acquisition, Entry, UserCatalog
 from apps.core.search.query import Channel, Level, SearchState, did_you_mean
 from apps.api.filters.base import BaseSecuredFilter
 
@@ -130,6 +130,14 @@ class EntryFilter(BaseSecuredFilter):
         method="filter_published_at_lte",
         help_text="Filter entries published on or before the specified date. Accepts partial dates (YYYY, YYYY-MM, YYYY-MM-DD) and full ISO dates.",
     )
+    withdrawn = django_filters.BooleanFilter(
+        method="filter_withdrawn",
+        help_text=(
+            "IP-034: withdrawn entries (e.g. their Dataverse dataset was deaccessioned) are hidden from every list "
+            "and search. `true` lists only withdrawn entries, for superusers and in catalogs the user manages; "
+            "`false` is the default."
+        ),
+    )
     config__readium_enabled = django_filters.BooleanFilter(
         field_name="config__readium_enabled",
         help_text="Filter entries by Readium LCP (Licensed Content Protection) availability. True returns only DRM-protected entries, False returns unprotected entries.",
@@ -242,10 +250,31 @@ class EntryFilter(BaseSecuredFilter):
     def _unfilled(cls, value) -> bool:
         return isinstance(value, str) and bool(cls.UNFILLED_TEMPLATE.match(value.strip()))
 
+    def filter_withdrawn(self, qs, name, value):
+        # Applied in `qs` (the default must hold when the parameter is absent).
+        return qs
+
+    def _withdrawn_requested(self) -> bool:
+        return str(self.data.get("withdrawn", "")).lower() in ("true", "1", "yes")
+
+    def _apply_withdrawn(self, qs):
+        """IP-034 Q6: only listed entries, unless a manager asks for the withdrawn ones."""
+        if not self._withdrawn_requested():
+            # Same condition as `Entry.objects.listed()`; callers may hand in any Entry queryset.
+            return qs.filter(withdrawn_at__isnull=True)
+        user = self.request.user
+        qs = qs.filter(withdrawn_at__isnull=False)
+        if user.is_authenticated and user.is_superuser:
+            return qs
+        if not user.is_authenticated:
+            return qs.none()
+        managed = UserCatalog.objects.filter(user=user, mode=UserCatalog.Mode.MANAGE).values("catalog_id")
+        return qs.filter(catalog_id__in=managed)
+
     @property
     def qs(self):
         if not hasattr(self, "_secured_qs"):
-            qs = self.apply_catalog_access_control(super().qs)
+            qs = self._apply_withdrawn(self.apply_catalog_access_control(super().qs))
             if self.search is not None and not self._search_resolved:
                 self._search_resolved = True
                 self._keep_result_hits(qs)

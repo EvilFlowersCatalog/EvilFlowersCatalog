@@ -26,13 +26,17 @@ from typing import Any, Dict, List, Optional
 from django.conf import settings
 from django.db import transaction
 
-from apps.core.models import Acquisition, Author, Catalog, Entry, EntryAuthor, User
-from apps.dataverse.exceptions import DataverseConfigError, DataverseError
+from apps.core.models import Acquisition, Author, Catalog, Category, Entry, EntryAuthor, User
+from apps.dataverse.exceptions import DataverseConfigError, DataverseError, DataverseNotFoundError
 from apps.dataverse.services.client import DataverseClient
 from apps.dataverse.services.mapper import extract_metadata, map_content_type_to_mime
 from apps.dataverse.services.router import CatalogRouter, RoutingDecision
+from apps.harvest.records import SourceRecord
 
 logger = logging.getLogger(__name__)
+
+#: Scheme of categories created from Dataverse keywords (Q3: the source's name as scheme).
+KEYWORD_SCHEME = "dataverse"
 
 
 @dataclass
@@ -68,6 +72,20 @@ class PrepublishPayload:
             title=data.get("title") or None,
             invocation_id=data.get("invocation_id") or data.get("invocationId"),
         )
+
+
+def apply_inbound(
+    dataset_id: str,
+    global_id: str,
+    *,
+    title: Optional[str] = None,
+    client: Optional[DataverseClient] = None,
+) -> SyncSummary:
+    """IP-034 seam: apply a published dataset to Elvira. The webhook calls only this; the generic sync
+    (`apps.harvest` connector) replaces the body. For now: the first-import/upsert behaviour of
+    `DataverseSyncService.sync`, reading `:latest-published`."""
+    service = DataverseSyncService(client=client)
+    return service.sync(PrepublishPayload(dataset_id=str(dataset_id), global_id=str(global_id), title=title))
 
 
 class DataverseSyncService:
@@ -113,8 +131,15 @@ class DataverseSyncService:
 
         system_user = self._resolve_system_user()
 
-        dataset_data = self.client.fetch_dataset_metadata(payload.dataset_id)
-        files = self.client.fetch_dataset_files(payload.dataset_id)
+        # IP-034 Q4: only published versions reach Elvira (the workflow trigger is PostPublishDataset). Strict
+        # reads: a failed request raises instead of reading as "no metadata".
+        try:
+            dataset_data = self.client.get_version(payload.dataset_id, ":latest-published") or {}
+        except DataverseNotFoundError as exc:
+            raise DataverseError(
+                f"Dataset {payload.global_id} has no published version; is the workflow PostPublishDataset? ({exc})"
+            ) from exc
+        files = self.client.get_version_files(payload.dataset_id, ":latest-published")
         metadata = extract_metadata(
             dataset_data,
             files,
@@ -138,6 +163,8 @@ class DataverseSyncService:
             summary.entry_id = str(entry.pk)
             if created:
                 summary.upserts = 1
+                if metadata.get("record") is not None:
+                    self._apply_book_fields(entry, metadata["record"])
             if updated:
                 summary.updates = 1
 
@@ -194,6 +221,8 @@ class DataverseSyncService:
             entry = Entry.objects.create(
                 creator=system_user,
                 catalog=catalog,
+                # IP-034: the origin of the Dataverse source (slug `dataverse`); its `oai_reexpose` is false.
+                origin="harvest:dataverse",
                 title=metadata.get("title") or f"Dataverse Dataset {payload.global_id}",
                 summary=metadata.get("summary"),
                 content=metadata.get("content"),
@@ -231,6 +260,36 @@ class DataverseSyncService:
             entry.save()
             logger.info("Updated Dataverse entry %s in catalog %s", entry.pk, catalog.url_name)
         return entry, False, updated
+
+    @staticmethod
+    def _apply_book_fields(entry: Entry, record: SourceRecord) -> None:
+        """First import only: ISBN/DOI, edition, page count (`elvira_book`) and subjects — UDC with
+        `UDC_SCHEME`, keywords with scheme `dataverse` — created when missing (Q3). Categories are looked up by
+        `(catalog, term)`, the unique key, whatever their scheme."""
+        identifiers = dict(entry.identifiers or {})
+        for key in ("isbn", "doi"):
+            if record.identifiers.get(key) and not identifiers.get(key):
+                identifiers[key] = record.identifiers[key]
+        if (record.identifiers.get("doi") or "") and identifiers.get("doi") == entry.identifiers.get("dataverse_pid"):
+            identifiers["doi"] = record.identifiers["doi"]
+        entry.identifiers = identifiers
+        entry.edition = record.edition or entry.edition
+        entry.page_count = record.page_count or entry.page_count
+        entry.save(update_fields=["identifiers", "edition", "page_count", "updated_at"])
+
+        categories = []
+        for subject in record.subjects:
+            category = Category.objects.filter(catalog=entry.catalog, term=subject.term).first()
+            if category is None:
+                category = Category.objects.create(
+                    creator=entry.creator,
+                    catalog=entry.catalog,
+                    term=subject.term,
+                    scheme=subject.scheme or KEYWORD_SCHEME,
+                )
+            categories.append(category)
+        if categories:
+            entry.categories.add(*categories)
 
     @staticmethod
     def _sync_authors(catalog: Catalog, entry: Entry, metadata: Dict[str, Any]) -> None:

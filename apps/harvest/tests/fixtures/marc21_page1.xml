@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <responseDate>2026-11-16T10:00:05Z</responseDate>
+  <request verb="ListRecords" metadataPrefix="marc21">https://kis.example.org/oai</request>
+  <ListRecords>
+    <record>
+      <header>
+        <identifier>oai:kis.example.org:STU_US_CAT*0000101</identifier>
+        <datestamp>2026-11-10T08:00:00Z</datestamp>
+        <setSpec>STU_US_CAT</setSpec>
+      </header>
+      <metadata>
+        <marc:record xmlns:marc="http://www.loc.gov/MARC21/slim">
+          <marc:leader>01234nam a2200301 i 4500</marc:leader>
+          <marc:controlfield tag="001">0000101</marc:controlfield>
+          <marc:controlfield tag="008">180312s2018    xo a          000 0 slo d</marc:controlfield>
+          <marc:datafield tag="015" ind1=" " ind2=" "><marc:subfield code="a">cnb000123456</marc:subfield></marc:datafield>
+          <marc:datafield tag="020" ind1=" " ind2=" "><marc:subfield code="a">80-227-1234-5 (brož.)</marc:subfield></marc:datafield>
+          <marc:datafield tag="020" ind1=" " ind2=" "><marc:subfield code="a">978-80-227-4000-5</marc:subfield><marc:subfield code="q">online</marc:subfield></marc:datafield>
+          <marc:datafield tag="022" ind1=" " ind2=" "><marc:subfield code="a">1335-2016</marc:subfield></marc:datafield>
+          <marc:datafield tag="041" ind1="0" ind2=" "><marc:subfield code="a">slo</marc:subfield></marc:datafield>
+          <marc:datafield tag="080" ind1=" " ind2=" "><marc:subfield code="a">519.6</marc:subfield></marc:datafield>
+          <marc:datafield tag="100" ind1="1" ind2=" "><marc:subfield code="a">Macák, Marek,</marc:subfield><marc:subfield code="4">aut</marc:subfield></marc:datafield>
+          <marc:datafield tag="245" ind1="1" ind2="0"><marc:subfield code="a">Numerická matematika :</marc:subfield><marc:subfield code="b">vybrané kapitoly /</marc:subfield><marc:subfield code="c">Marek Macák, Zuzana Minarechová</marc:subfield></marc:datafield>
+          <marc:datafield tag="250" ind1=" " ind2=" "><marc:subfield code="a">2. vydanie</marc:subfield></marc:datafield>
+          <marc:datafield tag="264" ind1=" " ind2="1"><marc:subfield code="a">Bratislava :</marc:subfield><marc:subfield code="b">Spektrum STU,</marc:subfield><marc:subfield code="c">2018.</marc:subfield></marc:datafield>
+          <marc:datafield tag="300" ind1=" " ind2=" "><marc:subfield code="a">245 strán :</marc:subfield><marc:subfield code="b">ilustrácie</marc:subfield></marc:datafield>
+          <marc:datafield tag="490" ind1="1" ind2=" "><marc:subfield code="a">Edícia vysokoškolských učebníc</marc:subfield><marc:subfield code="v">12</marc:subfield></marc:datafield>
+          <marc:datafield tag="520" ind1=" " ind2=" "><marc:subfield code="a">Učebnica numerických metód.</marc:subfield></marc:datafield>
+          <marc:datafield tag="650" ind1="0" ind2="7"><marc:subfield code="a">numerická matematika</marc:subfield><marc:subfield code="2">czenas</marc:subfield></marc:datafield>
+          <marc:datafield tag="653" ind1=" " ind2=" "><marc:subfield code="a">učebnice</marc:subfield></marc:datafield>
+          <marc:datafield tag="700" ind1="1" ind2=" "><marc:subfield code="a">Minarechová, Zuzana,</marc:subfield><marc:subfield code="4">aut</marc:subfield></marc:datafield>
+          <marc:datafield tag="856" ind1="4" ind2="0"><marc:subfield code="u">https://files.example.org/stu/0000101.pdf</marc:subfield></marc:datafield>
+        </marc:record>
+      </metadata>
+    </record>
+    <record>
+      <header>
+        <identifier>oai:kis.example.org:STU_US_CAT*0000102</identifier>
+        <datestamp>2026-11-11T08:00:00Z</datestamp>
+      </header>
+      <metadata>
+        <record xmlns="http://www.loc.gov/MARC21/slim">
+          <leader>00800nam a2200241 i 4500</leader>
+          <controlfield tag="001">0000102</controlfield>
+          <datafield tag="020" ind1=" " ind2=" "><subfield code="a">9788022750783</subfield></datafield>
+          <datafield tag="024" ind1="7" ind2=" "><subfield code="a">10.1234/ABC-102</subfield><subfield code="2">doi</subfield></datafield>
+          <datafield tag="041" ind1="0" ind2=" "><subfield code="a">eng</subfield></datafield>
+          <datafield tag="080" ind1=" " ind2=" "><subfield code="a">531</subfield></datafield>
+          <datafield tag="100" ind1="1" ind2=" "><subfield code="a">Doe, John.</subfield></datafield>
+          <datafield tag="245" ind1="1" ind2="0"><subfield code="a">Applied mechanics.</subfield></datafield>
+          <datafield tag="260" ind1=" " ind2=" "><subfield code="a">London :</subfield><subfield code="b">Example Press,</subfield><subfield code="c">c2020.</subfield></datafield>
+        </record>
+      </metadata>
+    </record>
+    <resumptionToken completeListSize="4" cursor="0">page-2</resumptionToken>
+  </ListRecords>
+</OAI-PMH>

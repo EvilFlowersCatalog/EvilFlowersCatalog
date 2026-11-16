@@ -65,6 +65,11 @@ READ_TOOLS = {
     "section_prerequisites",
     "similar_entries",
     "whoami",
+    # IP-034: harvest sources and their records.
+    "get_entry_sync",
+    "get_harvest_source",
+    "list_harvest_records",
+    "list_harvest_sources",
 }
 
 WRITE_TOOLS = {
@@ -89,6 +94,8 @@ WRITE_TOOLS = {
     "remove_entries_from_feed",
     "requeue_encryption",
     "revoke_api_key",
+    "push_entry",
+    "run_harvest",
     "send_test_notification",
     "sync_ldap_profiles",
     "update_catalog",

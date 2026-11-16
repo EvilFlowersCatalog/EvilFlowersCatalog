@@ -254,6 +254,10 @@ class EntrySerializer:
         publisher: Optional[str]
         content: Optional[str]
         identifiers: Optional[Dict]
+        # IP-034: where the entry came from, its edition, and whether it is withdrawn (hidden, not borrowable).
+        origin: str = "elvira"
+        edition: Optional[str] = None
+        withdrawn_at: Optional[datetime] = None
 
         # Issue #50 (partial — ratings/reviews tracked separately in #57)
         page_count: Optional[int] = None

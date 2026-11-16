@@ -28,6 +28,7 @@ from apps.readium.models import License, Reservation
 from apps.readium.services.exceptions import (
     AlreadyBorrowedError,
     AlreadyReservedError,
+    NotLendableError,
     ReservationCapReachedError,
     SlotsAvailableError,
 )
@@ -148,6 +149,9 @@ class ReservationService:
         """
         if not entry.read_config("readium_enabled"):
             raise ValueError("Entry is not readium-enabled")
+        # IP-034 Q6: nobody queues for a withdrawn entry.
+        if entry.withdrawn_at is not None:
+            raise NotLendableError("Entry is withdrawn")
 
         active_license_states = [License.LicenseState.READY, License.LicenseState.ACTIVE]
         if License.objects.filter(entry=entry, user=user, state__in=active_license_states).exists():

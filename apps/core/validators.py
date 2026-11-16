@@ -29,3 +29,20 @@ class AvailableKeysValidator:
 
     def __eq__(self, other):
         return isinstance(other, self.__class__) and self.keys == other.keys and self.messages == other.messages
+
+
+@deconstructible
+class IdentifierKeysValidator:
+    """`Entry.identifiers` keys: `EVILFLOWERS_IDENTIFIERS` plus the configured external systems (IP-033 Q8).
+
+    Reads the keys at call time, so the allowed set is not frozen into migrations and may differ per
+    deployment (`EVILFLOWERS_EXTERNAL_SYSTEMS`).
+    """
+
+    def __call__(self, value):
+        from apps.core.identifiers import allowed_identifier_keys
+
+        AvailableKeysValidator(allowed_identifier_keys())(value or {})
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__)
