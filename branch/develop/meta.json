@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "e6d4e2808a1d401aa7a85a52f6f9809cc6baedec",
-    "short": "e6d4e28",
-    "message": "OAI and catalog sync services",
+    "sha": "7caac0845894ba4041713e151430c2d536cec31c",
+    "short": "7caac08",
+    "message": "Resolving #186, #195, #196, #197",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e6d4e2808a1d401aa7a85a52f6f9809cc6baedec"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/7caac0845894ba4041713e151430c2d536cec31c"
   },
-  "deployed_at": "2026-11-16T19:34:53Z",
+  "deployed_at": "2026-11-16T20:44:41Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

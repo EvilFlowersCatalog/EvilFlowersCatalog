@@ -27,8 +27,10 @@ would see actually changes. Formats: `oai_dc` (mandatory) and `marc21` (MARCXML)
 
 ## Status
 
-✅ **Accepted** (2026-11-16). All Review Questions are answered (see the Resolutions); implementation is
-tracked in #196. The decisions that change the text below:
+✅ **Implemented** (2026-11-16). Live on dev and verified there with an independent harvester (Sickle) and the
+official XSDs: all six verbs, `oai_dc` and `marc21` through every resumption token, errors, 357 records of
+`openresearchlibrary` (#196, closed). Phase 3's library review of `marc21` and handing the base URL to the library
+remain. The decisions that change the text below:
 
 | Topic | Decision |
 |---|---|
@@ -732,3 +734,4 @@ The Dataverse keys stay in identifiers with their partial unique index (core/003
 | 2026-11-16 | Claude AI | Review Questions answered by jdubec, resolutions written; status Accepted. Q2 identifiers on `evilflowers.elvira.stuba.sk`, Q4 both formats now, Q6 link omitted when unset, Q8 hstore keys + `EVILFLOWERS_EXTERNAL_SYSTEMS` (link models dropped), Q7 exclusion by `Entry.origin`; exposure also requires an acquisition and registered encryption |
 | 2026-11-16 | Claude AI | Q7 generalised with IP-034's unification: re-exposure is a per-source flag (`HarvestSource.oai_reexpose`), origins are `harvest:<slug>` |
 | 2026-11-16 | Claude AI | Implemented (uncommitted): `apps/oai` with 77 tests validated against the OAI-PMH, oai_dc and MARC21slim XSDs, plus a round trip with IP-034's harvester; deploy knowledge#73, portal elvira-portal#54 |
+| 2026-11-16 | Claude AI | Status Implemented: verified on dev with Sickle + official XSDs (#196). Fixed `urn:isbn:` ISBNs normalising to None (oai_dc printed `urn:isbn:urn:isbn:…`, resolver missed them); MCP catalog tools take `harvestable`; backfill knowledge#74 |
