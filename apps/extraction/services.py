@@ -240,6 +240,9 @@ def _start_steps(run: ExtractionRun, *, steps, page_count: int, page_sizes: list
     run.page_sizes = page_sizes
     # The steps' provenance is reported again by their new jobs; a batch would only add a variant to the old one.
     provenance_ = {key: value for key, value in run.provenance.items() if key not in steps}
+    deciders = {key: value for key, value in (provenance_.get(DECIDER_MODELS) or {}).items() if key not in steps}
+    if DECIDER_MODELS in provenance_:
+        provenance_[DECIDER_MODELS] = deciders
     run.provenance = {**provenance_, **(provenance or {})}
     # Only the named steps' failures and the stale reason were in it: those steps start over.
     run.error = None
@@ -379,7 +382,9 @@ def start(
         run.page_count = page_count
         run.page_sizes = page_sizes
         run.jobs = {job: ExtractionRun.JobStatus.PENDING for job in jobs}
-        run.provenance = {**run.provenance, **(provenance or {})}
+        # A full pass reports its deciders again (#189); the previous attempt's would only linger.
+        previous = {key: value for key, value in run.provenance.items() if key != DECIDER_MODELS}
+        run.provenance = {**previous, **(provenance or {})}
         run.started_at = timezone.now()
         run.save()
     tracing.set_attributes({"evilflowers.extraction.attempt": run.attempt})
@@ -438,10 +443,42 @@ def _require_running_locked(run: ExtractionRun, attempt: Optional[int]) -> None:
     _require_running(run, attempt)
 
 
+#: Key of the run's provenance that lists the deciders behind its regions, per step (#189).
+DECIDER_MODELS = "decider_models"
+
+
+def merge_decider_models(provenance: Optional[dict], regions: List[dict]) -> Optional[dict]:
+    """`provenance[decider_models][step]` gains the batch's distinct `decider_model`s; None when nothing is new."""
+    steps = {kind: step for step, kind in STEP_REGION_KINDS.items()}
+    reported: dict = {}
+    for region in regions:
+        model, step = region.get("decider_model"), steps.get(region.get("kind"))
+        if model and step:
+            reported.setdefault(step, set()).add(model)
+    if not reported:
+        return None
+    current = dict((provenance or {}).get(DECIDER_MODELS) or {})
+    changed = False
+    for step, models in reported.items():
+        known = list(current.get(step) or [])
+        new = sorted(models - set(known))
+        if new:
+            current[step] = [*known, *new]
+            changed = True
+    return {**(provenance or {}), DECIDER_MODELS: current} if changed else None
+
+
 def add_regions(run: ExtractionRun, regions: List[dict], attempt: Optional[int] = None) -> int:
     with transaction.atomic():
         _require_running_locked(run, attempt)
         Region.objects.bulk_create(Region(run=run, **region) for region in regions)
+        if any(region.get("decider_model") for region in regions):
+            # Re-read under the lock `_require_running_locked` holds: batches of two jobs may run at once.
+            locked = ExtractionRun.objects.only("id", "provenance").get(pk=run.pk)
+            provenance = merge_decider_models(locked.provenance, regions)
+            if provenance is not None:
+                ExtractionRun.objects.filter(pk=run.pk).update(provenance=provenance)
+                run.provenance = provenance
     return len(regions)
 
 

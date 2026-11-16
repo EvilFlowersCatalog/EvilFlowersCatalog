@@ -203,7 +203,7 @@ def _region(source: dict, readable: bool, request, located=None) -> dict:
         _original, offset = _offset(source, located.locator.source_page)
         extra = _moved(source, located, offset)
     else:
-        region = Region.objects.filter(pk=source["region_id"]).select_related("run__acquisition").first()
+        region = Region.objects.visible().filter(pk=source["region_id"]).select_related("run__acquisition").first()
         extra = {}
     if region is None:
         return extra

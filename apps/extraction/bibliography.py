@@ -126,6 +126,28 @@ def is_reference_section(heading: Optional[str]) -> bool:
     return bool(heading) and bool(SECTION.match(fold(heading)))
 
 
+#: Characters of text per publication year at most, for a paragraph to read as a run of references.
+REFERENCE_DENSITY = 250
+
+
+def looks_like_references(text: Optional[str], section: Optional[str] = None) -> bool:
+    """A paragraph of a reference list: under a reference heading, or dense with years and DOIs (#187).
+
+    Many reference lists sit under a chapter's own heading ("2 Bernoulli"), so the heading alone misses them. Prose
+    citing sources has a year now and then; a reference list has one every line. Passage search leaves these out:
+    the dev evaluation of 2026-11-15 cited reference lists for claims they do not make ("rock physics" for a list
+    of TensorFlow papers).
+    """
+    if is_reference_section(section):
+        return True
+    text = text or ""
+    years = len(YEAR.findall(text))
+    dois = len(DOI.findall(text))
+    if dois >= 2:
+        return True
+    return years >= 3 and len(text) <= years * REFERENCE_DENSITY
+
+
 def _clean(text: str) -> str:
     text = unicodedata.normalize("NFKC", text or "")
     # Hyphenation at a line break ("stu- dents") as the extraction leaves it.

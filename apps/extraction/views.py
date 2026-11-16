@@ -355,7 +355,7 @@ class ReaderView(SecuredView):
     def _region(self, user_acquisition: UserAcquisition, region_id: UUID) -> tuple[Region, int]:
         """A region of the active run on a page the reader may see, with its reader page."""
         run = services.active_run(user_acquisition.acquisition_id)
-        region = run and run.regions.filter(pk=region_id).first()
+        region = run and run.regions.visible().filter(pk=region_id).first()
         reader_page = region and _reader_page(self._sources(user_acquisition, run), region.page)
         if not reader_page:
             raise ProblemDetailException(_("Region not found"), status=HTTPStatus.NOT_FOUND)
@@ -399,7 +399,8 @@ class UserAcquisitionRegions(ReaderView):
         description=(
             "Figures, tables and equations on a page of the reader's copy, in the reader's page numbering "
             "(the viewer's). Without `page`, every region of the copy. Pages outside the copy's range are "
-            "never returned. Empty while the publication has not been processed; see `.../extraction`."
+            "never returned, nor regions a decision model hid (band `hide`, #189). Empty while the publication "
+            "has not been processed; see `.../extraction`."
         ),
         tags=["Extraction"],
         summary="List regions of a reader's copy",
@@ -414,7 +415,7 @@ class UserAcquisitionRegions(ReaderView):
             return SingleResponse(request, data={"items": []})
 
         sources = self._sources(user_acquisition, run)
-        regions = run.regions.all()
+        regions = run.regions.visible()
         page = request.GET.get("page")
         if page:
             try:
@@ -488,7 +489,7 @@ class UserAcquisitionExtraction(ReaderView):
             available=active is not None,
         )
         if active is not None:
-            counts = active.regions.aggregate(
+            counts = active.regions.visible().aggregate(
                 figures=Count("id", filter=Q(kind=Region.Kind.FIGURE)),
                 tables=Count("id", filter=Q(kind=Region.Kind.TABLE)),
                 equations=Count("id", filter=Q(kind=Region.Kind.EQUATION)),

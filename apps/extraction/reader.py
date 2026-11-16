@@ -58,11 +58,11 @@ class ReaderExtraction:
         source = self.source_page(reader_page)
         if source is None:
             return []
-        return [_region_line(region, reader_page) for region in self.run.regions.filter(page=source)]
+        return [_region_line(region, reader_page) for region in self.run.regions.visible().filter(page=source)]
 
     def all_regions(self, kind: Optional[str] = None) -> List[dict]:
         """Every region on a page of the copy, in reading order (IP-018 Phase 8)."""
-        regions = self.run.regions.filter(page__in=list(self._reader_page))
+        regions = self.run.regions.visible().filter(page__in=list(self._reader_page))
         if kind:
             regions = regions.filter(kind=kind)
         lines = []
@@ -74,7 +74,7 @@ class ReaderExtraction:
         return lines
 
     def region(self, region_id) -> Optional[dict]:
-        region = self.run.regions.filter(pk=region_id).first()
+        region = self.run.regions.visible().filter(pk=region_id).first()
         page = region and self.reader_page(region.page)
         if not page:
             return None

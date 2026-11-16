@@ -86,8 +86,16 @@ def storage_dir(acquisition: Acquisition, pipeline_version: int) -> str:
     return f"{acquisition.upload_base_path()}/extraction/{acquisition.pk}/v{pipeline_version}"
 
 
+class RegionQuerySet(models.QuerySet):
+    def visible(self) -> "RegionQuerySet":
+        """What readers see (#189): every region but those a decider banded `hide`. Unknown (null) stays."""
+        return self.exclude(band=Region.Band.HIDE)
+
+
 class Region(BaseModel):
     """A figure, table or equation on a page of the original file."""
+
+    objects = RegionQuerySet.as_manager()
 
     class Meta:
         app_label = "extraction"
@@ -105,6 +113,13 @@ class Region(BaseModel):
         FIGURE = "figure", _("figure")
         TABLE = "table", _("table")
         EQUATION = "equation", _("equation")
+
+    class Band(models.TextChoices):
+        """What a decision model made of the region (#189): shown, shown but doubtful, hidden from readers."""
+
+        KEEP = "keep", _("keep")
+        REVIEW = "review", _("review")
+        HIDE = "hide", _("hide")
 
     run = models.ForeignKey(ExtractionRun, on_delete=models.CASCADE, related_name="regions")
     kind = models.CharField(max_length=10, choices=Kind.choices)
@@ -133,6 +148,22 @@ class Region(BaseModel):
     embedding_model = models.CharField(max_length=200, null=True)
     #: `Locator.key` (#171): the address of this figure that survives a newer run.
     locator_key = models.CharField(max_length=40, null=True, db_index=True)
+
+    # The decision a worker sent with the region (#189, knowledge `Proposals/Decision-Models.md`). Null: no
+    # decision (the worker predates it, or the decider was down); such a region is shown as before.
+    #: `keep` / `review` / `hide`; readers skip `hide` (`Region.objects.visible()`), nothing is deleted.
+    band = models.CharField(max_length=10, choices=Band.choices, null=True)
+    #: The calibrated probability of the chosen answer, 0-1 (wire name `p`), kept so a new threshold re-bands
+    #: without re-extraction (`manage.py reband_regions`).
+    decision_p = models.FloatField(null=True)
+    #: The table score text-service computes from grounding, grid signals, review outcome and p, 0-1.
+    decision_score = models.FloatField(null=True)
+    #: The answer itself (`stamp`, `chart`, `repeated`, ...).
+    decision = models.CharField(max_length=100, null=True)
+    #: `model@revision` of the decider (the answer's top-level `model`).
+    decider_model = models.CharField(max_length=200, null=True)
+    #: Further signals behind the decision: `review_outcome`, `grounded_share`, grid signals of a table.
+    decision_signals = models.JSONField(default=dict)
 
 
 class Paragraph(BaseModel):

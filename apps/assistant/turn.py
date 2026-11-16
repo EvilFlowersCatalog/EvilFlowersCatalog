@@ -251,7 +251,7 @@ def _rounds(
     from apps.assistant.pack import needs_pack
 
     # A question about content must be answered from evidence looked up for it (#162).
-    content_question = needs_pack(text)
+    content_question = needs_pack(text, _about_publication(chat, entry, document))
     staff = portal.is_staff(request.user)
     rounds = MAX_TOOL_ROUNDS if document is not None else MAX_CHAT_ROUNDS
     previous: Optional[List[dict]] = None
@@ -579,7 +579,7 @@ def _prefetch(request, chat: Chat, context: ToolContext, state: _Turn, text: str
     """
     from apps.assistant import pack
 
-    if not pack.needs_pack(text):
+    if not pack.needs_pack(text, _about_publication(chat, entry, context.document)):
         return False
     try:
         payload = pack.gather(context, text, entry)
@@ -613,6 +613,11 @@ def _prefetch(request, chat: Chat, context: ToolContext, state: _Turn, text: str
     yield sse("activity", activity.summarize(tools.GATHER_EVIDENCE, {"query": payload["query"]}, payload, model_text))
     yield from _access_frames(request, state)
     return True
+
+
+def _about_publication(chat: Chat, entry, document) -> bool:
+    """The turn is about one publication: bound to a copy, a chat about an entry, or one attached to the message."""
+    return document is not None or entry is not None or bool(getattr(chat, "entry_id", None))
 
 
 def _access_frames(request, state: "_Turn") -> Iterator[str]:

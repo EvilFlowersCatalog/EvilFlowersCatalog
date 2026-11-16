@@ -181,6 +181,8 @@ def project_run(run) -> Dict[str, int]:
     figures: Dict[str, dict] = {}
     references = (
         Reference.objects.filter(run=run, region__isnull=False, paragraph__section__isnull=False)
+        # Not the regions a decision model hid (#189): the graph tools would show them.
+        .exclude(region__band="hide")
         .select_related("region")
         .values_list("paragraph__section", "region_id", "region__kind", "region__page", "region__printed_caption")
     )

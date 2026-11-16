@@ -244,9 +244,9 @@ def outline(request, entry_id) -> dict:
         described = decide(request, entry, generated=True)
         payload["regions"] = [
             _region_payload(request, entry, region, decision, described)
-            for region in run.regions.order_by("page", "seq").only(
-                "id", "kind", "page", "printed_caption", "caption", "description", "locator_key"
-            )
+            for region in run.regions.visible()
+            .order_by("page", "seq")
+            .only("id", "kind", "page", "printed_caption", "caption", "description", "locator_key")
         ]
         from apps.extraction import bibliography
 
@@ -374,7 +374,9 @@ def read(request, value: str, *, context: int = 0, cursor: Optional[str] = None,
     regions = []
     if kept:
         pages = (kept[0].page, kept[-1].page)
-        for region in run.regions.filter(page__range=pages, locator_key__isnull=False).order_by("page", "seq"):
+        for region in (
+            run.regions.visible().filter(page__range=pages, locator_key__isnull=False).order_by("page", "seq")
+        ):
             regions.append(
                 {
                     "uri": uris.locator_uri(entry.pk, region.locator_key),

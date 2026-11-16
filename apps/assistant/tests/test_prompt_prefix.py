@@ -40,7 +40,9 @@ class PromptPrefixTests(TurnTestCase):
         # The language pin follows the user message instead of closing the request.
         first = requests[0]["messages"]
         self.assertEqual(first[-2]["role"], "user")
-        self.assertEqual(first[-1], {"role": "system", "content": services.language_instruction("sk")})
+        pin = services.language_instruction("sk", "Máte niečo o Analytical Engine?")
+        self.assertEqual(first[-1], {"role": "system", "content": pin})
+        self.assertTrue(pin.startswith("Answer in Slovak"))
         self.assertEqual(requests[1]["messages"][-1]["role"], "tool")
 
         attributes = requests[1]["span_attributes"]

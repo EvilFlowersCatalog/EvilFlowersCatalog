@@ -210,6 +210,25 @@ class ReadingToolTests(TestCase):
         refused = self.call("get_region", {"uri": self.uri(self.entry, self.paragraphs[0])})
         self.assertTrue(refused["isError"])
 
+    def test_a_region_a_decider_hid_is_left_out_of_every_tool(self):
+        """#189: the address still resolves (to its page), but no caption, crop or link."""
+        from apps.extraction.models import Region
+
+        Region.objects.filter(pk=self.venturi.pk).update(band=Region.Band.HIDE)
+        address = uris.locator_uri(self.entry.pk, self.venturi.locator_key)
+
+        region = self.ok("get_region", {"uri": address})
+        self.assertEqual((region["kind"], region["page"]), ("figure", 4))
+        for leaked in ("label", "caption", "crop_url", "description"):
+            self.assertNotIn(leaked, region)
+
+        outline = self.ok("get_outline", {"entry_id": str(self.entry.pk)})
+        self.assertNotIn(4, [item["page"] for item in outline["regions"]])
+
+        result = self.call("read", {"uri": self.uri(self.entry, self.paragraphs[3]), "context": 1})
+        self.assertNotIn(address, [block.get("uri") for block in result["content"]])
+        self.assertEqual(result["structuredContent"]["regions"], [])
+
     def test_a_pack_labels_passages_and_resolves_them_later_for_its_owner_only(self):
         pack = self.ok("content_pack", {"query": "Bernoulli pressure speed", "budget_chars": 2000}, self.reader)
         self.assertTrue(pack["passages"])

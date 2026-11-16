@@ -69,10 +69,13 @@ def index_run(run: ExtractionRun, *, embed: bool = True) -> Dict[str, int]:
     counts = {"regions": len(regions), "documents": 0, "embedded": 0}
     for region in regions:
         paragraph = context.get(str(region.pk))
-        text = document_text(region, paragraph.text if paragraph else None)
+        # A region a decision model hid (#189) is no search document and has no vector; re-banded back, it
+        # gets both on the next pass (`reband_regions` re-indexes the runs it changed).
+        hidden = region.band == Region.Band.HIDE
+        text = None if hidden else document_text(region, paragraph.text if paragraph else None)
         if text:
             counts["documents"] += 1
-        if text != region.embedding_text:
+        if text != region.embedding_text or (hidden and region.embedding is not None):
             region.embedding_text = text
             region.embedding = None
             region.embedding_model = None
@@ -187,7 +190,9 @@ def search(
     runs = {run_id: entry_id for run_id, entry_id in runs.items() if entry_id in readable}
     if not runs:
         return RegionSearch()
-    candidates = Region.objects.filter(run_id__in=list(runs), kind__in=list(kinds), embedding_text__isnull=False)
+    candidates = Region.objects.visible().filter(
+        run_id__in=list(runs), kind__in=list(kinds), embedding_text__isnull=False
+    )
 
     if vector is None:
         vector = embeddings.try_embed_query(text, "passages")

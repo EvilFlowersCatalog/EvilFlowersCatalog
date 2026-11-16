@@ -306,8 +306,13 @@ def _resolve_paragraph(locator: Locator, run: ExtractionRun) -> Optional[Resolut
 def _resolve_region(locator: Locator, run: ExtractionRun) -> Optional[Resolution]:
     region = run.regions.filter(locator_key=locator.key).first()
     if region is not None:
+        # A region a decision model hid (#189) is not shown, and not swapped for a neighbour either.
+        if region.band == Region.Band.HIDE:
+            return None
         return Resolution(locator, EXACT, region.page, run, region=region)
-    candidates = list(run.regions.filter(kind=locator.kind, page__range=_window(locator)).order_by("page", "seq"))
+    candidates = list(
+        run.regions.visible().filter(kind=locator.kind, page__range=_window(locator)).order_by("page", "seq")
+    )
     if locator.quote_exact:
         region = _best(locator, candidates, _caption)
     else:

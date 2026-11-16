@@ -62,14 +62,52 @@ _CAPABILITY = re.compile(
 )
 
 
-def needs_pack(text: str) -> bool:
-    """Whether a message is worth gathering evidence for (greetings and capability questions are not)."""
+#: Requests a dedicated tool answers, not the library's text (#187). With a pack in front of it the model answered
+#: from the pack instead: "What did I save on my shelf?" got "your shelf is empty" without `get_my_shelf`, "which
+#: subjects" got a list made up from the pack, "show me where my loans are" got prose instead of `show_in_portal`,
+#: and quiz, walkthrough and key-concepts requests in a bound chat got prose instead of `study`.
+_ACCOUNT = re.compile(
+    r"(\bshelf\b|polic[ia]|záložk|zalozk|bookmark|\bmy loans?\b|borrowed|výpožičk|vypozick|požičan|pozican|"
+    r"\bvyprš|\bexpir)",
+    re.IGNORECASE,
+)
+_PORTAL = re.compile(
+    r"(portál|portal|navig|\btour\b|prehliadk|administr|\bmenu\b|nastaveni|settings|"
+    r"kde (nájdem|najdem|je|sú|su)\b.*\b(úloh|uloh|profil|stránk|strank|sekci|časť)|"
+    r"where (do|can) i find (my|the) )",
+    re.IGNORECASE,
+)
+_SUBJECTS = re.compile(
+    r"(z akých oblastí|z akych oblasti|aké (oblasti|kategórie|témy|odbory)|which (subjects|categories|fields)|"
+    r"what (subjects|categories|fields))",
+    re.IGNORECASE,
+)
+_STUDY = re.compile(
+    r"(\bquiz|kvíz|kviz|vyskúšaj ma|vyskusaj ma|otestuj|test me|kľúčov\w* pojm|klucov\w* pojm|key (concepts|terms)|"
+    r"zhrň|zhrn|summari[sz]e|prejdi so mnou|walk me through|po kapitolách|po kapitolach|chapter by chapter|"
+    r"opýtaj sa ma|opytaj sa ma|ask me)",
+    re.IGNORECASE,
+)
+
+
+def needs_pack(text: str, about_publication: bool = False) -> bool:
+    """Whether a message is a question about the library's content, worth gathering evidence for.
+
+    Not for greetings and questions about the assistant, nor for what a dedicated tool answers: the reader's
+    shelf and loans, places in the portal, the list of subjects, and — in a chat about one publication
+    (`about_publication`) — study cards (#187). "Summarise what the library says about X" in a plain chat is
+    still a content question. None of these is looked up before answering either (#162 uses this test).
+    """
     text = (text or "").strip()
     if len(text) < 3:
         return False
     if len(text) <= SHORT and _SMALL_TALK.match(text):
         return False
     if _CAPABILITY.search(text):
+        return False
+    if _ACCOUNT.search(text) or _PORTAL.search(text) or _SUBJECTS.search(text):
+        return False
+    if about_publication and _STUDY.search(text):
         return False
     return True
 
@@ -194,6 +232,8 @@ def _figures(context: ToolContext, query: str, scope, floor: float, passages: Li
         Reference.objects.filter(
             paragraph_id__in=[passage["paragraph_id"] for passage in passages], region__isnull=False
         )
+        # Not a region a decision model hid (#189).
+        .exclude(region__band="hide")
         .select_related("region__run__acquisition")
         .order_by("paragraph__seq")
     )

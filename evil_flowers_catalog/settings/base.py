@@ -511,6 +511,11 @@ EVILFLOWERS_ASSISTANT_VISION = _bool_env("EVILFLOWERS_ASSISTANT_VISION", default
 EVILFLOWERS_ASSISTANT_FIGURE_MARKS = _bool_env("EVILFLOWERS_ASSISTANT_FIGURE_MARKS", default=False)
 # Figures (and tables) found by search_regions must reach this cosine similarity.
 EVILFLOWERS_SEARCH_REGION_MIN_SCORE = float(os.getenv("EVILFLOWERS_SEARCH_REGION_MIN_SCORE", 0.78))
+# Decider thresholds per region kind (#189, `apps.extraction.bands`), JSON, e.g.
+# {"figure": {"hide": ["stamp", "decoration", "blank"], "upper": 0.9, "lower": 0.6}, "table": {"upper": 0.7,
+# "lower": 0.3}}. Empty: the catalog bands nothing itself and stores the band the worker sent. Set from calibration
+# (knowledge#65), then `manage.py reband_regions` applies it to the stored probabilities.
+EVILFLOWERS_DECIDER_BANDS = json.loads(os.getenv("EVILFLOWERS_DECIDER_BANDS") or "{}")
 
 # Context policy (IP-015 D3). While a conversation is warm the full history is
 # replayed unchanged so the prompt prefix stays byte-identical and Ollama can

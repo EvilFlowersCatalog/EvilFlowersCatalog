@@ -119,7 +119,7 @@ def annotate(context, arguments: dict) -> dict:
         raise ToolError("Marks cannot be drawn here; explain the figure in words.")
     if not citations._access(context.request).readable(source.get("entry_id")):
         raise ToolError("The reader cannot see this figure; explain it in words.")
-    region = Region.objects.filter(pk=source["region_id"]).first()
+    region = Region.objects.visible().filter(pk=source["region_id"]).first()
     if region is None or not region.image_path:
         raise ToolError("This figure has no image to draw on; explain it in words.")
 

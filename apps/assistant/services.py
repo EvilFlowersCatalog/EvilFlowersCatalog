@@ -203,11 +203,11 @@ def conversation(chat: Chat, document=None, language: Optional[str] = None) -> L
     # A failed turn's notice was never the model's answer (IP-030 §5): it is not replayed.
     rows = rows.filter(error__isnull=True)
 
-    instruction = language_instruction(language)
     for row in rows:
         messages.append(_as_message(row))
-        if instruction and row.role == ChatMessage.Role.USER:
-            messages.append({"role": "system", "content": instruction})
+        if row.role == ChatMessage.Role.USER:
+            # Decided from the stored message: the same row always gets the same pin (#138, #187).
+            messages.append({"role": "system", "content": language_instruction(language, row.text)})
 
     return messages
 
@@ -332,13 +332,27 @@ def reader_notes(row: ChatMessage) -> str:
 LANGUAGE_NAMES = prompts.LANGUAGE_NAMES
 
 
-def language_instruction(language: Optional[str]) -> str:
+def language_instruction(language: Optional[str], text: Optional[str] = None) -> str:
     """Pins the answer's language (IP-030 Q9): the reader's message, else their UI language.
 
     Follows every user message in the history, so it never changes the cached prefix (#138). An English
     question in the Slovak UI is answered in English; "ok" in the Slovak UI, in Slovak. Small models drift
     (Slovak into Czech, a DRM notice into Russian), so the fallback is named and Czech is always ruled out.
+
+    With the message's `text`, the language is decided here (`language.answer_language`) and named: "the
+    language of the reader's last message" alone left English questions answered in Slovak (#187). Only a
+    message with no signal and no UI language gets the generic rule.
     """
+    if text is not None:
+        from apps.assistant.language import answer_language
+
+        chosen = prompts.language_name(answer_language(text, language))
+        if chosen:
+            czech = " It must be Slovak, never Czech, even when the message is in Czech." if chosen == "Slovak" else ""
+            return (
+                f"Answer in {chosen}, whatever language the publication or a tool result is in, and keep "
+                f"publication titles as they are.{czech}"
+            )
     name = prompts.language_name(language)
     fallback = f"; if it is too short to tell, in {name}" if name else ""
     return (

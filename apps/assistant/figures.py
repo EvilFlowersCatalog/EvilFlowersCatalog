@@ -21,6 +21,9 @@ def candidates():
 
     return (
         Region.objects.filter(kind=Region.Kind.FIGURE, run__is_active=True)
+        # Only figures a decision model kept, or that no model judged (#189): stamps and decoration hidden or
+        # in review do not take `elvira-assistant` time from the chat.
+        .filter(Q(band__isnull=True) | Q(band=Region.Band.KEEP))
         .exclude(image_path__isnull=True)
         .exclude(image_path="")
         .filter(Q(printed_caption__isnull=True) | Q(printed_caption=""))

@@ -77,6 +77,10 @@ class RunStatsSerializer(Serializer):
     with_description: int = 0
     #: Distinct pages that hold at least one region.
     pages_with_regions: int = 0
+    #: Regions per decider band (#189); readers see neither `hidden` ones nor their search documents.
+    regions_kept: int = 0
+    regions_in_review: int = 0
+    regions_hidden: int = 0
     paragraphs: int = 0
     #: Paragraphs that carry an embedding (searchable, recommendable).
     paragraphs_embedded: int = 0
@@ -197,6 +201,13 @@ class AdminRegionSerializer(Serializer):
     provenance: dict
     image_path: Optional[str]
     image_url: Optional[str]
+    #: The decider's answer (#189); null when no model judged the region. Readers never see `hide`.
+    band: Optional[str] = None
+    p: Optional[float] = None
+    score: Optional[float] = None
+    decision: Optional[str] = None
+    decider_model: Optional[str] = None
+    decision_signals: dict = {}
 
 
 class AdminParagraphSerializer(Serializer):
@@ -230,6 +241,9 @@ def run_stats(run: ExtractionRun) -> RunStatsSerializer:
         with_description=Count("id", filter=Q(description__isnull=False) & ~Q(description="")),
         pages_with_regions=Count("page", distinct=True),
         regions_embedded=Count("id", filter=Q(embedding__isnull=False)),
+        regions_kept=Count("id", filter=Q(band=Region.Band.KEEP)),
+        regions_in_review=Count("id", filter=Q(band=Region.Band.REVIEW)),
+        regions_hidden=Count("id", filter=Q(band=Region.Band.HIDE)),
     )
     references = run.references.aggregate(
         references_resolved=Count("id", filter=Q(region__isnull=False) | Q(target_paragraph__isnull=False)),
@@ -477,7 +491,9 @@ class EntryExtractionRegions(EntryExtractionView):
         description=(
             "Every figure, table and equation of one run of the entry (default: the active run of any of its "
             "PDFs, else the latest run), in reading order, with bbox, captions, description, table markdown, "
-            "equation LaTeX, provenance and the crop. `kind` narrows to one kind."
+            "equation LaTeX, provenance and the crop. `kind` narrows to one kind. Every band is listed, `hide` "
+            "too (#189), with the decider's answer; `band` narrows to `keep`, `review`, `hide` or `none` "
+            "(no decision)."
         ),
         tags=["Extraction"],
         summary="List an entry's extracted regions",
@@ -494,6 +510,14 @@ class EntryExtractionRegions(EntryExtractionView):
             if kind not in Region.Kind.values:
                 raise ProblemDetailException(_("Unknown region kind"), status=HTTPStatus.BAD_REQUEST)
             regions = regions.filter(kind=kind)
+        band = request.GET.get("band")
+        if band:
+            if band == "none":
+                regions = regions.filter(band__isnull=True)
+            elif band in Region.Band.values:
+                regions = regions.filter(band=band)
+            else:
+                raise ProblemDetailException(_("Unknown band"), status=HTTPStatus.BAD_REQUEST)
 
         items = []
         for region in regions:
@@ -519,6 +543,12 @@ class EntryExtractionRegions(EntryExtractionView):
                     provenance=region.provenance or {},
                     image_path=region.image_path,
                     image_url=image_url,
+                    band=region.band,
+                    p=region.decision_p,
+                    score=region.decision_score,
+                    decision=region.decision,
+                    decider_model=region.decider_model,
+                    decision_signals=region.decision_signals or {},
                 ).model_dump(mode="json")
             )
         return SingleResponse(request, data={"run_id": str(run.pk), "items": items})

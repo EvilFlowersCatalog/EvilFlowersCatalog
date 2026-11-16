@@ -225,7 +225,11 @@ def synthetic_cases(count: int, client=None, seed: Optional[int] = None) -> List
 
 
 def as_eval_cases(gold: List[dict]) -> List[dict]:
-    """Gold questions as `assistant_eval run` cases: the answer must cite a gold publication."""
+    """Gold questions as `assistant_eval run` cases: the answer must cite a gold publication.
+
+    Whatever read the text: the model's own `search_library_text` or the prefetched pack (`grounded`). Requiring
+    the tool by name failed 29 of 30 answers with prefetch on, 26 of which cited a gold publication (#187).
+    """
     cases = []
     for case in gold:
         entries, _pages = gold_sets(case)
@@ -234,7 +238,7 @@ def as_eval_cases(gold: List[dict]) -> List[dict]:
                 "id": f"gold-{case.get('id')}",
                 "language": case.get("language"),
                 "question": case["question"],
-                "expect": {"tools_any": ["search_library_text"], "cites": True, "cites_any_entry": sorted(entries)},
+                "expect": {"grounded": True, "cites": True, "cites_any_entry": sorted(entries)},
             }
         )
     return cases

@@ -7,8 +7,9 @@ A case is a question plus what a good turn looks like:
 
 `expect` keys (all optional):
 
-- `tools_any`: at least one of these tools is called.
-- `tools_all`: every one of these tools is called.
+- `tools_any`: at least one of these tools is called. The evidence pack (`gather_evidence`) counts as
+  `search_entries` and `search_library_text`, which it runs (`PACK_COVERS`, #187).
+- `tools_all`: every one of these tools is called (the pack counts the same way).
 - `tools_none`: none of these is called.
 - `displays`: publications are (true) / are not (false) shown as cards.
 - `answer_language`: "sk" or "en"; defaults to the case's `language`.
@@ -51,12 +52,6 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.test import RequestFactory
-
-#: Letters and words that occur in Czech but not Slovak, and the reverse. Enough to
-#: tell the two apart in an answer of a few sentences, which is all this needs.
-_CZECH = re.compile(r"[řůě]|\b(jsou|který|která|které|také|nebo|můžete|není|knihy jsou|půjčit)\b", re.IGNORECASE)
-_SLOVAK = re.compile(r"[äľĺŕô]|\b(sú|ktorý|ktorá|ktoré|tiež|alebo|môžete|nie je|požičať)\b", re.IGNORECASE)
-_SLAVIC = re.compile(r"[áčďéíňóšťúýž]", re.IGNORECASE)
 
 #: Czech words with no Slovak homograph, as they slip into otherwise Slovak answers. Kept to words that are
 #: never Slovak, so a single one is a failure (`knihovna`: #130, `sk-author`).
@@ -109,16 +104,16 @@ def czech_words(text: str) -> List[str]:
 
 
 def answer_language(text: str) -> Optional[str]:
-    """'sk', 'cs', 'en' or None (too short to tell)."""
+    """'sk', 'cs', 'en' or None (too short to tell), by weight (`apps.assistant.language`, #187).
+
+    One accented letter no longer makes an English answer Slovak ("I am Elvíra …", `en-showcase`).
+    """
+    from apps.assistant.language import guess
+
     text = text or ""
     if len(text.strip()) < 12:
         return None
-    czech, slovak = len(_CZECH.findall(text)), len(_SLOVAK.findall(text))
-    if czech > slovak:
-        return "cs"
-    if slovak or _SLAVIC.search(text):
-        return "sk"
-    return "en"
+    return guess(text, min_words=3)
 
 
 @dataclass
@@ -181,17 +176,33 @@ def parse_frames(frames: Iterable[str]) -> List[tuple]:
     return events
 
 
+#: What the evidence pack runs in one call (IP-030 §1): the catalog search and the passage search. With
+#: `EVILFLOWERS_ASSISTANT_PREFETCH` the model reads the pack instead of calling them, so an expected lookup is
+#: met by it (#187). Narrower tools (`get_entry`, `list_categories`, `find_similar`, `study`, …) are not.
+PACK_COVERS = ("search_entries", "search_library_text")
+
+
+def looked_up(tools: Iterable[str]) -> set:
+    """The tools a turn called, with what the pack stands in for."""
+    called = set(tools)
+    if "gather_evidence" in called:
+        called.update(PACK_COVERS)
+    return called
+
+
 def score(case: dict, outcome: Outcome) -> Outcome:
     expect = case.get("expect") or {}
+    # `tools_none` is checked against the calls themselves: a pack is no forbidden call.
     called = set(outcome.tools)
+    looked = looked_up(outcome.tools)
     failures = []
 
     if outcome.error:
         failures.append(f"error: {outcome.error}")
-    if expect.get("tools_any") and not called & set(expect["tools_any"]):
+    if expect.get("tools_any") and not looked & set(expect["tools_any"]):
         failures.append(f"none of {expect['tools_any']} called")
     for name in expect.get("tools_all") or []:
-        if name not in called:
+        if name not in looked:
             failures.append(f"{name} not called")
     for name in expect.get("tools_none") or []:
         if name in called:

@@ -255,7 +255,8 @@ def _figures(text: Text, passages: List[dict]) -> List[dict]:
 
     source_pages = {passage.get("source_page") or passage["page"] for passage in passages}
     regions = (
-        Region.objects.filter(run=text.run, page__in=source_pages, kind__in=("figure", "table"))
+        Region.objects.visible()
+        .filter(run=text.run, page__in=source_pages, kind__in=("figure", "table"))
         .exclude(image_path__isnull=True)
         .order_by("page", "seq")[:QUIZ_FIGURES]
     )

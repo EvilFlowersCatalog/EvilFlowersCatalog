@@ -61,13 +61,56 @@ class RegionForm(Form):
     markdown = forms.CharField(required=False)
     latex = forms.CharField(required=False)
     provenance = forms.JSONField(required=False)
+    # The decider's answer (#189). Every field is optional: missing means unknown, the region is shown as before.
+    band = forms.ChoiceField(choices=Region.Band.choices, required=False)
+    #: Calibrated probability of the chosen answer.
+    p = forms.FloatField(min_value=0, max_value=1, required=False)
+    #: text-service's table score (text-service#20).
+    score = forms.FloatField(min_value=0, max_value=1, required=False)
+    decision = forms.CharField(max_length=100, required=False)
+    #: `model@revision`, the answer's top-level `model`.
+    decider_model = forms.CharField(max_length=200, required=False)
+    #: Tables: what the Ollama review did (`kept`, `rewritten`, `transcribed`, `failed`; text-service#19).
+    review_outcome = forms.CharField(max_length=50, required=False)
+    #: Tables: share of the markdown's values found in the PDF text inside the box.
+    grounded_share = forms.FloatField(min_value=0, max_value=1, required=False)
+    #: Tables: grid signals (`filled_share`, `fragment_share`, `strategy`, ...), stored as sent.
+    signals = forms.JSONField(required=False)
 
     def clean_bbox(self):
         return _box(self.cleaned_data.get("bbox"))
 
+    def clean_signals(self):
+        signals = self.cleaned_data.get("signals")
+        if signals in (None, ""):
+            return {}
+        if not isinstance(signals, dict):
+            raise forms.ValidationError("Expected an object.")
+        return signals
+
+    def _clean_decision(self) -> None:
+        """Map the wire names onto `Region`'s columns; the signals go into one JSON column."""
+        data = self.cleaned_data
+        signals = dict(data.pop("signals", None) or {})
+        for key in ("review_outcome", "grounded_share"):
+            value = data.pop(key, None)
+            if value not in (None, ""):
+                signals[key] = value
+        data["decision_signals"] = signals
+        # 0.0 is a probability, not a missing one.
+        data["decision_p"] = data.pop("p", None)
+        data["decision_score"] = data.pop("score", None)
+        for key in ("band", "decision", "decider_model"):
+            data[key] = data.get(key) or None
+        if data["band"] is None:
+            from apps.extraction.bands import band_for
+
+            data["band"] = band_for(data.get("kind"), data["decision"], data["decision_p"], data["decision_score"])
+
     def clean(self):
         for key in ("image_path", "caption", "printed_caption", "description", "category", "markdown", "latex"):
             self.cleaned_data[key] = self.cleaned_data.get(key) or None
+        self._clean_decision()
         provenance = self.cleaned_data["provenance"] = self.cleaned_data.get("provenance") or {}
 
         # Services that predate the two fields: image-service with captions on

@@ -149,9 +149,9 @@ def _from_passage(context: ToolContext, label: str, source: dict, relation: str)
     if relation == "figure":
         regions = [
             reference.region
-            for reference in Reference.objects.filter(paragraph=paragraph, region__isnull=False).select_related(
-                "region"
-            )
+            for reference in Reference.objects.filter(paragraph=paragraph, region__isnull=False)
+            .exclude(region__band="hide")  # #189
+            .select_related("region")
         ]
         unique = list({region.pk: region for region in regions}.values())
         return _result(context, label, relation, [], [text.figure(region) for region in unique])
@@ -352,7 +352,7 @@ def _citing(context: ToolContext, label: str, source: dict, relation: str) -> di
 def _from_figure(context: ToolContext, label: str, source: dict, relation: str) -> dict:
     from apps.extraction.models import Reference, Region
 
-    region = Region.objects.filter(pk=source["region_id"]).select_related("run__acquisition__entry").first()
+    region = Region.objects.visible().filter(pk=source["region_id"]).select_related("run__acquisition__entry").first()
     if region is None:
         raise ToolError("This figure is no longer in the library's index; search again.")
     text = _text(context, region.run.acquisition.entry)

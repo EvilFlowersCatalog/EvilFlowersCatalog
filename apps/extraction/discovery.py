@@ -384,6 +384,8 @@ def search_passages(
     `EntryFilter` parameters (catalog, category, language, ...); access control is applied
     before ranking, as in entry search (IP-021). A passage's text is None where the content gate
     does not allow a snippet (`apps.content.access`; under `parity`: Readium LCP, IP block).
+    Paragraphs of reference lists are left out (`bibliography.looks_like_references`, #187); the
+    bibliography has its own surfaces (`cited_by`, the outline's reference section).
     """
     from apps.core.search import embeddings
     from apps.core.search.query import rrf
@@ -437,11 +439,16 @@ def search_passages(
         )
     }
 
+    from apps.extraction.bibliography import looks_like_references
+
     hits: Dict = {}
     catalogs: Dict = {}
     for pk in fused:
         row = rows.get(pk)
         if row is None:
+            continue
+        if looks_like_references(row["text"], row["section"]):
+            # A reference list matches every topic it lists and says nothing about it (#187).
             continue
         entry_id = row["run__acquisition__entry_id"]
         catalogs[entry_id] = row["run__acquisition__entry__catalog_id"]
@@ -578,7 +585,7 @@ class EntryFigures(ReaderView):
             raise ProblemDetailException(_("Unknown region kind"), status=HTTPStatus.BAD_REQUEST)
 
         items = []
-        for region in run.regions.filter(kind=kind).order_by("page", "seq"):
+        for region in run.regions.visible().filter(kind=kind).order_by("page", "seq"):
             image_url = None
             if region.image_path:
                 image_url = request.build_absolute_uri(
@@ -618,7 +625,7 @@ class EntryRegionImage(EntryFigures):
                 detail=_("This publication is lent through Readium LCP: borrow it to see its figures."),
             )
         run = _entry_run(entry_id)
-        region = run and run.regions.filter(pk=region_id).first()
+        region = run and run.regions.visible().filter(pk=region_id).first()
         storage = get_storage()
         if region is None or not region.image_path or not storage.exists(region.image_path):
             raise ProblemDetailException(_("Region image not found"), status=HTTPStatus.NOT_FOUND)
