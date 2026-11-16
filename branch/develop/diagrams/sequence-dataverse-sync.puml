@@ -1,0 +1,60 @@
+@startuml sequence-dataverse-sync
+!include elvira.iuml
+' =============================================================================
+' What: the two-way sync is generic (apps/harvest): inbound and outbound both
+'       run a three-way merge against the HarvestRecord's synced state, so a
+'       push that triggers the remote's own webhook comes back as a no-op, and
+'       deletions no webhook reports are found by the source's scheduled run;
+'       Dataverse appears only as the connector and its two webhook views.
+' Kind: UML sequence diagram, proposal (IP-034, accepted, unified 2026-11-16).
+'       Scope: validate, publish inbound, outbound push, scheduled reconcile,
+'       with Dataverse as the connector. Omitted: remote creation, retries.
+' Source: IP-034 decisions (2026-11-16); Dataverse 6.x guides workflows and
+'         native API (read 2026-11-16); apps/dataverse/views.py.
+' =============================================================================
+
+title Two-way sync with a writing connector (Dataverse): validate, publish, push, reconcile (IP-034, 2026-11-16)
+
+actor "Librarian" as librarian
+participant "Dataverse\n(intranet only)" as dv
+participant "Webhook views\n(apps.dataverse)" as hooks
+participant "Sync\n(apps.harvest)" as sync
+participant "Dataverse\nconnector" as connector
+database "Entry ·\nHarvestRecord" as db
+queue "Celery" as celery
+
+== librarian publishes a book dataset in Dataverse ==
+librarian -> dv : Publish
+dv -> hooks : PrePublishDataset http/sr\nPOST /api/v1/dataverse-validate
+hooks -> connector : validate(record)
+hooks --> dv : "OK" or "FAILED: invalid ISBN"\n(failure stops the publish)
+dv -> dv : publish version
+dv -[$accent_msg()]> hooks : <b>PostPublishDataset http/sr</b>\n<b>POST /api/v1/dataverse-prepublish</b>
+hooks -> sync : apply_record(source, record_id)
+sync -> connector : fetch → versions/:latest-published
+sync -> db : load HarvestRecord.synced_record
+sync -[$accent_msg()]> sync : <b>three-way merge per field: changed only remotely → take;</b>\n<b>both → later version wins, HarvestConflict</b>
+sync -> db : save entry + synced_record
+hooks --> dv : OK
+
+== librarian edits the entry in Elvira ==
+librarian -> db : PUT /api/v1/catalogs/{c}/entries/{id}
+db -> celery : on commit: harvest.push(entry, source)\n(deduplicated per entry)
+celery -> sync : push(entry, source)
+sync -> connector : fetch (values, version)
+sync -> sync : merge per field (same rules)
+sync -> connector : push(record_id, merged, expected_version)
+connector -> dv : PUT editMetadata (sourceLastUpdateTime)\nPOST publish?type=updatecurrent
+sync -> db : synced_record = pushed state,\nnew versions
+dv -> hooks : PostPublishDataset (caused by the push)
+hooks -> sync : apply_record(source, record_id)
+sync -> sync : nothing differs from synced_record → no write
+
+== the source's schedule (e.g. every 15 minutes) ==
+celery -> sync : harvest.run(source)
+sync -> connector : records(cursor): changed since cursor,\ndeaccessioned or gone = deleted
+sync -> db : changed → merge; deleted →\nEntry.withdrawn_at = now (loans keep running)
+
+caption Only the webhook views and the connector know Dataverse; the merge, conflicts, push, reconcile and withdrawal are the generic sync of\napps/harvest and work the same for any connector that can write. The pre-publish check refuses bad book metadata before anything is\npublished; a push updates the current version in place and the webhook call it causes finds nothing new.
+footer ELVIRA · FIIT STU · EvilFlowersCatalog · docs/diagrams/sequence-dataverse-sync.puml
+@enduml

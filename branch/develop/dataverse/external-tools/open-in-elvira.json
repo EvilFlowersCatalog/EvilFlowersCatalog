@@ -1,0 +1,14 @@
+{
+  "displayName": "Open in Elvira",
+  "description": "Open this book in the Elvira library portal.",
+  "toolName": "openInElvira",
+  "scope": "dataset",
+  "types": ["explore"],
+  "toolUrl": "https://elvira.example.org/resolve/dataverse",
+  "httpMethod": "GET",
+  "toolParameters": {
+    "queryParameters": [
+      {"id": "{datasetPid}"}
+    ]
+  }
+}

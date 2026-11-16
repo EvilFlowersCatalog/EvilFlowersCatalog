@@ -1,0 +1,68 @@
+@startuml component-oai-pmh
+!include elvira.iuml
+' =============================================================================
+' What: a new app apps/oai serves OAI-PMH 2.0 at /oai from its own table of
+'       harvestable records (oai_records), never from live Entry queries; the
+'       table is kept in step by OaiRecordSync, which re-projects an entry after
+'       every relevant change and bumps the datestamp only when the projected
+'       record's fingerprint changes, so opening a book never re-sends it.
+' Kind: UML component diagram, specification level, proposal (IP-033).
+'       Left: the read path (harvest). Right: the write path (sync).
+'       Omitted: tracing, rate limits, the Dataverse app (unchanged).
+' Source: OAI-PMH 2.0 spec + guidelines (openarchives.org, read 2026-11-16);
+'         apps/core/models/entry.py, apps/core/touch.py, apps/content/citation.py,
+'         knowledge ansible/roles/nginx/files/sites/evilflowers.elvira.stuba.sk
+'         (2026-11-16).
+' =============================================================================
+
+title OAI-PMH data provider: one view, one record table, one sync (proposal IP-033, 2026-11-16)
+
+actor "Harvester\n(STU discovery, BASE)" as harvester
+actor "Librarian · portal ·\nMCP · Dataverse sync" as editor
+
+component "OaiPmhView · GET, POST /oai\nanonymous · text/xml\nRequestParser: verb grammar" as view <<proposed>>
+component "OaiRepository\nsix verbs · OAI errors\nsigned stateless tokens" as repo <<proposed>> <<focus>>
+component "Crosswalks\noai_dc · marc21" as crosswalks <<proposed>>
+
+database "oai_records\nprojection · setSpecs ·\ndatestamp · deleted" as records <<proposed>>
+
+database "core tables\nEntry · Catalog · Category ·\nAuthor · Acquisition" as core
+component "Signal receivers\npost_save · post_delete ·\nm2m_changed" as receivers <<proposed>>
+queue "Celery\nqueue default" as celery
+component "Beat\noai.reconcile nightly" as beat <<proposed>>
+component "OaiRecordSync\nsync(entry_ids) · reconcile()" as sync <<proposed>>
+component "Projector + exposure rule\nEntry → RecordProjection,\nsetSpecs, exposed?" as projector <<proposed>>
+
+' ---- layout only ------------------------------------------------------------------
+harvester -[hidden]right- editor
+crosswalks -[hidden]right- records
+
+' ---- read path ----------------------------------------------------------------------
+harvester -[$accent()]down-> view : <b>HTTPS ?verb=ListRecords</b>
+view -[$accent()]down-> repo : <b>handle(OaiRequest)</b>
+repo -[$accent()]down-> records : <b>keyset (datestamp, id)</b>
+repo -down-> crosswalks : render(projection)
+
+' ---- write path ---------------------------------------------------------------------
+editor -down-> core : save · delete
+core ..> receivers : signals
+receivers -down-> celery : on commit:\noai.sync(ids)
+celery -down-> sync : run task
+beat -left-> sync : reconcile()
+sync -down-> projector : project(entry)
+projector -up-> core : read
+sync -left-> records : upsert if fingerprint\nchanged · tombstone
+
+legend bottom left
+  |= Notation |= Meaning |
+  | solid box | exists in the catalog today |
+  | dashed box, «proposed» | new in IP-033 |
+  | blue fill, «focus» | the component this figure is about |
+  | solid arrow | uses / calls, labelled with the operation |
+  | dashed arrow | Django signal (notification) |
+  | blue arrows | one harvest request |
+endlegend
+
+caption Harvesters read only oai_records: a stored projection per entry with setSpecs and a whole-second datestamp, tombstones included.\nOaiRecordSync re-projects an entry after a change (signals on entries, authors, categories, files, catalogs; on commit) and nightly\n(reconcile catches QuerySet.update() and bulk changes, which fire no signal); the datestamp moves only when the projection's fingerprint\nchanges. /oai needs no gateway change.
+footer ELVIRA · FIIT STU · EvilFlowersCatalog · docs/diagrams/component-oai-pmh.puml
+@enduml
