@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "7caac0845894ba4041713e151430c2d536cec31c",
-    "short": "7caac08",
-    "message": "Resolving #186, #195, #196, #197",
+    "sha": "362b535ebd9d0c137ca7e0721c3fa13b5750a0c6",
+    "short": "362b535",
+    "message": "Merge pull request #211 from EvilFlowersCatalog/feature/openapi-docs-coverage",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/7caac0845894ba4041713e151430c2d536cec31c"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/362b535ebd9d0c137ca7e0721c3fa13b5750a0c6"
   },
-  "deployed_at": "2026-11-16T20:44:41Z",
+  "deployed_at": "2026-11-16T22:41:04Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
