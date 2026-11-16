@@ -99,6 +99,7 @@ urlpatterns = [
     path("entries/<uuid:entry_id>/chapters", graph_views.EntryChapters.as_view(), name="entry-chapters"),
     path("sections/<str:key>/related", graph_views.SectionRelated.as_view(), name="section-related"),
     path("sections/<str:key>/prerequisites", graph_views.SectionPrerequisites.as_view(), name="section-prerequisites"),
+    path("sections/<str:key>/examples", graph_views.SectionExamples.as_view(), name="section-examples"),
     path("concepts", graph_views.ConceptList.as_view(), name="concept-list"),
     path("concepts/<str:key>", graph_views.ConceptDetail.as_view(), name="concept-detail"),
     path("graph/overview", graph_views.GraphOverview.as_view(), name="graph-overview"),

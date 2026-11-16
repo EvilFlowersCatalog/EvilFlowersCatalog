@@ -221,7 +221,7 @@ def _passages(context: ToolContext, query: str, scope, floor: float) -> List[dic
 
 def _figures(context: ToolContext, query: str, scope, floor: float, passages: List[dict]) -> List[dict]:
     from apps.extraction.models import Reference
-    from apps.extraction.regions import search_regions
+    from apps.extraction.regions import search_regions, wanted_kind
 
     limit = settings.EVILFLOWERS_ASSISTANT_PACK_FIGURES
     page_of = _page_mapping(context)
@@ -253,7 +253,16 @@ def _figures(context: ToolContext, query: str, scope, floor: float, passages: Li
         if len(figures) >= limit:
             return figures
 
-    hits = search_regions(context.request, query, limit=limit, scope=scope, min_score=floor, surface=Surface.ASSISTANT)
+    # #205: a question asking for a chart / diagram / map ranks regions of that label first.
+    hits = search_regions(
+        context.request,
+        query,
+        limit=limit,
+        scope=scope,
+        min_score=floor,
+        surface=Surface.ASSISTANT,
+        prefer=wanted_kind(query),
+    )
     hit_titles = _titles(context, [hit.entry_id for hit in hits])
     for hit in hits:
         if hit.region_id in {str(pk) for pk in seen}:

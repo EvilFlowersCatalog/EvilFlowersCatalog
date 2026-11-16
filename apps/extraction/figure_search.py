@@ -30,6 +30,9 @@ from evil_flowers_catalog import tracing
 
 #: Region kinds that can be searched: equations have no search document (`regions.document_text`).
 KINDS = (Region.Kind.FIGURE.value, Region.Kind.TABLE.value)
+#: #205: what `kind` also accepts: the decision model's label of the region (`table` is both).
+DECISION_KINDS = regions.DECISION_KINDS
+ALL_KINDS = tuple(dict.fromkeys(KINDS + DECISION_KINDS))
 
 DEFAULT_LIMIT = 10
 MAX_LIMIT = 50
@@ -60,10 +63,15 @@ class FigureSearchHitSerializer(Serializer):
     crop_url: Optional[str] = None
     #: Whether a client may offer the crop for download (open access, printing and sharing allowed).
     downloadable: bool = False
+    #: #205: the decision model's label of the region (`chart`, `diagram`, `photo`, `map`, `table`, `formula`, ...)
+    #: and its probability; null when undecided. Uncalibrated until the thresholds exist (knowledge#65).
+    decision: Optional[str] = None
+    decision_p: Optional[float] = None
 
 
 class FigureSearchSerializer(Serializer):
     query: str
+    #: The `kind` values searched: region kinds and decision labels.
     kinds: List[str]
     #: True when the query could not be embedded (tei-embed unconfigured or down): only word matches.
     degraded: bool
@@ -71,19 +79,35 @@ class FigureSearchSerializer(Serializer):
 
 
 def parse_kinds(value) -> List[str]:
-    """`figure`, `table`, `figure,table` (or a list) to the region kinds; both when empty."""
+    """`figure`, `table`, `chart,diagram` (or a list) to the `kind` values; `figure,table` when empty."""
     if not value:
         return list(KINDS)
     tokens = value if isinstance(value, (list, tuple)) else str(value).replace("|", ",").split(",")
     kinds = [token.strip() for token in tokens if token and token.strip()]
-    unknown = [kind for kind in kinds if kind not in KINDS]
+    unknown = [kind for kind in kinds if kind not in ALL_KINDS]
     if unknown:
         raise ProblemDetailException(
-            _("Unknown region kind: %(kinds)s. Allowed: figure, table.") % {"kinds": ", ".join(unknown)},
+            _("Unknown region kind: %(kinds)s. Allowed: %(allowed)s.")
+            % {"kinds": ", ".join(unknown), "allowed": ", ".join(ALL_KINDS)},
             status=HTTPStatus.BAD_REQUEST,
             detail_type=DetailType.VALIDATION_ERROR,
         )
     return list(dict.fromkeys(kinds)) or list(KINDS)
+
+
+def split_kinds(kinds: Sequence[str]) -> tuple:
+    """`(region kinds, decision labels)` of the `kind` values (#205).
+
+    Only region kinds (`figure`, `table`): those regions, as before. Any decision label (`chart`, ...): regions with
+    that label, plus every table when `table` is asked for; `figure` beside a label adds nothing, as a labelled
+    region is a figure.
+    """
+    labels = [kind for kind in kinds if kind in DECISION_KINDS and kind != Region.Kind.TABLE]
+    if not labels:
+        return [kind for kind in kinds if kind in KINDS] or list(KINDS), None
+    if Region.Kind.TABLE in kinds:
+        labels.append(Region.Kind.TABLE.value)
+    return list(KINDS), labels
 
 
 def figure_search(
@@ -91,8 +115,17 @@ def figure_search(
 ) -> FigureSearchSerializer:
     text = (text or "").strip()[:MAX_QUERY_CHARS]
     limit = max(1, min(limit, MAX_LIMIT))
+    region_kinds, labels = split_kinds(kinds)
     with tracing.span("search.figures", {"evilflowers.search.kinds": ",".join(kinds)}) as current:
-        found = regions.search(request, text, kinds=tuple(kinds), limit=limit, scope=scope, licensed=True)
+        found = regions.search(
+            request,
+            text,
+            kinds=tuple(region_kinds),
+            limit=limit,
+            scope=scope,
+            licensed=True,
+            labels=labels,
+        )
         current.set_attribute("evilflowers.search.hits", len(found.hits))
         current.set_attribute("evilflowers.search.degraded", found.degraded)
     entries = {
@@ -122,6 +155,8 @@ def figure_search(
                 matched=list(hit.matched),
                 crop_url=crop_url,
                 downloadable=bool(crop_url) and region_downloadable(entry),
+                decision=hit.decision,
+                decision_p=hit.decision_p,
             )
         )
     return FigureSearchSerializer(query=text, kinds=list(kinds), degraded=found.degraded, items=items)
@@ -133,7 +168,11 @@ class FigureSearch(SecuredView):
             "Find figures and tables across the library (#159): returns regions, not entries. `q` is matched by "
             "meaning (the region's caption, referring paragraph and description embedded with multilingual-e5) "
             "and by words (accents ignored), fused by reciprocal rank. `kind` is `figure`, `table` or both "
-            "(`figure,table`, the default); equations are not searchable. Only publications the caller may see, "
+            "(`figure,table`, the default); equations are not searchable. `kind` also takes the decision model's "
+            "label of a region, `chart`, `diagram`, `photo`, `map`, `table` or `formula` (comma-separated, #205): "
+            "only regions with that label (and every table for `table`). Each hit carries `decision` and "
+            "`decision_p`, null when undecided; labels are uncalibrated until thresholds are set. Where a kind has "
+            "thresholds, regions in review sort after kept ones. Only publications the caller may see, "
             "inside their allowed IP ranges; of those lent through Readium LCP only the ones the caller has a live "
             "loan of. Each hit has a `crop_url` (the region as an image, same access check) and `downloadable`, "
             "whether a client may offer it for download (open access, printing and sharing allowed). Other "

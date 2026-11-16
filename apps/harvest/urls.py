@@ -24,5 +24,17 @@ urlpatterns = [
         views.ConflictAcknowledge.as_view(),
         name="conflict-acknowledge",
     ),
+    # #207: suggested matches of records no identifier placed, for the conflicts inbox (elvira-portal#53).
+    path("harvest/match-suggestions", views.MatchSuggestionManagement.as_view(), name="match-suggestions"),
+    path(
+        "harvest/match-suggestions/<uuid:suggestion_id>/accept",
+        views.MatchSuggestionAccept.as_view(),
+        name="match-suggestion-accept",
+    ),
+    path(
+        "harvest/match-suggestions/<uuid:suggestion_id>/reject",
+        views.MatchSuggestionReject.as_view(),
+        name="match-suggestion-reject",
+    ),
     path("entries/<uuid:entry_id>/sync", views.EntrySyncState.as_view(), name="entry-sync"),
 ]

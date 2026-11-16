@@ -158,6 +158,10 @@ class ParagraphForm(Form):
     # a request: form validation was ~5 % of the app's CPU on dev.
     embedding = forms.JSONField(required=False)
     sentences = FormFieldList(SentenceForm, required=False)
+    # #208: the text worker's kind of the paragraph, as the decider answered. Optional: missing means undecided.
+    decision = forms.CharField(max_length=50, required=False)
+    p = forms.FloatField(min_value=0, max_value=1, required=False)
+    decider_model = forms.CharField(max_length=200, required=False)
 
     def clean_bbox(self):
         return _box(self.cleaned_data.get("bbox"))
@@ -175,7 +179,15 @@ class ParagraphForm(Form):
         return [float(value) for value in embedding]
 
     def clean(self):
+        from apps.extraction.bands import paragraph_band
+
         self.cleaned_data["section"] = self.cleaned_data.get("section") or None
+        data = self.cleaned_data
+        data["decision"] = data.get("decision") or None
+        data["decider_model"] = data.get("decider_model") or None
+        # 0.0 is a probability, not a missing one.
+        data["decision_p"] = data.pop("p", None)
+        data["band"] = paragraph_band(data["decision"], data["decision_p"])
         text = self.cleaned_data.get("text") or ""
         for sentence in self.cleaned_data.get("sentences") or []:
             if not sentence["start"] <= sentence["end"] <= len(text):

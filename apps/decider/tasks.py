@@ -18,6 +18,16 @@ def edge_sweep() -> dict:
 
 
 @shared_task(time_limit=settings.EVILFLOWERS_DECIDER_SWEEP_SECONDS + _GRACE)
+def mention_sweep() -> dict:
+    """#206: type MENTIONS (explains / uses / named) and SHOWS (refers or not), before `graph-rebuild`."""
+    from apps.decider import client, mentions
+
+    if not client.enabled():
+        return {"skipped": "EVILFLOWERS_DECIDER_URL is not set"}
+    return mentions.sweep()
+
+
+@shared_task(time_limit=settings.EVILFLOWERS_DECIDER_SWEEP_SECONDS + _GRACE)
 def subject_sweep() -> dict:
     """#191: suggest subjects for entries with at most one; file, queue for review or skip."""
     from apps.decider import client, subjects

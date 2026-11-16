@@ -5,7 +5,8 @@
 | `GET /api/v1/entries/map` | publication vectors, mutual nearest neighbours (`similarity.entry_neighbours`) |
 | `GET /api/v1/entries/{id}/chapters` | the outline and intra-book `similar` paragraph links per pair of sections |
 | `GET /api/v1/sections/{key}/related` | `queries.related_sections` |
-| `GET /api/v1/sections/{key}/prerequisites` | `queries.prerequisites` |
+| `GET /api/v1/sections/{key}/prerequisites` | `queries.prerequisites` (typed `PREREQUISITE_OF` first, #203) |
+| `GET /api/v1/sections/{key}/examples` | `queries.examples` (`EXAMPLE_OF`, #203) |
 | `GET /api/v1/concepts?q=`, `GET /api/v1/concepts/{key}` | `Concept` and its `MENTIONS` |
 | `GET /api/v1/graph/overview` | `queries.top_concepts` and counts |
 
@@ -82,6 +83,15 @@ class RelatedSectionSerializer(GraphSectionSerializer):
 class PrerequisiteSerializer(GraphSectionSerializer):
     #: True for a section further on in the same book: "defined later in this book", not "read first".
     later: bool
+    #: #203: `relation` when the decision model typed the pair as a prerequisite (`PREREQUISITE_OF`), `concepts`
+    #: when the section defines a concept this one only uses. Typed ones come first.
+    via: str = "concepts"
+    #: #203: steps back along `PREREQUISITE_OF` (1: read right before, 2: before that); null for `concepts`.
+    depth: Optional[int] = None
+
+
+class ExampleSerializer(GraphSectionSerializer):
+    """#203: a section the decision model typed as an example of the one asked about; `score` is its p."""
 
 
 class ConceptSummarySerializer(Serializer):
@@ -271,10 +281,12 @@ class SectionRelated(SecuredView):
 class SectionPrerequisites(SecuredView):
     @openapi.metadata(
         description=(
-            "Sections that define a concept this one only discusses: what to read before it. Earlier sections "
-            "of the same book and other books first; a section further on in the same book comes last with "
-            "`later: true` (#153). Only publications the caller may see; 404 for a hidden section. A `title` is "
-            "null for publications lent through Readium LCP or outside their allowed IP ranges."
+            "What to read before a section. First the sections the decision model typed as its prerequisites "
+            "(`via: relation`, `PREREQUISITE_OF`, up to two steps back, `depth`; #203), then sections that define "
+            "a concept this one only discusses (`via: concepts`): earlier sections of the same book and other "
+            "books first; a section further on in the same book comes last with `later: true` (#153). Only "
+            "publications the caller may see; 404 for a hidden section. A `title` is null for publications lent "
+            "through Readium LCP or outside their allowed IP ranges."
         ),
         tags=["Graph"],
         summary="List a section's prerequisites",
@@ -288,6 +300,28 @@ class SectionPrerequisites(SecuredView):
             found = _headings(request, queries.prerequisites(key, entries, _limit(request)))
             _rows(current, len(found))
         return SingleResponse(request, data=[PrerequisiteSerializer(**item).model_dump(mode="json") for item in found])
+
+
+class SectionExamples(SecuredView):
+    @openapi.metadata(
+        description=(
+            "Sections the decision model typed as examples of this one (`EXAMPLE_OF`, #190, #203), most certain "
+            "first; `score` is the model's probability. Empty until the night sweep has typed the section's pairs. "
+            "Only publications the caller may see; 404 for a hidden section. A `title` is null for publications "
+            "lent through Readium LCP or outside their allowed IP ranges."
+        ),
+        tags=["Graph"],
+        summary="List examples of a section",
+    )
+    @openapi.response(HTTPStatus.OK, "Examples", ExampleSerializer)
+    def get(self, request, key: str):
+        with _span("section.examples") as current:
+            if not age.available():
+                return SingleResponse(request, data=[])
+            entries = _visible_section(request, key)
+            found = _headings(request, queries.examples(key, entries, _limit(request)))
+            _rows(current, len(found))
+        return SingleResponse(request, data=[ExampleSerializer(**item).model_dump(mode="json") for item in found])
 
 
 class ConceptList(SecuredView):

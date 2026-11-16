@@ -193,13 +193,22 @@ def related_sections(request, raw_arguments: dict) -> dict:
     return {"available": True, "items": found}
 
 
+def _prerequisite_why(item: dict) -> str:
+    if item.get("via") == "relation":
+        return "read it first: a prerequisite" + (" of a prerequisite" if (item.get("depth") or 1) > 1 else "")
+    if item["later"]:
+        return "defines a concept this section uses, later in the same book"
+    return "defines a concept this section uses"
+
+
 @registry.tool(
     name="section_prerequisites",
     title="List what to read before a section",
     description=(
-        "Sections that define a concept this section only uses: what to read first. Earlier sections of the "
-        "same book and sections of other books come first; a section further on in the same book comes last "
-        "with `later: true` ('defined later in this book'). Each carries the page to cite."
+        "What to read before a section: sections typed as its prerequisites first, then sections that define a "
+        "concept it only uses. Earlier sections of the same book and sections of other books come first; a "
+        "section further on in the same book comes last with `later: true` ('defined later in this book'). Each "
+        "carries the page to cite."
     ),
     input_schema={
         "type": "object",
@@ -226,17 +235,10 @@ def section_prerequisites(request, raw_arguments: dict) -> dict:
             return _unavailable()
         visible = _visible(request)
         key = _section_key(request, entry_id, section, visible)
+        # #203: the decider's typed prerequisites (PREREQUISITE_OF) come first when the night sweep typed any.
         found = queries.prerequisites(key, visible, limit)
         later = {item["key"]: item["later"] for item in found}
-        items = _items(
-            request,
-            found,
-            lambda item: (
-                "defines a concept this section uses, later in the same book"
-                if item["later"]
-                else "defines a concept this section uses"
-            ),
-        )
+        items = _items(request, found, _prerequisite_why)
         for item in items:
             item["later"] = later[item["key"]]
         current.set_attribute("evilflowers.graph.rows", len(items))

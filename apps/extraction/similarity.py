@@ -115,6 +115,8 @@ def section_vectors(model: str) -> Tuple[List[tuple], np.ndarray]:
         "JOIN acquisitions a ON a.id = r.acquisition_id "
         "JOIN entries e ON e.id = a.entry_id "
         "WHERE r.is_active AND p.section IS NOT NULL AND p.embedding IS NOT NULL "
+        # #208: hidden paragraphs (reference lists, ToC, ...) inflate cosine between unrelated books.
+        "AND (p.band IS NULL OR p.band <> 'hide') "
         "AND COALESCE(r.provenance->'paragraphs'->>'embedding_model', '') = %s "
         "GROUP BY p.run_id, e.language_id, p.section HAVING count(*) >= %s ORDER BY p.run_id, p.section"
     )

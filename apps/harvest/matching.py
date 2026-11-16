@@ -35,6 +35,8 @@ class Match:
     entry_id: Optional[str] = None
     matched_on: Optional[str] = None
     message: Optional[str] = None
+    #: `ambiguous` on an identifier: the entries sharing it (#207 lets the decider choose among them).
+    candidates: tuple = ()
 
 
 class MatchIndex:
@@ -91,7 +93,12 @@ class MatchIndex:
             if not candidates:
                 continue
             if len(candidates) > 1:
-                return Match("ambiguous", matched_on=key, message=f"{len(candidates)} entries share the {key}")
+                return Match(
+                    "ambiguous",
+                    matched_on=key,
+                    message=f"{len(candidates)} entries share the {key}",
+                    candidates=tuple(sorted(candidates)),
+                )
             entry_id = next(iter(candidates))
             current = self.system_of.get(entry_id)
             if current and current != record.record_id:

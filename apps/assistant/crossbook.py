@@ -175,7 +175,8 @@ def _closest(run_id, section: Optional[str], vector, count: int) -> list:
 
     from apps.extraction.models import Paragraph
 
-    rows = Paragraph.objects.filter(run_id=run_id)
+    # #208: evidence never quotes a hidden paragraph (reference list, ToC, legal notice, running head).
+    rows = Paragraph.objects.searchable().filter(run_id=run_id)
     if section is not None:
         rows = rows.filter(section=section)
     if vector is not None:
@@ -183,7 +184,7 @@ def _closest(run_id, section: Optional[str], vector, count: int) -> list:
         found = list(rows.order_by("distance", "seq")[:count])
         if found or section is None:
             return found
-        rows = Paragraph.objects.filter(run_id=run_id, section=section)
+        rows = Paragraph.objects.searchable().filter(run_id=run_id, section=section)
     elif section is None:
         return []
     return list(rows.order_by("seq")[:count])

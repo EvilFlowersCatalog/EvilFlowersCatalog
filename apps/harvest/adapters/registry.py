@@ -195,6 +195,8 @@ def describe(connector: Connector) -> dict[str, Any]:
         "needs_base_url": connector.needs_base_url,
         "needs_upload": connector.needs_upload,
         "runnable": connector.runnable,
+        # #210: identifier keys the connector owns, offered as a source's `system_key` next to the external systems.
+        "system_keys": list(connector.system_keys),
     }
 
 

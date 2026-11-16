@@ -8,7 +8,7 @@ LCP only the ones the caller has a live loan of.
 from django.http import QueryDict
 from django.utils.translation import gettext as _
 
-from apps.extraction.figure_search import DEFAULT_LIMIT, KINDS, MAX_LIMIT, MAX_QUERY_CHARS, figure_search
+from apps.extraction.figure_search import ALL_KINDS, DEFAULT_LIMIT, KINDS, MAX_LIMIT, MAX_QUERY_CHARS, figure_search
 from apps.mcp.arguments import Arguments
 from apps.mcp.errors import ToolError
 from apps.mcp.registry import registry
@@ -34,6 +34,12 @@ FIGURE_SCHEMA = {
             "type": "boolean",
             "description": "Whether the crop may be offered for download (open access, printing and sharing allowed).",
         },
+        "decision": {
+            "type": ["string", "null"],
+            "description": "What a decision model labelled the region (chart, diagram, photo, map, table, formula, "
+            "...); null when undecided. Uncalibrated.",
+        },
+        "decision_p": {"type": ["number", "null"], "description": "The model's probability of `decision`."},
     },
     "required": ["entry_id", "title", "page", "region_id", "kind", "score"],
 }
@@ -56,8 +62,9 @@ FIGURE_SCHEMA = {
             "query": {"type": "string", "description": "What the figure or table shows.", "maxLength": 500},
             "kind": {
                 "type": "array",
-                "items": {"type": "string", "enum": list(KINDS)},
-                "description": "Region kinds to search. Defaults to both figures and tables.",
+                "items": {"type": "string", "enum": list(ALL_KINDS)},
+                "description": "Region kinds to search (figure, table; both by default), or the labels a decision "
+                "model gave figures: chart, diagram, photo, map, formula.",
             },
             "catalog_id": {**UUID_SCHEMA, "description": "Search only this catalog."},
             "limit": {"type": "integer", "minimum": 1, "maximum": MAX_LIMIT, "default": DEFAULT_LIMIT},
@@ -84,7 +91,7 @@ def search_figures(request, raw_arguments: dict) -> dict:
     query = arguments.string("query", max_length=MAX_QUERY_CHARS)
     if not query:
         raise ToolError(_("`query` is required."))
-    kinds = arguments.enum_list("kind", KINDS)
+    kinds = arguments.enum_list("kind", ALL_KINDS)
     scope = QueryDict(mutable=True)
     catalog_id = arguments.uuid("catalog_id")
     if catalog_id:

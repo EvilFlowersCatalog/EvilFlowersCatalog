@@ -74,9 +74,30 @@ decider_sweep_duration = _meter.create_histogram(
     explicit_bucket_boundaries_advisory=[1, 10, 60, 300, 600, 1800, 3600, 7200],
 )
 
-DECIDER_TASKS = frozenset({"edge", "subject"})
+DECIDER_TASKS = frozenset({"edge", "subject", "mention", "shows", "harvest_match"})
 DECIDER_ANSWERS = frozenset(
-    {"same", "pre", "example", "loose", "none", "filed", "pending", "skipped", "accepted", "rejected"}
+    {
+        # edge (#190)
+        "same",
+        "pre",
+        "example",
+        "loose",
+        "none",
+        # subject (#191); accepted / rejected also harvest_match (#207)
+        "filed",
+        "pending",
+        "skipped",
+        "accepted",
+        "rejected",
+        # mention / shows (#206)
+        "explains",
+        "uses",
+        "named",
+        "yes",
+        "no",
+        # harvest_match (#207)
+        "suggested",
+    }
 )
 
 LICENSE_TRANSITIONS = frozenset({"issued", "returned", "renewed", "revoked", "cancelled", "expired"})
@@ -147,6 +168,17 @@ def record_acquisition_served(mime: str, via: str, delivery: str) -> None:
     telemetry.on_commit(lambda: acquisitions_served.add(1, attributes))
 
 
+def record_decider_answers(task: str, answers) -> None:
+    """Answers outside a night sweep (#207: harvest match suggestions and the librarian's verdicts)."""
+    task = _bounded(task, DECIDER_TASKS)
+    for answer, count in dict(answers).items():
+        if count:
+            decider_answers.add(
+                count,
+                {"evilflowers.decider.task": task, "evilflowers.decider.answer": _bounded(answer, DECIDER_ANSWERS)},
+            )
+
+
 def record_decider_sweep(task: str, seconds: float, answers) -> None:
     """One night sweep (#190, #191): its duration and the answers it stored, by answer. Not deferred: the sweep
     commits per batch."""
@@ -162,6 +194,7 @@ def record_decider_sweep(task: str, seconds: float, answers) -> None:
 
 __all__ = [
     "record_acquisition_served",
+    "record_decider_answers",
     "record_decider_sweep",
     "record_extraction_ingest_refused",
     "record_extraction_run",

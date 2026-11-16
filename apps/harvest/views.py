@@ -27,7 +27,7 @@ from apps.harvest.adapters.marc_file import is_xml
 from apps.harvest.adapters.registry import describe
 from apps.harvest.filters import HarvestRecordFilter, HarvestSourceFilter, manageable_sources
 from apps.harvest.forms import HarvestSourceForm, sync_problem
-from apps.harvest.models import HarvestConflict, HarvestRecord, HarvestSource
+from apps.harvest.models import HarvestConflict, HarvestRecord, HarvestSource, MatchSuggestion
 from apps.harvest.status import entry_sync
 from apps.harvest.serializers import (
     AdapterTypeSerializer,
@@ -36,6 +36,7 @@ from apps.harvest.serializers import (
     ExternalSystemSerializer,
     HarvestRecordSerializer,
     HarvestSourceSerializer,
+    MatchSuggestionSerializer,
     SourceProbeSerializer,
 )
 
@@ -356,6 +357,105 @@ class ConflictAcknowledge(SecuredView):
         return SingleResponse(request, data=ConflictSerializer.model_validate(conflict))
 
 
+def suggestions_queryset(user):
+    """Suggestions of sources the caller manages, with what the serializer reads off the record and entry."""
+    from django.db.models import F
+
+    return MatchSuggestion.objects.filter(source__in=manageable_sources(user)).annotate(
+        source_record_id=F("record__record_id"),
+        source_record=F("record__source_record"),
+        entry_title=F("entry__title"),
+    )
+
+
+class MatchSuggestionManagement(SecuredView):
+    @openapi.metadata(
+        description=(
+            "#207: harvested records no identifier matched, for which the decision model suggested an entry the "
+            "catalog already holds. Nothing is linked until a librarian accepts (link) or rejects (create as new). "
+            "Filters: `source_id`, `status` (`pending` by default; `accepted`, `rejected`, `superseded`, `all`); "
+            "`page`, `limit`. Only suggestions of sources whose catalog the caller manages."
+        ),
+        tags=["Harvest"],
+        summary="List match suggestions",
+    )
+    def get(self, request):
+        _require_user(request)
+        suggestions = suggestions_queryset(request.user)
+        value = request.GET.get("source_id")
+        if value:
+            try:
+                suggestions = suggestions.filter(source_id=UUID(value))
+            except ValueError:
+                raise ProblemDetailException(
+                    _("Invalid %s") % "source_id",
+                    status=HTTPStatus.BAD_REQUEST,
+                    detail_type=DetailType.VALIDATION_ERROR,
+                )
+        status = request.GET.get("status") or MatchSuggestion.Status.PENDING
+        if status != "all":
+            if status not in MatchSuggestion.Status.values:
+                raise ProblemDetailException(
+                    _("Invalid %s") % "status", status=HTTPStatus.BAD_REQUEST, detail_type=DetailType.VALIDATION_ERROR
+                )
+            suggestions = suggestions.filter(status=status)
+        return PaginationResponse(
+            request, suggestions, serializer=MatchSuggestionSerializer, ordering=Ordering(["-created_at"])
+        )
+
+
+class _MatchSuggestionDecision(SecuredView):
+    accepted = True
+
+    def post(self, request, suggestion_id: UUID):
+        from apps.harvest import suggest
+        from apps.harvest.matching import SourceBusy
+
+        _require_user(request)
+        suggestion = suggestions_queryset(request.user).filter(pk=suggestion_id).first()
+        if suggestion is None:
+            raise ProblemDetailException(
+                _("Match suggestion not found"), status=HTTPStatus.NOT_FOUND, detail_type=DetailType.NOT_FOUND
+            )
+        try:
+            (suggest.accept if self.accepted else suggest.reject)(suggestion, request.user)
+        except (suggest.SuggestionClosed, SourceBusy) as error:
+            raise ProblemDetailException(str(error), status=HTTPStatus.CONFLICT, detail_type=DetailType.CONFLICT)
+        suggestion = suggestions_queryset(request.user).get(pk=suggestion_id)
+        return SingleResponse(request, data=MatchSuggestionSerializer.model_validate(suggestion))
+
+
+class MatchSuggestionAccept(_MatchSuggestionDecision):
+    accepted = True
+
+    @openapi.metadata(
+        description=(
+            "Accept a match suggestion: the record is linked to the suggested entry as a match of the source's mode "
+            "(`link_only` sets the `system_key`, `enrich` and `create` also apply fields per `field_policy`). 409 "
+            "when it was already decided, the entry holds another record of the source, or a run holds the source."
+        ),
+        tags=["Harvest"],
+        summary="Accept match suggestion",
+    )
+    def post(self, request, suggestion_id: UUID):
+        return super().post(request, suggestion_id)
+
+
+class MatchSuggestionReject(_MatchSuggestionDecision):
+    accepted = False
+
+    @openapi.metadata(
+        description=(
+            "Reject a match suggestion: a `create` source creates the record as a new entry now (its mirror row "
+            "shows the outcome); other modes leave it `unmatched`. The record is not suggested again."
+        ),
+        tags=["Harvest"],
+        summary="Reject match suggestion",
+    )
+    def post(self, request, suggestion_id: UUID):
+        return super().post(request, suggestion_id)
+
+
 def _delete_file(path: str) -> None:
     try:
         get_storage().delete(path)
@@ -374,4 +474,7 @@ __all__ = [
     "HarvestSourceManagement",
     "HarvestSourceTest",
     "HarvestSourceUpload",
+    "MatchSuggestionAccept",
+    "MatchSuggestionManagement",
+    "MatchSuggestionReject",
 ]

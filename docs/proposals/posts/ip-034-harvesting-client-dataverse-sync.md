@@ -150,6 +150,17 @@ For each `SourceRecord`, in order:
 
 Runs of one source hold a PostgreSQL advisory lock, so two runs cannot assign the same id.
 
+**Suggested matches (#207, after this proposal).** When `EVILFLOWERS_DECIDER_URL` is set, a record left
+`unmatched` (or `ambiguous` between entries sharing an identifier) of a non-`sync` source goes to the decision
+model: up to `EVILFLOWERS_DECIDER_MATCH_CANDIDATES` entries (those sharing the identifier, else the best
+full-text hits of its title words and author surnames, published within a year of it or with no year) and one
+`choice` — the same work as one of them, or `none`. An entry named → the record is held as `suggested`
+(not created, not linked) with a `MatchSuggestion`; a librarian accepts (link, as a match of the source's mode)
+or rejects (a `create` source creates it as new; other modes leave it `unmatched`; it is not asked again).
+Nothing links by itself until knowledge#65 sets a `harvest_match` threshold. `none`, a decider error, a dry run
+or no decider: unchanged behaviour. One decider call per record (each has its own candidates); an error stops
+the asking for the rest of the run. Diagram: `docs/diagrams/sequence-harvest-match-suggestion.puml`.
+
 #### Applying, by mode
 
 | Mode | Matched | Unmatched | Deleted at source |
@@ -303,7 +314,8 @@ return and file paths look entries up by id and must keep working for running lo
 | Start a run | `POST /api/v1/jobs` `{"kind": "harvest.run", "subject_id": "<source id>", "spec": {"dry_run": true, "full": false}}` (IP-031) |
 | Runs and progress | `GET /api/v1/jobs?kind=harvest.run&subject_id=<source id>`; the run's `report` holds counters |
 | Records of a source | `GET /api/v1/harvest/sources/{id}/records?status=&dry_run=&query=&page=&limit=` |
-| Connectors | `GET /api/v1/harvest/connectors` → name, title, capabilities (`read`, `write`, `validate`, `link`), config schema — the portal builds the source form from it |
+| Connectors | `GET /api/v1/harvest/connectors` → name, title, capabilities (`read`, `write`, `validate`, `link`), config schema, `system_keys` (identifier keys the connector owns, #210) — the portal builds the source form from it |
+| Match suggestions (#207) | `GET /api/v1/harvest/match-suggestions?source_id=&status=` (`pending` by default, `all`), `POST /api/v1/harvest/match-suggestions/{id}/accept` (link), `POST …/{id}/reject` (create as new) |
 | External systems | `GET /api/v1/external-systems` (key, name, URL template; from settings) |
 | Entry sync state | `GET /api/v1/entries/{id}/sync` → per linked source: source, record id, record URL, mode, last sync, state (`in_sync` · `pending` · `conflict` · `error`), last error, open conflicts |
 | Pull / push now | `POST /api/v1/jobs` kind `harvest.pull` / `harvest.push` with the entry id and `{"source": "<source id>"}` |
@@ -634,3 +646,4 @@ SyncState field hashes + record-level timestamps; SyncConflict audit with acknow
 | 2026-11-16 | Claude AI | Review Questions answered by jdubec; rewritten to the decisions: hstore external ids (no link models), `origin`/`edition`/`withdrawn_at`, import-only title rule, create-all subjects, `:latest-published`, superuser token from the environment, no file uploads, pre-publish check, admin API contract for the portal; status Accepted |
 | 2026-11-16 | Claude AI | Unified per the user: one connector contract and registry; two-way sync is a generic `sync` mode in `apps/harvest` (merge base on `HarvestRecord`, `HarvestConflict`, `harvest.push`/`harvest.pull`, generic resolver and endpoints); Dataverse reduced to a connector (client, mapper, webhooks); `Catalog.dataverse_collection` dropped (mirroring is source config); `origin = harvest:<slug>` everywhere; `oai_reexpose` per source replaces the `origin = dataverse` rule |
 | 2026-11-16 | Claude AI | Implemented (uncommitted): `apps/harvest` (connectors, matching, modes incl. `sync`, merge, conflicts, jobs, API, MCP, resolver), Dataverse connector, withdrawn entries; full suite green except the pre-existing tracing test; Dataverse calls tested against hand-built responses only; portal issues elvira-portal#51–#55, deploy knowledge#73 |
+| 2026-11-16 | Claude AI | #210: connectors list their `system_keys`; #207: decider-suggested matches for records without a shared identifier (`suggested` status, `MatchSuggestion`, accept/reject endpoints), never linked automatically |

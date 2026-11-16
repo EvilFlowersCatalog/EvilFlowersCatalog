@@ -17,6 +17,15 @@ maintenance(
     time_limit=_LIMIT,
 )
 maintenance(
+    "maintenance.decider_mention_sweep",
+    "apps.decider.tasks.mention_sweep",
+    "Type concept mentions and figure references",
+    "Ask the decision model whether a section explains, uses or only names each concept of its summary, and "
+    "whether a passage next to a figure refers to it; untyped first, EVILFLOWERS_DECIDER_MENTION_LIMIT of each a "
+    "night (#206).",
+    time_limit=_LIMIT,
+)
+maintenance(
     "maintenance.decider_subject_sweep",
     "apps.decider.tasks.subject_sweep",
     "Suggest subjects",

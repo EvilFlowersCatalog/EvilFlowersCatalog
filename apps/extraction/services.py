@@ -447,12 +447,18 @@ def _require_running_locked(run: ExtractionRun, attempt: Optional[int]) -> None:
 DECIDER_MODELS = "decider_models"
 
 
-def merge_decider_models(provenance: Optional[dict], regions: List[dict]) -> Optional[dict]:
-    """`provenance[decider_models][step]` gains the batch's distinct `decider_model`s; None when nothing is new."""
+def merge_decider_models(
+    provenance: Optional[dict], regions: List[dict], step: Optional[str] = None
+) -> Optional[dict]:
+    """`provenance[decider_models][step]` gains the batch's distinct `decider_model`s; None when nothing is new.
+
+    Regions name their step by kind; paragraphs (#208) pass `step="paragraphs"`.
+    """
     steps = {kind: step for step, kind in STEP_REGION_KINDS.items()}
+    fixed = step
     reported: dict = {}
     for region in regions:
-        model, step = region.get("decider_model"), steps.get(region.get("kind"))
+        model, step = region.get("decider_model"), fixed or steps.get(region.get("kind"))
         if model and step:
             reported.setdefault(step, set()).add(model)
     if not reported:
@@ -498,6 +504,13 @@ def add_paragraphs(
                 Paragraph(run=run, **{key: value for key, value in paragraph.items() if key != "sentences"})
                 for paragraph in paragraphs
             )
+            if any(paragraph.get("decider_model") for paragraph in paragraphs):
+                # #208: the deciders behind the paragraph kinds, as for regions (#189).
+                locked = ExtractionRun.objects.only("id", "provenance").get(pk=run.pk)
+                provenance = merge_decider_models(locked.provenance, paragraphs, step="paragraphs")
+                if provenance is not None:
+                    ExtractionRun.objects.filter(pk=run.pk).update(provenance=provenance)
+                    run.provenance = provenance
             Sentence.objects.bulk_create(
                 Sentence(paragraph=row, **sentence)
                 for row, paragraph in zip(created, paragraphs)

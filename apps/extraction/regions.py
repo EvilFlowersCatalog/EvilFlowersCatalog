@@ -15,11 +15,11 @@ a live loan of.
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from django.conf import settings
 from django.db import connection, transaction
-from django.db.models import FloatField
+from django.db.models import FloatField, Q
 from django.db.models.expressions import RawSQL
 from pgvector import HalfVector
 from pgvector.django import CosineDistance
@@ -112,6 +112,42 @@ class FigureHit:
     description: Optional[str] = None
     #: `semantic` (by meaning), `words` (the query's words, accents ignored), or both.
     matched: Tuple[str, ...] = ()
+    #: The decision model's label (`chart`, `diagram`, `photo`, ...) and its p (#189, #205); None when undecided.
+    decision: Optional[str] = None
+    decision_p: Optional[float] = None
+    band: Optional[str] = None
+
+
+#: #205: labels the figure decision sends that a search can ask for (`kind=chart`); uncalibrated until knowledge#65.
+DECISION_KINDS = ("chart", "diagram", "photo", "map", "table", "formula")
+
+#: #205: words of a question that ask for one kind of figure, by language (en, sk, cs, de), matched on folded words.
+_KIND_WORDS = {
+    "chart": ("chart", "graph", "plot", "histogram", "graf", "grafu", "grafe", "grafy", "diagramm", "kurve"),
+    "diagram": ("diagram", "scheme", "schema", "schematic", "flowchart", "schemat", "schemy", "schematu", "nakres"),
+    "photo": ("photo", "photograph", "picture", "foto", "fotografia", "fotografie", "fotku", "snimka", "bild"),
+    "map": ("map", "mapa", "mapu", "mape", "karte", "landkarte"),
+    "table": ("table", "tabulka", "tabulku", "tabulke", "tabelle"),
+    "formula": ("formula", "equation", "vzorec", "vzorca", "rovnica", "rovnicu", "rovnice", "formel", "gleichung"),
+}
+
+
+def wanted_kind(text: str) -> Optional[str]:
+    """#205: the figure kind a question asks for ("show the graph of …" → `chart`), else None."""
+    from apps.assistant.citations import fold
+
+    words = set(fold(text or "").replace("-", " ").split())
+    for kind, vocabulary in _KIND_WORDS.items():
+        if words.intersection(vocabulary):
+            return kind
+    return None
+
+
+def _ranked_kinds() -> set:
+    """#205: region kinds with calibrated thresholds; only their `review` regions sort after `keep` ones."""
+    from apps.extraction.bands import thresholds
+
+    return {kind for kind in (Region.Kind.FIGURE, Region.Kind.TABLE) if thresholds(kind) is not None}
 
 
 @dataclass
@@ -132,12 +168,14 @@ def search_regions(
     min_score: Optional[float] = None,
     licensed: bool = False,
     surface: str = "rest",
+    labels: Optional[Sequence[str]] = None,
+    prefer: Optional[str] = None,
 ) -> List[FigureHit]:
     """Figures (and tables) about `text` in publications the caller may see and read, best first.
 
     `licensed` also searches publications lent through Readium LCP that the caller holds a live loan of (the
     figure search, #159); the assistant leaves them out, as it never quotes them. `surface` is the content
-    gate's (`apps.content.access.Surface`).
+    gate's (`apps.content.access.Surface`). `labels` and `prefer`: see `search`.
     """
     return search(
         request,
@@ -149,6 +187,8 @@ def search_regions(
         min_score=min_score,
         licensed=licensed,
         surface=surface,
+        labels=labels,
+        prefer=prefer,
     ).hits
 
 
@@ -163,8 +203,16 @@ def search(
     min_score: Optional[float] = None,
     licensed: bool = False,
     surface: str = "rest",
+    labels: Optional[Sequence[str]] = None,
+    prefer: Optional[str] = None,
 ) -> RegionSearch:
-    """`search_regions`, saying also whether the query could be embedded."""
+    """`search_regions`, saying also whether the query could be embedded.
+
+    #205: `labels` keeps regions with one of these decision labels (`chart`, `diagram`, ...; `table` also keeps
+    table regions); `prefer` moves regions with that label (or of that kind, for `table`) to the front without
+    dropping others. Where a kind has calibrated thresholds (`EVILFLOWERS_DECIDER_BANDS`), its `review` regions sort
+    after `keep` ones, and tables of an equal fused rank by their table score. Undecided regions rank as before.
+    """
     from apps.api.filters.entries import EntryFilter
     from apps.core.models import Entry
     from apps.core.search import embeddings
@@ -193,6 +241,11 @@ def search(
     candidates = Region.objects.visible().filter(
         run_id__in=list(runs), kind__in=list(kinds), embedding_text__isnull=False
     )
+    if labels:
+        wanted = Q(decision__in=list(labels))
+        if Region.Kind.TABLE in labels:
+            wanted |= Q(kind=Region.Kind.TABLE)
+        candidates = candidates.filter(wanted)
 
     if vector is None:
         vector = embeddings.try_embed_query(text, "passages")
@@ -219,15 +272,28 @@ def search(
         .order_by("-rank", "pk")
         .values_list("pk", "rank")[:CANDIDATES]
     )
-    fused = [pk for pk, _score in rrf([sorted(by_meaning, key=lambda pk: -by_meaning[pk]), list(by_words)], k=RRF_K)]
+    fused_scores = rrf([sorted(by_meaning, key=lambda pk: -by_meaning[pk]), list(by_words)], k=RRF_K)
+    fused = [pk for pk, _score in fused_scores]
     if not fused:
         return RegionSearch(degraded=vector is None)
+    fused_rank = dict(fused_scores)
     regions = {region.pk: region for region in Region.objects.filter(pk__in=fused[: limit * 3])}
+    ranked_kinds = _ranked_kinds()
+
+    def order(pk) -> tuple:
+        region = regions[pk]
+        preferred = prefer is not None and (
+            region.decision == prefer or (prefer == Region.Kind.TABLE and region.kind == Region.Kind.TABLE)
+        )
+        review = region.kind in ranked_kinds and region.band == Region.Band.REVIEW
+        tie = (
+            -(region.decision_score or 0.0) if region.kind == Region.Kind.TABLE and region.kind in ranked_kinds else 0
+        )
+        return (not preferred, review, -round(fused_rank[pk], 9), tie)
+
     hits = []
-    for pk in fused:
-        region = regions.get(pk)
-        if region is None:
-            continue
+    for pk in sorted((pk for pk in fused if pk in regions), key=order):
+        region = regions[pk]
         semantic = pk in by_meaning
         hits.append(
             FigureHit(
@@ -240,6 +306,9 @@ def search(
                 has_image=bool(region.image_path),
                 description=region.description,
                 matched=(("semantic",) if semantic else ()) + (("words",) if pk in by_words else ()),
+                decision=region.decision,
+                decision_p=region.decision_p,
+                band=region.band,
             )
         )
         if len(hits) >= limit:

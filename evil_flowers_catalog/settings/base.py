@@ -569,6 +569,23 @@ EVILFLOWERS_DECIDER_SUBJECT_SCHEMES = [
     for scheme in os.getenv("EVILFLOWERS_DECIDER_SUBJECT_SCHEMES", "MDT,UDC").split(",")
     if scheme.strip()
 ]
+# #206: MENTIONS (section → concept: explains / uses / named) and SHOWS (paragraph → figure: refers or not), after the
+# edge sweep and before `graph-rebuild`. `named` / `no` above the `mention` / `shows` rule's `upper` in
+# EVILFLOWERS_DECIDER_BANDS keep the edge out of the graph; without thresholds every edge stays. 02:45 is after the edge
+# sweep's budget (01:00 + 100 min); it shares the night with the subject sweep (03:05), so with one maintenance worker
+# slot a full-budget night pushes the subject sweep later: lower EVILFLOWERS_DECIDER_MENTION_LIMIT if it does.
+EVILFLOWERS_DECIDER_MENTION_SCHEDULE = os.getenv(
+    "EVILFLOWERS_DECIDER_MENTION_SCHEDULE", "45 2 * * *" if EVILFLOWERS_DECIDER_URL else ""
+)
+EVILFLOWERS_DECIDER_MENTION_LIMIT = int(os.getenv("EVILFLOWERS_DECIDER_MENTION_LIMIT", 2000))
+# #203: `related_sections` multiplies a pair's SIMILAR_TO weight by its relation's factor, only when the relation's p
+# reaches the `edge` rule's `upper` (EVILFLOWERS_DECIDER_BANDS). JSON, e.g. {"same": 1.2, "pre": 1.1, "example": 1.0,
+# "loose": 0.7}. Without thresholds no factor applies.
+EVILFLOWERS_DECIDER_RELATION_WEIGHTS = json.loads(os.getenv("EVILFLOWERS_DECIDER_RELATION_WEIGHTS") or "{}")
+# #207: candidate entries (title + author, year ± 1) the decider chooses among for a harvested record that matched
+# no identifier. Suggestions only: a librarian links or creates (sync conflicts inbox), until a `harvest_match`
+# threshold exists.
+EVILFLOWERS_DECIDER_MATCH_CANDIDATES = int(os.getenv("EVILFLOWERS_DECIDER_MATCH_CANDIDATES", 5))
 
 # Context policy (IP-015 D3). While a conversation is warm the full history is
 # replayed unchanged so the prompt prefix stays byte-identical and Ollama can
@@ -1140,6 +1157,7 @@ EVILFLOWERS_MAINTENANCE_TASKS = (
     "apps.extraction.tasks.similarity_rebuild",
     "apps.graph.tasks.rebuild_graph",
     "apps.decider.tasks.edge_sweep",
+    "apps.decider.tasks.mention_sweep",
     "apps.decider.tasks.subject_sweep",
     "apps.oai.tasks.reconcile",
 )
@@ -1150,5 +1168,16 @@ CELERY_TASK_ROUTES = {
     **{task: dict(_MAINTENANCE_ROUTE) for task in EVILFLOWERS_MAINTENANCE_TASKS},
 }
 
+
+# #202: bibliographic metadata looked up by ISBN (`apps.core.services.isbn_metadata`), at import when the entry's
+# `evilflowers_metadata_fetch` is on and by `manage.py enrich_from_isbn`. isbnlib services, tried in order; free ones
+# only (no keys, no subscriptions): `openl` (Open Library), `goob` (Google Books, keyless quota), `wiki` (Wikipedia).
+EVILFLOWERS_ISBN_METADATA_SERVICES = [
+    service.strip()
+    for service in os.getenv("EVILFLOWERS_ISBN_METADATA_SERVICES", "openl,goob,wiki").split(",")
+    if service.strip()
+]
+# Seconds `enrich_from_isbn` waits between two lookups, to stay polite to the free services.
+EVILFLOWERS_ISBN_METADATA_DELAY = float(os.getenv("EVILFLOWERS_ISBN_METADATA_DELAY", 1.0))
 
 KAFKA_BROKER_URL = f"{os.getenv('KAFKA_HOST', '127.0.0.1')}:{int(os.getenv('KAFKA_PORT', 9092))}"

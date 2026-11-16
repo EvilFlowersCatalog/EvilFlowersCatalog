@@ -4,7 +4,10 @@
 |---|---|---|
 | `Entry {id, title, catalog_id}` | the entry | `WRITTEN_BY → Author`, `FILED_UNDER → Subject`, `HAS_SECTION → Section`, `CITES {items} → Entry` (#178) |
 | `Author {id, name}`, `Subject {id, term}` | authors, categories | — |
-| `Section {key, entry_id, run_id, title, first_page, last_page, seq}` (`key` run-independent, #171) | `outline(run)` | `NEXT → Section`, `SHOWS → Figure`, `MENTIONS {role} → Concept`, `SIMILAR_TO {weight} → Section` |
+| `Section {key, entry_id, run_id, title, first_page, last_page, seq}` (`key` run-independent, #171) | `outline(run)` | `NEXT → Section`, `SHOWS {kind, p} → Figure`, `MENTIONS {role, kind, p} → Concept`, `SIMILAR_TO {weight} → Section` |
+
+`kind`/`p` on `MENTIONS` (explains / uses / named) and `SHOWS` (yes / no) are the decider's answers (#206,
+`apps.decider.mentions`), null until the night sweep asked; an answer it hid is not drawn.
 | `Figure {id, entry_id, kind, page, caption}` | referenced figures and tables | — |
 | `Concept {key, term, subject}` | section summaries, `key_concepts` | — |
 
@@ -184,16 +187,45 @@ def project_run(run) -> Dict[str, int]:
         # Not the regions a decision model hid (#189): the graph tools would show them.
         .exclude(region__band="hide")
         .select_related("region")
-        .values_list("paragraph__section", "region_id", "region__kind", "region__page", "region__printed_caption")
+        .values_list(
+            "paragraph__section",
+            "region_id",
+            "region__kind",
+            "region__page",
+            "region__printed_caption",
+            "paragraph__locator_key",
+            "region__locator_key",
+        )
     )
-    for section, region_id, kind, page, caption in references:
+    references = list(references)
+    # #206: whether each referring paragraph refers to the figure, as the decider answered.
+    from apps.decider.mentions import shows_lookup
+    from apps.decider.models import Band
+
+    answers = shows_lookup((row[5], row[6]) for row in references)
+    for section, region_id, kind, page, caption, paragraph_key, figure_key in references:
         figures[str(region_id)] = {
             "id": str(region_id),
             "kind": kind,
             "page": page,
             "caption": (caption or "")[:CAPTION_CHARS],
         }
-        shown[(key_of(section), str(region_id))] = {"s": key_of(section), "f": str(region_id)}
+        answer = answers.get((paragraph_key, figure_key))
+        if answer is not None and answer.band == Band.HIDE:
+            continue  # this paragraph does not refer to the figure (`no` above the `shows` threshold)
+        edge = (key_of(section), str(region_id))
+        known = shown.get(edge)
+        candidate = {
+            "s": edge[0],
+            "f": edge[1],
+            "kind": answer.answer if answer is not None else None,
+            "p": answer.p if answer is not None else None,
+        }
+        # One edge per section and figure: a `yes` of any paragraph wins, then the higher p.
+        if known is None or (
+            known["kind"] != "yes" and (candidate["kind"] == "yes" or (candidate["p"] or 0) > (known["p"] or 0))
+        ):
+            shown[edge] = candidate
     for batch in _batches(list(figures.values())):
         statements.append(
             (
@@ -205,7 +237,8 @@ def project_run(run) -> Dict[str, int]:
     for batch in _batches(list(shown.values())):
         statements.append(
             (
-                "UNWIND $rows AS row MATCH (s:Section {key: row.s}), (f:Figure {id: row.f}) CREATE (s)-[:SHOWS]->(f)",
+                "UNWIND $rows AS row MATCH (s:Section {key: row.s}), (f:Figure {id: row.f}) "
+                "CREATE (s)-[r:SHOWS]->(f) SET r.kind = row.kind, r.p = row.p",
                 {"rows": batch},
             )
         )
@@ -342,6 +375,29 @@ def project_concepts(summary, subject: Optional[str] = None) -> int:
     return replace_concepts(section_key(summary.entry_id, summary.section), concepts)
 
 
+def _typed_mentions(section: str, concepts: List[dict]) -> List[dict]:
+    """#206: the decider's `kind` (explains / uses / named) and `p` on each concept; a concept it hid (`named`
+    above the `mention` rule's upper) is left out."""
+    from apps.decider.mentions import mention_lookup
+    from apps.decider.models import Band
+
+    relations = mention_lookup(section, [concept["key"] for concept in concepts])
+    typed = []
+    for concept in concepts:
+        relation = relations.get(concept["key"])
+        if relation is not None and relation.band == Band.HIDE:
+            continue
+        typed.append(
+            {
+                "subject": "",
+                **concept,
+                "kind": relation.relation if relation is not None else None,
+                "p": relation.p if relation is not None else None,
+            }
+        )
+    return typed
+
+
 def replace_concepts(section: str, concepts: List[dict], roles=("defines", "discusses")) -> int:
     if not available():
         return 0
@@ -351,13 +407,14 @@ def replace_concepts(section: str, concepts: List[dict], roles=("defines", "disc
             {"key": section, "roles": list(roles)},
         )
     ]
+    concepts = _typed_mentions(section, concepts)
     if concepts:
         statements.append(
             (
                 "MATCH (s:Section {key: $key}) UNWIND $rows AS row "
                 "MERGE (c:Concept {key: row.key}) SET c.term = row.term, c.subject = row.subject "
-                "CREATE (s)-[:MENTIONS {role: row.role}]->(c)",
-                {"key": section, "rows": [{"subject": "", **concept} for concept in concepts]},
+                "CREATE (s)-[m:MENTIONS {role: row.role}]->(c) SET m.kind = row.kind, m.p = row.p",
+                {"key": section, "rows": concepts},
             )
         )
     age.execute_many(statements)

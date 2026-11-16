@@ -42,6 +42,7 @@ COUNTERS = (
     "matched",
     "unmatched",
     "ambiguous",
+    "suggested",
     "skipped",
     "failed",
     "deleted",
@@ -76,6 +77,11 @@ class Run:
                 from apps.harvest.sync import SyncEngine
 
                 self.sync = SyncEngine(self.source, index=self.index, applier=self.applier, dry_run=self.dry_run)
+            else:
+                from apps.harvest.suggest import Suggester
+
+                # #207: records no identifier places may get a suggested entry, never a link.
+                self.applier.suggester = Suggester(self.source, dry_run=self.dry_run)
 
             batch: list[SourceRecord] = []
             for record in self.adapter.records():
@@ -90,6 +96,8 @@ class Run:
                 self._sweep_unseen()
             if self.sync is not None and not self.dry_run:
                 self.counters["push_declared"] = self.sync.declare_unlinked()
+        if self.applier.suggester is not None:
+            self.applier.suggester.report()
         report = self.report(started)
         if not self.dry_run and getattr(self.adapter, "cursor", None):
             self.source.cursor = self.adapter.cursor
@@ -168,7 +176,19 @@ class Run:
         else:
             outcome = self.applier.apply(record)
         self.counters[outcome.status] += 1
-        self._store(record, outcome)
+        row = self._store(record, outcome)
+        if self.dry_run:
+            return
+        from apps.harvest import suggest
+        from apps.harvest.models import MatchSuggestion
+
+        if outcome.suggestion is not None:
+            suggest.store(row, outcome.suggestion)
+        elif outcome.status in LINKED:
+            # An identifier placed the record before anyone decided: the suggestion is moot.
+            row.match_suggestions.filter(status=MatchSuggestion.Status.PENDING).update(
+                status=MatchSuggestion.Status.SUPERSEDED, updated_at=timezone.now()
+            )
 
     def _unchanged(self, record: SourceRecord, row: Optional[HarvestRecord]) -> bool:
         if self.full or record.deleted or row is None or row.deleted or row.entry_id is None:
@@ -178,8 +198,8 @@ class Run:
         # The link may have been removed by hand since: then the record is applied again.
         return self.index.system_of.get(str(row.entry_id)) == record.record_id
 
-    def _store(self, record: SourceRecord, outcome: Outcome) -> None:
-        store_record(self.source, record, outcome, dry_run=self.dry_run)
+    def _store(self, record: SourceRecord, outcome: Outcome) -> HarvestRecord:
+        return store_record(self.source, record, outcome, dry_run=self.dry_run)
 
     def _sweep_unseen(self) -> None:
         """A full harvest did not list these records: gone at source."""

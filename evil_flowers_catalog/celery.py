@@ -197,6 +197,12 @@ if settings.EVILFLOWERS_DECIDER_URL and settings.EVILFLOWERS_DECIDER_EDGE_SCHEDU
         "task": "apps.decider.tasks.edge_sweep",
         "schedule": _cron(settings.EVILFLOWERS_DECIDER_EDGE_SCHEDULE),
     }
+# #206: after the edge sweep (01:00), before the subject sweep and the graph rebuild.
+if settings.EVILFLOWERS_DECIDER_URL and settings.EVILFLOWERS_DECIDER_MENTION_SCHEDULE:
+    app.conf.beat_schedule["decider-mention-sweep"] = {
+        "task": "apps.decider.tasks.mention_sweep",
+        "schedule": _cron(settings.EVILFLOWERS_DECIDER_MENTION_SCHEDULE),
+    }
 if settings.EVILFLOWERS_DECIDER_URL and settings.EVILFLOWERS_DECIDER_SUBJECT_SCHEDULE:
     app.conf.beat_schedule["decider-subject-sweep"] = {
         "task": "apps.decider.tasks.subject_sweep",

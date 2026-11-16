@@ -166,8 +166,17 @@ class Region(BaseModel):
     decision_signals = models.JSONField(default=dict)
 
 
+class ParagraphQuerySet(models.QuerySet):
+    def searchable(self) -> "ParagraphQuerySet":
+        """#208: what search, the assistant pack, section similarity and summaries read: every paragraph but those the
+        `paragraph` rule hid (reference lists, ToC, legal notices, running heads). The reader shows them all."""
+        return self.exclude(band=Region.Band.HIDE)
+
+
 class Paragraph(BaseModel):
     """A paragraph of the original file, the unit that is embedded (IP-018 Phase 2b)."""
+
+    objects = ParagraphQuerySet.as_manager()
 
     class Meta:
         app_label = "extraction"
@@ -196,6 +205,16 @@ class Paragraph(BaseModel):
     embedding = HalfVectorField(dimensions=EMBEDDING_DIMENSIONS, null=True)
     #: `Locator.key` (#171): the address of this paragraph that survives a newer run.
     locator_key = models.CharField(max_length=40, null=True, db_index=True)
+
+    # #208: the text worker's kind of the paragraph (`body`, `references`, `toc`, `legal`, `running_head`, ...), as
+    # the decider answered. Null: undecided, searched as before. The catalog only stores it and applies the
+    # `paragraph` rule of EVILFLOWERS_DECIDER_BANDS (`apps.extraction.bands.paragraph_band`).
+    decision = models.CharField(max_length=50, null=True)
+    #: Probability of `decision`, 0-1 (wire name `p`), kept so new thresholds re-band without re-extraction.
+    decision_p = models.FloatField(null=True)
+    decider_model = models.CharField(max_length=200, null=True)
+    #: `keep` / `review` / `hide` from the `paragraph` rule; null without one. `hide` leaves search, never the reader.
+    band = models.CharField(max_length=10, choices=Region.Band.choices, null=True)
 
 
 class Locator(BaseModel):

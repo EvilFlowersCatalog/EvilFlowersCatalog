@@ -116,6 +116,9 @@ class HarvestRecord(BaseModel):
         ENRICHED = "enriched", _("Enriched")
         AMBIGUOUS = "ambiguous", _("Ambiguous")
         UNMATCHED = "unmatched", _("Unmatched")
+        #: #207: no identifier matched, but the decider named a likely entry; held (not created) until a
+        #: librarian accepts (link) or rejects (create as new) the `MatchSuggestion`.
+        SUGGESTED = "suggested", _("Suggested match")
         SKIPPED = "skipped", _("Skipped")
         FAILED = "failed", _("Failed")
         DELETED = "deleted", _("Deleted")
@@ -194,4 +197,58 @@ class HarvestConflict(BaseModel):
     acknowledged_at = models.DateTimeField(null=True, blank=True)
 
 
-__all__ = ["POLICY_DEFAULTS", "POLICY_FIELDS", "HarvestConflict", "HarvestRecord", "HarvestSource", "SyncState"]
+class MatchSuggestion(BaseModel):
+    """#207: the decider's guess that a harvested record without a shared identifier is an entry already held.
+
+    Never applied by itself (no `harvest_match` threshold exists until knowledge#65): the record waits as
+    `suggested` and a librarian accepts (the record is linked to the entry) or rejects (the record is created as a
+    new entry, in `create` mode). Accepted and rejected rows are labelled cases for calibration.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Pending")
+        ACCEPTED = "accepted", _("Accepted")
+        REJECTED = "rejected", _("Rejected")
+        #: An identifier matched on a later run before anyone decided.
+        SUPERSEDED = "superseded", _("Superseded")
+
+    class Meta:
+        app_label = "harvest"
+        db_table = "harvest_match_suggestions"
+        default_permissions = ()
+        verbose_name = _("Match suggestion")
+        verbose_name_plural = _("Match suggestions")
+        indexes = [models.Index(fields=["source", "status", "-created_at"], name="harvest_suggestion_queue_idx")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["record"],
+                condition=models.Q(status="pending"),
+                name="harvest_suggestion_one_pending",
+            )
+        ]
+
+    source = models.ForeignKey(HarvestSource, on_delete=models.CASCADE, related_name="match_suggestions")
+    record = models.ForeignKey(HarvestRecord, on_delete=models.CASCADE, related_name="match_suggestions")
+    entry = models.ForeignKey("core.Entry", on_delete=models.CASCADE, related_name="+")
+    #: Probability of the chosen candidate (uncalibrated until knowledge#65).
+    p = models.FloatField(null=True)
+    probabilities = models.JSONField(default=dict, blank=True)
+    #: Entry ids the decider chose among, in the order offered.
+    candidates = models.JSONField(default=list, blank=True)
+    decider_model = models.CharField(max_length=200)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+
+__all__ = [
+    "POLICY_DEFAULTS",
+    "POLICY_FIELDS",
+    "HarvestConflict",
+    "HarvestRecord",
+    "HarvestSource",
+    "MatchSuggestion",
+    "SyncState",
+]

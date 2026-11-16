@@ -91,6 +91,9 @@ class AdapterTypeSerializer(Serializer):
     needs_base_url: bool
     needs_upload: bool
     runnable: bool
+    #: `Entry.identifiers` keys the connector owns (a repository's persistent id), valid as a source's `system_key`
+    #: next to the external systems (#210).
+    system_keys: List[str] = []
 
 
 class ConflictSerializer(Serializer):
@@ -107,6 +110,30 @@ class ConflictSerializer(Serializer):
     acknowledged: bool
     acknowledged_by_id: Optional[UUID] = None
     acknowledged_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class MatchSuggestionSerializer(Serializer):
+    """#207: the decider's suggested entry for a record no identifier matched; a librarian accepts or rejects."""
+
+    id: UUID
+    source_id: UUID
+    #: The mirror row (`GET harvest/sources/{source_id}/records`).
+    record_id: UUID
+    #: The source's own id of the record.
+    source_record_id: str
+    #: What the source said: title, authors, published, publisher, language, identifiers.
+    source_record: Dict[str, Any]
+    entry_id: UUID
+    entry_title: str
+    #: Probability of the chosen entry (uncalibrated until knowledge#65).
+    p: Optional[float] = None
+    #: Entry ids the decider chose among.
+    candidates: List[str] = []
+    decider_model: str
+    status: str
+    decided_by_id: Optional[UUID] = None
+    decided_at: Optional[datetime] = None
     created_at: datetime
 
 
@@ -158,6 +185,7 @@ __all__ = [
     "ExternalSystemSerializer",
     "HarvestRecordSerializer",
     "HarvestSourceSerializer",
+    "MatchSuggestionSerializer",
     "SourceProbeSerializer",
     "record_counts",
 ]

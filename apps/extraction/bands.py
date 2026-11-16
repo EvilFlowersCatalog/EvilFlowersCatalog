@@ -31,6 +31,26 @@ def thresholds(kind: str, config: Optional[dict] = None) -> Optional[dict]:
     return rule
 
 
+def paragraph_band(decision: Optional[str], p: Optional[float], config: Optional[dict] = None) -> Optional[str]:
+    """#208: the band of a paragraph's kind under the `paragraph` rule, e.g.
+    `{"hide": ["references", "toc", "legal", "running_head"], "upper": 0.9, "lower": 0.6}`.
+
+    An answer in `hide` with p >= upper is hidden, with p >= lower (when given) goes to review; any other answer is
+    kept. None without a rule (until knowledge#65) or without an answer: nothing is hidden.
+    """
+    config = settings.EVILFLOWERS_DECIDER_BANDS if config is None else config
+    rule = (config or {}).get("paragraph")
+    if not isinstance(rule, dict) or "upper" not in rule or not decision or p is None:
+        return None
+    if decision not in (rule.get("hide") or []):
+        return Region.Band.KEEP
+    if p >= float(rule["upper"]):
+        return Region.Band.HIDE
+    if "lower" in rule and p >= float(rule["lower"]):
+        return Region.Band.REVIEW
+    return Region.Band.KEEP
+
+
 def band_for(
     kind: str,
     decision: Optional[str],

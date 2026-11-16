@@ -47,6 +47,68 @@ class SectionRelation(BaseModel):
     decider_model = models.CharField(max_length=200)
 
 
+class MentionRelation(BaseModel):
+    """How a section uses a concept its summary names (#206): explains it, uses it, or only names it.
+
+    Keyed like `SectionRelation` by run-independent keys: the graph's section key and concept key, so a graph
+    rebuild or a re-extraction keeps the answer. `named` above the `mention` rule's `upper` keeps the `MENTIONS`
+    edge out of the graph.
+    """
+
+    class Meta:
+        app_label = "decider"
+        db_table = "decider_mention_relation"
+        default_permissions = ()
+        constraints = [
+            models.UniqueConstraint(fields=["section_key", "concept_key"], name="decider_mention_relation_pair")
+        ]
+        verbose_name = _("Mention relation")
+        verbose_name_plural = _("Mention relations")
+
+    class Relation(models.TextChoices):
+        EXPLAINS = "explains", _("the passage explains the concept")
+        USES = "uses", _("uses it without explaining")
+        NAMED = "named", _("only names it")
+
+    section_key = models.CharField(max_length=64)
+    concept_key = models.CharField(max_length=200)
+    relation = models.CharField(max_length=10, choices=Relation.choices)
+    p = models.FloatField(null=True)
+    probabilities = models.JSONField(default=dict, blank=True)
+    band = models.CharField(max_length=10, choices=Band.choices, default=Band.KEEP)
+    decider_model = models.CharField(max_length=200)
+
+
+class ShowsRelation(BaseModel):
+    """Whether a paragraph that sits by a figure (a found cross-reference) refers to it (#206).
+
+    Keyed by the paragraph's and the figure's `Locator.key` (#171), which survive a newer run. `no` above the
+    `shows` rule's `upper` keeps the pair from drawing a `SHOWS` edge.
+    """
+
+    class Meta:
+        app_label = "decider"
+        db_table = "decider_shows_relation"
+        default_permissions = ()
+        constraints = [
+            models.UniqueConstraint(fields=["paragraph_key", "figure_key"], name="decider_shows_relation_pair")
+        ]
+        verbose_name = _("Shows relation")
+        verbose_name_plural = _("Shows relations")
+
+    class Answer(models.TextChoices):
+        YES = "yes", _("refers to the figure")
+        NO = "no", _("does not refer to it")
+
+    paragraph_key = models.CharField(max_length=40)
+    figure_key = models.CharField(max_length=40)
+    answer = models.CharField(max_length=5, choices=Answer.choices)
+    p = models.FloatField(null=True)
+    probabilities = models.JSONField(default=dict, blank=True)
+    band = models.CharField(max_length=10, choices=Band.choices, default=Band.KEEP)
+    decider_model = models.CharField(max_length=200)
+
+
 class SubjectSuggestion(BaseModel):
     """A subject the decider suggested for an entry (#191): filed, waiting for a librarian, or not taken.
 

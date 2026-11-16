@@ -7,18 +7,17 @@ from operator import or_
 
 import hashlib
 
-import isbnlib
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from django.conf import settings
 from django.core.files import File
 from django.db import transaction
 from django.db.models import Q
 from django.utils.translation import gettext as _
-from isbnlib.registry import bibformatters
 
 from apps.api.forms.entries import EntryForm
 from apps.core.models import Catalog, User, Entry, Author, Category, Acquisition, Price, EntryAuthor
 from apps.core.models.entry import cover_bytes_hash
+from apps.core.services import isbn_metadata
 from apps.core.tasks import store_table_of_contents
 from apps.files.jobs import queue_ocr
 
@@ -310,7 +309,8 @@ class EntryService:
         ):
             raise self.AlreadyExists()
 
-        # TODO: implement these meta downloaders for real
+        # #202: authors, publisher and year from the ISBN, once (while there is no citation), into empty fields only.
+        isbn_record = None
         if all(
             [
                 entry.citation is None,
@@ -318,9 +318,10 @@ class EntryService:
                 entry.read_config("evilflowers_metadata_fetch"),
             ]
         ):
-            metadata = isbnlib.meta(identifiers["isbn"])
-            if metadata:
-                entry.citation = bibformatters["bibtex"](metadata)
+            isbn_record = isbn_metadata.lookup(identifiers["isbn"])
+            if isbn_record is not None:
+                entry.citation = isbn_record.bibtex
+                isbn_metadata.fill_fields(entry, isbn_record)
 
         entry.save()
 
@@ -383,6 +384,10 @@ class EntryService:
             entry.authors.clear()
             for index, author in enumerate(form.cleaned_data.get("author_ids", [])):
                 EntryAuthor.objects.create(entry=entry, author=author, position=index)
+
+        if isbn_record is not None:
+            # After the form's authors: the record's are added only when the entry still has none.
+            isbn_metadata.fill_authors(entry, isbn_record)
 
         if "feeds" in form.cleaned_data:
             entry.feeds.clear()

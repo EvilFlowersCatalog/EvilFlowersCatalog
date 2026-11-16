@@ -62,6 +62,8 @@ class Outcome:
     #: `sync` sources: fields both sides changed (`apps.harvest.merge.Conflict`), with both timestamps.
     conflicts: list = field(default_factory=list)
     conflict_times: tuple = (None, None)
+    #: #207: the decider's suggested entry (`apps.harvest.suggest.Suggestion`), stored once the row exists.
+    suggestion: Optional[object] = None
 
 
 def run_user(source: HarvestSource):
@@ -149,6 +151,8 @@ class Applier:
         self.key = source.system_key
         self._languages: dict[str, Optional[Language]] = {}
         self._categories: dict[tuple, Category] = {}
+        #: #207: `apps.harvest.suggest.Suggester` of the run; None: no suggestions (sync sources, the tests).
+        self.suggester = None
 
     # -- entry points --------------------------------------------------------------------------------------
 
@@ -156,6 +160,10 @@ class Applier:
         if not record.record_id or len(record.record_id) > MAX_IDENTIFIER:
             return Outcome(Status.FAILED, message="record id missing or longer than 100 characters")
         match = self.index.match(record)
+        if match.status in ("ambiguous", "unmatched"):
+            held = self._suggested(record, match)
+            if held is not None:
+                return held
         if match.status == "ambiguous":
             return Outcome(Status.AMBIGUOUS, matched_on=match.matched_on, message=match.message)
         if match.status == "unmatched":
@@ -168,6 +176,33 @@ class Applier:
             changed = self.link(entry, record.record_id)
             return Outcome(Status.MATCHED, entry, match.matched_on, changed=changed)
         return self.enrich(entry, record, match.matched_on)
+
+    def _suggested(self, record: SourceRecord, match) -> Optional[Outcome]:
+        """#207: hold the record as `suggested` when the decider names an entry (or already did and nobody
+        decided yet); None to go on as without a decider. A rejected suggestion means "a new entry": not asked
+        again."""
+        if self.suggester is None or self.dry_run:
+            return None
+        if match.status == "ambiguous" and not match.candidates:
+            return None  # a system-key collision, not a choice between entries
+        from apps.harvest.models import MatchSuggestion
+
+        decided = MatchSuggestion.objects.filter(
+            source=self.source, record__record_id=record.record_id, record__dry_run=False
+        ).exclude(status=MatchSuggestion.Status.SUPERSEDED)
+        pending = decided.filter(status=MatchSuggestion.Status.PENDING).first()
+        if pending is not None:
+            return Outcome(
+                Status.SUGGESTED,
+                matched_on="decider",
+                message=f"suggested match: entry {pending.entry_id}, waiting for a librarian",
+            )
+        if decided.filter(status=MatchSuggestion.Status.REJECTED).exists():
+            return None
+        suggestion = self.suggester.suggest(record, match.candidates)
+        if suggestion is None:
+            return None
+        return Outcome(Status.SUGGESTED, matched_on="decider", message=suggestion.message(), suggestion=suggestion)
 
     def remove(self, record_id: str) -> Outcome:
         """Deleted at source: the key goes, the entry stays (a librarian decides about it)."""

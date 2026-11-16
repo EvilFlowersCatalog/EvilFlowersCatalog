@@ -67,6 +67,26 @@ def band(relation: str, p: Optional[float], config: Optional[dict] = None) -> st
     return Band.KEEP
 
 
+def relation_factor(relation: Optional[SectionRelation], config: Optional[dict] = None, weights=None) -> float:
+    """#203: what a pair's SIMILAR_TO weight is multiplied by in `related_sections`.
+
+    The factor of its relation (`EVILFLOWERS_DECIDER_RELATION_WEIGHTS`, e.g. `{"same": 1.2, "loose": 0.7}`), only
+    when the decider's p reaches the `edge` rule's `upper` (`EVILFLOWERS_DECIDER_BANDS`). Untyped pairs, pairs below
+    the threshold, relations without a weight and a deployment without thresholds (until knowledge#65) get 1.
+    """
+    if relation is None or relation.p is None:
+        return 1.0
+    config = settings.EVILFLOWERS_DECIDER_BANDS if config is None else config
+    weights = settings.EVILFLOWERS_DECIDER_RELATION_WEIGHTS if weights is None else weights
+    rule = (config or {}).get("edge")
+    if not isinstance(rule, dict) or "upper" not in rule or relation.p < float(rule["upper"]):
+        return 1.0
+    try:
+        return float((weights or {}).get(relation.relation, 1.0))
+    except (TypeError, ValueError):
+        return 1.0
+
+
 def perspective(relation: SectionRelation, key: str) -> str:
     """The relation as the reader of section `key` sees the other section."""
     return (_FROM_A if relation.a_key == key else _FROM_B).get(relation.relation, relation.relation)
@@ -155,7 +175,10 @@ def _section_texts(sides: Iterable[Tuple]) -> Dict[Tuple, str]:
     for run_id, section in missing:
         parts, size = [], 0
         for text in (
-            Paragraph.objects.filter(run_id=run_id, section=section).order_by("seq").values_list("text", flat=True)
+            Paragraph.objects.searchable()
+            .filter(run_id=run_id, section=section)
+            .order_by("seq")
+            .values_list("text", flat=True)
         ):
             parts.append(text)
             size += len(text) + 1

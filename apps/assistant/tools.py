@@ -772,9 +772,12 @@ def _figures(request, query: str, scope: dict, limit: int = FIGURES_PER_SEARCH) 
     without the licensed copies a borrower may see there: the assistant never quotes Readium LCP publications.
     """
     from apps.core.models import Entry
-    from apps.extraction.regions import search_regions
+    from apps.extraction.regions import search_regions, wanted_kind
 
-    hits = search_regions(request, query, limit=limit, scope=scope or None, surface=Surface.ASSISTANT)
+    # #205: "show the graph of …" ranks charts first (the decision model's label), without dropping others.
+    hits = search_regions(
+        request, query, limit=limit, scope=scope or None, surface=Surface.ASSISTANT, prefer=wanted_kind(query)
+    )
     titles = dict(Entry.objects.filter(pk__in=[hit.entry_id for hit in hits]).values_list("pk", "title"))
     return [
         {

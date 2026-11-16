@@ -152,6 +152,19 @@ class RecordsAndProbeTests(ApiTestCase):
         self.assertTrue(names["marc_file"]["needs_upload"])
         self.assertTrue(names["oai_pmh"]["needs_base_url"])
 
+    def test_connectors_list_their_own_system_keys(self):
+        # #210: the portal suggests a connector's identifier keys next to the external systems.
+        from apps.harvest.adapters import registry
+        from apps.harvest.tests.fake import FakeConnector
+
+        registry.register(FakeConnector)
+        self.addCleanup(registry.unregister, "fake")
+        response = self.client.get("/api/v1/harvest/connectors", headers=self.headers(self.manager))
+        self.assertEqual(response.status_code, 200, response.content)
+        names = {item["name"]: item for item in response.json()["response"]}
+        self.assertEqual(names["fake"]["system_keys"], ["fake_id"])
+        self.assertEqual(names["oai_pmh"]["system_keys"], [])
+
 
 class UploadTests(ApiTestCase):
     def setUp(self):

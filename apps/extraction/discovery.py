@@ -296,7 +296,8 @@ def _nearest_paragraphs(run_ids, vector, limit: int) -> List[tuple]:
         cursor.execute("SET LOCAL hnsw.iterative_scan = relaxed_order")
         cursor.execute(f"SET LOCAL hnsw.ef_search = {min(max(int(limit), 40), 1000)}")
         rows = list(
-            Paragraph.objects.filter(run_id__in=run_ids, embedding__isnull=False)
+            Paragraph.objects.searchable()
+            .filter(run_id__in=run_ids, embedding__isnull=False)
             .annotate(distance=CosineDistance("embedding", HalfVector(vector)))
             .order_by("distance")
             .values_list("pk", "run_id", "distance")[:limit]
@@ -400,7 +401,8 @@ def search_passages(
         "pk"
     )
     # Every paragraph of an active run is searchable by words; by meaning only those embedded by the current model.
-    active = Paragraph.objects.filter(run__is_active=True, run__acquisition__entry__in=visible)
+    # #208: not the paragraphs the `paragraph` rule hid (reference lists, ToC, legal notices, running heads).
+    active = Paragraph.objects.searchable().filter(run__is_active=True, run__acquisition__entry__in=visible)
     searchable = active.values("run__acquisition__entry_id").distinct().count()
 
     vector = embeddings.try_embed_query(text, "passages") if text else None
