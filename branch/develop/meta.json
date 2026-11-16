@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "a8068f2776011241017160d332a020b1ec0bf7c7",
-    "short": "a8068f2",
-    "message": "Extending AI assistant capabilities (content layer and figures in answers)",
+    "sha": "7ce7d45a1a9a0715c49af580e8543192a18e887b",
+    "short": "7ce7d45",
+    "message": "Implementing #189 (extraction regions)",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/a8068f2776011241017160d332a020b1ec0bf7c7"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/7ce7d45a1a9a0715c49af580e8543192a18e887b"
   },
-  "deployed_at": "2026-11-16T09:21:52Z",
+  "deployed_at": "2026-11-16T12:12:16Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

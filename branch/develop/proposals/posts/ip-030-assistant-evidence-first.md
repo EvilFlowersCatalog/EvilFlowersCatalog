@@ -687,6 +687,23 @@ within a turn, the cost that matters is round 1 of a new chat: ~200 extra tokens
     - The portal cases showed no place (`sk-portal-loans`, `sk-portal-ocr-admin`).
     - `sk-crossbook-compare` used all 6 rounds.
   - The expectations, these faults and the remaining measurements are tracked in EvilFlowersCatalog#187.
+  - **#187 (2026-11-16)**, catalog changes. A re-run is due after the deploy (knowledge#62).
+    - The pack counts as `search_entries` and `search_library_text` in the scoring, and gold cases are `grounded`.
+    - The language pin now names the language detected from each message (`apps/assistant/language.py`).
+    - No pack is gathered for shelf, loan, portal or subject-list requests, nor for study requests in a chat
+      about one publication.
+    - Passage search leaves reference lists out: most "unsupported" verdicts were reference-list paragraphs
+      cited for claims they do not make.
+    - 7 real dev questions were added as cases.
+  - #187 measurements, dev 2026-11-16:
+    - Round 1 of a bound chat is 3,439 real tokens against 2,712 for a plain chat (+27%: document tools and
+      the document message).
+    - Real prompts run 3.6–3.9 characters per token, so the 3.4 calibration is conservative.
+    - One `read_pdf_page(count=3)` adds ~2,100 tokens to every later round, ~28–44 s of prompt evaluation on
+      control.
+    - Explain needed 0 JSON retries in 5 Slovak-reader calls (0 in 15 overall). Dev has no Slovak PDFs.
+    - `highlight.py` with thinking off returns valid JSON. Pages of 3–13, 229–414 s on CPU.
+    - Cross-lingual page retrieval moved to #188.
 
 ### Phase 1: Ledger and streamed, paragraph-precise citations
 
@@ -1468,3 +1485,4 @@ As in § API: ChatMessage.feedback; `assistant_eval export --feedback` prints to
 | 2026-11-14 | jdubec | #151: cross-book `SIMILAR_TO` from section centroids centred per language (`extraction_section_similarity`, threshold 0.55 calibrated on dev, English and German); section headings in the REST routes follow the outline's rule (null for LCP and outside IP ranges); #153: concepts scoped by UDC main class, walkthrough `defined_later` instead of forward prerequisites; #152: read-only graph REST for the portal (related, prerequisites, concepts, overview, library map, chapter map) |
 | 2026-11-13 | jdubec | Second read-back: cache misses tied to capped turns or pauses, not to every follow-up turn (span-to-chat mapping); capped-round prefix fix moved to Phase 0; provenance markers on the research table; exam-prep share and the bound-chat figure behaviour stated exactly; unverified numbers marked |
 | 2026-11-16 | jdubec | #132: Phase 0 baseline on `elvira-assistant` recorded (17/49, most failures the eval's expectations under prefetch); IP-024 Phase 3/4 done with synthetic data by a Claude Opus agent; IP-024 Q5 answered C; follow-ups in #187. #185: `show_figures` directive, `figures` frame, `displayed_figures` (migration 0012), `search_library_text(figures: also/only)`, printed label, description, table Markdown and LaTeX on F# citations. #186: `follow` relations `prerequisites`, `cited_by`, `cites`; `POST /api/v1/cite`; `access` frame. Round-1 budget 2,450 → 2,550 |
+| 2026-11-16 | jdubec | #187: eval scores the pack as the searches it runs; language pin names the detected language; no pack for account, portal, subject-list and in-publication study requests; reference lists out of passage search; 7 real cases; dev measurements (bound round 1, page-read cost, explain, highlight) in Phase 0; #188 for cross-lingual pages |
