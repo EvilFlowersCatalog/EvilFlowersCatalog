@@ -31,8 +31,9 @@ from django.views import View
 
 from apps import openapi
 from apps.core.errors import ProblemDetailException, DetailType
-from apps.core.models import UserActivity
+from apps.core.models import ReadEvent, UserActivity
 from apps.core.services.activity import ActivityService
+from apps.core.services.reads import ReadService
 from apps.core.services.capability_tokens import CapabilityTokenService
 from apps.readium.capability_scopes import LCPL_DOWNLOAD, LCPL_EMAIL_DOWNLOAD, LCPL_FEED_DOWNLOAD
 from apps.readium.models import License
@@ -143,6 +144,11 @@ class LicenseDownloadView(View):
             license.entry,
             UserActivity.ActivityAction.LICENSE_DOWNLOADED,
             {"license_id": str(license.pk)},
+        )
+        # #194: feed and e-mail tokens are multi-use, so a reading app re-fetching the license is one read
+        # per holder and title within the de-duplication window.
+        ReadService.record(
+            license.entry, ReadEvent.Via.LCP_LICENSE, scope=f"lcp:{license.entry_id}", user=license.user
         )
 
         return response

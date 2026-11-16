@@ -154,7 +154,8 @@ class StatisticsComputationTests(StatisticsTestCase):
         for i in range(5):
             entry = self.entry(title=f"Extra {i}")
             self.license(entry, self.reader, License.LicenseState.RETURNED, local(2026, 3, 5), local(2026, 3, 9))
-        with self.assertNumQueries(6):
+        # Seven since #194 (reads per bucket); visitors come from Umami in the view.
+        with self.assertNumQueries(7):
             self.build()
 
     def test_returned_loan_ends_at_return(self):

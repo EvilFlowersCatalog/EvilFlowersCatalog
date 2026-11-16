@@ -15,6 +15,9 @@ a route cannot:
   forms refused (422), by endpoint and failing field (#181).
 - `evilflowers.acquisitions.served` — publication files actually handed out, by
   format and path.
+- `evilflowers.decider.answers` / `evilflowers.decider.sweep.duration` — answers
+  the night decision sweeps stored (section relation, subject outcome) and how
+  long each sweep ran (#190, #191).
 
 Attribute values are closed sets. No user, entry, license or acquisition ids
 and no URLs: each would create a time series per object in Mimir.
@@ -57,6 +60,23 @@ acquisitions_served = _meter.create_counter(
     "evilflowers.acquisitions.served",
     unit="{file}",
     description="Publication files served to readers.",
+)
+
+decider_answers = _meter.create_counter(
+    "evilflowers.decider.answers",
+    unit="{answer}",
+    description="Answers of the decider stored by the night sweeps (#190, #191), by task and answer.",
+)
+decider_sweep_duration = _meter.create_histogram(
+    "evilflowers.decider.sweep.duration",
+    unit="s",
+    description="Duration of one night sweep of the decider (#190, #191).",
+    explicit_bucket_boundaries_advisory=[1, 10, 60, 300, 600, 1800, 3600, 7200],
+)
+
+DECIDER_TASKS = frozenset({"edge", "subject"})
+DECIDER_ANSWERS = frozenset(
+    {"same", "pre", "example", "loose", "none", "filed", "pending", "skipped", "accepted", "rejected"}
 )
 
 LICENSE_TRANSITIONS = frozenset({"issued", "returned", "renewed", "revoked", "cancelled", "expired"})
@@ -127,8 +147,22 @@ def record_acquisition_served(mime: str, via: str, delivery: str) -> None:
     telemetry.on_commit(lambda: acquisitions_served.add(1, attributes))
 
 
+def record_decider_sweep(task: str, seconds: float, answers) -> None:
+    """One night sweep (#190, #191): its duration and the answers it stored, by answer. Not deferred: the sweep
+    commits per batch."""
+    task = _bounded(task, DECIDER_TASKS)
+    decider_sweep_duration.record(max(seconds, 0.0), {"evilflowers.decider.task": task})
+    for answer, count in dict(answers).items():
+        if count:
+            decider_answers.add(
+                count,
+                {"evilflowers.decider.task": task, "evilflowers.decider.answer": _bounded(answer, DECIDER_ANSWERS)},
+            )
+
+
 __all__ = [
     "record_acquisition_served",
+    "record_decider_sweep",
     "record_extraction_ingest_refused",
     "record_extraction_run",
     "record_extraction_superseded",

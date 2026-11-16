@@ -47,13 +47,21 @@ DOI = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>]+)", re.IGNORECASE)
 ISBN = re.compile(r"ISBN(?:-1[03])?:?\s*((?:97[89][\s-]?)?(?:\d[\s-]?){9}[\dX])", re.IGNORECASE)
 NUMBER_MARKER = re.compile(r"(?:(?<=\s)|^)(?:\[(\d{1,3})\]|(\d{1,3})\.)\s+(?=[^\W\d_]|\[)", re.UNICODE)
 
-_NAME = r"[^\W\d_][\w'’\-]*(?:\s(?:van|von|de|der|da|di|du|la|le|del|dos|ten|ter)\s?[\w'’\-]+)*"
-_INITIALS = r"(?:[^\W\d_]\.\s?-?){1,4}"
+#: #192: every quantifier below is possessive and every author atomic, so a string splits into authors one way
+#: only. The earlier pattern (an optional separator, initials that ate the following space, overlapping
+#: alternatives) split eight authors without commas in exponentially many ways and backtracked for an hour on a
+#: near miss (`Kates, R. W. Kates, R. W. … 1999`).
+_PARTICLE = r"(?:van|von|de|der|da|di|du|la|le|del|dos|ten|ter)"
+#: A family name, with particles before it (`van Dijk`, `de la Cruz`) or inside it.
+_NAME = rf"(?:{_PARTICLE}\s)*+[^\W\d_][\w'’\-]*+(?:\s{_PARTICLE}\s?[\w'’\-]++)*+"
+_INITIALS = r"[^\W\d_]\.(?:\s?-?[^\W\d_]\.){0,3}+"
 #: One author of an author-year list: `Kates, R. W.`, `Kates RW`, `Kates, R.`, `van Dijk, T. A.`, and Chicago's
 #: later authors `S. Collins`.
-_AUTHOR = rf"(?:{_NAME},\s?{_INITIALS}|{_NAME}\s[^\W\d_a-z]{{1,4}}(?![\w'])|{_INITIALS}\s?{_NAME})"
+_AUTHOR = rf"(?>{_NAME},\s?{_INITIALS}|{_NAME}\s[^\W\d_a-z]{{1,4}}(?![\w'])|{_INITIALS}\s?{_NAME})"
+#: Between two authors: `, and ` `, ` `; ` or, where the comma was lost, a space.
+_AUTHOR_SEPARATOR = r"(?:,?\s(?:&|and|und|a)\s|,\s|;\s|\s)"
 AUTHOR_LIST = re.compile(
-    rf"^(?:{_AUTHOR}(?:,?\s(?:&|and|und|a)\s|,\s|;\s)?)+(?:,?\s?et al\.?)?,?\s*"
+    rf"^{_AUTHOR}(?:{_AUTHOR_SEPARATOR}{_AUTHOR})*+(?:,?\s?et al\.?)?,?\s*"
     rf"(?:\((?:Eds?|Hrsg|eds?)\.?\)\.?\s*|(?:eds?|Hrsg)\.\s*)?\.?\s*$",
     re.UNICODE,
 )
@@ -252,16 +260,27 @@ def _institution(tail: str) -> bool:
     return all(word[0].isupper() or word[0].isdigit() or word.lower() in _NAME_WORDS for word in words)
 
 
+#: Characters before a year searched for its authors (#192). A year whose authors are not found does not move the
+#: window's start, so without a cap the window, and its candidate starts, grew with every skipped year.
+AUTHOR_WINDOW = 600
+
+
 def _author_year(text: str) -> List[Item]:
     years = list(YEAR.finditer(text))
     starts = []
     previous_end = 0
     for match in years:
-        window = text[previous_end : match.start()]
+        begin = previous_end
+        if match.start() - begin > AUTHOR_WINDOW:
+            # Cut at a word start, never inside a word ("ith, J." is not an author).
+            cut = match.start() - AUTHOR_WINDOW
+            space = text.find(" ", cut, match.start())
+            begin = space + 1 if space >= 0 else match.start()
+        window = text[begin : match.start()]
         offset = _author_start(window)
         if offset < 0:
             continue
-        starts.append(previous_end + offset)
+        starts.append(begin + offset)
         previous_end = match.end()
     items = []
     for index, start in enumerate(starts):

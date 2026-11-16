@@ -6,9 +6,12 @@ to a broker outage or a rollout, and a change to a step (bump the version) all c
 """
 
 import logging
+import time
 from typing import List
 
 from celery import shared_task
+from celery.exceptions import SoftTimeLimitExceeded
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -18,24 +21,64 @@ POST_PROCESS_KIND = "extraction.post_process"
 #: 1: references, figure documents and vectors, section similarity (#151), graph projection.
 #: 2: locators (#171): keys of the runs active before them, and the graph's run-independent section keys.
 #: 3: reference lists (#178): bibliography items, their locators, in-text markers and `CITES` edges.
-POST_PROCESS_VERSION = 3
+#: 4: author lists without backtracking (#192): items can split differently, and the runs whose jobs failed on the
+#:    old pattern get a new round.
+POST_PROCESS_VERSION = 4
 
 #: Seconds the weekly similarity rebuild may take (every pair of every active run, one set of means).
 SIMILARITY_REBUILD_TIME_LIMIT = 60 * 60
 
+#: #192: seconds one run's post-processing may take; the hard limit kills the child two minutes later.
+POST_PROCESS_SOFT_TIME_LIMIT = settings.EVILFLOWERS_POST_PROCESS_SOFT_TIME_LIMIT
+POST_PROCESS_TIME_LIMIT = POST_PROCESS_SOFT_TIME_LIMIT + 120
 
-@shared_task
-def post_process_run(run_id: str) -> dict:
+
+def stale_delivery(task_id) -> str | None:
+    """Why this delivery of `post_process_run` must not run, or None (#192).
+
+    With late acks, a run whose worker died comes back from Redis after the visibility timeout (12 h), long after
+    the ledger gave up on it and its job was retried or failed. On dev such redeliveries held a worker slot for an
+    hour each, for jobs that had already failed. A delivery runs only while its run is still the job's business:
+    no newer run replaced it, and the job was neither failed nor cancelled. A task the ledger does not know (sent
+    while the database was down) runs.
+    """
+    from apps.tasks.domain.values import DesiredState, JobState
+    from apps.tasks.models import JobRun
+
+    if not task_id:
+        return None
+    run = JobRun.objects.filter(pk=task_id).select_related("job__current_run").first()
+    if run is None or run.job is None:
+        return None
+    job, current = run.job, run.job.current_run
+    if current is not None and current.pk != run.pk and current.created_at > run.created_at:
+        return f"replaced by run {current.pk}"
+    if job.desired_state == DesiredState.CANCELLED or job.state == JobState.CANCELLED:
+        return "job cancelled"
+    # Only this run's own failure: a run published for a failed job (sweep, apply, re-activation) moves the job to
+    # `queued` when the publisher commits, and may be received a moment before that.
+    if job.state == JobState.FAILED and job.current_run_id == run.pk:
+        return "job failed"
+    return None
+
+
+@shared_task(bind=True, soft_time_limit=POST_PROCESS_SOFT_TIME_LIMIT, time_limit=POST_PROCESS_TIME_LIMIT)
+def post_process_run(self, run_id: str) -> dict:
     """References, figure documents and vectors (they use the references), cross-book section similarity, then
     the AGE graph.
 
     Every step is tried. The run is marked post-processed only when all of them succeeded; otherwise the task
-    fails, the job is retried (`PostProcessDefinition.max_attempts`) and the sweep picks the run again.
+    fails, the job is retried (`PostProcessDefinition.max_attempts`) and the sweep picks the run again. Past the
+    soft time limit the steps left are skipped and the task fails naming the step that overran (#192).
     """
     from apps.extraction import bibliography, locators, references, regions, similarity
     from apps.extraction.models import ExtractionRun
     from apps.graph import projection
 
+    reason = stale_delivery(self.request.id)
+    if reason is not None:
+        logger.warning("extraction.post_process_skipped run=%s task=%s reason=%s", run_id, self.request.id, reason)
+        return {"skipped": reason}
     run = ExtractionRun.objects.filter(pk=run_id, is_active=True).select_related("acquisition").first()
     if run is None:
         return {}
@@ -50,11 +93,27 @@ def post_process_run(run_id: str) -> dict:
     )
     report, failed = {}, []
     for name, step in steps:
+        started = time.monotonic()
+        logger.info("extraction.post_process_step run=%s step=%s", run_id, name)
         try:
             report[name] = step(run)
+        except SoftTimeLimitExceeded:
+            logger.error(
+                "extraction.post_process_timeout run=%s step=%s limit=%ss", run_id, name, POST_PROCESS_SOFT_TIME_LIMIT
+            )
+            raise RuntimeError(
+                f"Post-processing of run {run_id} exceeded {POST_PROCESS_SOFT_TIME_LIMIT} s in step {name}"
+            ) from None
         except Exception:
             logger.exception("Post-processing step %s of run %s failed", name, run_id)
             failed.append(name)
+        finally:
+            logger.info(
+                "extraction.post_process_step_done run=%s step=%s seconds=%.1f",
+                run_id,
+                name,
+                time.monotonic() - started,
+            )
     if failed:
         raise RuntimeError(f"Post-processing of run {run_id} failed in: {', '.join(failed)}")
     if report.get("bibliography", {}).get("items"):

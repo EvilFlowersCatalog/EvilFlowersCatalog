@@ -1,5 +1,6 @@
 """`GET /api/v1/statistics` — operational lending statistics for the admin dashboard (GitHub #131)."""
 
+import logging
 from datetime import date
 from http import HTTPStatus
 from uuid import UUID
@@ -7,6 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.core.cache import cache
+from django.utils import timezone
 from django.utils.translation import get_language
 from django.utils.translation import gettext as _
 
@@ -15,7 +17,10 @@ from apps.api.response import SingleResponse
 from apps.core.errors import DetailType, ProblemDetailException, UnauthorizedException
 from apps.core.models import Catalog, UserCatalog
 from apps.core.views import SecuredView
-from apps.readium.services.statistics import AdminStatistics, build_statistics, count_buckets
+from apps.readium.services.statistics import AdminStatistics, build_statistics, count_buckets, make_buckets
+from apps.readium.services.umami import visitors_per_window
+
+logger = logging.getLogger(__name__)
 
 MAX_SPAN_DAYS = 400
 MAX_BUCKETS = 400
@@ -64,6 +69,18 @@ def parse_params(query) -> dict:
     return {"catalog_id": catalog_id, "date_from": date_from, "date_to": date_to, "bucket": bucket, "tz_name": tz}
 
 
+def _overlay_visitors(data: AdminStatistics, params: dict) -> None:
+    """#194: portal-wide Umami visitors per bucket. Never fails the response: `null` on any trouble."""
+    try:
+        buckets = make_buckets(params["date_from"], params["date_to"], params["bucket"], ZoneInfo(params["tz_name"]))
+        counts = visitors_per_window([(b.window.start, b.window.end) for b in buckets], timezone.now())
+    except Exception:
+        logger.exception("statistics.visitors_failed", extra={"event": "statistics.visitors_failed"})
+        return
+    for row, count in zip(data.series, counts):
+        row.visitors = count
+
+
 class StatisticsView(SecuredView):
     @openapi.metadata(
         description=(
@@ -73,7 +90,11 @@ class StatisticsView(SecuredView):
             "outcomes and the top categories. Query: `catalog_id`, `from` and `to` (inclusive local dates, at most "
             "400 days), `bucket` (`day`, `week`, `month`; at most 400 buckets) and `tz` (IANA zone, default the "
             "server zone). Superusers and catalog managers only. Aggregates only, never per-reader data. "
-            "Cached for 60 seconds."
+            "Each series bucket also carries `reads` (publications opened or downloaded, any access path, anonymous "
+            "included, de-duplicated per reader and file within 30 minutes) and `visitors` (distinct portal "
+            "visitors from Umami's website stats, **portal-wide** even with `catalog_id`; `null` when analytics is "
+            "not configured, unreachable or slower than 2 s). `null` means not available, `0` means measured, "
+            "nobody. Cached for 60 seconds."
         ),
         tags=["Statistics"],
         summary="Catalog lending statistics",
@@ -102,13 +123,15 @@ class StatisticsView(SecuredView):
         # Access is checked above; the numbers do not depend on who asks, so the key has no user.
         # The language is part of it because category titles are localized.
         language = get_language()
-        key = "statistics:v1:{catalog_id}:{date_from}:{date_to}:{bucket}:{tz_name}".format(**params)
+        # v2: buckets carry `reads` and `visitors` (#194).
+        key = "statistics:v2:{catalog_id}:{date_from}:{date_to}:{bucket}:{tz_name}".format(**params)
         key = f"{key}:{language}"
         cached = cache.get(key)
         if cached is not None:
             data = AdminStatistics.model_validate(cached)
         else:
             data = build_statistics(**params, language=language)
+            _overlay_visitors(data, params)
             cache.set(key, data.model_dump(by_alias=True), CACHE_SECONDS)
 
         return SingleResponse(request, data=data)

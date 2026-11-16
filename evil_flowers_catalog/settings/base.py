@@ -83,6 +83,7 @@ INSTALLED_APPS = [
     "apps.extraction",
     "apps.graph",
     "apps.content",
+    "apps.decider",
 ]
 
 MIDDLEWARE = [
@@ -516,6 +517,32 @@ EVILFLOWERS_SEARCH_REGION_MIN_SCORE = float(os.getenv("EVILFLOWERS_SEARCH_REGION
 # "lower": 0.3}}. Empty: the catalog bands nothing itself and stores the band the worker sent. Set from calibration
 # (knowledge#65), then `manage.py reband_regions` applies it to the stored probabilities.
 EVILFLOWERS_DECIDER_BANDS = json.loads(os.getenv("EVILFLOWERS_DECIDER_BANDS") or "{}")
+# The catalog's own calls to `decider` (#190, #191; contract knowledge#64). Empty URL: the night sweeps are off.
+# `edge` and `subject` thresholds go into EVILFLOWERS_DECIDER_BANDS as well, from calibration, e.g.
+# {"edge": {"hide": ["none"], "upper": 0.9}, "subject": {"upper": 0.9, "lower": 0.5}}. Without them nothing is
+# hidden or filed: every answer is stored, and every subject suggestion waits in the review queue.
+EVILFLOWERS_DECIDER_URL = os.getenv("EVILFLOWERS_DECIDER_URL", "").rstrip("/")
+EVILFLOWERS_DECIDER_VISION_URL = os.getenv("EVILFLOWERS_DECIDER_VISION_URL", "").rstrip("/")
+EVILFLOWERS_DECIDER_TIMEOUT = float(os.getenv("EVILFLOWERS_DECIDER_TIMEOUT", 60))
+# The checkpoint asked for in every call; without it Laya may route to its English checkpoint (slow swap).
+EVILFLOWERS_DECIDER_MODEL = os.getenv("EVILFLOWERS_DECIDER_MODEL", "multilingual")
+# Nightly sweeps, before `graph-rebuild` (04:50), each bounded by items and by seconds. Empty schedule: off.
+EVILFLOWERS_DECIDER_EDGE_SCHEDULE = os.getenv(
+    "EVILFLOWERS_DECIDER_EDGE_SCHEDULE", "0 1 * * *" if EVILFLOWERS_DECIDER_URL else ""
+)
+EVILFLOWERS_DECIDER_EDGE_LIMIT = int(os.getenv("EVILFLOWERS_DECIDER_EDGE_LIMIT", 5000))
+EVILFLOWERS_DECIDER_SUBJECT_SCHEDULE = os.getenv(
+    "EVILFLOWERS_DECIDER_SUBJECT_SCHEDULE", "5 3 * * *" if EVILFLOWERS_DECIDER_URL else ""
+)
+EVILFLOWERS_DECIDER_SUBJECT_LIMIT = int(os.getenv("EVILFLOWERS_DECIDER_SUBJECT_LIMIT", 500))
+# Seconds each sweep may call the decider: 01:00 + 100 min and 03:05 + 100 min both end before 04:50.
+EVILFLOWERS_DECIDER_SWEEP_SECONDS = int(os.getenv("EVILFLOWERS_DECIDER_SWEEP_SECONDS", 100 * 60))
+# Category schemes the subject sweep offers and counts (the catalog's UDC / MDT terms).
+EVILFLOWERS_DECIDER_SUBJECT_SCHEMES = [
+    scheme.strip()
+    for scheme in os.getenv("EVILFLOWERS_DECIDER_SUBJECT_SCHEMES", "MDT,UDC").split(",")
+    if scheme.strip()
+]
 
 # Context policy (IP-015 D3). While a conversation is warm the full history is
 # replayed unchanged so the prompt prefix stays byte-identical and Ollama can
@@ -809,6 +836,23 @@ EVILFLOWERS_REVIEWS_PRIOR_WEIGHT = float(os.getenv("EVILFLOWERS_REVIEWS_PRIOR_WE
 # personal activity history retention
 EVILFLOWERS_ACTIVITY_RETENTION_DAYS = int(os.getenv("EVILFLOWERS_ACTIVITY_RETENTION_DAYS", 365))
 
+# #194: `reads` and `visitors` in GET /api/v1/statistics.
+# ReadEvent holds no personal data, so it outlives the activity history. The statistics span is at most 400 days;
+# the prune never goes below that, and older buckets report `reads: null` rather than a false 0.
+EVILFLOWERS_READ_EVENT_RETENTION_DAYS = max(400, int(os.getenv("EVILFLOWERS_READ_EVENT_RETENTION_DAYS", 800)))
+# One reader re-opening (or a viewer range-fetching) the same file within this window is one read. The portal
+# creates a new user acquisition and downloads the whole file on every open, so 30 minutes absorbs reloads.
+EVILFLOWERS_READ_DEDUP_SECONDS = int(os.getenv("EVILFLOWERS_READ_DEDUP_SECONDS", 1800))
+# Umami web analytics, read server side (the credential never reaches the browser). Empty URL or website = off,
+# and `visitors` is null. Credential: an API key, or a username + password exchanged at /api/auth/login.
+EVILFLOWERS_UMAMI_URL = os.getenv("EVILFLOWERS_UMAMI_URL", "").rstrip("/")
+EVILFLOWERS_UMAMI_WEBSITE_ID = os.getenv("EVILFLOWERS_UMAMI_WEBSITE_ID", "")
+EVILFLOWERS_UMAMI_API_KEY = os.getenv("EVILFLOWERS_UMAMI_API_KEY", "")
+EVILFLOWERS_UMAMI_USERNAME = os.getenv("EVILFLOWERS_UMAMI_USERNAME", "")
+EVILFLOWERS_UMAMI_PASSWORD = os.getenv("EVILFLOWERS_UMAMI_PASSWORD", "")
+# Total time budget (seconds) for all Umami calls of one statistics response; buckets not fetched in time are null.
+EVILFLOWERS_UMAMI_TIMEOUT = float(os.getenv("EVILFLOWERS_UMAMI_TIMEOUT", 2.0))
+
 # OpenAPI
 EVILFLOWERS_OPENAPI_APPS = ["api", "files", "readium", "assistant", "extraction"]
 
@@ -837,6 +881,9 @@ EVILFLOWERS_POST_PROCESS_SWEEP_SCHEDULE = os.getenv(
 EVILFLOWERS_POST_PROCESS_SWEEP_BATCH = int(os.getenv("EVILFLOWERS_POST_PROCESS_SWEEP_BATCH", 4))
 # Runs of one run's post-processing before its job is failed; the sweep skips it until a manual apply.
 EVILFLOWERS_POST_PROCESS_MAX_ATTEMPTS = int(os.getenv("EVILFLOWERS_POST_PROCESS_MAX_ATTEMPTS", 3))
+# Seconds one run's post-processing may take (#192); the hard limit follows two minutes later. Runs on dev take
+# 15-45 s; a run past this fails with the step that overran, instead of holding a worker slot for an hour.
+EVILFLOWERS_POST_PROCESS_SOFT_TIME_LIMIT = int(os.getenv("EVILFLOWERS_POST_PROCESS_SOFT_TIME_LIMIT", 600))
 # Weekly recompute of every section pair with one set of per-language means, before `graph-rebuild`; empty = off.
 EVILFLOWERS_SIMILARITY_REBUILD_SCHEDULE = os.getenv("EVILFLOWERS_SIMILARITY_REBUILD_SCHEDULE", "20 4 * * 0")
 # Orphan cleanup (#30): cron expression (`m h dom mon dow`) of the beat job; unset = off.
@@ -1001,10 +1048,34 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = int(os.getenv("CELERY_WORKER_PREFETCH_MULTIP
 # after the visibility timeout above. Tasks that must not run twice set acks_late=False.
 CELERY_TASK_ACKS_LATE = _bool_env("CELERY_TASK_ACKS_LATE", default=False)
 CELERY_TASK_REJECT_ON_WORKER_LOST = _bool_env("CELERY_TASK_REJECT_ON_WORKER_LOST", default=False)
+# #193: long nightly maintenance (backup, storage audit, rebuilds, prunes) goes to a queue of its own, so
+# a fixed-replica consumer with a long shutdown grace runs it, outside the autoscaled general worker.
+# The general worker does not consume it unless its `--queues` names it (prod's Compose worker does).
+# A direct exchange of the same name, like the service queues (knowledge#14 naming).
+EVILFLOWERS_MAINTENANCE_QUEUE = os.getenv("EVILFLOWERS_MAINTENANCE_QUEUE", "evilflowers.catalog.maintenance")
+_MAINTENANCE_ROUTE = {
+    "queue": EVILFLOWERS_MAINTENANCE_QUEUE,
+    "exchange": EVILFLOWERS_MAINTENANCE_QUEUE,
+    "exchange_type": "direct",
+    "routing_key": EVILFLOWERS_MAINTENANCE_QUEUE,
+}
+EVILFLOWERS_MAINTENANCE_TASKS = (
+    "apps.tasks.tasks.backup",
+    "apps.tasks.tasks.cleanup_orphans",
+    "apps.tasks.tasks.prune_user_activity",
+    "apps.tasks.tasks.prune_read_events",
+    "apps.tasks.tasks.prune_content_disclosures",
+    "apps.tasks.tasks.prune_jobs",
+    "apps.extraction.tasks.similarity_rebuild",
+    "apps.graph.tasks.rebuild_graph",
+    "apps.decider.tasks.edge_sweep",
+    "apps.decider.tasks.subject_sweep",
+)
 CELERY_TASK_ROUTES = {
     "evilflowers_ocr_worker.*": {"queue": "evilflowers_ocr_worker"},
     "evilflowers_lcpencrypt_worker.*": {"queue": "evilflowers_lcpencrypt_worker"},
     "test.*": {"queue": "test"},
+    **{task: dict(_MAINTENANCE_ROUTE) for task in EVILFLOWERS_MAINTENANCE_TASKS},
 }
 
 

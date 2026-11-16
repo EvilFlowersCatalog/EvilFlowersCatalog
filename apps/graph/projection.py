@@ -215,10 +215,32 @@ def project_run(run) -> Dict[str, int]:
         statements.append(
             (
                 "UNWIND $rows AS row MATCH (a:Section {key: row.a}), (b:Section {key: row.b}) "
-                "MERGE (a)-[r:SIMILAR_TO]->(b) SET r.weight = row.weight",
+                "MERGE (a)-[r:SIMILAR_TO]->(b) SET r.weight = row.weight, r.relation = row.relation, r.p = row.p, "
+                "r.a = row.from",
                 {"rows": batch},
             )
         )
+    # #190: typed edges next to SIMILAR_TO, from the decider's A and B (`apps.decider.edges.TYPED_EDGES`).
+    from apps.decider.edges import TYPED_EDGES
+
+    for relation, (label, reverse) in TYPED_EDGES.items():
+        typed = [
+            {
+                "f": item["to"] if reverse else item["from"],
+                "t": item["from"] if reverse else item["to"],
+                "p": item["p"],
+            }
+            for item in similar
+            if item["relation"] == relation
+        ]
+        for batch in _batches(typed):
+            statements.append(
+                (
+                    "UNWIND $rows AS row MATCH (a:Section {key: row.f}), (b:Section {key: row.t}) "
+                    f"MERGE (a)-[r:{label}]->(b) SET r.p = row.p",
+                    {"rows": batch},
+                )
+            )
 
     cited = _cited_entries(run)
     statements.append(("MATCH (e:Entry {id: $entry_id})-[r:CITES]->() DELETE r", {"entry_id": entry_id}))
@@ -281,10 +303,25 @@ def _similar_sections(run) -> List[dict]:
         )
         .order_by("source_id", "source_section", "target_id", "target_section")
     )
-    return [
-        {"a": section_key(source_entry, source), "b": section_key(target_entry, target), "weight": score}
+    from apps.decider.edges import lookup
+    from apps.decider.models import Band
+
+    pairs = [
+        (section_key(source_entry, source), section_key(target_entry, target), score)
         for source_entry, source, target_entry, target, score in rows
     ]
+    # #190: the decider's relation, if it typed the pair; a pair it hid (`unrelated`, high p) is not drawn.
+    relations = lookup((a, b) for a, b, _ in pairs)
+    similar = []
+    for a, b, score in pairs:
+        relation = relations.get(frozenset((a, b)))
+        if relation is not None and relation.band == Band.HIDE:
+            continue
+        item = {"a": a, "b": b, "weight": score, "relation": None, "p": None, "from": None, "to": None}
+        if relation is not None:
+            item.update(relation=relation.relation, p=relation.p, **{"from": relation.a_key, "to": relation.b_key})
+        similar.append(item)
+    return similar
 
 
 def project_concepts(summary, subject: Optional[str] = None) -> int:
@@ -375,7 +412,19 @@ def rebuild() -> Dict[str, int]:
 
 
 #: Edge labels `counts` reports.
-EDGE_LABELS = ("HAS_SECTION", "NEXT", "SHOWS", "MENTIONS", "SIMILAR_TO", "WRITTEN_BY", "FILED_UNDER", "CITES")
+EDGE_LABELS = (
+    "HAS_SECTION",
+    "NEXT",
+    "SHOWS",
+    "MENTIONS",
+    "SIMILAR_TO",
+    "SAME_IDEA_AS",  # #190: typed by the decider
+    "PREREQUISITE_OF",
+    "EXAMPLE_OF",
+    "WRITTEN_BY",
+    "FILED_UNDER",
+    "CITES",
+)
 
 
 def counts() -> Dict[str, int]:

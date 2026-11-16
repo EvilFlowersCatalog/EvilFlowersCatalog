@@ -23,9 +23,10 @@ from apps import openapi
 from apps.api.response import SingleResponse, SeeOtherResponse
 from apps.core.errors import ProblemDetailException, DetailType, AuthorizationException
 from apps.core.fields.multirange import depack
-from apps.core.models import Acquisition, Entry, UserAcquisition, AnnotationItem, UserActivity
+from apps.core.models import Acquisition, Entry, UserAcquisition, AnnotationItem, UserActivity, ReadEvent
 from apps.core.modifiers import InvalidPage
 from apps.core.services.activity import ActivityService
+from apps.core.services.reads import ReadService
 from apps.core.views import SecuredView
 from apps.files import personalised
 from apps.files.ranges import is_continuation, ranged_file_response
@@ -156,6 +157,10 @@ class AcquisitionDownload(SecuredView):
                 UserActivity.ActivityAction.ENTRY_DOWNLOADED,
                 {"acquisition_id": str(acquisition.pk), "mime": acquisition.mime, "via": "acquisition"},
             )
+            # #194: anonymous open-access downloads count too; only the served path, never the 303 above.
+            ReadService.record(
+                acquisition.entry, ReadEvent.Via.ACQUISITION, scope=f"acquisition:{acquisition.pk}", request=request
+            )
 
         if request.GET.get("format", None) == "base64":
             if acquisition.storage_backend == Acquisition.StorageBackend.EXTERNAL_URL:
@@ -215,6 +220,13 @@ class UserAcquisitionDownload(SecuredView):
                     "mime": user_acquisition.acquisition.mime,
                     "via": "user_acquisition",
                 },
+            )
+            # #194: scoped by the acquisition, not this user acquisition: the portal creates one per open.
+            ReadService.record(
+                user_acquisition.acquisition.entry,
+                ReadEvent.Via.USER_ACQUISITION,
+                scope=f"acquisition:{user_acquisition.acquisition_id}",
+                request=request,
             )
 
         sanitized_filename = (

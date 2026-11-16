@@ -9,7 +9,11 @@ number of queries, independent of how many titles or loans the catalog holds:
 3. every license that matters for the period or the previous one,
 4. every reservation that matters for them, plus all non-terminal ones,
 5. encryption jobs that need attention,
-6. the top categories by loans.
+6. the top categories by loans,
+7. read events (`ReadEvent`, any access path) per bucket (#194).
+
+`visitors` comes from Umami, not from this database: the view overlays it (`apps.readium.services.umami`), so
+this function stays a pure, cacheable database read.
 
 Licenses and reservations are folded in Python. Interval metrics (copy
 utilization, active readers) are overlaps with each window, which grouping by
@@ -31,12 +35,13 @@ from zoneinfo import ZoneInfo
 
 from django.db.models import Count, Exists, IntegerField, Max, OuterRef, Q, Subquery, Value
 from django.db.models.fields.json import KeyTextTransform
-from django.db.models.functions import Cast, Coalesce
+from django.conf import settings
+from django.db.models.functions import Cast, Coalesce, TruncDay, TruncMonth, TruncWeek
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.core.fields.localized import localize
-from apps.core.models import Category, Entry, EntryAuthor
+from apps.core.models import Category, Entry, EntryAuthor, ReadEvent
 from apps.readium.models import EncryptedContent, License, Reservation
 
 StatsBucket = Literal["day", "week", "month"]
@@ -108,6 +113,24 @@ class StatisticsBucket(BaseModel):
     loans_returned: int
     loans_expired: int
     holds_placed: int
+    # #194. `null` = not available for this bucket; `0` = measured, nobody.
+    reads: Optional[int] = Field(
+        default=None,
+        description=(
+            "Publications opened or downloaded in the bucket, any access path (open access, in-portal viewer, LCP "
+            "license), anonymous readers included. Repeated requests of one file by one reader within "
+            "`EVILFLOWERS_READ_DEDUP_SECONDS` (default 30 min) count once. `null` for buckets older than the "
+            "read-event retention."
+        ),
+    )
+    visitors: Optional[int] = Field(
+        default=None,
+        description=(
+            "Distinct portal visitors in the bucket from Umami web analytics (the stats endpoint's `visitors`, i.e. "
+            "distinct Umami sessions in `[bucket start, bucket end)`). Portal-wide: not filtered by `catalog_id`. "
+            "`null` when analytics is not configured, unreachable or slower than its time budget."
+        ),
+    )
 
 
 class StatisticsHeatCell(BaseModel):
@@ -230,6 +253,27 @@ class Bucket:
     window: Window  # clipped to the period
 
 
+def make_buckets(date_from: date, date_to: date, bucket: StatsBucket, tz: ZoneInfo) -> List[Bucket]:
+    """Calendar-aligned buckets, each window clipped to the period (shared with the Umami overlay, #194)."""
+    buckets: List[Bucket] = []
+    for start in bucket_starts(date_from, date_to, bucket):
+        end = next_bucket(start, bucket)
+        buckets.append(
+            Bucket(
+                start=start,
+                partial=start < date_from or end - timedelta(days=1) > date_to,
+                window=Window(
+                    local_midnight(max(start, date_from), tz),
+                    local_midnight(min(end, date_to + timedelta(days=1)), tz),
+                ),
+            )
+        )
+    return buckets
+
+
+_TRUNC = {"day": TruncDay, "week": TruncWeek, "month": TruncMonth}
+
+
 def _ratio(numerator: float, denominator: float) -> Optional[float]:
     return numerator / denominator if denominator else None
 
@@ -287,19 +331,7 @@ def build_statistics(
     previous = Window(local_midnight(previous_from, tz), period.start)
     span = Window(previous.start, period.end)
 
-    buckets: List[Bucket] = []
-    for start in bucket_starts(date_from, date_to, bucket):
-        end = next_bucket(start, bucket)
-        buckets.append(
-            Bucket(
-                start=start,
-                partial=start < date_from or end - timedelta(days=1) > date_to,
-                window=Window(
-                    local_midnight(max(start, date_from), tz),
-                    local_midnight(min(end, date_to + timedelta(days=1)), tz),
-                ),
-            )
-        )
+    buckets = make_buckets(date_from, date_to, bucket, tz)
     bucket_edges = [b.window.start for b in buckets]
 
     def bucket_of(moment: datetime) -> Optional[int]:
@@ -525,6 +557,22 @@ def build_statistics(
         .values("id", "term", "label", "loans")[:CATEGORIES_LIMIT]
     )
 
+    # --- 7. reads per bucket (#194): truncated in `tz` by the database, so 23:30 UTC is the next Bratislava day.
+    # Week truncation is ISO (Monday), like `align`; a clipped first bucket still truncates to its aligned start.
+    reads_by_start: Dict[date, int] = {}
+    for moment, count in (
+        ReadEvent.objects.filter(catalog_id=catalog_id, occurred_at__gte=period.start, occurred_at__lt=period.end)
+        .annotate(t=_TRUNC[bucket]("occurred_at", tzinfo=tz))
+        .order_by()
+        .values("t")
+        .annotate(n=Count("pk"))
+        .values_list("t", "n")
+    ):
+        day = moment.astimezone(tz).date() if isinstance(moment, datetime) else moment
+        reads_by_start[day] = reads_by_start.get(day, 0) + count
+    # Events past the retention are pruned: a bucket that started before the horizon is unknown, not zero.
+    reads_horizon = now - timedelta(days=settings.EVILFLOWERS_READ_EVENT_RETENTION_DAYS)
+
     # --- KPIs
     def utilization(seconds: float, window: Window) -> Optional[float]:
         return _ratio(seconds, copies_total * window.seconds)
@@ -583,6 +631,7 @@ def build_statistics(
                 loans_returned=b_returned[i],
                 loans_expired=b_expired[i],
                 holds_placed=b_holds[i],
+                reads=None if b.window.start < reads_horizon else reads_by_start.get(b.start, 0),
             )
             for i, b in enumerate(buckets)
         ],

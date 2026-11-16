@@ -16,6 +16,7 @@ from apps.core.models import Acquisition
 from apps.extraction.batches import STEPS, missing_steps, summarise_jobs
 from apps.extraction.tasks import (
     POST_PROCESS_KIND,
+    POST_PROCESS_TIME_LIMIT,
     POST_PROCESS_VERSION,
     SIMILARITY_REBUILD_TIME_LIMIT,
     is_exhausted,
@@ -250,6 +251,8 @@ class PostProcessDefinition(JobDefinition):
     )
     task = "apps.extraction.tasks.post_process_run"
     spec_model = PostProcessSpec
+    #: The task's own hard limit (#192), so the sweeper calls a silent run `lost` after it, not after 30 min.
+    time_limit = timedelta(seconds=POST_PROCESS_TIME_LIMIT)
 
     @property
     def subject_model(self):

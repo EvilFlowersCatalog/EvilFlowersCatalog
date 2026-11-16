@@ -58,7 +58,7 @@ issue left open.
 
 ### Query plan
 
-Six queries, independent of the number of titles and loans (asserted with `assertNumQueries(6)`), plus one or
+Seven queries, independent of the number of titles and loans (asserted with `assertNumQueries(7)`), plus one or
 two for the access check in the view:
 
 1. LCP titles with copies, live licenses now, last loan ever and whether a `registered` package exists
@@ -68,6 +68,7 @@ two for the access check in the view:
 4. Every reservation requested, promoted or resolved in those windows, plus all `queued`/`available` ones.
 5. Encryption jobs `failed` or stuck (`pending`, last dispatch or creation older than 1 h).
 6. Top 10 categories by licenses created in the period.
+7. `ReadEvent` counts per `Trunc{Day,Week,Month}(occurred_at, tzinfo=tz)` in the period (GitHub #194).
 
 Licenses and reservations are folded in Python in one pass. Utilization and active readers are interval overlaps
 with each window, which `Trunc` grouping cannot produce, and the same pass serves the period, the previous
@@ -93,6 +94,36 @@ period, every bucket and every title.
 - **Buckets:** calendar-aligned local dates (ISO week from Monday, first of month); `partial` when the bucket
   starts before `from` or ends after `to`.
 
+### `reads` and `visitors` per bucket (GitHub #194)
+
+Both are optional, additive fields of every `series[]` bucket. `null` means "not available for this bucket", `0`
+means "measured, nobody".
+
+- **`reads`:** rows of `ReadEvent` (`apps/core/models/read_event.py`), an append-only table with no user, IP or
+  session: entry, denormalised `catalog_id`, `occurred_at`, `via` (`acquisition`, `user_acquisition`,
+  `lcp_license`) and `authenticated`. Written by `ReadService.record` next to `ActivityService.record` in
+  `AcquisitionDownload`, `UserAcquisitionDownload` and the License Gateway, anonymous readers included. It
+  never raises and runs in its own savepoint.
+- **One read:** the first request of one file by one reader within `EVILFLOWERS_READ_DEDUP_SECONDS` (default
+  1,800). The portal opens a book by creating a new user acquisition and downloading the whole file in one GET
+  (`Viewer.tsx`, `useGetUserAcquisition`, `responseType: 'arraybuffer'`), so the key is the acquisition, not
+  the user acquisition, and a reload is the same read. pdf.js in `url` mode fetches ranges; continuation ranges
+  are skipped (`is_continuation`) and the window absorbs a restart from byte 0. LCP reads key on the license
+  holder and title (feed and e-mail tokens are multi-use). The reader is an HMAC (`SECRET_KEY`) of the user id,
+  or of the client address plus User-Agent when anonymous, and it lives only in the cache for the window.
+- **Retention:** `EVILFLOWERS_READ_EVENT_RETENTION_DAYS` (default 800, never below 400), pruned nightly by
+  `apps.tasks.tasks.prune_read_events` on the maintenance queue. Buckets that start before the horizon report
+  `reads: null`. Buckets from before the table existed report `0`.
+- **`visitors`:** distinct portal visitors from Umami, read server side by `apps/readium/services/umami.py`:
+  one `GET /api/websites/{id}/stats?startAt&endAt` per bucket (epoch ms, half-open bucket as an inclusive range),
+  whose `visitors` is Umami's count of distinct sessions in the range. The page-views endpoint's `sessions`
+  series is per day or month only, and summing days counts a returning visitor once per day, so it is not used.
+  **Portal-wide**: Umami does not know catalogs. Calls run in parallel under one total budget
+  (`EVILFLOWERS_UMAMI_TIMEOUT`, default 2 s); a bucket without an answer is `null`, and the endpoint still
+  answers 200. Past buckets are cached for a day, `null` never. Off (all `null`) until `EVILFLOWERS_UMAMI_URL`,
+  `EVILFLOWERS_UMAMI_WEBSITE_ID` and a credential (`EVILFLOWERS_UMAMI_API_KEY`, or
+  `EVILFLOWERS_UMAMI_USERNAME` + `EVILFLOWERS_UMAMI_PASSWORD`) are set.
+
 ## Alternatives Considered
 
 - **SQL per bucket** (`generate_series` joined to licenses with `GREATEST`/`LEAST`): pushes the overlap work into
@@ -116,8 +147,9 @@ period, every bucket and every title.
 
 ## Future Considerations
 
-- Download, shelf and review trends need an append-only event table or daily rollups in `ActivityService.record`
-  (`UserActivity` is an upserted counter). Out of scope per #131.
+- Shelf and review trends need an append-only event table or daily rollups in `ActivityService.record`
+  (`UserActivity` is an upserted counter). Downloads have one since #194 (`ReadEvent`); a `reads` column on
+  `titles[]` would give open-access titles a demand signal.
 - Cost per loan needs purchase prices per copy.
 
 ## References
@@ -229,3 +261,4 @@ includes deadlines already passed but not yet swept.
 |------|--------|---------|
 | 2026-11-11 | jdubec | Initial draft from GitHub #131, implemented with recommended answers and tested locally |
 | 2026-11-11 | jdubec | Added Review Questions section |
+| 2026-11-16 | jdubec | GitHub #194: `reads` (ReadEvent) and `visitors` (Umami) per bucket; seventh query |

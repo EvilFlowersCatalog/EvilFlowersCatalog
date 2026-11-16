@@ -143,6 +143,23 @@ def _items(request, found: List[dict], why) -> List[dict]:
     ]
 
 
+#: #190: the decider's relation, as the reader of the asked section sees the other one.
+_RELATION_WHY = {
+    "same": "explains the same idea",
+    "prerequisite": "read it first: a prerequisite",
+    "next": "builds on this section",
+    "example": "an example of this section's idea",
+    "general": "the general idea this section is an example of",
+    "loose": "loosely related",
+}
+
+
+def _related_why(item: dict) -> str:
+    why = _WHY.get(item["via"], item["via"])
+    relation = _RELATION_WHY.get(item.get("relation") or "")
+    return f"{why}; {relation}" if relation else why
+
+
 @registry.tool(
     name="related_sections",
     title="Find related sections in other books",
@@ -171,9 +188,7 @@ def related_sections(request, raw_arguments: dict) -> dict:
             return _unavailable()
         visible = _visible(request)
         key = _section_key(request, entry_id, section, visible)
-        found = _items(
-            request, queries.related_sections(key, visible, limit), lambda item: _WHY.get(item["via"], item["via"])
-        )
+        found = _items(request, queries.related_sections(key, visible, limit), _related_why)
         current.set_attribute("evilflowers.graph.rows", len(found))
     return {"available": True, "items": found}
 

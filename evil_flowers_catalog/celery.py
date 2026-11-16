@@ -191,6 +191,17 @@ if settings.EVILFLOWERS_SIMILARITY_REBUILD_SCHEDULE:
         "task": "apps.extraction.tasks.similarity_rebuild",
         "schedule": _cron(settings.EVILFLOWERS_SIMILARITY_REBUILD_SCHEDULE),
     }
+# #190, #191: the decision model types similar sections and suggests subjects, before the graph rebuild.
+if settings.EVILFLOWERS_DECIDER_URL and settings.EVILFLOWERS_DECIDER_EDGE_SCHEDULE:
+    app.conf.beat_schedule["decider-edge-sweep"] = {
+        "task": "apps.decider.tasks.edge_sweep",
+        "schedule": _cron(settings.EVILFLOWERS_DECIDER_EDGE_SCHEDULE),
+    }
+if settings.EVILFLOWERS_DECIDER_URL and settings.EVILFLOWERS_DECIDER_SUBJECT_SCHEDULE:
+    app.conf.beat_schedule["decider-subject-sweep"] = {
+        "task": "apps.decider.tasks.subject_sweep",
+        "schedule": _cron(settings.EVILFLOWERS_DECIDER_SUBJECT_SCHEDULE),
+    }
 if settings.EVILFLOWERS_GRAPH_REBUILD_SCHEDULE:
     app.conf.beat_schedule["graph-rebuild"] = {
         "task": "apps.graph.tasks.rebuild_graph",
@@ -205,4 +216,9 @@ app.conf.beat_schedule["core-prune-user-activity"] = {
 app.conf.beat_schedule["content-prune-disclosures"] = {
     "task": "apps.tasks.tasks.prune_content_disclosures",
     "schedule": crontab(hour=3, minute=45),
+}
+# #194: read events (no personal data) outlive the activity history; kept at least the 400-day statistics span.
+app.conf.beat_schedule["core-prune-read-events"] = {
+    "task": "apps.tasks.tasks.prune_read_events",
+    "schedule": crontab(hour=3, minute=40),
 }

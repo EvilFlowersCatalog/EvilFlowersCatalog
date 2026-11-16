@@ -19,3 +19,4 @@ from .entry_author import EntryAuthor
 from .user_activity import UserActivity
 from .entry_review import EntryReview
 from .setting import Setting
+from .read_event import ReadEvent

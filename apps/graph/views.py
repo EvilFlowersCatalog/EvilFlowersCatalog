@@ -71,6 +71,12 @@ class GraphSectionSerializer(Serializer):
 class RelatedSectionSerializer(GraphSectionSerializer):
     #: `concepts`, `similar` or `concepts+similar`.
     via: str
+    #: #190: how the decider relates this section to the one asked about, from its reader's side: `same`,
+    #: `prerequisite` (read this one first), `next` (builds on the one asked about), `example` (an example of it),
+    #: `general` (the idea the one asked about is an example of) or `loose`. Null until the pair is typed.
+    relation: Optional[str] = None
+    #: The decider's probability of `relation`.
+    relation_p: Optional[float] = None
 
 
 class PrerequisiteSerializer(GraphSectionSerializer):
@@ -240,7 +246,8 @@ class SectionRelated(SecuredView):
     @openapi.metadata(
         description=(
             "Sections of other publications that use the same concepts or discuss the same thing "
-            "(`SIMILAR_TO`, #151), best first. `via` says which. Only publications the caller may see; 404 for "
+            "(`SIMILAR_TO`, #151), best first. `via` says which; `relation` and `relation_p` say how the decision "
+            "model relates the pair (#190), null until it typed it. Only publications the caller may see; 404 for "
             "a section of a publication they may not. A `title` is null for publications lent through Readium LCP "
             "or outside their allowed IP ranges. Empty without the graph."
         ),

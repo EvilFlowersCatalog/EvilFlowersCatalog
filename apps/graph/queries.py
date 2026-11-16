@@ -64,7 +64,29 @@ def related_sections(section: str, entries: Iterable[str], limit: int = 5) -> Li
             scored[item["key"]]["via"] = "concepts+similar"
         else:
             scored[item["key"]] = {**item, "score": weight, "via": "similar"}
-    return sorted(scored.values(), key=lambda item: (-item["score"], item["key"]))[:limit]
+    return _with_relations(section, sorted(scored.values(), key=lambda item: (-item["score"], item["key"]))[:limit])
+
+
+def _with_relations(section: str, items: List[dict]) -> List[dict]:
+    """#190: the decider's relation of each item to `section`, as its reader sees it, and its p; a pair the
+    decider hid is left out even before the graph is projected again."""
+    from apps.decider.edges import lookup, perspective
+    from apps.decider.models import Band
+
+    relations = lookup((section, item["key"]) for item in items)
+    found = []
+    for item in items:
+        relation = relations.get(frozenset((section, item["key"])))
+        if relation is not None and relation.band == Band.HIDE:
+            continue
+        found.append(
+            {
+                **item,
+                "relation": perspective(relation, section) if relation is not None else None,
+                "relation_p": relation.p if relation is not None else None,
+            }
+        )
+    return found
 
 
 def prerequisites(section: str, entries: Iterable[str], limit: int = 3) -> List[dict]:

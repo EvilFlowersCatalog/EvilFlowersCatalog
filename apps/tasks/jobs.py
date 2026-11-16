@@ -1,12 +1,16 @@
 """Maintenance job kinds (IP-031): one job per beat task; applying it runs the task now."""
 
+from datetime import timedelta
+
 from apps.tasks.contract import maintenance
+from apps.tasks.tasks import BACKUP_TIME_LIMIT
 
 maintenance(
     "maintenance.backup",
     "apps.tasks.tasks.backup",
     "Backup",
     "PostgreSQL dump and per-catalog archives to EVILFLOWERS_BACKUP_DESTINATION.",
+    time_limit=timedelta(seconds=BACKUP_TIME_LIMIT),
 )
 maintenance(
     "maintenance.cleanup_orphans",
@@ -37,6 +41,12 @@ maintenance(
     "apps.tasks.tasks.prune_user_activity",
     "Prune activity history",
     "Drop personal activity history older than the retention window (IP-016).",
+)
+maintenance(
+    "maintenance.prune_read_events",
+    "apps.tasks.tasks.prune_read_events",
+    "Prune read events",
+    "Drop read events older than EVILFLOWERS_READ_EVENT_RETENTION_DAYS, never under 400 days (#194).",
 )
 maintenance(
     "maintenance.sweep_jobs",

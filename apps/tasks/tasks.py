@@ -8,9 +8,18 @@ from django.core.management import call_command
 
 logger = logging.getLogger(__name__)
 
+#: Seconds a backup may take (#193); its job kind carries it too, so the sweeper does not call it `lost` sooner.
+BACKUP_TIME_LIMIT = 3 * 60 * 60
 
-@shared_task
+
+@shared_task(acks_late=False, reject_on_worker_lost=False, time_limit=BACKUP_TIME_LIMIT)
 def backup():
+    """Nightly backup, on the maintenance queue (#193).
+
+    Acked on receipt whatever `CELERY_TASK_ACKS_LATE` says: a backup killed mid-run must not come back
+    after the 12 h visibility timeout and run during the day. The next night's schedule retries it.
+    Its own hard limit: it takes ~11 min on dev and grows with the library; the global 30 min is too tight.
+    """
     if settings.EVILFLOWERS_BACKUP_DESTINATION:
         call_command(
             "backup",
@@ -82,6 +91,14 @@ def prune_user_activity() -> int:
     from apps.core.services.activity import ActivityService
 
     return ActivityService.prune()
+
+
+@shared_task
+def prune_read_events() -> int:
+    """#194: drop read events past `EVILFLOWERS_READ_EVENT_RETENTION_DAYS` (at least the 400-day statistics span)."""
+    from apps.core.services.reads import ReadService
+
+    return ReadService.prune()
 
 
 @shared_task
