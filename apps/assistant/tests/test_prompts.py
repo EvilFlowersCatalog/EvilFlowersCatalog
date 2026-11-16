@@ -18,7 +18,7 @@ PROMPT_HASHES = {
     # 2026-11-15, #162/#165/#167/#168: search before answering about content, cite only this message's labels,
     # `search_library_text` for what texts say, no lcp_states hint, `show_in_portal`, no tool names or asking
     # before a lookup, English term names in Slovak. Not yet run through `assistant_eval` either.
-    "chat": "78135bfeafed391f8cc8006ae43e3fe328258b05abee28c844ea1ff8db3c9335",
+    "chat": "c4a3d3261e46e65c8575542d31c304fa5be872795c5eab3032e0475db6b55ba8",
     "explain": "78c31a0ef64cd0cd56c2d2b573c7967fe15bfa7632836fda6a0e741599542120",
     "highlight": "e18e507f1b61be651fabf82ea6bebe13a11f95de93c9183f63d8150127805369",
     "semantic": "58e58ff31be28adb45ea2c6890169af7c3e508461df8d1648b7265ae8355d153",

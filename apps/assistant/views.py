@@ -251,7 +251,10 @@ class ChatMessages(AssistantView):
             "(`text/event-stream`). Events: `status`, `activity`, `evidence` (sources gathered before the "
             "first round), `chunk` (a fragment of the answer), `citation` (a label such as `[E3]` or `[F2]` "
             "when it first appears, resolved to page, paragraph box and sentence quads, or figure crop), "
-            "`message`, `citations` (all cited and unknown labels), `entries` (publication cards), `study` "
+            "`message`, `citations` (all cited and unknown labels; shown figures too), `entries` (publication cards), "
+            '`figures` (`{labels: ["F2"]}`: a gallery of figures whose `citation` frames came first, #185), '
+            "`access` (`{entry_id, title, tier, basis, reason, how_to_unlock}`: a publication whose text was "
+            "withheld or cut short this turn, once per publication, #186), `study` "
             "(a walkthrough, quiz or key-concepts card), `navigate` (`{targets: [place ids], tour?, auto?}`: "
             "places in the portal to show the reader, live only), `pages`, `suggestions`, `error` (with "
             "`message_id` and `retryable`; the failed turn is stored) and `done` (`chat_id`, and `message_id` of "

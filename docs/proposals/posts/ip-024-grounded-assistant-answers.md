@@ -271,15 +271,54 @@ owns it.
 - [x] Sentence splitter, verifier prompt and schema, `unverified` on failure
 - [x] `assistant_eval run --verify`: verdicts per citation in the report
 - [x] `assistant_eval pairs` / `calibrate`: export for labelling, tuning and held-out halves
-- [ ] Label ≥ 200 pairs from STU publications; choose the threshold on the tuning half; record it here; run the
-  held-out half (needs a person and `elvira-assistant`)
+- [x] Label ≥ 200 pairs; choose the threshold on the tuning half; record it here; run the held-out half. Done
+  2026-11-15 with synthetic labels (#132): 236 pairs labelled by a Claude Opus agent, threshold **75** (see
+  "Evaluation runs")
 
 ### Phase 4: Gold set and retrieval benchmark (#118) ✅ tooling on the working tree
 
 - [x] `assistant_eval retrieval`: Recall@5, nDCG@10, MRR at publication and page level, no model
 - [x] `assistant_eval run --gold`, `expect.cites_any_entry`
 - [x] Pre-registered bars in this proposal and in `retrieval_bench.PREREGISTERED`
-- [ ] ~50 gold questions with publication and page ranges in `retrieval_gold.json` (needs a librarian)
+- [x] Gold questions with publication and page ranges: 210 synthetic questions on dev, 2026-11-15 (#132)
+
+### Evaluation runs
+
+**2026-11-15, dev, synthetic data (#132).** The maintainer decided that no librarian will write the gold set or
+label pairs. A dedicated Claude Opus agent wrote both from 600 seeded paragraphs of dev's open-access
+publications (seed 20261115, at most 4 per entry, the `synthetic_cases` filters). Files are in
+`/var/log/assistant-eval/` of the dev catalog pod.
+
+*Gold set* (`gold-opus-2026-11-15.json`): 210 questions over 143 publications.
+- Language: 106 Slovak, 104 English. Dev's open-access set has no Slovak books, so every Slovak question is
+  cross-lingual; 113 questions are cross-lingual in all.
+- Paraphrased, never copied from the paragraph. 30 also name the next page.
+
+*Retrieval* (`retrieval-2026-11-15.json`, no model, 0 degraded). The bars report `met: null`, since every case
+is synthetic. Compared by hand they would all be met, which certifies nothing (Q6):
+
+| | entry R@5 | entry nDCG@10 | page R@5 | page nDCG@10 |
+|---|---|---|---|---|
+| all (210) | 0.933 | 0.888 | 0.617 | 0.568 |
+| EN question, EN book (97) | 0.99 | — | 0.778 | 0.754 |
+| SK question, foreign book (106) | 0.906 | — | 0.491 | 0.419 |
+| EN question, DE book (7) | 0.571 | — | 0.286 | — |
+
+Cross-lingual retrieval is the weak spot, at page level above all.
+
+*Support check* (`pairs-labelled-2026-11-15.json`): 236 pairs.
+- Only 26 are real, because dev chats held no more. The other 210 are synthetic: 131 supported, 36 partial,
+  43 unsupported.
+- Labelled blind: 150 supported, 86 not (partial counts as not).
+- Tuning half (113): precision 0.944 and recall 0.958 at every threshold from 70 to 85. **Threshold 75** was
+  chosen before the held-out run.
+- Held-out half (123) at 75: precision 0.987, recall 0.975. Probably optimistic, since the synthetic errors are
+  cleaner than a model's. Re-calibrate once there are more real cited answers.
+
+*Gold run* (30-case subset, `elvira-assistant`, prefetch on):
+- 26 of 30 answers cite a gold publication. First token p50 28 s, total p50 59 s.
+- 1 of 30 PASS, because `as_eval_cases` expects `search_library_text` and with prefetch the model reads the
+  `gather_evidence` pack instead. That expectation has to change (follow-up issue).
 
 ### Phase 5: Chapter summaries (#119) ✅ on the working tree
 
@@ -522,14 +561,18 @@ has value immediately.
 **Options**:
 - [ ] **A**: Evaluation only until calibrated; then decide (recommended)
 - [ ] **B**: Background on live traffic in shadow mode, off-peak queue only
-- [ ] **C**: Not at all; rely on the label check
+- [x] **C**: Not at all; rely on the label check
 
 **Answer**:
 ```
+C (jdubec, 2026-11-15, #132).
 ```
 
 **Resolution**:
 ```
+The support check never runs on live traffic. It stays an evaluation tool (`assistant_eval run --verify`,
+`calibrate`); a live answer is checked only by the label rule (#162). Calibrated 2026-11-15 on synthetic
+labels: a score ≥ 75 means supported (see "Evaluation runs" below). Read `--verify` scores against it.
 ```
 
 ---
@@ -545,16 +588,20 @@ before any gold question exists. They were chosen by Claude without data from th
 **Question**: Keep these bars, or set them once the gold set exists but before running it?
 
 **Options**:
-- [ ] **A**: Keep them as written; revise only with a changelog entry giving the reason (recommended)
+- [x] **A**: Keep them as written; revise only with a changelog entry giving the reason (recommended)
 - [ ] **B**: Librarian and maintainer set the bars after writing the gold questions, before the first run
 - [ ] **C**: No bars; compare runs against each other only
 
 **Answer**:
 ```
+A (jdubec, 2026-11-15, #132), decided before the first run. No librarian will write 200 questions: the gold
+set is synthetic, written by a dedicated Claude Opus agent from real dev paragraphs.
 ```
 
 **Resolution**:
 ```
+`PREREGISTERED` unchanged. `report()` checks the bars only on non-synthetic cases, so the synthetic set
+reports `met: null`; its numbers compare changes and never certify recall (IP-030 Q10).
 ```
 
 ---
@@ -593,3 +640,4 @@ in chats that ask about that publication, and as a tool result rather than in ev
 | 2026-11-09 | jdubec | §2: staged JSON repair (commas before quotes) so Slovak „…“ quotation marks survive |
 | 2026-11-09 | jdubec | Phases 2–5 implemented (#116–#119) and #114 prefix budget enforced; §4–§7 rewritten to match; pre-registered retrieval bars; Q6, Q7 added |
 | 2026-11-13 | jdubec | Superseded by IP-030; Q1 resolved by the portal implementation (elvira-portal#37, branch `dev`); open items and Q2–Q7 carried into IP-030 |
+| 2026-11-16 | jdubec | #132: Q5 answered C (never on live traffic), Q6 answered A (bars unchanged); Phases 3–4 done with synthetic data by a Claude Opus agent (210 gold questions, 236 labelled pairs, threshold 75); "Evaluation runs" added |

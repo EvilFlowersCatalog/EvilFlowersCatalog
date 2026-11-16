@@ -6,7 +6,9 @@ A label in the ledger is kept small: publication, page, section, and the paragra
 - a passage: the paragraph's `bbox` on the page and the quads of its **best sentence** — the sentence of the
   paragraph sharing the most words with the answer's sentence that cites it (accents and case folded; the first
   on a tie). This is kotaemon's "highlight the evidence unit" without asking a CPU model to copy quotes;
-- a figure, table or equation: its printed caption, its `bbox` and the crop's URL.
+- a figure, table or equation: its printed caption, its `bbox` and the crop's URL; its printed label ("Table 8.1")
+  and the vision description; a table's extracted Markdown and an equation's LaTeX where the reader may read
+  passages (#185).
 
 A source issued since #171 also keeps the unit's `locator_key`. The citation then resolves through the locator
 (`apps.extraction.locators.resolve`), so it survives a newer extraction run: the same paragraph in the new run
@@ -69,20 +71,27 @@ class _Access:
 
     def __init__(self, request):
         self.request = request
-        self._readable: Dict[str, bool] = {}
+        self._decisions: Dict[str, object] = {}
 
-    def readable(self, entry_id) -> bool:
+    def _decision(self, entry_id):
         from apps.content import access
         from apps.core.models import Entry
 
         key = str(entry_id)
-        if key not in self._readable:
+        if key not in self._decisions:
             entry = Entry.objects.filter(pk=entry_id).first() if entry_id else None
             # The source was issued to this reader in their own chat; the ACL is not re-checked for a citation.
-            self._readable[key] = bool(
-                entry is not None and access.decide(self.request, entry, visible=True).allows(access.Tier.SNIPPET)
-            )
-        return self._readable[key]
+            self._decisions[key] = access.decide(self.request, entry, visible=True) if entry is not None else None
+        return self._decisions[key]
+
+    def allows(self, entry_id, tier: str) -> bool:
+        decision = self._decision(entry_id)
+        return bool(decision is not None and decision.allows(tier))
+
+    def readable(self, entry_id) -> bool:
+        from apps.content import access
+
+        return self.allows(entry_id, access.Tier.SNIPPET)
 
 
 def _access(request) -> _Access:
@@ -202,11 +211,27 @@ def _region(source: dict, readable: bool, request, located=None) -> dict:
     if str(region.pk) != str(source.get("region_id")):
         extra["region_id"] = str(region.pk)
     if readable:
+        from apps.content import access
+        from apps.content.citation import label_of
+
         caption = region.printed_caption or region.caption or region.description
         if caption:
             extra["caption"] = _clip(caption)
+        # #185: the printed label names the figure ("Table 8.1"; the extractor's kind is sometimes wrong), the
+        # vision description says what it shows. The extracted table and LaTeX are the publication's content, so
+        # they need the passage tier. All untrusted text for the portal, the crop stays primary.
+        printed_label = label_of(region.printed_caption or region.caption)
+        if printed_label:
+            extra["printed_label"] = printed_label
+        if region.description:
+            extra["description"] = _clip_long(region.description, DESCRIPTION_CHARS)
+        entry_id = source.get("entry_id") or region.run.acquisition.entry_id
+        if (region.markdown or region.latex) and _access(request).allows(entry_id, access.Tier.PASSAGE):
+            if region.markdown and region.kind == "table":
+                extra["markdown"] = _clip_long(region.markdown, MARKDOWN_CHARS)
+            if region.latex and region.kind == "equation":
+                extra["latex"] = _clip_long(region.latex, LATEX_CHARS)
         if region.image_path:
-            entry_id = source.get("entry_id") or region.run.acquisition.entry_id
             try:
                 extra["image_url"] = request.build_absolute_uri(
                     reverse("files:entry-region-image", kwargs={"entry_id": entry_id, "region_id": region.pk})
@@ -219,6 +244,18 @@ def _region(source: dict, readable: bool, request, located=None) -> dict:
 def _clip(text: str) -> str:
     text = " ".join((text or "").split())
     return text if len(text) <= QUOTE_CHARS else text[: QUOTE_CHARS - 1].rsplit(" ", 1)[0] + "…"
+
+
+#: Caps of a figure citation's extracted text (#185): a description, a table's Markdown, an equation's LaTeX.
+DESCRIPTION_CHARS = 600
+MARKDOWN_CHARS = 4000
+LATEX_CHARS = 2000
+
+
+def _clip_long(text: str, limit: int) -> str:
+    """Line breaks kept (a Markdown table needs them), cut at `limit` characters."""
+    text = (text or "").strip()
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 class Resolver:

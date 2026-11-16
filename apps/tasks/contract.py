@@ -32,8 +32,12 @@ def declare(kind: str, subject_id: Any = None, *, spec: Mapping | None = None, c
 def outcome_token(definition: JobDefinition, dispatch: Dispatch) -> str:
     """The per-run capability token an `outcome_file` kind sends as the `token` kwarg (#169).
 
-    The worker copies it into the outcome file; the catalog applies the file only with it. A worker that
-    ever needs an HTTP callback authenticates with this token too, never with a static service API key.
+    The worker copies it into the outcome file; the catalog applies the file only with it. A worker of a job
+    kind that ever needs an HTTP callback authenticates with this token too, never with a static service API key.
+
+    Scope (#184, IP-031 Q8): job-ledger kinds. Extraction's `/extraction/v1` keeps its service API key (hundreds of
+    writes per run, stale writers refused by `ExtractionRun.attempt`, #140); lcpencrypt keeps the Basic credentials
+    of its report URL until IP-031 Q11 retires the old LCP surfaces.
     """
     from apps.tasks.capability_scopes import mint_outcome_token
 

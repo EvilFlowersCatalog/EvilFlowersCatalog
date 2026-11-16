@@ -15,7 +15,12 @@ def visible_q() -> models.Q:
     return models.Q(role="user") | (
         models.Q(role="assistant")
         & models.Q(tool_calls__isnull=True)
-        & (~models.Q(text="") | models.Q(displayed_entries__isnull=False) | models.Q(study__isnull=False))
+        & (
+            ~models.Q(text="")
+            | models.Q(displayed_entries__isnull=False)
+            | models.Q(displayed_figures__isnull=False)
+            | models.Q(study__isnull=False)
+        )
     )
 
 
@@ -100,6 +105,10 @@ class ChatMessage(BaseModel):
     #: that closes the turn in which the tool was called.
     displayed_entries = models.JSONField(null=True, blank=True)
 
+    #: Figure labels (`F#`) the assistant showed as a gallery (#185), in display order: the persisted form of the
+    #: `show_figures` directive, set on the answer that closes the turn. Their citations are in `citations`.
+    displayed_figures = models.JSONField(null=True, blank=True)
+
     #: Agent annotation ids the assistant created during the turn this message closes (IP-018 Phase 8).
     annotations = models.JSONField(null=True, blank=True)
 
@@ -136,7 +145,10 @@ class ChatMessage(BaseModel):
             return True
         if self.role == self.Role.ASSISTANT:
             return self.tool_calls is None and (
-                bool(self.text) or self.displayed_entries is not None or self.study is not None
+                bool(self.text)
+                or self.displayed_entries is not None
+                or self.displayed_figures is not None
+                or self.study is not None
             )
         return False
 

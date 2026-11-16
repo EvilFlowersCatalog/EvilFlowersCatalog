@@ -151,7 +151,10 @@ def _passages(context: ToolContext, query: str, scope, floor: float) -> List[dic
     for hit in result.items:
         for passage in hit.passages:
             if not passage.text:
-                # Readium LCP or IP-blocked: nothing to cite.
+                # Readium LCP or IP-blocked: nothing to cite; the reader gets an `access` card instead (#186).
+                from apps.assistant import withheld
+
+                withheld.note(context.request, hit.entry_id)
                 continue
             # By meaning, above the floor. With search by meaning down (`degraded`) the word matches are all
             # there is; their rank is no cosine, so no floor applies.

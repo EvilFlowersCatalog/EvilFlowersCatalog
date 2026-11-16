@@ -3,6 +3,7 @@ import math
 from django import forms
 from django_api_forms import FieldList, Form, FormFieldList
 
+from apps.extraction.batches import STEPS
 from apps.extraction.models import EMBEDDING_DIMENSIONS, ParagraphLink, Region
 
 _BOX_KEYS = ("x0", "y0", "x1", "y1")
@@ -27,6 +28,9 @@ class StartRunForm(Form):
     #: The jobs the analyzer dispatched (`paragraphs`, `figures`, `equations`, `tables`).
     jobs = FieldList(forms.CharField(max_length=30))
     provenance = forms.JSONField(required=False)
+    #: A step re-run (#183): the steps the catalog asked for (`steps` of the analyzer task). Only they are reset;
+    #: `jobs` then names their jobs only. Absent or empty: a full pass, as before.
+    steps = FieldList(forms.ChoiceField(choices=[(step, step) for step in STEPS]), required=False)
 
     def clean_page_sizes(self):
         sizes = self.cleaned_data.get("page_sizes")
@@ -40,6 +44,7 @@ class StartRunForm(Form):
     def clean(self):
         # Absent fields are missing from `cleaned_data` altogether.
         self.cleaned_data["provenance"] = self.cleaned_data.get("provenance") or {}
+        self.cleaned_data["steps"] = sorted(set(self.cleaned_data.get("steps") or []))
         return self.cleaned_data
 
 

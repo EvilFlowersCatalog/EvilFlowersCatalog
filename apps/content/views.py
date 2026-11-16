@@ -120,6 +120,43 @@ class ContentPolicyExplain(SecuredView):
         return SingleResponse(request, data=data)
 
 
+class CiteReferences(SecuredView):
+    @openapi.metadata(
+        description=(
+            "Formatted references for citation addresses (#186), the MCP `cite` tool's payload: `{uris: [...], style}` "
+            "→ `{style, references: [{uri, text | csl}]}`. An address is `evilflowers://entry/<id>/locator/<key>` (a "
+            "chat citation's `uri`), a `/cite/<id>/<key>` link, absolute or relative (its `url`), or "
+            "`evilflowers://entry/<id>` for the whole publication. `style` is `iso690` (default, as Slovak theses "
+            "use), `apa`, `bibtex` or `csl-json`. At most 50 addresses; each reference carries the page and the "
+            "`/cite` link. Same access rules as the MCP tool: 404 for a publication or locator the caller may not "
+            "see."
+        ),
+        tags=["Content"],
+        summary="Format references",
+    )
+    def post(self, request):
+        from apps.content import reading
+
+        payload = _body(request)
+        addresses = payload.get("uris")
+        if not isinstance(addresses, list) or not addresses or not all(isinstance(item, str) for item in addresses):
+            raise ProblemDetailException(
+                _("`uris` must be a non-empty array of addresses."), status=HTTPStatus.BAD_REQUEST
+            )
+        if len(addresses) > reading.MAX_REFERENCES:
+            raise ProblemDetailException(
+                _("At most %(count)s addresses per request.") % {"count": reading.MAX_REFERENCES},
+                status=HTTPStatus.BAD_REQUEST,
+            )
+        try:
+            data = reading.references(request, addresses, str(payload.get("style") or "iso690"))
+        except reading.NotFound as error:
+            raise ProblemDetailException(str(error), status=HTTPStatus.NOT_FOUND, previous=error)
+        except reading.Invalid as error:
+            raise ProblemDetailException(str(error), status=HTTPStatus.BAD_REQUEST, previous=error)
+        return SingleResponse(request, data=data)
+
+
 class ContentPolicyDetail(SecuredView):
     @openapi.metadata(
         description="One content policy at its current version.",

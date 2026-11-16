@@ -119,6 +119,24 @@ DISPLAY_BOOKS_SCHEMA = {
 
 DISPLAY_BOOKS_DESCRIPTION = "Show publications as cards (title, author, availability)."
 
+#: #185: the figure gallery, a directive like `displayBooks` over `F#` labels the model already holds.
+SHOW_FIGURES = "show_figures"
+#: Figures one `show_figures` call shows at most.
+MAX_SHOWN_FIGURES = 8
+
+SHOW_FIGURES_SPECIFICATION = {
+    "type": "function",
+    "function": {
+        "name": SHOW_FIGURES,
+        "description": "Show figures and tables (F#) as images.",
+        "parameters": {
+            "type": "object",
+            "properties": {"labels": {"type": "array", "items": {"type": "string"}}},
+            "required": ["labels"],
+        },
+    },
+}
+
 #: What the model is told about each tool: (description, parameters). Arguments
 #: left out here are still accepted by the handler; they are only not advertised.
 SPECIFICATIONS: Dict[str, tuple] = {
@@ -181,14 +199,14 @@ SPECIFICATIONS: Dict[str, tuple] = {
     ),
     SEARCH_PASSAGES: (
         "Search inside publications' text for passages (E#) about a question; with `entry_id` inside one "
-        "publication, with `figures` also figures and tables (F#).",
+        "publication, with `figures` figures and tables (F#).",
         {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "The question or topic, in a sentence."},
                 "entry_id": {"type": "string", "description": "Only this publication."},
                 "category_term": {"type": "string", "description": _SUBJECT},
-                "figures": {"type": "boolean", "description": "Also figures and tables."},
+                "figures": {"type": "string", "enum": ["also", "only"]},
             },
             "required": ["query"],
         },
@@ -297,6 +315,7 @@ def specifications(authenticated: bool = True, bound: bool = False, staff: bool 
             },
         }
     )
+    specs.append(SHOW_FIGURES_SPECIFICATION)
     if authenticated:
         # The portal's guide is for signed-in readers only (the portal's own gate).
         specs.append(portal.specification(staff))
@@ -313,9 +332,13 @@ def is_show_in_portal(name: str) -> bool:
     return name == SHOW_IN_PORTAL
 
 
+def is_show_figures(name: str) -> bool:
+    return name == SHOW_FIGURES
+
+
 def is_directive(name: str) -> bool:
-    """A tool that only tells the portal to show something (cards, a place): no lookup behind it."""
-    return is_display_books(name) or is_show_in_portal(name)
+    """A tool that only tells the portal to show something (cards, figures, a place): no lookup behind it."""
+    return is_display_books(name) or is_show_figures(name) or is_show_in_portal(name)
 
 
 def clean_arguments(arguments) -> dict:
@@ -635,6 +658,10 @@ def _document(request, entry):
         return open_access_document(request, entry)
     except DocumentUnavailable as error:
         reason = error.args[0] if error.args else ""
+        if reason in _UNREADABLE:
+            from apps.assistant import withheld
+
+            withheld.note(request, entry.pk)
         raise ToolError(_UNREADABLE.get(reason, _NOT_READABLE)) from error
 
 
@@ -662,6 +689,23 @@ def _read_page(request, arguments: dict, reading: Reading) -> dict:
     }
 
 
+#: `search_library_text`'s `figures`: also figures and tables, or only them (#185).
+FIGURES_ALSO = "also"
+FIGURES_ONLY = "only"
+
+
+def figures_mode(value) -> Optional[str]:
+    """`figures` as the model sent it: `also`, `only`, or None; `true` (the boolean of before #185) is `also`."""
+    if value is True:
+        return FIGURES_ALSO
+    text = str(value or "").strip().lower()
+    if text in ("true", "yes", FIGURES_ALSO):
+        return FIGURES_ALSO
+    if text == FIGURES_ONLY:
+        return FIGURES_ONLY
+    return None
+
+
 def _search_passages(request, arguments: dict) -> dict:
     # The passage search the MCP tools use: what is shown is logged by one rule (#182).
     from apps.content.reading import search_passages
@@ -670,18 +714,23 @@ def _search_passages(request, arguments: dict) -> dict:
         raise ToolError("`query` is required.")
     subject_note = None if arguments.get("entry_id") else _check_subject(request, arguments)
     query = str(arguments.get("query") or "").strip()
+    mode = figures_mode(arguments.get("figures"))
     scope = {}
     if arguments.get("category_term"):
         scope["category_term"] = str(arguments["category_term"])
     if arguments.get("entry_id"):
         entry = _publication(request, arguments["entry_id"])
+        if mode == FIGURES_ONLY:
+            return _figures_only(request, query, {"id": str(entry.pk)}, subject_note)
         payload = _search_publication(request, query, entry)
-        if arguments.get("figures") is True:
+        if mode == FIGURES_ALSO:
             payload["figures"] = _figures(request, query, {"id": str(entry.pk)})
         return payload
+    if mode == FIGURES_ONLY:
+        return _figures_only(request, query, scope, subject_note)
 
     result = search_passages(request, query, limit=5, per_entry=2, scope=scope, surface=Surface.ASSISTANT)
-    figures = _figures(request, query, scope) if arguments.get("figures") is True else []
+    figures = _figures(request, query, scope) if mode == FIGURES_ALSO else []
     if result.degraded and not result.items and not figures:
         # Search by meaning is down and no passage has the query's words (#113).
         return {"items": [], "note": "Passage search is unavailable right now; use search_entries."}
@@ -700,16 +749,32 @@ def _search_passages(request, arguments: dict) -> dict:
     return payload
 
 
-#: Figures `search_library_text` returns with `figures: true`.
+#: Figures `search_library_text` returns with `figures: "also"`.
 FIGURES_PER_SEARCH = 3
+#: Figures it returns with `figures: "only"`: the gallery shows up to `MAX_SHOWN_FIGURES`, a few to choose from.
+FIGURES_ONLY_PER_SEARCH = 6
 
 
-def _figures(request, query: str, scope: dict) -> List[dict]:
-    """Figures and tables about `query` (IP-030 §3), only of publications the reader may read here."""
+def _figures_only(request, query: str, scope: dict, subject_note: Optional[str] = None) -> dict:
+    """Figures and tables alone (#185): what the figure search finds by what they show, multilingual."""
+    payload = {"items": [], "figures": _figures(request, query, scope, FIGURES_ONLY_PER_SEARCH)}
+    if subject_note:
+        payload["subject_note"] = subject_note
+    if not payload["figures"]:
+        payload["note"] = "No figure or table matched. Search the text instead (without figures), or other words."
+    return payload
+
+
+def _figures(request, query: str, scope: dict, limit: int = FIGURES_PER_SEARCH) -> List[dict]:
+    """Figures and tables about `query` (IP-030 §3), only of publications the reader may read here.
+
+    The figure search's own ranking (`regions.search_regions`, what `search_figures` and `GET /api/v1/search` use),
+    without the licensed copies a borrower may see there: the assistant never quotes Readium LCP publications.
+    """
     from apps.core.models import Entry
     from apps.extraction.regions import search_regions
 
-    hits = search_regions(request, query, limit=FIGURES_PER_SEARCH, scope=scope or None, surface=Surface.ASSISTANT)
+    hits = search_regions(request, query, limit=limit, scope=scope or None, surface=Surface.ASSISTANT)
     titles = dict(Entry.objects.filter(pk__in=[hit.entry_id for hit in hits]).values_list("pk", "title"))
     return [
         {
@@ -742,7 +807,10 @@ def _search_publication(request, query: str, entry) -> dict:
         payload = {"items": items}
         decision = access.decide(request, entry, surface=Surface.ASSISTANT, visible=True)
         if decision.reason == access.Reason.LCP:
+            from apps.assistant import withheld
+
             payload["note"] = _UNREADABLE["readium"]
+            withheld.note(request, entry.pk)
         return payload
 
     # Not processed into paragraphs (or nothing matched there): the page text itself, as `search_pdf` reads it.
@@ -765,6 +833,11 @@ def _passage_items(request, result) -> List[dict]:
     }
     items = []
     for hit in result.items:
+        if hit.passages and not any(passage.text for passage in hit.passages):
+            # Found, but its text is withheld (Readium LCP, IP ranges): an `access` card says how to read it (#186).
+            from apps.assistant import withheld
+
+            withheld.note(request, hit.entry_id)
         items.append(
             {
                 "entry_id": str(hit.entry_id),

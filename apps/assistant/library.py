@@ -46,6 +46,8 @@ class ToolContext:
     study_pages: Dict[str, List[int]] = field(default_factory=dict)
     #: Frames a tool asks the turn to send (`study`, `evidence`), as `(event, data)`.
     frames: List[tuple] = field(default_factory=list)
+    #: Figure labels a `show_figures` call accepted, for the turn's `figures` frame (#185).
+    shown_figures: List[str] = field(default_factory=list)
     #: Model time spent by tools' own requests (study, section summary, vision), booked on the tool row (Q2).
     model_seconds: float = 0.0
 
@@ -78,8 +80,11 @@ class Text:
         from apps.content import access
         from apps.extraction.discovery import _entry_run
 
+        from apps.assistant import withheld
+
         decision = access.decide(context.request, entry, surface=access.Surface.ASSISTANT, visible=True)
         if decision.reason == access.Reason.LCP and not decision.allows(access.Tier.PASSAGE):
+            withheld.note(context.request, entry.pk)
             raise ToolError(_UNREADABLE["readium"])
         if context.document is not None and context.bound_entry_id == str(entry.pk):
             from apps.extraction.reader import ReaderExtraction
@@ -89,6 +94,7 @@ class Text:
                 raise ToolError(_UNREADABLE["none"])
             return cls(entry, extraction.run, extraction.reader_page, bound=True)
         if not decision.allows(access.Tier.PASSAGE):
+            withheld.note(context.request, entry.pk)
             raise ToolError(_UNREADABLE[_UNREADABLE_BY_REASON.get(decision.reason, "policy")])
         run = _entry_run(entry.pk)
         if run is None:
@@ -122,7 +128,10 @@ class Text:
             )
             self._budget_left = charged.budget_left
             if charged.left_out:
+                from apps.assistant import withheld
+
                 self._stopped = True
+                withheld.note(self.request, self.entry.pk, withheld.BUDGET)
                 return None
         return {
             "kind": "passage",

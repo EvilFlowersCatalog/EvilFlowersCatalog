@@ -419,8 +419,12 @@ class EntryExtraction(EntryExtractionView):
         description=(
             "Queue the entry's PDFs (or one of them, `acquisition_id`) for extraction by the current pipeline "
             "version. A run that is done is left alone unless `force`; a failed run is retried; a run left "
-            "`queued` or `running` is sent again (services may have been down). Readers keep the active run "
-            "until the new one finishes. 409 when extraction is disabled on this catalog."
+            "`queued` or `running` is sent again (services may have been down). Every re-run here is a whole "
+            "run: the current version's run is reset and its results dropped at once, so if it was the active "
+            "run readers lose its figures and paragraphs until it finishes; an active run of an older version "
+            "is kept until the new one finishes. To redo only the steps of a failed run that did not finish, "
+            'apply `extraction.run` with `{"steps": [...]}` through `/api/v1/jobs` (#183). 409 when '
+            "extraction is disabled on this catalog."
         ),
         tags=["Extraction"],
         summary="Queue an entry for extraction",

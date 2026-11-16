@@ -45,6 +45,7 @@ urlpatterns = [
     path("settings", instance_settings.SettingCollection.as_view(), name="setting-collection"),
     path("settings/<str:key>", instance_settings.SettingDetail.as_view(), name="setting-detail"),
     # Content policies (#174); the fixed paths before `<key>`.
+    path("cite", content_views.CiteReferences.as_view(), name="cite"),
     path("content-policies", content_views.ContentPolicyCollection.as_view(), name="content-policy-collection"),
     path("content-policies/schema", content_views.ContentPolicySchema.as_view(), name="content-policy-schema"),
     path("content-policies/explain", content_views.ContentPolicyExplain.as_view(), name="content-policy-explain"),

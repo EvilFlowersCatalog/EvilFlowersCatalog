@@ -540,6 +540,10 @@ EVILFLOWERS_EXTRACTION_EMBED_TIMEOUT = int(os.getenv("EVILFLOWERS_EXTRACTION_EMB
 # A `running` run no service has reported to for this many hours is failed, so a backfill retries it
 # (a lost task never reports). Counted from the last report, not the start; 0 turns the sweep off.
 EVILFLOWERS_EXTRACTION_STALE_HOURS = float(os.getenv("EVILFLOWERS_EXTRACTION_STALE_HOURS", 24))
+# Re-running single steps of a failed run (`extraction.run` with `{"steps": [...]}`, #183). Needs an analyzer that
+# understands the `steps` kwarg and posts a step `/start`; an older one ignores it and the run stays failed, so the
+# request would do nothing. Off until the analyzer in use supports it.
+EVILFLOWERS_EXTRACTION_STEP_RERUN = bool(int(os.getenv("EVILFLOWERS_EXTRACTION_STEP_RERUN", "0")))
 
 # Background jobs (IP-031)
 # A queued job older than this is flagged `stale`: almost certainly it never reached a worker.

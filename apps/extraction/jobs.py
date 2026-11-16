@@ -5,13 +5,15 @@ The run's truth is `ExtractionRun`: the definition observes it, and summarises i
 """
 
 from datetime import timedelta
+from typing import Literal
 
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.utils.translation import gettext as _
+from pydantic import field_validator, model_serializer
 
 from apps.core.models import Acquisition
-from apps.extraction.batches import summarise_jobs
+from apps.extraction.batches import STEPS, missing_steps, summarise_jobs
 from apps.extraction.tasks import (
     POST_PROCESS_KIND,
     POST_PROCESS_VERSION,
@@ -43,18 +45,41 @@ def _current_run(acquisition):
     ).first()
 
 
+class ExtractionRunSpec(Spec):
+    """`{}`: the whole run again. `{"steps": ["paragraphs"]}`: only those steps of a failed run (#183)."""
+
+    #: Steps of the current pipeline version's failed run to re-run; every step that is not done must be named.
+    steps: tuple[Literal[STEPS], ...] = ()
+
+    @field_validator("steps")
+    @classmethod
+    def _normalise(cls, value):
+        return tuple(sorted(set(value)))
+
+    @model_serializer(mode="wrap")
+    def _omit_empty(self, handler):
+        # A full run stays `{}`, the spec every job stored before #183: anything else reads as a new spec and
+        # starts a new generation (a second full extraction) on the next idempotent apply.
+        data = handler(self)
+        if not data.get("steps"):
+            data.pop("steps", None)
+        return data
+
+
 @registry.register
-class ExtractionRunDefinition(JobDefinition[Acquisition, Spec]):
+class ExtractionRunDefinition(JobDefinition[Acquisition, ExtractionRunSpec]):
     kind = "extraction.run"
     title = "AI processing (extraction)"
     description = (
         "Extract figures, tables, equations and the paragraph index of a PDF (IP-018). The analyzer fans out to "
-        "the image, equation and text workers; their tasks are runs of this job."
+        "the image, equation and text workers; their tasks are runs of this job. `steps` re-runs only those steps "
+        "of a failed run, keeping the others' results (#183, EVILFLOWERS_EXTRACTION_STEP_RERUN)."
     )
     task = "evilflowers_analyzer.extract"
     subject_model = Acquisition
+    spec_model = ExtractionRunSpec
     # The task id is a function of acquisition and pipeline version: workers' late reports are told apart
-    # by `attempt`, so every run of the job reuses one run row (Q9).
+    # by `attempt`, so every run of the job reuses one run row (Q9). A step re-run gets its own (`task_id_for`).
     stable_task_id = True
 
     @property
@@ -84,17 +109,89 @@ class ExtractionRunDefinition(JobDefinition[Acquisition, Spec]):
         if not is_extractable(acquisition):
             return Refused(_("Only stored PDF files are extracted."))
         if not settings.EVILFLOWERS_EXTRACTION_ENABLED:
-            return Blocked(_("Extraction is switched off (EVILFLOWERS_EXTRACTION_ENABLED)."))
+            message = _("Extraction is switched off (EVILFLOWERS_EXTRACTION_ENABLED).")
+            # A blocked step spec would be sent by itself once extraction is on, against whatever the run is then.
+            return Refused(message) if spec.steps else Blocked(message)
+        if spec.steps:
+            return self._check_steps(acquisition, spec)
         return Ready()
+
+    @staticmethod
+    def _check_steps(acquisition, spec):
+        """Refused, never Blocked: a blocked spec is stored and dispatched by itself once the cause goes away."""
+        from apps.extraction import services
+        from apps.extraction.models import ExtractionRun
+
+        if not settings.EVILFLOWERS_EXTRACTION_STEP_RERUN:
+            return Refused(
+                _(
+                    "Re-running single steps is switched off (EVILFLOWERS_EXTRACTION_STEP_RERUN): the analyzer in use "
+                    "may not support it. Re-run the whole run (empty spec)."
+                )
+            )
+        run = _current_run(acquisition)
+        if run is None:
+            return Refused(_("No run of the current pipeline version to re-run steps of; run it whole."))
+        if run.status != ExtractionRun.Status.FAILED:
+            # A running run's job is active: a new generation would wait for a run that already reported.
+            return Refused(
+                _("Only steps of a failed run are re-run; this run is %(status)s.") % {"status": run.status}
+            )
+        try:
+            services.step_plan(run, spec.steps)
+        except services.StepsRefused as error:
+            return Refused(str(error))
+        return Ready()
+
+    def preview(self, acquisition, spec):
+        from apps.extraction import services
+
+        if not spec.steps:
+            return {}
+        run = _current_run(acquisition)
+        if run is None:
+            return {}
+        try:
+            plan = services.step_plan(run, spec.steps)
+        except services.StepsRefused as error:
+            return {"steps": list(spec.steps), "refused": str(error)}
+        return {
+            "run_id": str(run.pk),
+            "steps": plan["steps"],
+            # The analyzer declares the steps' jobs again in its `/start`; these are the ones it replaces.
+            "resend": plan["jobs"],
+            "kept": plan["kept"],
+            "deleted": services.step_counts(run, plan["steps"]),
+            "attempt": run.attempt + 1,
+            "is_active": run.is_active,
+            "readers": (
+                "The run is the active one: readers lose the named steps' results until the run finishes."
+                if run.is_active
+                else "Readers keep the acquisition's active run, if any, until this one finishes."
+            ),
+        }
 
     def task_id_for(self, acquisition, spec):
         from apps.extraction.services import task_id
 
+        if spec.steps:
+            # A fresh id (the facade's uuid4): the full run's stable id would reuse the row of the pass whose
+            # steps failed, and the analyzer's delivery count is kept per task id.
+            return None
         return task_id(acquisition.pk, settings.EVILFLOWERS_EXTRACTION_PIPELINE_VERSION)
 
     def dispatch(self, dispatch):
         from apps.extraction import services
+        from apps.extraction.models import ExtractionRun
 
+        if dispatch.spec.steps:
+            run = _current_run(dispatch.subject)
+            if run is None or run.status != ExtractionRun.Status.FAILED:
+                raise DispatchError(_("The run is no longer failed; its steps were not re-run."), status=409)
+            # The run stays `failed` until the analyzer's step `/start` resets the named steps, so an analyzer
+            # that ignores `steps` and starts a full pass is refused (409) and nothing is lost.
+            dispatch.send(self.task, kwargs=services.step_kwargs(run, dispatch.spec.steps), queue=self.queue)
+            return
         # `force`: the facade decided this generation needs a run; a done or stuck run starts over.
         if services.queue(dispatch.subject, force=True) is None:
             raise DispatchError(_("The extraction run could not be queued; see the catalog log."), status=502)
@@ -118,6 +215,8 @@ class ExtractionRunDefinition(JobDefinition[Acquisition, Spec]):
                 "attempt": run.attempt,
                 "is_active": run.is_active,
                 "jobs": summarise_jobs(run.jobs),
+                # #183: what a step re-run of a failed run would have to name (structured, unlike `error`).
+                "missing_steps": missing_steps(run.jobs),
                 "started_at": run.started_at.isoformat() if run.started_at else None,
                 "finished_at": run.finished_at.isoformat() if run.finished_at else None,
             }

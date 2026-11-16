@@ -177,7 +177,12 @@ class RunStart(IngestionView):
         description=(
             "Called by the analyzer once it has opened the document: page count, page sizes in PDF points "
             "and the jobs it dispatched. The run is `running` from here until every job has reported. Every "
-            "start is a new `attempt`: pass the returned one to the jobs, which send it back with their results."
+            "start is a new `attempt`: pass the returned one to the jobs, which send it back with their results. "
+            "With `steps` (a step re-run the catalog asked for, #183) only those steps are reset: their data is "
+            "dropped and `jobs` (which must name jobs of those steps only) replace theirs, while the other "
+            "steps keep their data and `done` status. A step start is taken by a `failed` or `running` run and "
+            "refused with 409 `steps_refused` when another step is unfinished too; a plain start of a `failed` "
+            "run stays 409 `not_running`."
         ),
         tags=["Extraction"],
         summary="Start an extraction run",
@@ -193,6 +198,13 @@ class RunStart(IngestionView):
             run = services.start(run, **form.cleaned_data)
         except services.RunNotRunning as error:
             raise self._conflict(error) from error
+        except services.StepsRefused as error:
+            raise ProblemDetailException(
+                _("The extraction run cannot re-run these steps"),
+                status=HTTPStatus.CONFLICT,
+                detail=str(error),
+                additional_data={"reason": "steps_refused"},
+            ) from error
 
         return SingleResponse(request, data=ExtractionRunSerializer.Base.model_validate(run))
 

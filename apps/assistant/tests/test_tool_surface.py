@@ -57,7 +57,11 @@ class OfferedToolsTests(SimpleTestCase):
     #: (#167, signed in only) costs ~240 with its place list, ~5 s of round 1 of a new chat on control. Nothing
     #: smaller replaces it: the place ids are what lets the model stop saying it cannot navigate. A superuser's
     #: list adds the administration (~110 more), outside this budget.
-    PREFIX_TOKEN_BUDGET = 2450
+    #: #185/#186: 2,186 / 2,544. `show_figures` (~73) and the prompt line for figure-only search; `follow` gained
+    #: prerequisites/cited_by/cites with a shorter description, `search_library_text` lost its `figures` description
+    #: and "by citing them" left the prompt. ~100 tokens, ~2 s of round 1 of a new chat on control, against a figure
+    #: the model could only show by citing it in prose (unreliable) and the three content-layer moves without a tool.
+    PREFIX_TOKEN_BUDGET = 2550
 
     def test_first_round_prefix_stays_within_the_cpu_budget(self):
         for authenticated in (False, True):

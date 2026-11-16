@@ -18,6 +18,9 @@ MAX_VARIANTS = 10
 #: Kind names listed in a stale reason before the rest is summed up as "+N more".
 MAX_KINDS_IN_REASON = 6
 
+#: The steps of a run that can be re-run alone (#183): job kinds, as `job_kind` names them.
+STEPS = ("equations", "figures", "paragraphs", "tables")
+
 _PAGES = re.compile(r"^(\d+)-(\d+)$")
 
 
@@ -80,6 +83,11 @@ def summarise_jobs(jobs: Mapping[str, str] | None) -> dict:
     for name, status in (jobs or {}).items():
         grouped[job_kind(name)][str(status)] += 1
     return {kind: dict(sorted(counts.items())) for kind, counts in sorted(grouped.items())}
+
+
+def missing_steps(jobs: Mapping[str, str] | None) -> list[str]:
+    """Kinds with a job that is not `done` (pending or failed), sorted: what a step re-run must name (#183)."""
+    return [group.kind for group in group_jobs(jobs) if group.counts["done"] < group.total]
 
 
 def pending_summary(names: Iterable[str]) -> str:

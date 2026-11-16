@@ -453,6 +453,22 @@ own model and the ledger share the id:
   `apps/extraction/services.py:107`), so every re-queue of a run reuses one Celery task id.
   The kind declares `stable_task_id = True`: a retry resets the existing row to queued instead of
   inserting a new one, and the attempts stay in `JobEvent` (Q9).
+- `extraction.run` spec (#183, 2026-11-15): `{}` is the whole run, as before (the empty spec still
+  serialises to `{}`, so jobs stored earlier do not read as changed). `{"steps": ["paragraphs",
+  "tables"]}` re-runs only those steps of the current pipeline version's **failed** run, behind
+  `EVILFLOWERS_EXTRACTION_STEP_RERUN` (off: `Refused`, never `Blocked`, so a stored spec is not sent by
+  itself later). Refused too when there is no such run, the run is not `failed` (a running run's job
+  is active and a new generation would never be dispatched), a named step is already done, or another
+  step is unfinished and not named. `?dry_run=true` previews `resend` (the step jobs replaced), `kept`,
+  `deleted` (rows per step), the next `attempt` and whether readers are affected. A step re-run gets a
+  fresh task id (`task_id_for` returns None, the facade's uuid4); the analyzer receives the usual
+  kwargs plus `steps`. The catalog resets nothing at dispatch: the analyzer's `/start` with `steps`
+  drops the named steps' rows and crops, replaces their jobs with the ones it declares, bumps
+  `attempt` and keeps the other steps `done`. Invariant: after a step start every job is `done` (kept)
+  or `pending` under the new attempt, so stale tasks of the old attempt are refused as `superseded`
+  and the run still finishes. An analyzer without step support posts a full `/start`, which a failed
+  run refuses with 409, so nothing is lost. The observation's `detail.extraction_run.missing_steps`
+  lists the kinds with a job not done, the list a step re-run has to name.
 
 ### Status
 
@@ -831,9 +847,17 @@ Built 2026-11-15 (#169). A per-run capability token (scope `job_run_outcome`, si
 hours + the kind's time limit + the lost grace) travels in the task kwargs, and the worker copies it into the
 outcome file. The token binds the file to its run; it does not authenticate a caller (it sits in the broker).
 `/api/v1/jobs/runs/{run}/report` and `tasks.report_job` are removed. The rule for job kinds: a worker that
-needs an HTTP callback authenticates with its run's token, never with a static service API key. Extraction
-(`/extraction/v1`, static key) and lcpencrypt (Basic credentials in the report URL) are outside this rule
-for now; decision in #184.
+needs an HTTP callback authenticates with its run's token, never with a static service API key.
+
+Scope (#184, option A, 2026-11-16): the rule covers kinds whose outcome goes through the job ledger
+(`outcome_file`), not every worker callback.
+- Extraction is exempt. One run makes hundreds of writes to `/extraction/v1` (per-batch jobs, #150), and
+  `ExtractionRun.attempt` already refuses a stale writer (#140). A per-run token would add a mint and a check
+  per batch without fencing anything `attempt` does not. It keeps the static `CATALOG_API_KEY` of a service
+  user with `extraction.ingest_extraction`.
+- lcpencrypt keeps its Basic credentials in `EVILFLOWERS_READIUM_LCPENCRYPT_REPORT_URL` until Q11 retires the
+  old LCP surfaces. Its report endpoint is open when that URL has no credentials, so deployments must set them.
+- A new worker callback outside these two follows the rule.
 ```
 
 ---
@@ -960,3 +984,5 @@ Revision 2 starts a new generation only when the spec differs or the job is sett
 | 2026-11-14 | jdubec | #148 resolved: `/readium/v1/encryption-jobs` (list/detail/requeue/reencrypt over EncryptedContent, dispatch via JobService), MCP encryption tools on the same operations, entry endpoint lists jobs with LCP off, typed OpenAPI responses; Q5 effectively B for LCP |
 | 2026-11-14 | jdubec | Run reports from a replaced run refused (409); #150 implemented in `apps/extraction/batches.py`: provenance per kind with `variants`, per-kind stale reason, `job_groups` on the admin run list, superseded-counter label by kind |
 | 2026-11-15 | jdubec | #169: outcome file + Celery events replace the HTTP report (per-run capability token, `outcome_file`, report endpoint and `tasks.report_job` removed); Q8 resolved; #156: OCR engine in the spec and entry config |
+| 2026-11-15 | jdubec | #183: `extraction.run` spec `steps` re-runs single steps of a failed run (gate `EVILFLOWERS_EXTRACTION_STEP_RERUN`, dry-run preview, fresh task id, partial reset in the analyzer's step `/start`, attempt invariant); `missing_steps` in the observation detail |
+| 2026-11-16 | jdubec | #184 (option A): Q8's per-run token rule scoped to job-ledger kinds; extraction (static key, fenced by `attempt`) and lcpencrypt (Basic URL, until Q11) exempt |

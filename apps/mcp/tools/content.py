@@ -350,7 +350,7 @@ def resolve_citation(request, raw_arguments: dict) -> dict:
     description=(
         "Formatted references for addresses (from any content tool) in a citation style: `iso690` (ISO 690, "
         "as Slovak theses use), `apa`, `bibtex` or `csl-json`. Each reference carries the page and the `/cite` "
-        "link to the passage."
+        "link to the passage; a publication address (`evilflowers://entry/<id>`) is cited as the whole work."
     ),
     input_schema={
         "type": "object",
@@ -376,8 +376,8 @@ def cite(request, raw_arguments: dict) -> dict:
     if not isinstance(addresses, list) or not addresses or not all(isinstance(item, str) for item in addresses):
         raise ToolError(_("`uris` must be a non-empty array of addresses."))
     style = arguments.enum("style", citation.STYLES, default="iso690")
-    objects = [_call(reading.citation_for, request, address) for address in addresses[:50]]
-    return {"style": style, "references": citation.cite(objects, style)}
+    # The same export as `POST /api/v1/cite` (#186); a publication address is cited as the whole work.
+    return _call(reading.references, request, addresses, style)
 
 
 @registry.tool(

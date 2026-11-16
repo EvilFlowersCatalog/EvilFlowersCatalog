@@ -21,6 +21,7 @@ from apps.assistant.tools import (
     LIBRARY_OVERVIEW,
     READ_PAGE,
     SEARCH_PASSAGES,
+    SHOW_FIGURES,
     STUDY,
 )
 
@@ -40,6 +41,7 @@ SYSTEM_PROMPT = prompts.render(
     study=STUDY,
     library_overview=LIBRARY_OVERVIEW,
     show_in_portal=SHOW_IN_PORTAL,
+    show_figures=SHOW_FIGURES,
 )
 
 

@@ -23,6 +23,9 @@ class ChatMessageSerializer:
         #: Pages of the publication the answer was drawn from.
         pages_read: Optional[List[int]]
         displayed_entries: Optional[list]
+        #: Figure labels (`F2`) shown as a gallery in this turn (#185), as the `figures` frame carried them; their
+        #: crops are in `citations`.
+        displayed_figures: Optional[List[str]] = None
         #: Agent annotation ids created by the assistant in this turn.
         annotations: Optional[List[str]] = None
         #: Evidence labels cited in `text` (`[E3]`, `[F2]`), resolved to publication, page, paragraph (box, best

@@ -55,8 +55,18 @@ class UnknownJob(Exception):
         self.declared = sorted(declared)
 
 
+class StepsRefused(Exception):
+    """A step re-run (#183) the run cannot take; the message says why."""
+
+
 #: Job name the analyzer reports under; never declared by `/start` (it is the one declaring).
 ANALYZER_JOB = "analyzer"
+
+STEPS = batches.STEPS
+#: The region kind each region step stores. `Region` records no producer: a service posts the kind of its own job
+#: (the mapping `views._REGION_JOBS` counts superseded batches by), so `kind` is the producer. The printed caption
+#: may disagree (a `figure` captioned "Table 3.4"); that is the layout model's label, not a second producer.
+STEP_REGION_KINDS = {"figures": Region.Kind.FIGURE, "tables": Region.Kind.TABLE, "equations": Region.Kind.EQUATION}
 
 
 def is_extractable(acquisition: Acquisition) -> bool:
@@ -128,6 +138,153 @@ def task_id(acquisition_id, pipeline_version: int) -> str:
     return str(uuid.uuid5(_TASK_ID_NAMESPACE, f"extract:{acquisition_id}:v{pipeline_version}"))
 
 
+def step_kwargs(run: ExtractionRun, steps: Iterable[str]) -> dict:
+    """The analyzer task's keyword arguments for a step re-run (#183): those of `queue` plus `steps`.
+
+    An analyzer that predates #183 ignores `steps` (`**_`) and posts a full `/start`, which a `failed` run
+    refuses with 409: nothing is lost, the run stays failed. That is why the step re-run is gated
+    (`EVILFLOWERS_EXTRACTION_STEP_RERUN`): with an old analyzer it would do nothing.
+    """
+    acquisition = run.acquisition
+    return {
+        "run_id": str(run.pk),
+        "acquisition_id": str(acquisition.pk),
+        "source": acquisition.content.name,
+        "output_dir": run.storage_dir,
+        "pipeline_version": run.pipeline_version,
+        "steps": sorted(set(steps)),
+    }
+
+
+def step_plan(run: ExtractionRun, steps: Iterable[str], *, requested: bool = True) -> dict:
+    """What a step re-run (#183) of `run` resets and keeps; raises `StepsRefused` when it may not.
+
+    Granularity is the whole step: every job of a named kind is declared again by the analyzer (it may batch
+    differently than the pass before), done batches of that kind included. The invariant of the attempt
+    fencing (#140) holds only if, after the partial start, every job of the run is either `done` (its data
+    kept) or `pending` under the new attempt. So every kind that is not done must be named; a run with another
+    unfinished kind is refused rather than silently widened. `requested`: a client's request, which may not
+    name a step that is already done; the analyzer's `/start` of a redelivered step pass may (#183).
+    """
+    steps = sorted(set(steps))
+    unknown = [step for step in steps if step not in STEPS]
+    if unknown:
+        raise StepsRefused(f"Unknown steps: {', '.join(unknown)}; known: {', '.join(STEPS)}.")
+    if not steps:
+        raise StepsRefused("No step named; an empty list re-runs the whole run.")
+    if not run.jobs:
+        raise StepsRefused("The run never declared its jobs; re-run it whole.")
+    groups = {group.kind: group for group in batches.group_jobs(run.jobs)}
+    absent = [step for step in steps if step not in groups]
+    if absent:
+        raise StepsRefused(f"The run has no {', '.join(absent)} jobs; re-run it whole.")
+    if requested:
+        done = [step for step in steps if groups[step].counts["done"] == groups[step].total]
+        if done:
+            raise StepsRefused(f"Already done: {', '.join(done)}. Re-run the whole run to redo a finished step.")
+    unfinished = sorted(
+        kind for kind, group in groups.items() if kind not in steps and group.counts["done"] < group.total
+    )
+    if unfinished:
+        raise StepsRefused(
+            f"Not done either: {', '.join(unfinished)}. Name every unfinished step "
+            f"(steps: {', '.join(sorted({*steps, *unfinished}))})."
+        )
+    return {
+        "steps": steps,
+        "jobs": sorted(name for name in run.jobs if batches.job_kind(name) in steps),
+        "kept": sorted(kind for kind in groups if kind not in steps),
+    }
+
+
+def step_counts(run: ExtractionRun, steps: Iterable[str]) -> dict:
+    """What a step re-run deletes: rows per step, for `?dry_run=true`."""
+    counts = {}
+    for step in steps:
+        if step == "paragraphs":
+            counts[step] = run.paragraphs.count()
+        elif step in STEP_REGION_KINDS:
+            counts[step] = run.regions.filter(kind=STEP_REGION_KINDS[step]).count()
+    return counts
+
+
+def _start_steps(run: ExtractionRun, *, steps, page_count: int, page_sizes: list, jobs, provenance: dict) -> None:
+    """`/start` of a step re-run (#183), on the run's locked row: reset only the named steps.
+
+    The run must be `failed` (what a client re-runs steps of) or `running` (a redelivered step pass). A step
+    pass over a run whose other steps are still pending is refused by `step_plan`. The named steps lose their data and
+    their jobs; the jobs the analyzer declares now are `pending` under a new attempt. The other steps keep
+    their rows and their `done` status. Every job still out under the old attempt (a stale task of a named
+    step) is refused as `superseded` from here on, and so is a duplicate report of a kept step: it is done.
+
+    `is_active` and `post_processed` stay: the run is normally not the active one (only `done` runs are), and
+    `_finish` resets the marker, queues post-processing and assigns locators once the steps are back.
+    """
+    if run.status not in (ExtractionRun.Status.FAILED, ExtractionRun.Status.RUNNING):
+        raise RunNotRunning(run.status)
+    plan = step_plan(run, steps, requested=False)
+    steps = plan["steps"]
+    foreign = sorted(name for name in jobs if batches.job_kind(name) not in steps)
+    if foreign:
+        raise StepsRefused(f"Declared jobs of steps that were not asked for: {', '.join(foreign)}.")
+    missing = [step for step in steps if not any(batches.job_kind(name) == step for name in jobs)]
+    if missing:
+        raise StepsRefused(f"Declared no job for: {', '.join(missing)}.")
+
+    crops = _delete_step_results(run, steps)
+    kept = {name: status for name, status in run.jobs.items() if batches.job_kind(name) not in steps}
+    run.jobs = {**kept, **{name: ExtractionRun.JobStatus.PENDING for name in jobs}}
+    run.status = ExtractionRun.Status.RUNNING
+    run.attempt += 1
+    run.page_count = page_count
+    run.page_sizes = page_sizes
+    # The steps' provenance is reported again by their new jobs; a batch would only add a variant to the old one.
+    provenance_ = {key: value for key, value in run.provenance.items() if key not in steps}
+    run.provenance = {**provenance_, **(provenance or {})}
+    # Only the named steps' failures and the stale reason were in it: those steps start over.
+    run.error = None
+    run.started_at = timezone.now()
+    run.finished_at = None
+    run.save()
+    transaction.on_commit(lambda: delete_crops(crops))
+    logger.info(
+        "Extraction steps restarted: run_id=%s steps=%s jobs=%d kept=%s attempt=%s",
+        run.pk,
+        ",".join(steps),
+        len(jobs),
+        ",".join(plan["kept"]),
+        run.attempt,
+    )
+    tracing.set_attributes({"evilflowers.extraction.steps": ",".join(steps)})
+
+
+def _delete_step_results(run: ExtractionRun, steps: Iterable[str]) -> List[str]:
+    """Delete what the named steps stored; returns the storage names of the deleted regions' crops.
+
+    `paragraphs` takes its sentences, links and cross-references along (cascades); a region step its kind's
+    regions on every page (whole-step granularity), with their cross-references.
+    """
+    crops: List[str] = []
+    kinds = [STEP_REGION_KINDS[step] for step in steps if step in STEP_REGION_KINDS]
+    if kinds:
+        regions = run.regions.filter(kind__in=kinds)
+        crops = [path for path in regions.values_list("image_path", flat=True) if path]
+        regions.delete()
+    if "paragraphs" in steps:
+        run.paragraphs.all().delete()
+    return crops
+
+
+def delete_crops(paths: Iterable[str]) -> None:
+    """Remove single crops from the storage backend; best effort."""
+    storage = get_storage()
+    for path in paths:
+        try:
+            storage.delete(path)
+        except Exception:
+            logger.warning("Cannot delete crop %s", path, exc_info=True)
+
+
 def _send(kwargs: dict) -> None:
     task_id_ = task_id(kwargs["acquisition_id"], kwargs["pipeline_version"])
     try:
@@ -180,9 +337,17 @@ def _delete_results(run: ExtractionRun) -> None:
 
 
 def start(
-    run: ExtractionRun, *, page_count: int, page_sizes: list, jobs: Iterable[str], provenance: dict
+    run: ExtractionRun,
+    *,
+    page_count: int,
+    page_sizes: list,
+    jobs: Iterable[str],
+    provenance: dict,
+    steps: Optional[Iterable[str]] = None,
 ) -> ExtractionRun:
     """The analyzer opened the document and names the jobs it dispatched.
+
+    With `steps` (#183) it is a step re-run: see `_start_steps`; only those steps are reset.
 
     A run that is already `running` is an analyzer pass done again (a redelivered
     task, a restarted pod): what the earlier pass stored is dropped, or the new
@@ -196,6 +361,13 @@ def start(
     with transaction.atomic():
         # Two passes may post `/start` at once; the second waits and then sees the first one's state.
         run.refresh_from_db(from_queryset=ExtractionRun.objects.select_for_update())
+        if steps:
+            jobs = list(jobs)
+            _start_steps(
+                run, steps=steps, page_count=page_count, page_sizes=page_sizes, jobs=jobs, provenance=provenance
+            )
+            tracing.set_attributes({"evilflowers.extraction.attempt": run.attempt})
+            return run
         if run.status not in (ExtractionRun.Status.QUEUED, ExtractionRun.Status.RUNNING):
             raise RunNotRunning(run.status)
         if run.status == ExtractionRun.Status.RUNNING:

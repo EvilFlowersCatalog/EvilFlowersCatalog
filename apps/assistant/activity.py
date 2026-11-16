@@ -166,6 +166,8 @@ def summarize(
         result = json.loads(text) if text else None
     except (TypeError, ValueError):
         result = None
+    if name == "show_figures":
+        return _shown_figures(summary, result if isinstance(result, dict) else None)
     if isinstance(result, dict) and result.get("error"):
         summary["error"] = True
         return summary
@@ -176,7 +178,8 @@ def summarize(
     if isinstance(payload, dict) and ("passages" in payload or "figures" in payload or "paragraphs" in payload):
         # IP-030 tools (gather_evidence, follow, study, the bound chat's searches): labelled passages and figures.
         units = (payload.get("passages") or []) + (payload.get("paragraphs") or []) + (payload.get("figures") or [])
-        summary["count"] = len(units)
+        # `follow` with `cited_by` / `cites` finds publications, not passages (#186).
+        summary["count"] = len(units) or (len(payload.get("publications") or []) if payload.get("relation") else 0)
         records = [_entry(item.get("id"), item.get("title")) for item in payload.get("publications") or []]
         records += [_entry(unit.get("entry_id"), unit.get("title")) for unit in units]
         entries = _entries(records)
@@ -213,4 +216,16 @@ def summarize(
         summary["count"] = 1
     elif "annotation_id" in result:
         summary["count"] = 1
+    return summary
+
+
+def _shown_figures(summary: dict, result) -> dict:
+    """ "Showed figures · 3" (#185); the labels let the log point at the gallery. Some labels refused is not an
+    error while others were shown."""
+    shown = [label for label in (result or {}).get("shown") or [] if isinstance(label, str)]
+    summary["count"] = len(shown)
+    if shown:
+        summary["labels"] = shown
+    elif isinstance(result, dict) and result.get("error"):
+        summary["error"] = True
     return summary

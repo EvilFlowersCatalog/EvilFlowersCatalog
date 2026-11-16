@@ -12,8 +12,12 @@ One read-only tool over the links already in Postgres, plus the AGE graph for `r
 | `related` | `E#` | sections of other publications sharing its section's concepts or similar to it (graph) |
 | `look` | `F#` | what the figure shows: caption, the paragraph that refers to it, and with vision on, the model's view |
 | `compare` | `E#` (+ `entry_id`) | the passage, and how another book explains the same thing over `SIMILAR_TO` (#157) |
+| `prerequisites` | `E#` | sections defining a concept its section only uses (graph, as `section_prerequisites`): earlier sections and other books first, `later: true` last; the first paragraph of each (#186) |
+| `cited_by` | `E#` / `F#` | publications whose reference lists cite its publication (#178), with the reference item's page |
+| `cites` | `E#` / `F#` | publications of the library its publication's reference list cites |
 
-Everything returned is labelled into the chat's ledger, so a followed passage is citable like any other.
+Everything returned is labelled into the chat's ledger, so a followed passage is citable like any other. `cited_by`
+and `cites` return publications (`id`, `title`), not passages: the model shows them with `displayBooks`.
 """
 
 import json
@@ -28,7 +32,22 @@ from apps.mcp.errors import ToolError
 
 logger = logging.getLogger(__name__)
 
-RELATIONS = ("next", "previous", "figure", "mentions", "similar_elsewhere", "section", "related", "look", "compare")
+RELATIONS = (
+    "next",
+    "previous",
+    "figure",
+    "mentions",
+    "similar_elsewhere",
+    "section",
+    "related",
+    "prerequisites",
+    "look",
+    "compare",
+    "cited_by",
+    "cites",
+)
+#: Relations of a label's publication rather than of the passage or figure (#186).
+CITATION_RELATIONS = ("cited_by", "cites")
 
 #: Paragraphs returned for `next` / `previous`.
 NEIGHBOURS = 2
@@ -38,8 +57,8 @@ SECTION_PARAGRAPHS = 12
 LINKS = 3
 
 SPECIFICATION = (
-    "From a passage (E#): neighbours, its figure, similar passages elsewhere, its section, related sections, or "
-    "how book entry_id explains it (compare). From a figure (F#): passages mentioning it, or what it shows (look).",
+    "Follow a label to what it links to. F# only: mentions, look (what it shows). compare: how book entry_id "
+    "explains an E#. prerequisites: what to read first. cited_by, cites: publications citing its book, or cited.",
     {
         "type": "object",
         "properties": {
@@ -63,6 +82,8 @@ def follow(context: ToolContext, arguments: dict) -> dict:
         raise ToolError("`label` must be an E# or F# label from a result in this chat.")
     source = context.ledger.sources[label]
 
+    if relation in CITATION_RELATIONS:
+        return _citing(context, label, source, relation)
     if label.startswith("F"):
         if relation not in ("mentions", "look"):
             raise ToolError("A figure (F#) can be followed by `mentions` or `look`.")
@@ -140,6 +161,9 @@ def _from_passage(context: ToolContext, label: str, source: dict, relation: str)
 
     if relation == "similar_elsewhere":
         return _similar(context, label, paragraph)
+
+    if relation == "prerequisites":
+        return _prerequisites(context, label, text, paragraph)
 
     return _related(context, label, text, paragraph)
 
@@ -236,6 +260,93 @@ def _related(context: ToolContext, label: str, text: Text, paragraph) -> dict:
         if len(passages) >= LINKS:
             break
     return _result(context, label, "related", passages)
+
+
+def _prerequisites(context: ToolContext, label: str, text: Text, paragraph) -> dict:
+    """What to read before the passage's section (#186): the graph query behind `section_prerequisites`.
+
+    Earlier sections of the same book and sections of other books first; a section further on in the same book
+    last, marked `later` ("defined later in this book"). Each as its first paragraph, labelled like `related`.
+    """
+    from apps.content import access
+    from apps.core.models import Entry
+    from apps.extraction.models import Paragraph
+    from apps.graph import projection, queries
+
+    if not paragraph.section:
+        raise ToolError("This passage has no section to find prerequisites for.")
+    if not projection.available():
+        return _result(context, label, "prerequisites", [], note="Prerequisites are not available; use related.")
+    visible = queries.visible_entry_ids(context.request)
+    found = queries.prerequisites(projection.section_key(text.entry.pk, paragraph.section), visible, LINKS * 2)
+    own = str(text.entry.pk)
+    others = Entry.objects.filter(pk__in=[item["entry_id"] for item in found if item["entry_id"] != own])
+    entries = {str(entry.pk): entry for entry in others}
+    readable = access.readable_ids(
+        context.request, entries.values(), access.Tier.PASSAGE, access.Surface.ASSISTANT, visible=True
+    )
+    passages = []
+    for item in found:
+        if item["entry_id"] == own:
+            # The same book: its pages as this chat numbers them (the reader's copy when bound).
+            reader = text
+            run_id = text.run.pk
+        else:
+            entry = entries.get(item["entry_id"])
+            if entry is None or item["entry_id"] not in readable:
+                continue
+            reader, run_id = None, item["run_id"]
+        first = Paragraph.objects.filter(run_id=run_id, section=item["title"]).order_by("seq").first()
+        if first is None:
+            continue
+        if reader is None:
+            reader = Text(entries[item["entry_id"]], first.run, lambda page: page)
+        passage = reader.passage(first)
+        if passage is None:
+            continue
+        if item.get("later"):
+            passage["later"] = True
+        passages.append(passage)
+        if len(passages) >= LINKS:
+            break
+    return _result(context, label, "prerequisites", passages)
+
+
+#: Publications `cited_by` / `cites` return at most.
+CITING = 8
+
+
+def _citing(context: ToolContext, label: str, source: dict, relation: str) -> dict:
+    """Publications citing the label's publication, or cited by it (#178, #186), among those the reader may see.
+
+    Publications, not passages: the catalogue record is enough to show them as cards, so a Readium LCP book is
+    listed like any other. `cited_by` carries the page of the reference item that cites it.
+    """
+    from apps.extraction.bibliography import citations_of
+
+    entry_id = source.get("entry_id")
+    if not entry_id:
+        raise ToolError("This label has no publication to follow.")
+    found = citations_of(context.request, entry_id)
+    publications, seen = [], set()
+    for item in found.get(relation) or []:
+        if item["entry_id"] in seen:
+            continue
+        seen.add(item["entry_id"])
+        publication = {"id": item["entry_id"], "title": item.get("title")}
+        if relation == "cited_by" and item.get("page"):
+            publication["page"] = item["page"]
+        publications.append(publication)
+        if len(publications) >= CITING:
+            break
+    payload = {"from": label, "relation": relation, "passages": [], "figures": [], "publications": publications}
+    if not publications:
+        payload["note"] = (
+            "No publication in this library cites it."
+            if relation == "cited_by"
+            else "Its reference list cites no publication of this library."
+        )
+    return payload
 
 
 def _from_figure(context: ToolContext, label: str, source: dict, relation: str) -> dict:

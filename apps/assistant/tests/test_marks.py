@@ -82,10 +82,11 @@ class OfferTests(SimpleTestCase):
     @override_settings(**ON)
     def test_first_round_prefix_with_marks_on(self):
         # 2026-11-15: ~2,600 estimated tokens signed in with the tool, past the 2,450 CPU budget held while it is
-        # off (`test_tool_surface`). Pinned so the switch's cost is a known number, not drift.
+        # off (`test_tool_surface`). Pinned so the switch's cost is a known number, not drift. #185/#186 added ~100
+        # to both: 2,700 with the tool, against the 2,550 budget without it.
         specs = json.dumps(tools.specifications(authenticated=True), ensure_ascii=False)
         estimate = (len(specs) + len(services.SYSTEM_PROMPT)) / 3.4
-        self.assertLessEqual(estimate, 2620)
+        self.assertLessEqual(estimate, 2720)
 
 
 @contextmanager

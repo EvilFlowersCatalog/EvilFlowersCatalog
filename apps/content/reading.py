@@ -96,7 +96,8 @@ def parse_address(value: str) -> Address:
     if reference is not None and reference.kind == uris.ENTRY and reference.part in (None, uris.LOCATOR):
         return Address(reference.identifier, reference.key)
     match = _CITE_URL.search(value)
-    if match and value.startswith(("http://", "https://")):
+    # A full link, or the portal's own relative `/cite/<id>/<key>` (what a chat citation's `url` path is, #186).
+    if match and value.startswith(("http://", "https://", "/cite/")):
         try:
             return Address(str(UUID(match.group("entry"))), match.group("key"))
         except ValueError:
@@ -136,6 +137,40 @@ def citation_for(request, value: str) -> dict:
             charge=False,
         )
     return built
+
+
+def work_citation(request, entry_id) -> dict:
+    """A citation of a whole publication (`evilflowers://entry/<id>`): the work, no page, linked to its detail."""
+    from apps.mcp import uris
+
+    entry = visible_entry(request, entry_id)
+    return {
+        "uri": uris.entry_uri(entry.pk),
+        "url": citation.entry_url(entry.pk),
+        "kind": "entry",
+        "work": citation.work(entry),
+        "locator": {},
+        "access": citation.access_of(decide(request, entry), entry.pk),
+    }
+
+
+#: Addresses one `cite` call formats at most.
+MAX_REFERENCES = 50
+
+
+def references(request, addresses: List[str], style: str) -> dict:
+    """Formatted references of addresses (`cite`, MCP and `POST /api/v1/cite`, #186), each under the caller's access.
+
+    A locator address (or `/cite` link) is cited at its page; a publication address as the whole work. Raises
+    `Invalid` for a value that is no address and `NotFound` for a publication or locator the caller cannot see.
+    """
+    if style not in citation.STYLES:
+        raise Invalid(f"`style` must be one of: {', '.join(citation.STYLES)}.")
+    objects = []
+    for value in list(addresses)[:MAX_REFERENCES]:
+        address = parse_address(value)
+        objects.append(citation_for(request, value) if address.key else work_citation(request, address.entry_id))
+    return {"style": style, "references": citation.cite(objects, style)}
 
 
 def my_access(request, entry_id) -> dict:

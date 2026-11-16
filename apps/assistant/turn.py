@@ -202,6 +202,10 @@ class _Turn:
         # Publications shown and pages read during this turn. They belong to the answer that closes it, which is
         # the message a reader sees when the chat is read back.
         self.displayed: List[str] = []
+        # Figure labels shown as a gallery (`show_figures`, #185), in display order.
+        self.figures: List[str] = []
+        # Publications an `access` frame was sent for (#186): once per turn.
+        self.access_sent: set = set()
         self.pages_read: List[int] = []
         self.annotations: List[str] = []
         self.study: Optional[dict] = None
@@ -301,7 +305,7 @@ def _rounds(
         state.called = state.called or bool(tool_calls)
 
         if not tool_calls:
-            if final and not content.strip() and not state.displayed:
+            if final and not content.strip() and not (state.displayed or state.figures):
                 content = _notice(language, "rephrase")
                 yield sse("message", {"text": content})
             yield from close(content, done.total_tokens, done.model_seconds)
@@ -311,7 +315,7 @@ def _rounds(
         # for, its text and the cards close the turn. Asking it again only made it call more tools until the
         # rounds ran out. Not when every id was refused (made-up ids, #163) or there is nothing to read with it:
         # then the model hears why and goes on.
-        only_display = _closes(request, chat, tool_calls, content, staff)
+        only_display = _closes(request, chat, tool_calls, content, staff, ledger)
 
         # The assistant turn that requested the tools has to be recorded before
         # their results, or the replayed conversation would show results with
@@ -357,6 +361,8 @@ def _rounds(
             for entry_id in (yield from run):
                 if entry_id not in state.displayed:
                     state.displayed.append(entry_id)
+            yield from _gallery(request, ledger, state, context)
+            yield from _access_frames(request, state)
             for event, data in context.frames:
                 if event == "study":
                     state.study = data
@@ -375,7 +381,7 @@ def _rounds(
             return
 
     # Out of rounds (a chat bound to a copy: the runaway guard).
-    if state.displayed or state.annotations or state.study is not None:
+    if state.displayed or state.figures or state.annotations or state.study is not None:
         # Publications were already shown — that is an answer.
         yield from close(keep_empty=True)
         return
@@ -438,11 +444,14 @@ def _from_memory(ledger: "evidence.Ledger", content: str, resolver: "citations.R
     return False
 
 
-def _closes(request, chat: Chat, tool_calls: List[dict], content: str, staff: bool) -> bool:
+def _closes(
+    request, chat: Chat, tool_calls: List[dict], content: str, staff: bool, ledger: Optional["evidence.Ledger"] = None
+) -> bool:
     """Whether a round's calls close the turn: only portal directives, and they show something (#163, #167).
 
-    Cards close it when at least one id is real; a place in the portal only with text to read beside it, since
-    the `navigate` frame is not stored and an empty answer would vanish when the chat is read back.
+    Cards close it when at least one id is real, a gallery when at least one label may be shown (#185); a place in
+    the portal only with text to read beside it, since the `navigate` frame is not stored and an empty answer would
+    vanish when the chat is read back.
     """
     shows = False
     for call in tool_calls:
@@ -453,6 +462,9 @@ def _closes(request, chat: Chat, tool_calls: List[dict], content: str, staff: bo
         arguments = _arguments(function.get("arguments"))
         if tools.is_display_books(name):
             accepted, _rejected = _displayable(request, chat, arguments.get("entry_ids"))
+            shows = shows or bool(accepted)
+        elif tools.is_show_figures(name):
+            accepted, _rejected = _showable(ledger, arguments.get("labels"))
             shows = shows or bool(accepted)
         else:
             frame, _error, _rejected = portal.navigation(arguments, staff)
@@ -497,6 +509,45 @@ def _displayable(request, chat: Chat, requested) -> tuple:
     accepted = list(dict.fromkeys(item for item in candidates if item in visible))
     rejected = [item for item in requested if tools._uuid(item) not in accepted]
     return accepted, rejected
+
+
+def _showable(ledger: Optional["evidence.Ledger"], requested) -> tuple:
+    """`(accepted, rejected)` labels of a `show_figures` call (#185).
+
+    The rule citations follow (#162): a figure label (`F#`) of this chat's ledger that this turn's answer may cite
+    (`Ledger.citable`). Each once, in the order asked, at most `tools.MAX_SHOWN_FIGURES`; the rest is refused.
+    """
+    if isinstance(requested, str):
+        requested = [part for part in re.split(r"[\s,;]+", requested) if part]
+    accepted, rejected = [], []
+    for item in requested if isinstance(requested, list) else []:
+        label = evidence.normalise(str(item))
+        if label is None or not label.startswith("F") or ledger is None or not ledger.citable(label):
+            rejected.append(str(item))
+        elif label not in accepted:
+            if len(accepted) < tools.MAX_SHOWN_FIGURES:
+                accepted.append(label)
+            else:
+                rejected.append(label)
+    return accepted, rejected
+
+
+def _gallery(request, ledger: "evidence.Ledger", state: _Turn, context: ToolContext) -> Iterator[str]:
+    """The `figures` frame of the labels a `show_figures` call just accepted (#185).
+
+    Each label not cited yet in this turn gets its `citation` frame first, so the portal has the crop when the
+    gallery arrives; the answer citing it later does not send it again.
+    """
+    labels = [label for label in context.shown_figures if label not in state.figures]
+    context.shown_figures.clear()
+    if not labels:
+        return
+    for label in labels:
+        if label not in state.cited:
+            state.cited.add(label)
+            yield sse("citation", citations.complete(label, ledger.sources[label], "", request))
+        state.figures.append(label)
+    yield sse("figures", {"labels": labels})
 
 
 def _synthesise(request, chat: Chat, client, specifications, ledger, state: _Turn, document, language, close):
@@ -560,7 +611,16 @@ def _prefetch(request, chat: Chat, context: ToolContext, state: _Turn, text: str
     )
     yield sse("evidence", pack.sources(payload, request))
     yield sse("activity", activity.summarize(tools.GATHER_EVIDENCE, {"query": payload["query"]}, payload, model_text))
+    yield from _access_frames(request, state)
     return True
+
+
+def _access_frames(request, state: "_Turn") -> Iterator[str]:
+    """One `access` frame per publication whose text this turn's tools had to withhold (#186)."""
+    from apps.assistant import withheld
+
+    for data in withheld.frames(request, state.access_sent):
+        yield sse("access", data)
 
 
 CREATE_HIGHLIGHTS = "create_highlights"
@@ -647,6 +707,11 @@ def _close(
             unknown.append(label)
     if state.study is not None:
         _study_citations(ledger, state.study, request, found, unknown)
+    cited = {citation["label"] for citation in found}
+    for label in state.figures:
+        # Shown, not cited in the text (#185): the gallery replays from these crops when the chat is read back.
+        if label not in cited and label in ledger.sources:
+            found.append(citations.complete(label, ledger.sources[label], "", request))
     if unknown:
         logger.warning("Assistant answer cited labels it was not given %s (chat %s)", unknown, chat.pk)
     row = ChatMessage.objects.create(
@@ -656,6 +721,7 @@ def _close(
         text=text,
         # An empty list (rather than None) keeps a textless answer visible (`visible_q`).
         displayed_entries=state.displayed if keep_empty else (state.displayed or None),
+        displayed_figures=state.figures or None,
         pages_read=state.pages_read or None,
         annotations=state.annotations or None,
         citations=found or None,
@@ -880,6 +946,24 @@ def _run_tool(
         if entry_ids:
             yield sse("entries", {"entry_ids": entry_ids})
         return entry_ids
+
+    if tools.is_show_figures(name):
+        labels, rejected = _showable(ledger, arguments.get("labels"))
+        result = {"shown": labels}
+        if rejected:
+            # A label never given, or one of an earlier question once this one has evidence (#162).
+            result["error"] = (
+                f"Not shown: {', '.join(rejected)}. Show only F# labels of figures found for this question, at most "
+                f"{tools.MAX_SHOWN_FIGURES}."
+            )
+            logger.warning("show_figures refused labels %s (chat %s)", rejected, chat.pk)
+        text = json.dumps(result, ensure_ascii=False)
+        ChatMessage.objects.create(chat=chat, user=chat.user, role=ChatMessage.Role.TOOL, text=_with_note(text, note))
+        if context is not None:
+            # The turn sends the gallery (`_gallery`): it owns the citations already sent.
+            context.shown_figures.extend(labels)
+        yield sse("activity", activity.summarize(name, arguments, text=text))
+        return []
 
     if tools.is_show_in_portal(name):
         frame, error, _rejected = portal.navigation(arguments, staff)

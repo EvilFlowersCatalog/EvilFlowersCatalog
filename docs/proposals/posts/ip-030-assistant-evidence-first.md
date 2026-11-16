@@ -668,8 +668,25 @@ within a turn, the cost that matters is round 1 of a new chat: ~200 extra tokens
   turn
 - [x] New evaluation cases from the dev chats above (anonymised): show a figure, study chapter by chapter, quiz,
   capability question, corpus question, English question in the Slovak UI, a summary of the section on the open page
-- [ ] `assistant_eval run` on `elvira-assistant` as the baseline (carried over from IP-022 Phase 4/6); record rounds,
-  output tokens, time to first token, citation rate
+- [x] `assistant_eval run` on `elvira-assistant` as the baseline (carried over from IP-022 Phase 4/6); record rounds,
+  output tokens, time to first token, citation rate. **2026-11-15, dev at 8805496, prefetch on, `--verify`** (#132,
+  `/var/log/assistant-eval/qwen-2026-11-15.{log,json}`), prompt fingerprints `9a70f470e9a6`, `cec1aab0a021`:
+  - 17 of 49 cases pass, 0 errors.
+  - Rounds p50 1. First token p50 25 s, p95 85 s; total p50 42 s, p95 113 s. 2,411 model seconds, 327 K tokens.
+  - 29 cases carry citations (rate 0.59). 5 unknown labels, 9 figures shown.
+  - The verifier's verdicts: 24 citations supported, 5 partial, 48 unsupported.
+  - Most failures are the eval's own expectations: with the pack prefetched, the model answers from
+    `gather_evidence` instead of calling `search_entries`, `list_categories`, `get_entry`, `study` or
+    `search_library_text`, which the cases still require.
+  - Real faults:
+    - 4 English cases answered in Slovak (`en-shelf`, `en-asks-in-slovak-ui`, `en-showcase`, `en-portal-tour`).
+    - One answer in Czech (`sk-czech-trap`); "knihovna" appeared in 2 more answers.
+    - Bound chats never called `study` (walkthrough, quiz, key concepts).
+    - Figure cases cited unknown `F#` labels and showed no figure (`sk-show-figure`, `sk-corpus`), which #185
+      addresses.
+    - The portal cases showed no place (`sk-portal-loans`, `sk-portal-ocr-admin`).
+    - `sk-crossbook-compare` used all 6 rounds.
+  - The expectations, these faults and the remaining measurements are tracked in EvilFlowersCatalog#187.
 
 ### Phase 1: Ledger and streamed, paragraph-precise citations
 
@@ -1045,8 +1062,8 @@ Open work items:
 | IP-022 Phase 4/6 | `assistant_eval run` on `elvira-assistant`, explain/highlight JSON contracts, Q1 cache check | Phase 0 baseline; the cache check is answered by Tempo (§ Current state) |
 | IP-022 Phase 5 | Prompt iteration; prod HTTPRoute `llm.elvira.internal` | §7; prod after the evaluation passes (unchanged) |
 | IP-022 Phase 6 | Portal: attach a publication to a plain chat by hand | Portal issue |
-| IP-024 Phase 3 | ~200 labelled support pairs, threshold | Unchanged, still needs a person; study items join the pairs |
-| IP-024 Phase 4 | ~50 gold questions | Synthetic gold now (§6), librarian questions later |
+| IP-024 Phase 3 | ~200 labelled support pairs, threshold | Done 2026-11-15 (#132): 236 pairs labelled by a Claude Opus agent (26 real, 210 synthetic), threshold 75; IP-024 "Evaluation runs" |
+| IP-024 Phase 4 | ~50 gold questions | Done 2026-11-15 (#132): 210 synthetic questions by a Claude Opus agent; no librarian set is planned |
 | IP-024 Phase 5 | First batch of chapter summaries | Replaced by section summaries on first request (§4) |
 | IP-024 #114 | Measure first-round tokens in Tempo | Done: § Current state |
 
@@ -1068,7 +1085,7 @@ Unanswered review questions:
 | IP-024 Q2 (unknown labels) | Kept as implemented (option A) |
 | IP-024 Q3 (explain retry) | Kept as implemented (option A) |
 | IP-024 Q4 (labels in bound chats) | **Q1 below** (this proposal chooses B) |
-| IP-024 Q5 (support check placement) | Kept: evaluation only until calibrated |
+| IP-024 Q5 (support check placement) | **C** (2026-11-15, #132): never on live traffic, evaluation only |
 | IP-024 Q6 (retrieval bars) | **Q10 below** (synthetic gold changes the context) |
 | IP-024 Q7 (summaries on `get_entry`) | Superseded by section summaries and `outline` (§4) |
 ## Review Questions
@@ -1450,3 +1467,4 @@ As in § API: ChatMessage.feedback; `assistant_eval export --feedback` prints to
 | 2026-11-14 | jdubec | #145: `done` carries the stored answer's `message_id`; a study turn resolves the labels on its card's items into `citations` (frame and row) |
 | 2026-11-14 | jdubec | #151: cross-book `SIMILAR_TO` from section centroids centred per language (`extraction_section_similarity`, threshold 0.55 calibrated on dev, English and German); section headings in the REST routes follow the outline's rule (null for LCP and outside IP ranges); #153: concepts scoped by UDC main class, walkthrough `defined_later` instead of forward prerequisites; #152: read-only graph REST for the portal (related, prerequisites, concepts, overview, library map, chapter map) |
 | 2026-11-13 | jdubec | Second read-back: cache misses tied to capped turns or pauses, not to every follow-up turn (span-to-chat mapping); capped-round prefix fix moved to Phase 0; provenance markers on the research table; exam-prep share and the bound-chat figure behaviour stated exactly; unverified numbers marked |
+| 2026-11-16 | jdubec | #132: Phase 0 baseline on `elvira-assistant` recorded (17/49, most failures the eval's expectations under prefetch); IP-024 Phase 3/4 done with synthetic data by a Claude Opus agent; IP-024 Q5 answered C; follow-ups in #187. #185: `show_figures` directive, `figures` frame, `displayed_figures` (migration 0012), `search_library_text(figures: also/only)`, printed label, description, table Markdown and LaTeX on F# citations. #186: `follow` relations `prerequisites`, `cited_by`, `cites`; `POST /api/v1/cite`; `access` frame. Round-1 budget 2,450 → 2,550 |
