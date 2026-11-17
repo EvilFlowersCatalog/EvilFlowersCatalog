@@ -343,16 +343,6 @@
       "get": {
         "parameters": [],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success"
-          },
           "401": {
             "description": "The credentials sent are missing, expired or invalid",
             "content": {
@@ -362,11 +352,21 @@
                 }
               }
             }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
           }
         },
         "operationId": "SettingCollection.get",
         "summary": "List instance settings",
-        "description": "Every instance setting the code declares: its key, JSON Schema, description, default, the Django setting it falls back to, the effective `value` and its `source` (`stored`, `setting` or `default`). The portal renders its settings form from this. Administrators only.",
+        "description": "Every instance setting the code declares: its key, JSON Schema, description, default, the Django setting it falls back to, `public`, the effective `value` and its `source` (`stored`, `setting` or `default`). The portal renders its settings form from this. Administrators only, except `public=true`: the keys marked public (`portal.features`, ...), which anyone may read, anonymous readers included. A secret key is never public. `include=capabilities` adds `capabilities`, what the deployment can do whatever the settings say (`assistant`, `extraction`, `hybrid_search`, `lcp`, `graph`, `harvest`); the portal hides a feature whose capability is false (#212).",
         "tags": [
           "Settings"
         ]
@@ -18373,6 +18373,33 @@
           "metadata"
         ],
         "title": "EntryListResponse",
+        "type": "object"
+      },
+      "apps__api__views__instance_settings__SettingListResponse": {
+        "properties": {
+          "response": {
+            "title": "Response"
+          },
+          "capabilities": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Capabilities"
+          }
+        },
+        "required": [
+          "response"
+        ],
+        "title": "SettingListResponse",
         "type": "object"
       },
       "apps__assistant__serializers__AgentHighlightSerializer": {

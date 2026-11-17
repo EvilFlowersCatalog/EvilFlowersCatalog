@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "35eb4523ebb6d9ec844fb8129d70ffe30244c45c",
-    "short": "35eb452",
-    "message": "Enabling django admin",
+    "sha": "b064eea3b27920265bbb579a4ac24e03adae8734",
+    "short": "b064eea",
+    "message": "Portal feature switches #212",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/35eb4523ebb6d9ec844fb8129d70ffe30244c45c"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/b064eea3b27920265bbb579a4ac24e03adae8734"
   },
-  "deployed_at": "2026-11-17T16:24:52Z",
+  "deployed_at": "2026-11-17T18:55:17Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
