@@ -1,0 +1,32 @@
+{% load i18n humanize_console %}
+<header class="record-hero">
+  <div class="record-visual"{% if not record.image %} data-tone="{{ record.title|tone }}"{% endif %}>
+    {% if record.image %}<img src="{{ record.image }}" alt="">{% else %}<span class="record-initials">{{ record.initials }}</span>{% endif %}
+  </div>
+  <div class="record-heading">
+    <div class="console-eyebrow"><span class="record-eyebrow-icon">{% include "console/icon.html" with name=record.icon %}</span>{{ record.eyebrow }}</div>
+    <h1>{{ record.title }}</h1>
+    {% if record.subtitle %}<p class="record-subtitle">{{ record.subtitle }}</p>{% endif %}
+    {% if record.badges %}
+    <div class="record-badges">{% for badge in record.badges %}<span class="console-badge {{ badge.tone }}">{{ badge.label }}</span>{% endfor %}</div>
+    {% endif %}
+  </div>
+  {% if record.actions %}
+  <div class="record-actions">
+    {% for action in record.actions %}
+      <a class="console-btn{% if action.primary %} primary{% endif %}" href="{{ action.url }}"{% if action.external %} target="_blank" rel="noopener"{% endif %}>{% include "console/icon.html" with name=action.icon %}{{ action.label }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</header>
+{% if record.stats %}
+<div class="record-stats">
+  {% for stat in record.stats %}
+    {% if stat.url %}<a class="record-stat" href="{{ stat.url }}">{% else %}<div class="record-stat">{% endif %}
+      <span class="label">{{ stat.label }}</span>
+      <span class="value{% if stat.tone == 'accent' %} accent{% endif %}">{{ stat.value }}</span>
+      {% if stat.hint %}<span class="hint">{{ stat.hint }}</span>{% endif %}
+    {% if stat.url %}</a>{% else %}</div>{% endif %}
+  {% endfor %}
+</div>
+{% endif %}

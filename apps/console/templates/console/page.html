@@ -1,0 +1,40 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+{% comment %}
+IP-035: base of every console page (Modules, Data grid, Graph, Vectors, Jobs).
+
+Blocks a page fills:
+  vendor           <script>/<link> tags of the vendored libraries it needs, e.g.
+                   <script src="{% static 'console/vendor/echarts.min.js' %}"></script>
+                   Alpine.js is always loaded (deferred), after the page's own scripts.
+  console_content  the page body.
+  console_script   inline <script> defining the Alpine components (`function jobsPage() { ... }`).
+
+`console.js` (always loaded) gives every page `Console.api(url, {method, body})` (JSON + CSRF),
+`Console.css(name)` (read a `--e-*` token, for chart and graph colours) and `Console.onTheme(fn)`.
+{% endcomment %}
+
+{% block extrahead %}{{ block.super }}
+<meta name="csrf-token" content="{{ csrf_token }}">
+<script src="{% static 'console/js/console.js' %}"></script>
+{% block vendor %}{% endblock %}
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} console-page-body{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate 'Overview' %}</a>
+  {% if console_module %} › <a href="{% url 'admin:console_module' console_module.key %}">{{ console_module.title }}</a>{% endif %}
+  {% block console_breadcrumbs %}{% endblock %}
+  › {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="console-page">
+{% block console_content %}{% endblock %}
+</div>
+{% block console_script %}{% endblock %}
+<script defer src="{% static 'console/vendor/alpine.min.js' %}"></script>
+{% endblock %}

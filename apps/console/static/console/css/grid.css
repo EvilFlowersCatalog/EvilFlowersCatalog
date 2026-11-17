@@ -1,0 +1,29 @@
+/* IP-035: the data grid page; Tabulator's own ELVIRA overrides live in elvira-admin.css. */
+
+.console-grid-search { position: relative; display: inline-flex; align-items: center; }
+.console-grid-search input { padding-left: 1.9rem; min-width: 16rem; }
+.console-grid-search-icon { position: absolute; left: 0.55rem; width: 0.95rem; height: 0.95rem; color: var(--e-muted); pointer-events: none; display: inline-flex; }
+.console-grid-search-icon svg { width: 100%; height: 100%; }
+.console-grid-count { font-variant-numeric: tabular-nums; font-size: 0.85rem; }
+.console-grid-hint { font-size: 0.78rem; margin: -0.3rem 0 0.6rem; }
+
+.console-grid-menu { position: relative; }
+.console-grid-popover {
+  position: absolute; right: 0; top: calc(100% + 0.35rem); z-index: 30; min-width: 15rem; max-height: 60vh; overflow: auto;
+  background: var(--e-paper); border: 1px solid var(--e-rule-strong); border-radius: 6px; padding: 0.5rem 0.65rem;
+}
+.console-grid-check { display: flex; align-items: center; gap: 0.5rem; padding: 0.22rem 0; font-size: 0.84rem; cursor: pointer; }
+.console-grid-check input { accent-color: var(--e-accent); }
+
+.console-grid .tabulator-row .tabulator-cell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.console-grid .tabulator-row .tabulator-cell a { color: var(--e-accent); }
+.console-grid-long { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; color: var(--e-muted); }
+.console-grid .tabulator-header .tabulator-col .tabulator-header-filter input {
+  border: 1px solid var(--e-rule-strong); border-radius: var(--e-radius); background: var(--e-paper); color: var(--e-ink); width: 100%;
+}
+.console-grid .tabulator .tabulator-header .tabulator-col .tabulator-col-content .tabulator-col-sorter .tabulator-arrow { border-bottom-color: var(--e-rule-strong); }
+.console-grid .tabulator .tabulator-header .tabulator-col.tabulator-sortable[aria-sort="ascending"] .tabulator-col-content .tabulator-col-sorter .tabulator-arrow { border-bottom-color: var(--e-accent); }
+.console-grid .tabulator .tabulator-header .tabulator-col.tabulator-sortable[aria-sort="descending"] .tabulator-col-content .tabulator-col-sorter .tabulator-arrow { border-top-color: var(--e-accent); }
+
+.console-grid-compact .tabulator-row { min-height: 1.6rem; }
+.console-grid-compact .tabulator-row .tabulator-cell { padding: 0.18rem 0.45rem; font-size: 0.8rem; }

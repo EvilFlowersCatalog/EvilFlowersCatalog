@@ -21,7 +21,9 @@ RECORD = {
     "Language": "en",
 }
 
-META = "apps.core.services.isbn_metadata.isbnlib.meta"
+# The isbnlib providers (`openl`, `goob`) call `isbnlib.meta`; the HTTP and Z39.50 drivers are tested in
+# `test_isbn_providers`.
+META = "isbnlib.meta"
 
 
 class _Form:

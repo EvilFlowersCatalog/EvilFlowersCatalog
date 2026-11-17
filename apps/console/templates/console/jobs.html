@@ -1,0 +1,251 @@
+{% extends "console/page.html" %}
+{% load i18n static %}
+{# IP-035: the live jobs dashboard over the IP-031 ledger. Data from `console/api/jobs/…`, see views/jobs.py. #}
+
+{% block vendor %}
+<link rel="stylesheet" href="{% static 'console/css/jobs.css' %}">
+<script src="{% static 'console/vendor/echarts.min.js' %}"></script>
+<script src="{% static 'console/js/jobs.js' %}"></script>
+{% endblock %}
+
+{% block console_content %}
+<div x-data="jobsPage()" x-init="init()" class="jobs-page"
+     data-summary="{% url 'admin:console_jobs_summary' %}"
+     data-timeseries="{% url 'admin:console_jobs_timeseries' %}"
+     data-list="{% url 'admin:console_jobs_list' %}"
+     data-queues="{% url 'admin:console_jobs_queues' %}"
+     data-read-only="{{ read_only|yesno:'1,0' }}">
+
+  <div class="console-toolbar">
+    <p class="console-lede" style="margin: 0;">{% blocktranslate %}The background-jobs ledger: what is declared, running and failing, and every Celery run behind it. Actions go through the jobs facade, the same as <code>/api/v1/jobs</code>.{% endblocktranslate %}</p>
+    <span class="spacer"></span>
+    <label class="jobs-live">
+      <span class="console-switch"><input type="checkbox" x-model="live" @change="schedule()"><span></span></span>
+      <span>{% translate 'Live' %}</span>
+      <span class="jobs-pulse" :class="{ on: live && !paused }" aria-hidden="true"></span>
+    </label>
+    <button type="button" class="console-btn" @click="refresh(true)">{% include "console/icon.html" with name="refresh" %}{% translate 'Refresh' %}</button>
+    <span class="console-muted jobs-updated" x-text="updatedLabel()"></span>
+  </div>
+
+  <template x-if="error"><div class="console-error" x-text="error" style="margin-bottom: 1rem;"></div></template>
+
+  {# --- KPIs ------------------------------------------------------------------------------------------ #}
+  <div class="console-kpis">
+    <template x-for="state in jobStates" :key="state">
+      <button type="button" class="console-kpi jobs-kpi" :class="{ selected: filters.view === 'jobs' && filters.state === state }"
+              @click="pickState(state)" :title="'{% translate 'Show jobs in state' %} ' + state">
+        <div class="label" x-text="state"></div>
+        <div class="value" :class="{ accent: state === 'failed' && (summary.states?.[state] || 0) > 0 }" x-text="Console.number(summary.states?.[state] ?? 0)"></div>
+      </button>
+    </template>
+    <div class="console-kpi">
+      <div class="label">{% translate 'Stale queued' %}</div>
+      <div class="value" :class="{ accent: summary.stale > 0 }" x-text="Console.number(summary.stale ?? 0)"></div>
+      <div class="hint">{% translate 'queued past the stale limit' %}</div>
+    </div>
+    <div class="console-kpi">
+      <div class="label">{% translate 'Runs · 1 h / 24 h' %}</div>
+      <div class="value"><span x-text="Console.number(summary.runs?.last_hour ?? 0)"></span><span class="jobs-sub"> / <span x-text="Console.number(summary.runs?.last_day ?? 0)"></span></span></div>
+      <div class="hint"><span x-text="Console.number(summary.runs?.active_last_day ?? 0)"></span> {% translate 'still active' %}</div>
+    </div>
+    <div class="console-kpi">
+      <div class="label">{% translate 'Failure rate · 24 h' %}</div>
+      <div class="value" :class="{ accent: (summary.runs?.failure_rate || 0) > 0.05 }" x-text="percent(summary.runs?.failure_rate)"></div>
+      <div class="hint"><span x-text="Console.number(summary.runs?.failed_last_day ?? 0)"></span> {% translate 'failed, rejected or lost' %}</div>
+    </div>
+    <div class="console-kpi">
+      <div class="label">{% translate 'Runtime p50 / p95' %}</div>
+      <div class="value"><span x-text="seconds(summary.runs?.runtime_p50)"></span><span class="jobs-sub"> / <span x-text="seconds(summary.runs?.runtime_p95)"></span></span></div>
+      <div class="hint">{% translate 'finished runs, 24 h' %}</div>
+    </div>
+  </div>
+
+  {# --- charts ---------------------------------------------------------------------------------------- #}
+  <div class="jobs-charts">
+    <section class="console-panel jobs-chart-wide">
+      <header>
+        <h2>{% translate 'Runs over time' %}</h2>
+        <span class="spacer" style="flex: 1;"></span>
+        <select x-model.number="hours" @change="loadCharts()" aria-label="{% translate 'Window' %}">
+          <option value="6">6 h</option>
+          <option value="24">24 h</option>
+          <option value="72">3 d</option>
+          <option value="168">7 d</option>
+        </select>
+      </header>
+      <div class="jobs-chart" x-ref="timeline"></div>
+    </section>
+    <section class="console-panel">
+      <header><h2>{% translate 'Runtime by kind' %}</h2><span class="console-muted" style="font-size: 0.78rem;">p50 · p95 (s)</span></header>
+      <div class="jobs-chart" x-ref="runtimes"></div>
+    </section>
+    <section class="console-panel">
+      <header><h2>{% translate 'Jobs: kind × state' %}</h2></header>
+      <div class="jobs-chart" x-ref="matrix"></div>
+    </section>
+    <section class="console-panel">
+      <header>
+        <h2>{% translate 'Broker queues' %}</h2>
+        <template x-if="queues && !queues.reachable"><span class="console-badge warn">{% translate 'broker unreachable' %}</span></template>
+      </header>
+      <div class="body">
+        <table class="console-kv">
+          <tbody>
+            <template x-for="q in (queues?.queues || [])" :key="q.queue">
+              <tr>
+                <th><span x-text="q.service"></span><div class="console-mono console-muted" x-text="q.queue" x-show="q.service !== q.queue"></div></th>
+                <td style="text-align: right;"><span class="jobs-queue" :class="{ busy: q.waiting > 0 }" x-text="q.waiting === null ? '—' : Console.number(q.waiting)"></span></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <p class="console-muted" x-show="queues && !queues.queues.length" style="margin: 0;">{% translate 'No queue seen in the last day.' %}</p>
+      </div>
+    </section>
+  </div>
+
+  {# --- table ----------------------------------------------------------------------------------------- #}
+  <section class="console-panel">
+    <header class="jobs-table-head">
+      <div class="jobs-tabs" role="tablist">
+        <button type="button" role="tab" :aria-selected="filters.view === 'jobs'" :class="{ active: filters.view === 'jobs' }" @click="setView('jobs')">{% translate 'Jobs' %}</button>
+        <button type="button" role="tab" :aria-selected="filters.view === 'runs'" :class="{ active: filters.view === 'runs' }" @click="setView('runs')">{% translate 'Runs' %}</button>
+      </div>
+      <span style="flex: 1;"></span>
+      <input type="search" placeholder="{% translate 'Search title, reason, worker, trace id' %}" x-model.debounce.400ms="filters.q" @input.debounce.400ms="loadList(1)" aria-label="{% translate 'Search' %}">
+      <select x-model="filters.kind" @change="loadList(1)" aria-label="{% translate 'Kind' %}">
+        <option value="">{% translate 'All kinds' %}</option>
+        {% for kind in kinds %}<option value="{{ kind }}">{{ kind }}</option>{% endfor %}
+      </select>
+      <select x-model="filters.state" @change="loadList(1)" aria-label="{% translate 'State' %}">
+        <option value="">{% translate 'All states' %}</option>
+        <template x-for="value in (filters.view === 'jobs' ? jobStates : runStatuses)" :key="value">
+          <option :value="value" x-text="value" :selected="value === filters.state"></option>
+        </template>
+      </select>
+    </header>
+    <div class="jobs-table-wrap">
+      <table class="jobs-table">
+        <thead>
+          <tr>
+            <th>{% translate 'Kind' %}</th>
+            <th>{% translate 'Subject' %}</th>
+            <th>{% translate 'State' %}</th>
+            <th class="num">{% translate 'Attempts' %}</th>
+            <th>{% translate 'Last change' %}</th>
+            <th>{% translate 'Worker' %}</th>
+            <th class="num">{% translate 'Runtime' %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="row in list.rows" :key="row.id">
+            <tr @click="open(row)" :class="{ selected: drawer && drawer.id === (filters.view === 'jobs' ? row.id : row.id) }" tabindex="0" @keydown.enter="open(row)">
+              <td class="console-mono" x-text="row.kind || '—'"></td>
+              <td class="jobs-subject"><template x-if="row.entry_url"><a :href="row.entry_url" @click.stop x-text="row.entry"></a></template><span x-show="!row.entry_url" class="console-muted" x-text="row.entry || '—'"></span>
+                <div class="console-muted jobs-reason" x-show="row.reason || row.error" x-text="row.reason || row.error"></div></td>
+              <td><span class="console-badge" :class="badge(row.state)" x-text="row.state"></span>
+                <span class="console-badge muted" x-show="row.desired_state === 'cancelled' && row.state !== 'cancelled'">{% translate 'cancel requested' %}</span></td>
+              <td class="num" x-text="row.attempts"></td>
+              <td :title="Console.dateTime(row.last_transition_at)" x-text="Console.relative(row.last_transition_at)"></td>
+              <td class="console-mono jobs-worker" x-text="row.worker || '—'"></td>
+              <td class="num" x-text="seconds(row.runtime)"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <p class="console-empty" x-show="!loading.list && !list.rows.length">{% translate 'Nothing matches.' %}</p>
+    </div>
+    <footer class="jobs-pager">
+      <button type="button" class="console-btn" :disabled="list.page <= 1" @click="loadList(list.page - 1)">‹ {% translate 'Newer' %}</button>
+      <span class="console-muted" x-text="'{% translate 'Page' %} ' + list.page"></span>
+      <button type="button" class="console-btn" :disabled="!list.has_next" @click="loadList(list.page + 1)">{% translate 'Older' %} ›</button>
+    </footer>
+  </section>
+
+  {# --- drawer ---------------------------------------------------------------------------------------- #}
+  <div class="jobs-backdrop" x-show="drawer" x-cloak @click="close()"></div>
+  <aside class="jobs-drawer" x-show="drawer" x-cloak @keydown.escape.window="close()" aria-live="polite">
+    <template x-if="drawer">
+      <div>
+        <header class="jobs-drawer-head">
+          <div>
+            <div class="console-eyebrow" x-text="drawer.mode === 'job' ? '{% translate 'Job' %}' : '{% translate 'Run' %}'"></div>
+            <h2 class="console-display" x-text="drawer.kind || drawer.name"></h2>
+            <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center;">
+              <span class="console-badge" :class="badge(drawer.state || drawer.status)" x-text="drawer.state || drawer.status"></span>
+              <template x-if="drawer.mode === 'job'"><span class="console-badge muted" x-text="'{% translate 'desired' %}: ' + drawer.desired_state"></span></template>
+              <template x-if="drawer.stale"><span class="console-badge warn">{% translate 'stale' %}</span></template>
+              <a x-show="drawer.admin_url" :href="drawer.admin_url" class="console-chip">{% translate 'admin record' %}</a>
+            </div>
+          </div>
+          <button type="button" class="console-btn" @click="close()" aria-label="{% translate 'Close' %}">✕</button>
+        </header>
+
+        <template x-if="drawer.mode === 'job' && drawer.actions && drawer.actions.length && !readOnly">
+          <div class="console-toolbar jobs-actions">
+            <template x-for="action in drawer.actions" :key="action">
+              <button type="button" class="console-btn" :class="{ primary: action === 'retry' }" :disabled="acting" @click="act(action)" x-text="actionLabel(action)"></button>
+            </template>
+          </div>
+        </template>
+        <template x-if="actionResult"><div class="console-badge ok" style="margin-bottom: 0.75rem;" x-text="actionResult"></div></template>
+        <template x-if="actionError"><div class="console-error" style="margin-bottom: 0.75rem;" x-text="actionError"></div></template>
+
+        <table class="console-kv">
+          <tbody>
+            <template x-for="pair in facts()" :key="pair[0]">
+              <tr><th x-text="pair[0]"></th><td x-html="pair[1]"></td></tr>
+            </template>
+          </tbody>
+        </table>
+
+        <template x-if="drawer.reason || drawer.error">
+          <div><h3 class="jobs-h3">{% translate 'Reason' %}</h3><pre class="jobs-pre" x-text="drawer.reason || drawer.error"></pre></div>
+        </template>
+
+        <template x-if="traceback()">
+          <details open><summary class="jobs-h3">{% translate 'Traceback' %}</summary><pre class="jobs-pre jobs-tb" x-text="traceback()"></pre></details>
+        </template>
+
+        <template x-if="drawer.mode === 'job'">
+          <div>
+            <h3 class="jobs-h3">{% translate 'Spec' %}</h3><pre class="jobs-pre" x-text="pretty(drawer.spec)"></pre>
+            <template x-if="drawer.detail && Object.keys(drawer.detail).length"><div><h3 class="jobs-h3">{% translate 'Observed detail' %}</h3><pre class="jobs-pre" x-text="pretty(drawer.detail)"></pre></div></template>
+            <h3 class="jobs-h3">{% translate 'Runs' %} <span class="console-muted" x-text="'(' + drawer.runs.length + ')'"></span></h3>
+            <ul class="jobs-runs">
+              <template x-for="run in drawer.runs" :key="run.id">
+                <li @click="openRun(run.id)">
+                  <span class="console-badge" :class="badge(run.status)" x-text="run.status"></span>
+                  <span class="console-mono" x-text="run.worker || run.queue || '—'"></span>
+                  <span class="console-muted" x-text="Console.relative(run.created_at)"></span>
+                  <span class="num" x-text="seconds(run.runtime)"></span>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </template>
+
+        <template x-if="drawer.mode === 'run'">
+          <div>
+            <template x-if="drawer.job_id"><button type="button" class="console-btn" @click="openJob(drawer.job_id)">{% translate 'Open its job' %}</button></template>
+            <h3 class="jobs-h3">{% translate 'Arguments' %}</h3><pre class="jobs-pre" x-text="pretty({args: drawer.args, kwargs: drawer.kwargs})"></pre>
+          </div>
+        </template>
+
+        <h3 class="jobs-h3">{% translate 'Timeline' %} <span class="console-muted" x-text="'(' + (drawer.events || []).length + ')'"></span></h3>
+        <ol class="jobs-timeline">
+          <template x-for="(event, i) in (drawer.events || [])" :key="i">
+            <li :class="eventClass(event.type)">
+              <span class="dot" aria-hidden="true"></span>
+              <div class="what"><strong x-text="event.type"></strong> <span class="console-muted console-mono" x-text="event.hostname || ''"></span></div>
+              <div class="when console-muted" :title="event.timestamp" x-text="Console.dateTime(event.timestamp)"></div>
+              <template x-if="event.data && Object.keys(event.data).length"><pre class="jobs-pre small" x-text="pretty(event.data)"></pre></template>
+            </li>
+          </template>
+        </ol>
+      </div>
+    </template>
+  </aside>
+</div>
+{% endblock %}

@@ -1,0 +1,514 @@
+/*
+ * IP-035: the ELVIRA look for Django admin and the console pages.
+ *
+ * Tokens (`--e-*`) are those of https://elvira.digital (paper, ink, rules, the STU wine accent; Literata
+ * for display, IBM Plex for text and code). The second half maps them onto Django admin's own CSS
+ * variables, with the same selector structure as `admin/css/base.css` + `dark_mode.css`, so the theme
+ * toggle (auto / light / dark) keeps working. No shadows, thin rules, square-ish corners.
+ */
+
+@font-face { font-family: "Literata Variable"; font-style: normal; font-display: swap; font-weight: 200 900;
+  src: url("../fonts/literata-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Literata Variable"; font-style: normal; font-display: swap; font-weight: 200 900;
+  src: url("../fonts/literata-latin-ext-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-display: swap; font-weight: 400;
+  src: url("../fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-display: swap; font-weight: 400;
+  src: url("../fonts/ibm-plex-sans-latin-ext-400-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-display: swap; font-weight: 500;
+  src: url("../fonts/ibm-plex-sans-latin-500-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-display: swap; font-weight: 500;
+  src: url("../fonts/ibm-plex-sans-latin-ext-500-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-display: swap; font-weight: 600;
+  src: url("../fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-display: swap; font-weight: 600;
+  src: url("../fonts/ibm-plex-sans-latin-ext-600-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-display: swap; font-weight: 400;
+  src: url("../fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-display: swap; font-weight: 400;
+  src: url("../fonts/ibm-plex-mono-latin-ext-400-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
+/* ---- ELVIRA tokens ------------------------------------------------------------------------------- */
+
+html[data-theme="light"],
+:root {
+  --e-paper: #fff;
+  --e-ink: #1e1b1a;
+  --e-muted: #625a55;
+  --e-rule: #e5dfdb;
+  --e-rule-strong: #cbc2bc;
+  --e-wash: #f6f4f3;
+  --e-accent: #a80331;
+  --e-accent-dark: #8f032a;
+  --e-accent-wash: #fbeef1;
+  /* Text on an accent background: white on the wine red, dark on the light pink of dark mode. */
+  --e-on-accent: #fff;
+  --e-card-line: #d6e0ea;
+  --e-ok: #2f6b3a;
+  --e-ok-wash: #e8f2ea;
+  --e-warn: #8a5a00;
+  --e-warn-wash: #fbf3e2;
+  --e-info: #2c5a85;
+  --e-info-wash: #e9f0f7;
+  /* Categorical series for charts and graph nodes; the accent first. */
+  --e-series-1: #a80331;
+  --e-series-2: #2c5a85;
+  --e-series-3: #2f6b3a;
+  --e-series-4: #8a5a00;
+  --e-series-5: #6b3a85;
+  --e-series-6: #3f7d7a;
+  --e-series-7: #7a4a3a;
+  --e-series-8: #5c5f66;
+  --e-font-display: "Literata Variable", Georgia, "Times New Roman", serif;
+  --e-font-text: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --e-font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --e-radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --e-paper: #151313;
+    --e-ink: #ece7e4;
+    --e-muted: #a8a09b;
+    --e-rule: #2f2a28;
+    --e-rule-strong: #4a4340;
+    --e-wash: #1f1c1b;
+    --e-accent: #ec7a94;
+    --e-accent-dark: #e65374;
+    --e-accent-wash: #2a1a1e;
+    --e-on-accent: #151313;
+    --e-card-line: #2c3640;
+    --e-ok: #8fd19e;
+    --e-ok-wash: #18261b;
+    --e-warn: #e8c070;
+    --e-warn-wash: #2a2214;
+    --e-info: #8fb8e0;
+    --e-info-wash: #172230;
+    --e-series-1: #ec7a94;
+    --e-series-2: #8fb8e0;
+    --e-series-3: #8fd19e;
+    --e-series-4: #e8c070;
+    --e-series-5: #c39be0;
+    --e-series-6: #7fcfc9;
+    --e-series-7: #d9a48f;
+    --e-series-8: #a8abb3;
+  }
+}
+
+html[data-theme="dark"] {
+  --e-paper: #151313;
+  --e-ink: #ece7e4;
+  --e-muted: #a8a09b;
+  --e-rule: #2f2a28;
+  --e-rule-strong: #4a4340;
+  --e-wash: #1f1c1b;
+  --e-accent: #ec7a94;
+  --e-accent-dark: #e65374;
+  --e-accent-wash: #2a1a1e;
+  --e-on-accent: #151313;
+  --e-card-line: #2c3640;
+  --e-ok: #8fd19e;
+  --e-ok-wash: #18261b;
+  --e-warn: #e8c070;
+  --e-warn-wash: #2a2214;
+  --e-info: #8fb8e0;
+  --e-info-wash: #172230;
+  --e-series-1: #ec7a94;
+  --e-series-2: #8fb8e0;
+  --e-series-3: #8fd19e;
+  --e-series-4: #e8c070;
+  --e-series-5: #c39be0;
+  --e-series-6: #7fcfc9;
+  --e-series-7: #d9a48f;
+  --e-series-8: #a8abb3;
+}
+
+/* ---- Django admin variables, expressed in ELVIRA tokens ----------------------------------------- */
+/* Same three selectors as Django: light (and default), auto-dark through the media query, forced dark. */
+
+html[data-theme="light"],
+:root,
+html[data-theme="dark"] {
+  --primary: var(--e-wash);
+  --secondary: var(--e-ink);
+  --accent: var(--e-accent);
+  --primary-fg: var(--e-ink);
+
+  --body-fg: var(--e-ink);
+  --body-bg: var(--e-paper);
+  --body-quiet-color: var(--e-muted);
+  --body-medium-color: var(--e-ink);
+  --body-loud-color: var(--e-ink);
+
+  --header-color: var(--e-muted);
+  --header-branding-color: var(--e-ink);
+  --header-bg: var(--e-paper);
+  --header-link-color: var(--e-ink);
+
+  --breadcrumbs-fg: var(--e-muted);
+  --breadcrumbs-link-fg: var(--e-accent);
+  --breadcrumbs-bg: var(--e-paper);
+
+  --link-fg: var(--e-accent);
+  --link-hover-color: var(--e-ink);
+  --link-selected-fg: var(--e-accent);
+
+  --hairline-color: var(--e-rule);
+  --border-color: var(--e-rule-strong);
+
+  --error-fg: var(--e-accent);
+
+  --message-debug-bg: var(--e-wash);
+  --message-info-bg: var(--e-info-wash);
+  --message-success-bg: var(--e-ok-wash);
+  --message-warning-bg: var(--e-warn-wash);
+  --message-error-bg: var(--e-accent-wash);
+
+  --darkened-bg: var(--e-wash);
+  --selected-bg: var(--e-rule);
+  --selected-row: var(--e-accent-wash);
+
+  --button-fg: var(--e-paper);
+  --button-bg: var(--e-ink);
+  --button-hover-bg: var(--e-accent);
+  --default-button-bg: var(--e-accent);
+  --default-button-hover-bg: var(--e-accent-dark);
+  --close-button-bg: var(--e-muted);
+  --close-button-hover-bg: var(--e-ink);
+  --delete-button-bg: var(--e-accent);
+  --delete-button-hover-bg: var(--e-accent-dark);
+
+  --object-tools-fg: var(--e-ink);
+  --object-tools-bg: var(--e-wash);
+  --object-tools-hover-bg: var(--e-rule);
+
+  --font-family-primary: var(--e-font-text);
+  --font-family-monospace: var(--e-font-mono);
+}
+
+/* ---- Base ---------------------------------------------------------------------------------------- */
+
+body {
+  font-family: var(--e-font-text);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--e-ink);
+  background: var(--e-paper);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, #site-name, .console-display {
+  font-family: var(--e-font-display);
+  letter-spacing: 0.005em;
+}
+
+/* Django 6 underlines every content link through `a:not(#header a, …)` (an id inside :not, so id weight);
+   elvira.digital underlines on hover only. `:not()` weighs as its heaviest argument (`#content-main.app-list a`),
+   so Django's selector is (1,1,2); `#container #main a:link` is (2,1,1). */
+#container #main a:link, #container #main a:visited { text-decoration: none; }
+#container #main a:hover, #container #main a:focus-visible { text-decoration: underline; }
+#container #main a.console-btn:hover, #container #main a.console-chip:hover,
+#container #main .console-attention a:hover { text-decoration: none; }
+/* `dashboard.css` pins the index to 600px; the console index is a card grid. */
+.dashboard #content { width: auto; }
+
+#content h1 { font-size: 1.85rem; font-weight: 600; line-height: 1.2; color: var(--e-ink); margin-bottom: 1rem; }
+#content h2 { font-weight: 600; }
+a:link, a:visited { color: var(--e-accent); text-decoration: none; }
+a:hover, a:focus { color: var(--e-ink); text-decoration: underline; }
+code, pre, kbd, .console-mono { font-family: var(--e-font-mono); font-size: 0.86em; }
+::selection { background: var(--e-accent-wash); }
+
+/* ---- Header -------------------------------------------------------------------------------------- */
+
+#header {
+  background: var(--e-paper);
+  color: var(--e-ink);
+  border-bottom: 1px solid var(--e-rule);
+  padding: 0.85rem 2rem;
+  min-height: 3.25rem;
+}
+
+#site-name { margin: 0; font-size: 1.35rem; }
+#site-name a:link, #site-name a:visited { color: var(--e-ink); text-decoration: none; display: inline-flex; align-items: baseline; gap: 0.6rem; }
+#site-name a:hover { color: var(--e-accent); }
+.console-wordmark { font-weight: 650; letter-spacing: 0.04em; }
+.console-wordmark-sub { font-family: var(--e-font-text); font-size: 0.8rem; font-weight: 500; color: var(--e-muted); letter-spacing: 0.02em; text-transform: uppercase; }
+.console-mark { display: inline-block; width: 0.55rem; height: 0.55rem; background: var(--e-accent); border-radius: 1px; transform: translateY(-0.15rem); }
+
+#user-tools { font-size: 0.8125rem; letter-spacing: 0.01em; text-transform: none; color: var(--e-muted); }
+#user-tools a { border-bottom: none; color: var(--e-ink); }
+#user-tools a:hover { color: var(--e-accent); }
+#logout-form button { color: var(--e-ink); font-family: var(--e-font-text); font-size: 0.8125rem; text-transform: none; letter-spacing: 0.01em; }
+#logout-form button:hover { color: var(--e-accent); text-decoration: underline; }
+.theme-toggle svg.theme-icon-when-auto,
+.theme-toggle svg.theme-icon-when-dark,
+.theme-toggle svg.theme-icon-when-light { fill: var(--e-ink); color: var(--e-paper); }
+
+#nav-global { display: flex; gap: 1.25rem; align-items: center; font-size: 0.875rem; }
+#nav-global a:link, #nav-global a:visited { color: var(--e-ink); }
+#nav-global a:hover, #nav-global a.active { color: var(--e-accent); text-decoration: none; }
+#nav-global a.active { box-shadow: inset 0 -2px 0 var(--e-accent); }
+
+/* ---- Breadcrumbs --------------------------------------------------------------------------------- */
+
+div.breadcrumbs {
+  background: var(--e-paper);
+  color: var(--e-muted);
+  border-bottom: 1px solid var(--e-rule);
+  padding: 0.6rem 2rem;
+  font-size: 0.8125rem;
+}
+div.breadcrumbs a { color: var(--e-accent); }
+div.breadcrumbs a:hover { color: var(--e-ink); }
+
+/* ---- Sidebar ------------------------------------------------------------------------------------- */
+
+#nav-sidebar { background: var(--e-paper); border-right: 1px solid var(--e-rule); }
+#nav-sidebar .module caption,
+#nav-sidebar .module th,
+#nav-sidebar .module td { font-size: 0.8125rem; }
+#nav-sidebar .module caption { background: transparent; color: var(--e-muted); font-family: var(--e-font-text); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.6875rem; font-weight: 600; padding: 1rem 0.75rem 0.35rem; }
+#nav-sidebar .module caption a { color: var(--e-muted); }
+#nav-sidebar .current-app .section:link, #nav-sidebar .current-app .section:visited { color: var(--e-accent); font-weight: 600; }
+#nav-sidebar .current-model { background: var(--e-accent-wash); }
+#nav-sidebar .current-model th a { color: var(--e-accent); font-weight: 600; }
+#nav-sidebar tr { border-bottom: none; }
+#nav-sidebar th, #nav-sidebar td { border-bottom: none; padding: 0.3rem 0.75rem; }
+#nav-filter { background: var(--e-paper); border: 1px solid var(--e-rule-strong); border-radius: var(--e-radius); margin: 0.75rem; width: calc(100% - 1.5rem); padding: 0.4rem 0.6rem; }
+.toggle-nav-sidebar { background: var(--e-paper); border-right: 1px solid var(--e-rule); color: var(--e-muted); }
+.toggle-nav-sidebar:hover, .toggle-nav-sidebar:focus { background: var(--e-wash); }
+
+/* ---- Modules / tables (Django's own) ------------------------------------------------------------- */
+
+.module { background: var(--e-paper); border: 1px solid var(--e-rule); border-radius: var(--e-radius); }
+.module h2, .module caption, .inline-group h2 {
+  background: var(--e-wash);
+  color: var(--e-ink);
+  font-family: var(--e-font-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--e-rule);
+  padding: 0.55rem 0.75rem;
+}
+.module caption a.section:link, .module caption a.section:visited, .module h2 a { color: var(--e-ink); }
+.module caption a.section:hover { color: var(--e-accent); }
+
+thead th, tfoot td { background: var(--e-wash); color: var(--e-muted); border-bottom: 1px solid var(--e-rule); font-size: 0.75rem; letter-spacing: 0.03em; text-transform: uppercase; }
+thead th a:link, thead th a:visited { color: var(--e-muted); }
+td, th { border-bottom: 1px solid var(--e-rule); }
+tr:nth-child(even), .row-form-errors { background: transparent; }
+#changelist table tbody tr:hover { background: var(--e-wash); }
+#changelist table tbody tr.selected { background: var(--e-accent-wash); }
+#changelist .toplinks, #changelist .paginator { border-color: var(--e-rule); }
+#changelist-filter { border-left: 1px solid var(--e-rule); background: var(--e-paper); }
+#changelist-filter h2 { background: transparent; color: var(--e-ink); font-family: var(--e-font-display); font-size: 1rem; text-transform: none; letter-spacing: 0; border-bottom: 1px solid var(--e-rule); }
+#changelist-filter h3 { color: var(--e-muted); font-size: 0.6875rem; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
+#changelist-filter li.selected a { color: var(--e-accent); font-weight: 600; }
+#changelist-filter a:hover { color: var(--e-accent); }
+#changelist #toolbar { background: var(--e-paper); border: 1px solid var(--e-rule); border-radius: var(--e-radius); padding: 0.6rem 0.75rem; }
+#changelist #toolbar form input[type="text"] { border-radius: var(--e-radius); border-color: var(--e-rule-strong); padding: 0.35rem 0.5rem; }
+#changelist .actions { background: var(--e-wash); border-color: var(--e-rule); color: var(--e-muted); }
+.paginator a:link, .paginator a:visited { background: var(--e-wash); color: var(--e-ink); border-radius: var(--e-radius); }
+.paginator a.end, .paginator .this-page { color: var(--e-accent); }
+
+/* ---- Forms and buttons --------------------------------------------------------------------------- */
+
+fieldset .fieldset-heading, fieldset .inline-heading, :not(.inline-related) .collapse summary {
+  background: var(--e-wash); color: var(--e-ink); border: 1px solid var(--e-rule); border-radius: var(--e-radius);
+  font-family: var(--e-font-text); font-weight: 600; font-size: 0.8125rem; letter-spacing: 0.04em; text-transform: uppercase;
+}
+.form-row { border-bottom: 1px solid var(--e-rule); }
+input[type=text], input[type=password], input[type=email], input[type=url], input[type=number], input[type=tel],
+textarea, select, .vTextField {
+  border: 1px solid var(--e-rule-strong); border-radius: var(--e-radius); background: var(--e-paper); color: var(--e-ink);
+  font-family: var(--e-font-text); padding: 0.4rem 0.55rem;
+}
+/* Django gives selects a fixed height; with our padding the text would be clipped. */
+select { height: auto; min-height: 2.1rem; line-height: 1.3; }
+input:focus, textarea:focus, select:focus { border-color: var(--e-accent); outline: 2px solid var(--e-accent-wash); outline-offset: 0; }
+textarea, .vLargeTextField { font-family: var(--e-font-mono); font-size: 0.84rem; }
+.readonly { font-size: 0.875rem; }
+div.readonly pre, .readonly pre { white-space: pre-wrap; }
+
+.button, input[type=submit], input[type=button], .submit-row input, a.button {
+  background: var(--e-ink); color: var(--e-paper); border: 1px solid var(--e-ink); border-radius: var(--e-radius);
+  font-family: var(--e-font-text); font-weight: 600; letter-spacing: 0.01em; padding: 0.5rem 0.95rem;
+}
+.button:hover, input[type=submit]:hover, input[type=button]:hover, a.button:hover { background: var(--e-accent); border-color: var(--e-accent); color: var(--e-on-accent); text-decoration: none; }
+.button.default, input[type=submit].default, .submit-row input.default { background: var(--e-accent); border-color: var(--e-accent); color: var(--e-on-accent); }
+.button.default:hover, input[type=submit].default:hover { background: var(--e-accent-dark); border-color: var(--e-accent-dark); }
+/* The dual selector (categories, permissions): Django paints the chosen side's title with `--secondary`. */
+.selector-chosen .selector-chosen-title, .selector-chosen h2 { background: var(--e-ink); color: var(--e-paper); border-color: var(--e-ink); }
+.selector-chosen .selector-chosen-title label, .selector-chosen .helptext { color: var(--e-paper); }
+.selector-available .selector-available-title, .selector-available h2 { background: var(--e-wash); color: var(--e-ink); border-color: var(--e-rule); }
+.selector .selector-filter { border-color: var(--e-rule); }
+.submit-row input, .submit-row input.default, input[type=submit].default { text-transform: none; letter-spacing: 0.01em; }
+/* Django's green "+ Add" / pencil icons, redrawn in the accent (light) and its dark variant. */
+a.addlink, .addlink {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M7 2v10M2 7h10' stroke='%23a80331' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+html[data-theme="dark"] a.addlink, html[data-theme="dark"] .addlink {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M7 2v10M2 7h10' stroke='%23ec7a94' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+a.addlink, .addlink { background-size: 0.7rem; background-position: 0 50%; padding-left: 1.05rem; }
+#nav-sidebar a.addlink { color: var(--e-muted); }
+.submit-row { background: var(--e-wash); border: 1px solid var(--e-rule); border-radius: var(--e-radius); }
+.submit-row a.deletelink:link, .submit-row a.deletelink:visited { background: transparent; color: var(--e-accent); border: 1px solid var(--e-accent); border-radius: var(--e-radius); }
+.submit-row a.deletelink:hover { background: var(--e-accent); color: var(--e-on-accent); }
+.object-tools a:link, .object-tools a:visited { background: var(--e-wash); color: var(--e-ink); border: 1px solid var(--e-rule); border-radius: var(--e-radius); text-transform: none; letter-spacing: 0.01em; font-size: 0.8125rem; font-weight: 500; }
+.object-tools a:hover { background: var(--e-ink); color: var(--e-paper); border-color: var(--e-ink); text-decoration: none; }
+
+ul.messagelist li { border-radius: var(--e-radius); border: 1px solid var(--e-rule); color: var(--e-ink); font-size: 0.875rem; }
+.errornote { border: 1px solid var(--e-accent); background: var(--e-accent-wash); color: var(--e-accent); border-radius: var(--e-radius); }
+.errorlist li { background: var(--e-accent); border-radius: var(--e-radius); }
+
+/* ---- Login --------------------------------------------------------------------------------------- */
+
+body.login { background: var(--e-wash); }
+.login #container { background: var(--e-paper); border: 1px solid var(--e-rule); border-radius: 6px; box-shadow: none; max-width: 26rem; }
+.login #header { padding: 1.4rem 1.75rem; }
+.login #content { padding: 1.25rem 1.75rem 1.75rem; }
+.login .submit-row { background: transparent; border: none; padding: 1rem 0 0; }
+.login .submit-row input { width: 100%; background: var(--e-accent); border-color: var(--e-accent); padding: 0.6rem; }
+.login .console-login-note { color: var(--e-muted); font-size: 0.8125rem; margin-top: 1rem; }
+
+/* ===================================================================================================
+ * Console components (used by `console/*.html`: index, modules, grid, graph, vectors, jobs)
+ * ================================================================================================= */
+
+.console-page { max-width: 100%; }
+.console-lede { color: var(--e-muted); max-width: 46rem; margin: -0.5rem 0 1.5rem; font-size: 0.95rem; }
+.console-eyebrow { color: var(--e-muted); font-size: 0.6875rem; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+
+.console-grid-cards { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); }
+.console-card {
+  border: 1px solid var(--e-rule); border-radius: 6px; background: var(--e-paper);
+  padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.6rem; min-width: 0;
+}
+.console-card:hover { border-color: var(--e-rule-strong); }
+.console-card h2, .console-card h3 { margin: 0; font-family: var(--e-font-display); font-size: 1.15rem; font-weight: 600; text-transform: none; letter-spacing: 0; background: none; padding: 0; border: none; color: var(--e-ink); }
+.console-card h2 a, .console-card h3 a { color: var(--e-ink); }
+.console-card h2 a:hover, .console-card h3 a:hover { color: var(--e-accent); text-decoration: none; }
+.console-card p { margin: 0; color: var(--e-muted); font-size: 0.85rem; }
+.console-card-head { display: flex; align-items: center; gap: 0.6rem; }
+.console-card-icon { width: 1.9rem; height: 1.9rem; border-radius: 6px; background: var(--e-accent-wash); color: var(--e-accent); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.console-card-icon svg { width: 1.1rem; height: 1.1rem; }
+
+.console-models { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--e-rule); }
+.console-models li { display: flex; align-items: center; gap: 0.5rem; padding: 0.38rem 0; border-bottom: 1px solid var(--e-rule); font-size: 0.875rem; list-style: none; }
+.console-models li:last-child { border-bottom: none; }
+.console-models .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.console-models .count { color: var(--e-muted); font-variant-numeric: tabular-nums; font-size: 0.8rem; }
+.console-models .links { display: inline-flex; gap: 0.35rem; }
+
+.console-chip, .console-badge {
+  display: inline-flex; align-items: center; gap: 0.3rem; border-radius: 999px; padding: 0.08rem 0.55rem;
+  font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em; border: 1px solid var(--e-rule-strong); color: var(--e-muted); background: var(--e-paper);
+  white-space: nowrap;
+}
+a.console-chip:hover { border-color: var(--e-accent); color: var(--e-accent); text-decoration: none; }
+.console-badge.ok { color: var(--e-ok); background: var(--e-ok-wash); border-color: transparent; }
+.console-badge.warn { color: var(--e-warn); background: var(--e-warn-wash); border-color: transparent; }
+.console-badge.bad { color: var(--e-accent); background: var(--e-accent-wash); border-color: transparent; }
+.console-badge.info { color: var(--e-info); background: var(--e-info-wash); border-color: transparent; }
+.console-badge.muted { color: var(--e-muted); background: var(--e-wash); border-color: transparent; }
+
+.console-attention { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0 0 1.5rem; }
+.console-attention a {
+  display: inline-flex; align-items: baseline; gap: 0.5rem; padding: 0.55rem 0.8rem; border-radius: 6px;
+  border: 1px solid var(--e-rule); background: var(--e-paper); color: var(--e-ink); font-size: 0.875rem;
+}
+.console-attention a:hover { border-color: var(--e-accent); text-decoration: none; }
+.console-attention .n { font-family: var(--e-font-display); font-size: 1.25rem; font-weight: 650; color: var(--e-accent); font-variant-numeric: tabular-nums; }
+
+.console-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem; }
+.console-kpi { border: 1px solid var(--e-rule); border-radius: 6px; padding: 0.75rem 0.9rem; background: var(--e-paper); }
+.console-kpi .label { color: var(--e-muted); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
+.console-kpi .value { font-family: var(--e-font-display); font-size: 1.7rem; font-weight: 650; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.console-kpi .value.accent { color: var(--e-accent); }
+.console-kpi .hint { color: var(--e-muted); font-size: 0.78rem; }
+
+.console-toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.9rem; }
+.console-toolbar .spacer { flex: 1; }
+.console-toolbar input[type=search], .console-toolbar input[type=text], .console-toolbar select { min-width: 12rem; }
+.console-btn {
+  display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid var(--e-rule-strong); background: var(--e-paper);
+  color: var(--e-ink); border-radius: var(--e-radius); padding: 0.38rem 0.7rem; font: 500 0.8125rem var(--e-font-text); cursor: pointer;
+}
+.console-btn:hover { border-color: var(--e-ink); }
+.console-btn.primary { background: var(--e-accent); border-color: var(--e-accent); color: var(--e-on-accent); }
+#container #main a.console-btn.primary:link, #container #main a.console-btn.primary:visited { color: var(--e-on-accent); }
+.console-btn.primary:hover { background: var(--e-accent-dark); border-color: var(--e-accent-dark); }
+.console-btn[disabled] { opacity: 0.5; cursor: default; }
+.console-btn svg { width: 0.95rem; height: 0.95rem; }
+
+.console-panel { border: 1px solid var(--e-rule); border-radius: 6px; background: var(--e-paper); }
+.console-panel > header { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--e-rule); }
+.console-panel > header h2 { margin: 0; font-family: var(--e-font-display); font-size: 1rem; font-weight: 600; text-transform: none; letter-spacing: 0; background: none; padding: 0; border: none; color: var(--e-ink); }
+.console-panel > .body { padding: 0.85rem; }
+.console-split { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; gap: 1rem; align-items: start; }
+@media (max-width: 1100px) { .console-split { grid-template-columns: 1fr; } }
+.console-canvas { width: 100%; height: 68vh; min-height: 26rem; background: var(--e-paper); border-radius: 0 0 6px 6px; }
+
+.console-kv { border-collapse: collapse; width: 100%; font-size: 0.84rem; }
+.console-kv th { text-align: left; color: var(--e-muted); font-weight: 500; padding: 0.3rem 0.6rem 0.3rem 0; white-space: nowrap; vertical-align: top; background: none; text-transform: none; letter-spacing: 0; font-size: 0.84rem; border-bottom: 1px solid var(--e-rule); }
+.console-kv td { padding: 0.3rem 0; border-bottom: 1px solid var(--e-rule); word-break: break-word; }
+
+.console-switch { position: relative; display: inline-block; width: 2.3rem; height: 1.3rem; flex: none; }
+.console-switch input { opacity: 0; width: 0; height: 0; }
+.console-switch span { position: absolute; inset: 0; background: var(--e-rule-strong); border-radius: 999px; transition: background 0.15s; cursor: pointer; }
+.console-switch span::before { content: ""; position: absolute; width: 1rem; height: 1rem; left: 0.15rem; top: 0.15rem; background: var(--e-paper); border-radius: 50%; transition: transform 0.15s; }
+.console-switch input:checked + span { background: var(--e-accent); }
+.console-switch input:checked + span::before { transform: translateX(1rem); }
+.console-switch input:disabled + span { opacity: 0.45; cursor: not-allowed; }
+.console-switch input:focus-visible + span { outline: 2px solid var(--e-accent); outline-offset: 2px; }
+
+.console-empty { color: var(--e-muted); padding: 2rem; text-align: center; font-size: 0.9rem; }
+.console-error { color: var(--e-accent); background: var(--e-accent-wash); border-radius: var(--e-radius); padding: 0.6rem 0.8rem; font-size: 0.875rem; }
+.console-muted { color: var(--e-muted); }
+[x-cloak] { display: none !important; }
+
+/* ---- Tabulator in ELVIRA dress ------------------------------------------------------------------- */
+
+.tabulator { border: 1px solid var(--e-rule); border-radius: 6px; background: var(--e-paper); font-family: var(--e-font-text); font-size: 0.84rem; color: var(--e-ink); }
+.tabulator .tabulator-header { background: var(--e-wash); border-bottom: 1px solid var(--e-rule); color: var(--e-muted); font-weight: 600; }
+.tabulator .tabulator-header .tabulator-col { background: var(--e-wash); border-right: 1px solid var(--e-rule); }
+.tabulator .tabulator-header .tabulator-col .tabulator-col-content .tabulator-col-title { font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; }
+.tabulator .tabulator-header .tabulator-col.tabulator-sortable.tabulator-col-sorter-element:hover { background: var(--e-rule); }
+.tabulator .tabulator-header .tabulator-col .tabulator-header-filter input,
+.tabulator .tabulator-header .tabulator-col .tabulator-header-filter select { font-size: 0.78rem; padding: 0.2rem 0.35rem; text-transform: none; letter-spacing: 0; }
+.tabulator .tabulator-tableholder { background: var(--e-paper); }
+.tabulator .tabulator-tableholder .tabulator-table { background: var(--e-paper); color: var(--e-ink); }
+.tabulator-row { background: var(--e-paper); border-bottom: 1px solid var(--e-rule); min-height: 2.1rem; }
+.tabulator-row.tabulator-row-even { background: var(--e-paper); }
+.tabulator-row.tabulator-selectable:hover { background: var(--e-wash); cursor: pointer; }
+.tabulator-row.tabulator-selected { background: var(--e-accent-wash); }
+.tabulator-row .tabulator-cell { border-right: 1px solid var(--e-rule); padding: 0.45rem 0.6rem; }
+.tabulator .tabulator-footer { background: var(--e-wash); border-top: 1px solid var(--e-rule); color: var(--e-muted); font-weight: 500; }
+.tabulator .tabulator-footer .tabulator-page { background: var(--e-paper); border: 1px solid var(--e-rule-strong); border-radius: var(--e-radius); color: var(--e-ink); }
+.tabulator .tabulator-footer .tabulator-page.active { color: var(--e-accent); border-color: var(--e-accent); }
+.tabulator .tabulator-footer .tabulator-page:not(.disabled):hover { background: var(--e-ink); color: var(--e-paper); }
+.tabulator .tabulator-footer .tabulator-page-size { border-radius: var(--e-radius); border-color: var(--e-rule-strong); background: var(--e-paper); color: var(--e-ink); }
+.tabulator .tabulator-placeholder .tabulator-placeholder-contents { color: var(--e-muted); font-weight: 500; font-size: 0.9rem; }
+.tabulator-row .tabulator-cell.tabulator-row-handle, .tabulator .tabulator-col-resize-handle { background: transparent; }
+.tabulator-popup-container, .tabulator-menu { background: var(--e-paper); border: 1px solid var(--e-rule-strong); color: var(--e-ink); box-shadow: none; border-radius: var(--e-radius); }
+.tabulator-menu .tabulator-menu-item:not(.tabulator-menu-item-disabled):hover { background: var(--e-wash); }
+
+@media (max-width: 767px) {
+  #header { padding: 0.75rem 1rem; }
+  div.breadcrumbs { padding: 0.5rem 1rem; }
+  #nav-global { display: none; }
+}

@@ -1,0 +1,162 @@
+/*
+ * IP-035: record pages (hero, figures, tabs, side panel, sticky save bar) and the changelist gallery.
+ * Uses the `--e-*` tokens of elvira-admin.css; nothing here sets a colour of its own.
+ */
+
+/* ---- Hero --------------------------------------------------------------------------------------- */
+
+.console-record-page #content { padding-top: 1.5rem; }
+.record-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 1.25rem;
+  align-items: start;
+  margin-bottom: 1.25rem;
+}
+.record-visual {
+  width: 5.5rem; height: 7.5rem; border-radius: 6px; overflow: hidden; flex: none;
+  background: var(--e-accent-wash); border: 1px solid var(--e-rule);
+  display: flex; align-items: center; justify-content: center;
+}
+.record-visual img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.model-user .record-visual, .model-catalog .record-visual, .record-visual:not(:has(img)) { height: 5.5rem; border-radius: 12px; }
+/* Initials tiles take a stable colour per name from the chart palette (`|tone`). */
+[data-tone="1"] { --tone: var(--e-series-1); } [data-tone="2"] { --tone: var(--e-series-2); }
+[data-tone="3"] { --tone: var(--e-series-3); } [data-tone="4"] { --tone: var(--e-series-4); }
+[data-tone="5"] { --tone: var(--e-series-5); } [data-tone="6"] { --tone: var(--e-series-6); }
+[data-tone="7"] { --tone: var(--e-series-7); } [data-tone="8"] { --tone: var(--e-series-8); }
+.record-visual[data-tone], .console-gallery-visual[data-tone] { background: color-mix(in srgb, var(--tone) 13%, var(--e-paper)); }
+[data-tone] .record-initials { color: var(--tone); }
+.record-initials { font-family: var(--e-font-display); font-weight: 650; font-size: 1.9rem; color: var(--e-accent); letter-spacing: 0.02em; }
+.record-heading { min-width: 0; padding-top: 0.15rem; }
+.record-heading .console-eyebrow { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.35rem; }
+.record-eyebrow-icon { display: inline-flex; width: 0.95rem; height: 0.95rem; color: var(--e-accent); }
+.record-eyebrow-icon svg { width: 100%; height: 100%; }
+#content .record-hero h1 { margin: 0; font-size: 2rem; line-height: 1.15; overflow-wrap: anywhere; }
+.record-subtitle { margin: 0.35rem 0 0; color: var(--e-muted); font-size: 0.98rem; }
+.record-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.6rem; }
+.record-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: flex-end; max-width: 26rem; }
+
+/* ---- Key figures -------------------------------------------------------------------------------- */
+
+.record-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  border: 1px solid var(--e-rule); border-radius: 6px; margin-bottom: 1.5rem; overflow: hidden;
+}
+.record-stat {
+  display: flex; flex-direction: column; gap: 0.1rem; padding: 0.7rem 0.9rem;
+  border-right: 1px solid var(--e-rule); background: var(--e-paper); color: var(--e-ink);
+}
+.record-stat:last-child { border-right: none; }
+#container #main a.record-stat:link, #container #main a.record-stat:visited { color: var(--e-ink); text-decoration: none; }
+a.record-stat:hover { background: var(--e-wash); }
+.record-stat .label { color: var(--e-muted); font-size: 0.68rem; letter-spacing: 0.07em; text-transform: uppercase; font-weight: 600; }
+.record-stat .value { font-family: var(--e-font-display); font-size: 1.45rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.record-stat .value.accent { color: var(--e-accent); }
+.record-stat .hint { color: var(--e-muted); font-size: 0.75rem; }
+
+/* ---- Layout ------------------------------------------------------------------------------------- */
+
+.record-layout { display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: 1.5rem; align-items: start; }
+.record-layout:not(:has(.record-aside)) { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 1180px) { .record-layout { grid-template-columns: minmax(0, 1fr); } }
+.record-main #content-main { float: none; width: auto; }
+
+/* ---- Tabs --------------------------------------------------------------------------------------- */
+
+.record-tabs {
+  display: flex; flex-wrap: wrap; gap: 0.15rem; border-bottom: 1px solid var(--e-rule); margin: 0 0 1rem;
+}
+.record-tabs [role=tab] {
+  appearance: none; border: none; background: none; cursor: pointer;
+  padding: 0.5rem 0.7rem; margin-bottom: -1px; border-bottom: 2px solid transparent;
+  font: 500 0.875rem var(--e-font-text); color: var(--e-muted);
+}
+.record-tabs [role=tab]:hover { color: var(--e-ink); }
+.record-tabs [role=tab][aria-selected=true] { color: var(--e-ink); border-bottom-color: var(--e-accent); font-weight: 600; }
+.record-tabs [role=tab]:focus-visible { outline: 2px solid var(--e-accent); outline-offset: -2px; border-radius: 4px 4px 0 0; }
+.record-tabs [role=tab].has-error { color: var(--e-accent); }
+.record-tabs [role=tab].has-error::after { content: ""; display: inline-block; width: 0.4rem; height: 0.4rem; border-radius: 50%; background: var(--e-accent); margin-left: 0.35rem; vertical-align: middle; }
+.record-tab-count { display: inline-block; min-width: 1.2rem; padding: 0 0.3rem; border-radius: 999px; background: var(--e-wash); color: var(--e-muted); font-size: 0.7rem; text-align: center; margin-left: 0.25rem; }
+
+/* In tab mode the tab names the section: the fieldset's own heading and collapse toggle go. */
+.record-tabbed .record-panel > fieldset > h2.fieldset-heading,
+.record-tabbed .record-panel > fieldset > details > summary { display: none; }
+.record-panel > fieldset.module { margin-bottom: 0; }
+.record-panel .inline-group { margin-bottom: 0; }
+.record-panel .inline-group > h2, .record-panel .inline-group > fieldset > h2 { display: none; }
+.record-tabbed .record-panel .inline-group > fieldset > h2 { display: none; }
+
+/* ---- Form rows ---------------------------------------------------------------------------------- */
+
+.record-main fieldset.module { border: 1px solid var(--e-rule); border-radius: 6px; }
+.record-main .form-row { padding: 0.8rem 1rem; }
+.record-main .aligned label { color: var(--e-muted); font-weight: 500; }
+.record-main .help, .record-main div.help { color: var(--e-muted); }
+
+/* Django's related-object icons (green add, yellow change, blue view) in the console's quiet ink. */
+.related-widget-wrapper-link img, a.related-lookup img { filter: grayscale(1); opacity: 0.55; }
+.related-widget-wrapper-link:hover img, a.related-lookup:hover img { opacity: 1; }
+
+/* The save bar stays reachable on long forms. */
+.record-main .submit-row {
+  position: sticky; bottom: 0; z-index: 5; margin-top: 1.25rem;
+  background: color-mix(in srgb, var(--e-paper) 92%, transparent); backdrop-filter: blur(6px);
+  border: 1px solid var(--e-rule);
+}
+
+/* ---- Side panel --------------------------------------------------------------------------------- */
+
+.record-aside { display: flex; flex-direction: column; gap: 1rem; position: sticky; top: 1rem; }
+.record-side > header { justify-content: space-between; }
+.record-more { font-size: 0.8rem; }
+.record-list, .record-related { list-style: none; margin: 0; padding: 0.25rem 0; }
+.record-list li, .record-related li {
+  list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.45rem 0.85rem; border-bottom: 1px solid var(--e-rule); font-size: 0.85rem;
+}
+.record-list li:last-child, .record-related li:last-child { border-bottom: none; }
+.record-list-main { display: flex; flex-direction: column; min-width: 0; }
+.record-list-main a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.record-list-meta { color: var(--e-muted); font-size: 0.76rem; }
+.record-related .count { color: var(--e-muted); font-variant-numeric: tabular-nums; font-size: 0.8rem; background: var(--e-wash); border-radius: 999px; padding: 0 0.45rem; }
+.record-empty { color: var(--e-muted); font-size: 0.85rem; margin: 0; padding: 0.75rem 0.85rem; }
+.record-facts { margin: 0; }
+.record-facts th, .record-facts td { padding-left: 0.85rem; padding-right: 0.85rem; }
+.record-id { cursor: copy; font-size: 0.72rem; word-break: break-all; }
+.record-id.copied { color: var(--e-ok); }
+
+/* ---- Changelist: view toggle and gallery -------------------------------------------------------- */
+
+.object-tools li.console-view-toggle { display: inline-flex; border: 1px solid var(--e-rule); border-radius: var(--e-radius); overflow: hidden; }
+.object-tools li.console-view-toggle a:link, .object-tools li.console-view-toggle a:visited {
+  border: none; border-radius: 0; background: var(--e-paper); color: var(--e-muted); margin: 0;
+}
+.object-tools li.console-view-toggle a.active { background: var(--e-ink); color: var(--e-paper); }
+
+.console-gallery {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 1rem; padding: 1rem 0;
+}
+.console-gallery-card {
+  display: flex; flex-direction: column; border: 1px solid var(--e-rule); border-radius: 6px; overflow: hidden;
+  background: var(--e-paper); color: var(--e-ink); transition: border-color 0.15s, transform 0.15s;
+}
+#container #main a.console-gallery-card:link, #container #main a.console-gallery-card:visited { color: var(--e-ink); text-decoration: none; }
+.console-gallery-card:hover { border-color: var(--e-accent); transform: translateY(-2px); }
+.console-gallery-visual {
+  aspect-ratio: 2 / 3; background: var(--e-accent-wash); display: flex; align-items: center; justify-content: center;
+  border-bottom: 1px solid var(--e-rule);
+}
+.model-catalog .console-gallery-visual, .model-user .console-gallery-visual { aspect-ratio: 3 / 2; }
+.console-gallery-visual img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.console-gallery-body { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.6rem 0.7rem 0.75rem; min-width: 0; }
+.console-gallery-title { font-family: var(--e-font-display); font-weight: 600; font-size: 0.95rem; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.console-gallery-subtitle { color: var(--e-muted); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.console-gallery-badges { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.console-gallery-meta { color: var(--e-muted); font-size: 0.74rem; }
+
+@media (max-width: 767px) {
+  .record-hero { grid-template-columns: auto minmax(0, 1fr); }
+  .record-actions { grid-column: 1 / -1; justify-content: flex-start; max-width: none; }
+  .record-visual { width: 4rem; height: 5.5rem; }
+}

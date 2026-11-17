@@ -1,0 +1,40 @@
+{% extends "admin/change_list.html" %}
+{% load i18n humanize_console %}
+{% comment %}
+IP-035: the changelist with an optional gallery view (`ConsoleMixin.gallery`): the same filtered, searched and
+paginated rows as cards (`card()`). `?view=gallery|list` switches; the choice is kept in the session.
+{% endcomment %}
+
+{% block object-tools-items %}
+{% if console_gallery_available %}
+  <li class="console-view-toggle" role="group" aria-label="{% translate 'View' %}">
+    <a href="?{% if cl.get_query_string %}{{ cl.get_query_string|slice:'1:' }}&amp;{% endif %}view=list" class="{% if console_view != 'gallery' %}active{% endif %}">{% translate 'List' %}</a>
+    <a href="?{% if cl.get_query_string %}{{ cl.get_query_string|slice:'1:' }}&amp;{% endif %}view=gallery" class="{% if console_view == 'gallery' %}active{% endif %}">{% translate 'Gallery' %}</a>
+  </li>
+{% endif %}
+{{ block.super }}
+{% endblock %}
+
+{% block result_list %}
+{% if console_view == 'gallery' %}
+  {% if console_cards %}
+  <div class="console-gallery">
+    {% for card in console_cards %}
+    <a class="console-gallery-card" href="{{ card.url }}">
+      <span class="console-gallery-visual"{% if not card.image %} data-tone="{{ card.title|tone }}"{% endif %}>
+        {% if card.image %}<img src="{{ card.image }}" alt="" loading="lazy">{% else %}<span class="record-initials">{{ card.initials }}</span>{% endif %}
+      </span>
+      <span class="console-gallery-body">
+        <span class="console-gallery-title">{{ card.title }}</span>
+        {% if card.subtitle %}<span class="console-gallery-subtitle">{{ card.subtitle }}</span>{% endif %}
+        {% if card.badges %}<span class="console-gallery-badges">{% for badge in card.badges %}<span class="console-badge {{ badge.tone }}">{{ badge.label }}</span>{% endfor %}</span>{% endif %}
+        {% if card.meta %}<span class="console-gallery-meta">{{ card.meta }}</span>{% endif %}
+      </span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="console-empty">{% translate 'Nothing matches.' %}</p>
+  {% endif %}
+{% else %}{{ block.super }}{% endif %}
+{% endblock %}

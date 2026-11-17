@@ -1,0 +1,17 @@
+{% load i18n admin_urls %}
+{# IP-035: the stock "Add" link, plus a link to the same table in the console data grid. #}
+
+{% block object-tools-items %}
+  {% url 'admin:console_grid' cl.opts.app_label cl.opts.model_name as grid_url %}
+  {% if grid_url and not is_popup %}
+  <li><a href="{{ grid_url }}">{% translate 'Data grid' %}</a></li>
+  {% endif %}
+  {% if has_add_permission %}
+  <li>
+    {% url cl.opts|admin_urlname:'add' as add_url %}
+    <a href="{% add_preserved_filters add_url is_popup to_field %}" class="addlink">
+      {% blocktranslate with cl.opts.verbose_name as name %}Add {{ name }}{% endblocktranslate %}
+    </a>
+  </li>
+  {% endif %}
+{% endblock %}

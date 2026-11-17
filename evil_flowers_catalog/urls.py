@@ -41,10 +41,13 @@ urlpatterns = [
     path("data/v1/", include(("apps.files.urls", "files"), namespace="files")),
     path("docs/", include(("apps.openapi.urls", "openapi"), namespace="openapi")),
     path("extraction/v1/", include(("apps.extraction.urls", "extraction"), namespace="extraction")),
-    path("admin/", admin.site.urls),
     # #177: W3C TDMRep, the text-and-data-mining reservations of publications.
     path(".well-known/tdmrep.json", TDMRepView.as_view(), name="tdmrep"),
 ]
+
+# IP-035: the administration console (Django admin) is opt-out and its path configurable.
+if settings.EVILFLOWERS_ADMIN_ENABLED:
+    urlpatterns.append(path(settings.EVILFLOWERS_ADMIN_PATH, admin.site.urls))
 
 # IP-015: the chat assistant is opt-out, following the MCP pattern above.
 # Disabled means the routes are never mounted at all.

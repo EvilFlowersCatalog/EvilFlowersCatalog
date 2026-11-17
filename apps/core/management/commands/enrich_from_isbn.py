@@ -1,8 +1,9 @@
 """Fill authors, publisher and year of entries that have an ISBN but lack them (#202).
 
-Looks the ISBN up with `EVILFLOWERS_ISBN_METADATA_SERVICES` (free services) and fills empty fields only; a value
-a librarian entered is never replaced, and authors are added only to an entry without any. Waits
-`EVILFLOWERS_ISBN_METADATA_DELAY` seconds between lookups.
+Asks the provider queue `EVILFLOWERS_ISBN_METADATA_SERVICES` (Crossref, Open Library, the Slovak National Library,
+Google Books) in order until every field the entry lacks has a value, and fills empty fields only; a value a
+librarian entered is never replaced, and authors are added only to an entry without any. Waits
+`EVILFLOWERS_ISBN_METADATA_DELAY` seconds between entries.
 
 Examples:
     python manage.py enrich_from_isbn --catalog stu --dry-run
@@ -64,7 +65,8 @@ class Command(TracedCommandMixin, BaseCommand):
         for index, entry in enumerate(entries.iterator()):
             if index and delay > 0:
                 time.sleep(delay)
-            metadata = isbn_metadata.lookup(entry.identifiers.get("isbn"))
+            # The queue goes on until every field this entry lacks has a value (or the providers run out).
+            metadata = isbn_metadata.lookup(entry.identifiers.get("isbn"), wanted=isbn_metadata.missing(entry))
             if metadata is None:
                 not_found += 1
                 self.stdout.write(f"{entry.pk} not found: {entry.identifiers.get('isbn')}")
@@ -75,7 +77,9 @@ class Command(TracedCommandMixin, BaseCommand):
                 continue
             filled += 1
             verb = "would fill" if options["dry_run"] else "filled"
-            self.stdout.write(f"{entry.pk} {verb} ({metadata.service}): {isbn_metadata.describe(found)}")
+            left = isbn_metadata.missing(entry) - set(found) if options["dry_run"] else isbn_metadata.missing(entry)
+            note = f" still missing: {', '.join(sorted(left))}" if left else ""
+            self.stdout.write(f"{entry.pk} {verb}: {isbn_metadata.describe(found, metadata)}{note}")
 
         prefix = "Dry run: " if options["dry_run"] else ""
         self.stdout.write(

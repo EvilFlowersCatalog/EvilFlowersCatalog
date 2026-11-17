@@ -1,0 +1,55 @@
+{% extends "admin/change_form.html" %}
+{% load i18n static %}
+{% comment %}
+IP-035: the record page. Extends Django's own change form (the same name: Django skips this template when it
+resolves the parent) and adds, when the admin built a `console_record`: a hero, key figures, fieldsets and
+inlines as tabs, and a side panel of related records. Popups and admins without a record keep Django's form.
+{% endcomment %}
+
+{% block extrahead %}{{ block.super }}
+{% if console_record %}<script defer src="{% static 'console/js/record.js' %}"></script>{% endif %}
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }}{% if console_record %} console-record-page{% endif %}{% endblock %}
+
+{% block content_title %}{% if console_record %}{% include "console/record_hero.html" with record=console_record %}{% else %}{{ block.super }}{% endif %}{% endblock %}
+{% block content_subtitle %}{% if not console_record %}{{ block.super }}{% endif %}{% endblock %}
+
+{% block content %}
+{% if console_record %}
+<div class="record-layout">
+  <div class="record-main">{{ block.super }}</div>
+  {% if change %}<aside class="record-aside">{% include "console/record_aside.html" with record=console_record %}</aside>{% endif %}
+</div>
+{% else %}{{ block.super }}{% endif %}
+{% endblock %}
+
+{% block object-tools %}{% if not console_record %}{{ block.super }}{% endif %}{% endblock %}
+
+{% block field_sets %}
+{% if console_record %}
+<nav class="record-tabs" role="tablist" aria-label="{% translate 'Sections' %}" data-record-tabs hidden>
+  {% for fieldset in adminform %}
+    <button type="button" role="tab" data-tab="fieldset-{{ forloop.counter0 }}">{% if fieldset.name %}{{ fieldset.name }}{% else %}{% translate 'Details' %}{% endif %}</button>
+  {% endfor %}
+  {% for inline_admin_formset in inline_admin_formsets %}
+    <button type="button" role="tab" data-tab="inline-{{ forloop.counter0 }}">{{ inline_admin_formset.opts.verbose_name_plural|capfirst }}{% with count=inline_admin_formset.formset.initial_form_count %}{% if count %} <span class="record-tab-count">{{ count }}</span>{% endif %}{% endwith %}</button>
+  {% endfor %}
+</nav>
+{% for fieldset in adminform %}
+  <section class="record-panel" role="tabpanel" data-panel="fieldset-{{ forloop.counter0 }}">
+    {% include "admin/includes/fieldset.html" with heading_level=2 prefix="fieldset" id_prefix=0 id_suffix=forloop.counter0 %}
+  </section>
+{% endfor %}
+{% else %}{{ block.super }}{% endif %}
+{% endblock %}
+
+{% block inline_field_sets %}
+{% if console_record %}
+{% for inline_admin_formset in inline_admin_formsets %}
+  <section class="record-panel" role="tabpanel" data-panel="inline-{{ forloop.counter0 }}">
+    {% include inline_admin_formset.opts.template %}
+  </section>
+{% endfor %}
+{% else %}{{ block.super }}{% endif %}
+{% endblock %}

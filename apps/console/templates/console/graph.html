@@ -1,0 +1,121 @@
+{% extends "console/page.html" %}
+{% load i18n static %}
+{# IP-035: the knowledge-graph explorer. Data: console/api/graph/{search,expand,overview}/ (apps.console.views.graph). #}
+
+{% block vendor %}
+<link rel="stylesheet" href="{% static 'console/css/explorers.css' %}">
+<script src="{% static 'console/vendor/cytoscape.min.js' %}"></script>
+<script src="{% static 'console/js/graph.js' %}"></script>
+{% endblock %}
+
+{% block console_content %}
+{{ edge_types|json_script:"graph-edge-types" }}
+<div x-data="graphPage({
+      searchUrl: '{% url 'admin:console_graph_search' %}',
+      expandUrl: '{% url 'admin:console_graph_expand' %}',
+      overviewUrl: '{% url 'admin:console_graph_overview' %}',
+      vectorsUrl: '{% url 'admin:console_vectors' as v %}{{ v }}',
+      seed: '{{ seed|escapejs }}'
+    })" x-init="init()" class="explorer">
+  <p class="console-lede">{% blocktranslate %}Start from a publication, category, author or concept, then double-click a node to open its neighbourhood. The graph is read from the tables the <code>library</code> graph is projected from (outlines, section similarity, the decider's typed relations, summaries' concepts, reference lists){% endblocktranslate %}{% if age_available %}{% translate '; concept questions use the AGE graph.' %}{% else %}{% translate '; the AGE graph is not available here, concepts come from the summaries.' %}{% endif %}</p>
+
+  <div class="console-kpis" x-show="overview" x-cloak>
+    <div class="console-kpi"><div class="label">{% translate 'Publications' %}</div><div class="value" x-text="Console.number(overview?.entries)"></div></div>
+    <div class="console-kpi"><div class="label">{% translate 'Sections' %}</div><div class="value" x-text="overview?.sections === null ? '—' : Console.number(overview?.sections)"></div></div>
+    <div class="console-kpi"><div class="label">{% translate 'Similar section pairs' %}</div><div class="value" x-text="Console.number(overview?.similar_sections)"></div></div>
+    <div class="console-kpi"><div class="label">{% translate 'Typed relations' %}</div><div class="value" x-text="Console.number(overview?.typed_relations)"></div></div>
+    <div class="console-kpi"><div class="label">{% translate 'Concept mentions typed' %}</div><div class="value" x-text="Console.number(overview?.mentions)"></div></div>
+  </div>
+
+  <div class="console-toolbar">
+    <div class="explorer-search" @click.outside="results = []">
+      <input type="search" placeholder="{% translate 'Find a publication, category, author or concept…' %}" x-model="query" @input.debounce.300ms="search()" @keydown.escape="results = []" aria-label="{% translate 'Search' %}">
+      <ul class="explorer-results" x-show="results.length" x-cloak>
+        <template x-for="item in results" :key="item.id">
+          <li><button type="button" @click="seedWith(item)"><span class="explorer-kind" :data-kind="item.kind" x-text="item.kind"></span> <span x-text="item.label"></span></button></li>
+        </template>
+      </ul>
+    </div>
+    <label class="console-muted">{% translate 'Layout' %}
+      <select x-model="layout" @change="runLayout()">
+        <option value="cose">{% translate 'force (cose)' %}</option>
+        <option value="concentric">{% translate 'concentric' %}</option>
+        <option value="breadthfirst">{% translate 'tree (breadth-first)' %}</option>
+        <option value="circle">{% translate 'circle' %}</option>
+      </select>
+    </label>
+    <label class="console-muted">{% translate 'Min p' %}
+      <input type="range" min="0" max="1" step="0.05" x-model.number="minP" @input="applyFilters()">
+      <span class="console-mono" x-text="minP.toFixed(2)"></span>
+    </label>
+    <label class="console-muted"><input type="checkbox" x-model="showHidden" @change="reloadExpanded()"> {% translate 'show pairs the decider hid' %}</label>
+    <span class="spacer"></span>
+    <button type="button" class="console-btn" @click="fit()">{% translate 'Fit' %}</button>
+    <button type="button" class="console-btn" @click="clear()">{% translate 'Clear' %}</button>
+  </div>
+
+  <div class="console-split">
+    <section class="console-panel">
+      <header>
+        <h2>{% translate 'Graph' %}</h2>
+        <span class="console-muted" x-text="stats()"></span>
+        <span class="console-badge muted" x-show="source" x-cloak x-text="source"></span>
+        <span class="console-badge warn" x-show="truncated" x-cloak>{% translate 'capped: not every neighbour shown' %}</span>
+        <span class="spacer" style="flex:1"></span>
+        <span class="console-muted" x-show="loading" x-cloak>{% translate 'Loading…' %}</span>
+      </header>
+      <div class="console-error" x-show="error" x-cloak x-text="error" style="margin: 0.75rem;"></div>
+      <div x-ref="canvas" class="console-canvas explorer-canvas"></div>
+      <div class="console-empty explorer-hint" x-show="empty" x-cloak>{% translate 'Search above to place a first node.' %}</div>
+    </section>
+
+    <aside class="explorer-aside">
+      <section class="console-panel">
+        <header><h2>{% translate 'Selection' %}</h2></header>
+        <div class="body">
+          <template x-if="!selected"><p class="console-muted">{% translate 'Click a node or an edge.' %}</p></template>
+          <template x-if="selected">
+            <div>
+              <div class="explorer-title"><span class="explorer-kind" :data-kind="selected.kind" x-text="selected.kind || selected.type"></span> <strong x-text="selected.label || selected.type"></strong></div>
+              <table class="console-kv">
+                <template x-for="row in selectedRows()" :key="row[0]">
+                  <tr><th x-text="row[0]"></th><td class="console-mono" x-text="row[1]"></td></tr>
+                </template>
+              </table>
+              <div class="console-toolbar" style="margin-top: 0.75rem;" x-show="selected.kind" x-cloak>
+                <button type="button" class="console-btn primary" @click="expand(selected.id)">{% translate 'Expand' %}</button>
+                <a class="console-btn" :href="selected.url" x-show="selected.url">{% translate 'Open in admin' %}</a>
+                <a class="console-btn" :href="vectorsUrl + '?entry=' + selected.id.slice(6)" x-show="selected.kind === 'entry' && vectorsUrl">{% translate 'Neighbours' %}</a>
+                <button type="button" class="console-btn" @click="remove(selected.id)">{% translate 'Remove' %}</button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </section>
+
+      <section class="console-panel">
+        <header><h2>{% translate 'Relations' %}</h2></header>
+        <div class="body explorer-legend">
+          <template x-for="type in edgeTypes" :key="type.key">
+            <label>
+              <input type="checkbox" x-model="enabled[type.key]" @change="applyFilters()">
+              <span class="explorer-swatch" :style="'background:' + edgeColour(type.key)"></span>
+              <span x-text="type.label"></span>
+              <span class="console-muted console-mono" x-text="counts[type.key] || ''"></span>
+            </label>
+          </template>
+        </div>
+      </section>
+
+      <section class="console-panel">
+        <header><h2>{% translate 'Nodes' %}</h2></header>
+        <div class="body explorer-legend">
+          <template x-for="kind in ['entry', 'section', 'concept', 'category', 'author']" :key="kind">
+            <div><span class="explorer-dot" :style="'background:' + nodeColour(kind)"></span> <span x-text="kind"></span></div>
+          </template>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+{% endblock %}

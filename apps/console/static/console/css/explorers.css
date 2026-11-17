@@ -1,0 +1,53 @@
+/* IP-035: the graph and vector explorers (console/graph/, console/vectors/). Tokens from elvira-admin.css. */
+
+.explorer-search { position: relative; flex: 1 1 22rem; max-width: 34rem; }
+.explorer-search input[type=search] { width: 100%; box-sizing: border-box; }
+.explorer-results {
+  position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 0.25rem 0;
+  list-style: none; background: var(--e-paper); border: 1px solid var(--e-rule-strong); border-radius: var(--e-radius);
+  max-height: 22rem; overflow-y: auto;
+}
+.explorer-results li { list-style: none; padding: 0; }
+.explorer-results button {
+  display: flex; gap: 0.5rem; align-items: baseline; width: 100%; text-align: left; border: 0; background: transparent;
+  padding: 0.4rem 0.7rem; font: 400 0.875rem var(--e-font-text); color: var(--e-ink); cursor: pointer;
+}
+.explorer-results button:hover, .explorer-results button:focus { background: var(--e-wash); outline: none; }
+.explorer-kind {
+  display: inline-block; min-width: 4.4rem; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--e-muted);
+}
+.explorer-kind[data-kind="entry"] { color: var(--e-series-1); }
+.explorer-kind[data-kind="section"] { color: var(--e-series-2); }
+.explorer-kind[data-kind="concept"] { color: var(--e-series-3); }
+.explorer-kind[data-kind="category"] { color: var(--e-series-4); }
+.explorer-kind[data-kind="author"] { color: var(--e-series-5); }
+
+.explorer .console-panel { position: relative; }
+.explorer-canvas { height: 70vh; }
+.explorer-hint { position: absolute; left: 0; right: 0; top: 45%; pointer-events: none; }
+.explorer-aside { display: flex; flex-direction: column; gap: 1rem; }
+.explorer-title { margin-bottom: 0.5rem; display: flex; gap: 0.4rem; align-items: baseline; flex-wrap: wrap; }
+.explorer-title strong { font-family: var(--e-font-display); font-size: 1rem; }
+.explorer-legend { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.84rem; }
+.explorer-legend label { display: flex; align-items: center; gap: 0.45rem; cursor: pointer; }
+.explorer-legend label span:last-child { margin-left: auto; }
+.explorer-swatch { display: inline-block; width: 1.1rem; height: 3px; border-radius: 2px; flex: none; }
+.explorer-dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%; vertical-align: middle; }
+
+.explorer input[type=range] { vertical-align: middle; accent-color: var(--e-accent); }
+
+/* Vectors */
+.vectors-chart { width: 100%; height: 62vh; min-height: 24rem; }
+.vectors-list { list-style: none; margin: 0; padding: 0; }
+.vectors-list li { list-style: none; display: flex; gap: 0.5rem; align-items: baseline; padding: 0.4rem 0; border-bottom: 1px solid var(--e-rule); font-size: 0.86rem; }
+.vectors-list li:last-child { border-bottom: none; }
+.vectors-list .title { flex: 1; min-width: 0; }
+.vectors-list .score { font-variant-numeric: tabular-nums; color: var(--e-muted); font-family: var(--e-font-mono); font-size: 0.8rem; }
+.vectors-bar { height: 6px; background: var(--e-wash); border-radius: 3px; overflow: hidden; margin-top: 0.25rem; }
+.vectors-bar > span { display: block; height: 100%; background: var(--e-accent); }
+.vectors-passage { padding: 0.6rem 0; border-bottom: 1px solid var(--e-rule); font-size: 0.86rem; }
+.vectors-passage:last-child { border-bottom: none; }
+.vectors-passage mark { background: var(--e-accent-wash); color: var(--e-ink); padding: 0 0.1em; }
+.vectors-grid { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin-top: 1rem; }
+@media (max-width: 1100px) { .vectors-grid { grid-template-columns: 1fr; } }

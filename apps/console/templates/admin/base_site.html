@@ -1,0 +1,42 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+{# IP-035: the ELVIRA chrome of every admin and console page. #}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('ELVIRA administration') }}{% endblock %}
+
+{% block responsive %}{{ block.super }}
+<link rel="preload" href="{% static 'console/fonts/ibm-plex-sans-latin-400-normal.woff2' %}" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="{% static 'console/fonts/literata-latin-wght-normal.woff2' %}" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{% static 'console/css/elvira-admin.css' %}">
+<link rel="stylesheet" href="{% static 'console/css/record.css' %}">
+<link rel="icon" href="{% static 'console/img/favicon.svg' %}" type="image/svg+xml">
+{% endblock %}
+
+{% block branding %}
+<div id="site-name">
+  <a href="{% url 'admin:index' %}">
+    <span class="console-mark" aria-hidden="true"></span>
+    <span class="console-wordmark">ELVIRA</span>
+    <span class="console-wordmark-sub">{% translate 'Administration' %}</span>
+  </a>
+</div>
+{% if user.is_anonymous %}
+  {% include "admin/color_theme_toggle.html" %}
+{% endif %}
+{% endblock %}
+
+{% block nav-global %}
+{% if user.is_active and user.is_staff %}
+<nav id="nav-global" aria-label="{% translate 'Console' %}">
+  {% url 'admin:index' as index_url %}
+  <a href="{{ index_url }}"{% if request.path == index_url %} class="active"{% endif %}>{% translate 'Overview' %}</a>
+  {% if console_states.jobs.enabled %}{% url 'admin:console_jobs' as jobs_url %}{% if jobs_url %}<a href="{{ jobs_url }}"{% if request.path == jobs_url %} class="active"{% endif %}>{% translate 'Jobs' %}</a>{% endif %}{% endif %}
+  {% if console_states.knowledge.enabled %}{% url 'admin:console_graph' as graph_url %}{% if graph_url %}<a href="{{ graph_url }}"{% if request.path == graph_url %} class="active"{% endif %}>{% translate 'Graph' %}</a>{% endif %}{% endif %}
+  {% if console_states.library.enabled %}{% url 'admin:console_vectors' as vectors_url %}{% if vectors_url %}<a href="{{ vectors_url }}"{% if request.path == vectors_url %} class="active"{% endif %}>{% translate 'Vectors' %}</a>{% endif %}{% endif %}
+  {% url 'admin:console_modules' as modules_url %}
+  <a href="{{ modules_url }}"{% if request.path == modules_url %} class="active"{% endif %}>{% translate 'Modules' %}</a>
+</nav>
+{% endif %}
+{% endblock %}
+
+{% block footer %}<div class="console-muted" style="padding: 1.5rem 2rem; font-size: 0.75rem;">ELVIRA · EvilFlowers Catalog · <a href="https://elvira.digital" rel="noopener">elvira.digital</a></div>{% endblock %}

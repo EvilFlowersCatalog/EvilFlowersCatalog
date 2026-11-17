@@ -1,0 +1,44 @@
+{% extends "admin/base_site.html" %}
+{% load i18n humanize_console %}
+{# IP-035: one module's page (`console/module/<key>/`), or a Django app's page for `/admin/<app_label>/`. #}
+
+{% block bodyclass %}{{ block.super }} app-{{ app_label }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate 'Overview' %}</a>
+  {% for app in app_list %} › {{ app.name }}{% endfor %}
+</div>
+{% endblock %}
+
+{% block content_title %}{% for app in app_list %}<h1>{{ app.name }}</h1>{% endfor %}{% endblock %}
+
+{% block content %}
+<div class="console-page">
+  {% for app in app_list %}
+    {% if app.module.description %}<p class="console-lede">{{ app.module.description }}</p>{% endif %}
+    <div class="console-grid-cards">
+      {% for model in app.models %}
+      <section class="console-card">
+        <div class="console-card-head">
+          <span class="console-card-icon">{% include "console/icon.html" with name="table" %}</span>
+          <h2>{% if model.admin_url %}<a href="{{ model.admin_url }}">{{ model.name }}</a>{% else %}{{ model.name }}{% endif %}</h2>
+        </div>
+        <p>
+          {% if model.estimate is not None and model.estimate >= 0 %}{% blocktranslate with n=model.estimate|compact_number %}about {{ n }} rows{% endblocktranslate %}{% else %}{% translate 'row count unknown' %}{% endif %}
+          · <span class="console-mono">{{ model.object_name }}</span>
+        </p>
+        <div class="console-toolbar" style="margin: 0;">
+          {% if model.admin_url %}<a class="console-btn" href="{{ model.admin_url }}">{% include "console/icon.html" with name="list" %}{% translate 'List' %}</a>{% endif %}
+          {% if model.grid_url %}<a class="console-btn" href="{{ model.grid_url }}">{% include "console/icon.html" with name="table" %}{% translate 'Data grid' %}</a>{% endif %}
+          {% if model.add_url %}<a class="console-btn" href="{{ model.add_url }}">{% include "console/icon.html" with name="plus" %}{% translate 'Add' %}</a>{% endif %}
+          {% if model.view_only %}<span class="console-badge muted">{% translate 'read-only' %}</span>{% endif %}
+        </div>
+      </section>
+      {% endfor %}
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block sidebar %}{% endblock %}

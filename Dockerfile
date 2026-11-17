@@ -69,6 +69,11 @@ ENV CELERY_HOSTNAME=catalog@%h
 
 RUN date -I > BUILD.txt
 
+# IP-035: admin and console assets into STATIC_ROOT, hashed and pre-compressed, at build time: every
+# runtime (Compose prod, k8s web/worker/beat, a future read-only root filesystem) gets the same files and
+# WhiteNoise serves them from the web process. Needs no database and no secrets.
+RUN DJANGO_SETTINGS_MODULE=evil_flowers_catalog.settings.production python3 manage.py collectstatic --noinput --verbosity 0
+
 COPY conf/supervisor.conf /etc/supervisord.conf
 RUN chmod +x conf/entrypoint.sh
 

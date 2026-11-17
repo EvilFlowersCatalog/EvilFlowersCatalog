@@ -1,0 +1,52 @@
+{% extends "admin/base_site.html" %}
+{% load i18n humanize_console %}
+{# IP-035: the console overview: what needs attention, then one card per enabled module. #}
+
+{% block bodyclass %}{{ block.super }} dashboard console-index{% endblock %}
+{% block nav-breadcrumbs %}{% endblock %}
+{% block nav-sidebar %}{% endblock %}
+{% block content_title %}<h1>{% translate 'Overview' %}</h1>{% endblock %}
+
+{% block content %}
+<div class="console-page">
+  <p class="console-lede">{% blocktranslate %}Everything the catalog stores, grouped by the work it serves. Counts are planner estimates; open a table for exact numbers. Switch modules on the Modules page.{% endblocktranslate %}</p>
+
+  {% if attention %}
+  <div class="console-eyebrow" style="margin-bottom: 0.5rem;">{% translate 'Needs attention' %}</div>
+  <div class="console-attention">
+    {% for item in attention %}
+      <a href="{{ item.url }}"><span class="n">{{ item.count }}</span> {{ item.label }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if app_list %}
+  <div class="console-grid-cards">
+    {% for app in app_list %}
+    <section class="console-card" id="module-{{ app.app_label }}">
+      <div class="console-card-head">
+        <span class="console-card-icon">{% include "console/icon.html" with name=app.module.icon %}</span>
+        <h2><a href="{{ app.app_url }}">{{ app.name }}</a></h2>
+        {% if app.module.sensitive %}<span class="console-badge warn" title="{% translate 'Holds personal data' %}">{% translate 'sensitive' %}</span>{% endif %}
+      </div>
+      {% if app.module.description %}<p>{{ app.module.description }}</p>{% endif %}
+      <ul class="console-models">
+        {% for model in app.models %}
+        <li>
+          <span class="name">{% if model.admin_url %}<a href="{{ model.admin_url }}">{{ model.name }}</a>{% else %}{{ model.name }}{% endif %}</span>
+          {% if model.estimate is not None and model.estimate >= 0 %}<span class="count" title="{% translate 'Planner estimate' %}">{{ model.estimate|compact_number }}</span>{% endif %}
+          <span class="links">
+            {% if model.grid_url %}<a class="console-chip" href="{{ model.grid_url }}" title="{% translate 'Open in the data grid' %}">{% translate 'grid' %}</a>{% endif %}
+            {% if model.add_url %}<a class="console-chip" href="{{ model.add_url }}" title="{% translate 'Add' %}">+</a>{% endif %}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="console-empty">{% translate 'No module is switched on, or you may not view any of them.' %}</p>
+  {% endif %}
+</div>
+{% endblock %}

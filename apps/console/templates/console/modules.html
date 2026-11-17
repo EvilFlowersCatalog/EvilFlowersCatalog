@@ -1,0 +1,42 @@
+{% extends "console/page.html" %}
+{% load i18n %}
+{# IP-035: switch console modules; stored as the instance setting `admin.modules`. #}
+
+{% block console_content %}
+<p class="console-lede">{% blocktranslate %}A module groups the tables one kind of work needs. Switching one off hides it from the console and answers its pages with "forbidden" at once, without a restart. The choice is stored as the instance setting <code>admin.modules</code>; modules nobody switched follow the deployment default <code>EVILFLOWERS_ADMIN_MODULES</code>. A module whose feature is turned off in the deployment stays off.{% endblocktranslate %}</p>
+
+<form method="post">
+  {% csrf_token %}
+  <div class="console-panel">
+    <table class="console-kv" style="margin: 0;">
+      <tbody>
+      {% for state in states %}
+        <tr>
+          <td style="width: 3rem; padding: 0.75rem 0.5rem 0.75rem 0.9rem;">
+            <label class="console-switch" title="{{ state.module.title }}">
+              <input type="checkbox" name="module-{{ state.module.key }}" {% if state.wanted %}checked{% endif %} {% if not state.available %}disabled{% endif %} aria-label="{{ state.module.title }}">
+              <span></span>
+            </label>
+          </td>
+          <td style="padding: 0.75rem 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+              <strong class="console-display" style="font-size: 1.02rem;">{{ state.module.title }}</strong>
+              <code class="console-muted">{{ state.module.key }}</code>
+              {% if state.module.sensitive %}<span class="console-badge warn">{% translate 'personal data' %}</span>{% endif %}
+              {% if not state.available %}<span class="console-badge muted">{% blocktranslate with flag=state.module.requires %}needs {{ flag }}{% endblocktranslate %}</span>{% endif %}
+              {% if state.enabled %}<span class="console-badge ok">{% translate 'on' %}</span>{% else %}<span class="console-badge muted">{% translate 'off' %}</span>{% endif %}
+              <span class="console-muted" style="font-size: 0.78rem;">{% if state.source == 'setting' %}{% translate 'switched here' %}{% elif state.source == 'deployment' %}{% translate 'deployment default' %}{% else %}{% translate 'feature flag' %}{% endif %}</span>
+            </div>
+            <div class="console-muted" style="font-size: 0.85rem; margin-top: 0.15rem;">{{ state.module.description }}</div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="console-toolbar" style="margin-top: 1rem;">
+    <button type="submit" class="console-btn primary">{% translate 'Save' %}</button>
+    <button type="submit" name="reset" value="1" class="console-btn">{% translate 'Reset to deployment defaults' %}</button>
+  </div>
+</form>
+{% endblock %}

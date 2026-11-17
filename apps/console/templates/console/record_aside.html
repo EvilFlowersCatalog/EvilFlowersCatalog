@@ -1,0 +1,43 @@
+{% load i18n humanize_console %}
+{% for list in record.lists %}
+<section class="console-panel record-side">
+  <header><h2>{{ list.title }}</h2>{% if list.more_url %}<a class="record-more" href="{{ list.more_url }}">{% translate 'all' %} →</a>{% endif %}</header>
+  {% if list.items %}
+  <ul class="record-list">
+    {% for item in list.items %}
+    <li>
+      <div class="record-list-main">
+        {% if item.url %}<a href="{{ item.url }}">{{ item.label }}</a>{% else %}{{ item.label }}{% endif %}
+        {% if item.meta %}<span class="record-list-meta">{{ item.meta }}</span>{% endif %}
+      </div>
+      {% if item.badge %}<span class="console-badge {{ item.badge.tone }}">{{ item.badge.label }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="record-empty">{{ list.empty|default:_("Nothing yet.") }}</p>
+  {% endif %}
+</section>
+{% endfor %}
+
+<section class="console-panel record-side">
+  <header><h2>{% translate 'Related' %}</h2></header>
+  {% if record.related %}
+  <ul class="record-related">
+    {% for related in record.related %}
+    <li>{% if related.url %}<a href="{{ related.url }}">{{ related.label }}</a>{% else %}{{ related.label }}{% endif %}<span class="count">{{ related.count|compact_number }}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="record-empty">{% translate 'Nothing points at this record yet.' %}</p>
+  {% endif %}
+</section>
+
+{% if record.facts %}
+<section class="console-panel record-side">
+  <header><h2>{% translate 'Record' %}</h2></header>
+  <table class="console-kv record-facts">
+    {% for label, value in record.facts %}<tr><th>{{ label }}</th><td>{% if forloop.first %}<code class="record-id" title="{% translate 'Click to copy' %}" data-copy="{{ value }}">{{ value }}</code>{% else %}{{ value }}{% endif %}</td></tr>{% endfor %}
+  </table>
+</section>
+{% endif %}

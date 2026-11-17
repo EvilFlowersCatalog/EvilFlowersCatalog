@@ -65,7 +65,10 @@ ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(";") + ["localhost"]
 # Application definition
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    # IP-035: the console's templates override the admin's, so it comes first; the admin app itself runs
+    # with the console's site as the default (`ElviraAdminConfig`).
+    "apps.console",
+    "apps.console.apps.ElviraAdminConfig",
     "django.contrib.sessions",
     "django.contrib.staticfiles",
     "django.contrib.auth",
@@ -101,6 +104,10 @@ MIDDLEWARE = [
     # Must run first: fixes the request scheme before anything builds URLs.
     "apps.api.middleware.public_scheme.PublicSchemeMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # IP-035: serves `/static/` (admin and console assets) from the image's STATIC_ROOT, already
+    # compressed and with far-future caching for hashed names; answers before the GZip and
+    # Cache-Control middleware below ever see the request.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     # GZip compresses the highly-repetitive OPDS Atom XML and entry JSON
     # payloads (which now carry ~15 LCP fields per entry). Placed high so it
     # wraps the response body produced by the middleware below it.
@@ -272,6 +279,29 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
+# IP-035: `collectstatic` runs at image build (Dockerfile); `production.py` switches to WhiteNoise's
+# hashed, pre-compressed manifest storage. Here (development, tests) files come straight from the apps.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+
+# IP-035: the administration console (Django admin at EVILFLOWERS_ADMIN_PATH).
+# Off = the admin is not mounted at all (404), like the MCP and assistant switches.
+EVILFLOWERS_ADMIN_ENABLED = _bool_env("EVILFLOWERS_ADMIN_ENABLED", default=True)
+EVILFLOWERS_ADMIN_PATH = os.getenv("EVILFLOWERS_ADMIN_PATH", "admin/").strip("/") + "/"
+# Comma-separated module keys (`library,lending,jobs`), `all`, or unset for each module's default
+# (`apps.console.modules`). The instance setting `admin.modules` overrides it at runtime.
+EVILFLOWERS_ADMIN_MODULES = os.getenv("EVILFLOWERS_ADMIN_MODULES") or None
+# Every add/change/delete off for the whole deployment, whatever each model admin allows.
+EVILFLOWERS_ADMIN_READ_ONLY = _bool_env("EVILFLOWERS_ADMIN_READ_ONLY", default=False)
+# Link of a trace id on the console's Jobs page, `{trace_id}` replaced (e.g. a Grafana Explore/Tempo URL).
+# Empty = the id is shown as text.
+EVILFLOWERS_TRACE_URL_TEMPLATE = os.getenv("EVILFLOWERS_TRACE_URL_TEMPLATE", "")
+
+# Origins allowed to POST forms (the admin login) besides the request's own host, e.g. when a proxy
+# rewrites Host. Comma-separated, with scheme. The public base URL is always trusted.
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if origin.strip()]
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = os.getenv("MEDIA_ROOT", os.path.join(BASE_DIR, "media"))
@@ -878,6 +908,11 @@ EVILFLOWERS_NOTIFICATION_SCOPED_TOKEN_TTL_HOURS = int(os.getenv("EVILFLOWERS_NOT
 # deployments already set that one to the public https origin, while this one
 # was left unset, so every e-mail link pointed at http://127.0.0.1:8000.
 EVILFLOWERS_BASE_URL = os.getenv("EVILFLOWERS_BASE_URL", EVILFLOWERS_READIUM_BASE_URL)
+# IP-035: the admin login POSTs from the public origin; trust it even when a proxy rewrites Host.
+if EVILFLOWERS_BASE_URL and EVILFLOWERS_BASE_URL.startswith("https://"):
+    _public_origin = "/".join(EVILFLOWERS_BASE_URL.split("/")[:3])
+    if _public_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_public_origin)
 # Library name shown in the notification header / footer ("Digitálna knižnica
 # Elvíra / Digital Library Elvira" on STU deployments).
 EVILFLOWERS_NOTIFICATION_LIBRARY_NAME = os.getenv("EVILFLOWERS_NOTIFICATION_LIBRARY_NAME", "Evil Flowers Catalog")
@@ -1170,14 +1205,25 @@ CELERY_TASK_ROUTES = {
 
 
 # #202: bibliographic metadata looked up by ISBN (`apps.core.services.isbn_metadata`), at import when the entry's
-# `evilflowers_metadata_fetch` is on and by `manage.py enrich_from_isbn`. isbnlib services, tried in order; free ones
-# only (no keys, no subscriptions): `openl` (Open Library), `goob` (Google Books, keyless quota), `wiki` (Wikipedia).
+# `evilflowers_metadata_fetch` is on and by `manage.py enrich_from_isbn`. A queue of providers
+# (`apps.core.services.isbn_providers`), asked in order until every missing field has a value: `crossref`,
+# `openlibrary`, `snk` (Slovak National Library, Z39.50), `googlebooks` (only with a key); isbnlib's `openl`, `goob`
+# and `wiki` remain accepted. All free, no subscriptions.
 EVILFLOWERS_ISBN_METADATA_SERVICES = [
     service.strip()
-    for service in os.getenv("EVILFLOWERS_ISBN_METADATA_SERVICES", "openl,goob,wiki").split(",")
+    for service in os.getenv("EVILFLOWERS_ISBN_METADATA_SERVICES", "crossref,openlibrary,snk,googlebooks").split(",")
     if service.strip()
 ]
-# Seconds `enrich_from_isbn` waits between two lookups, to stay polite to the free services.
+# Seconds `enrich_from_isbn` waits between two entries, to stay polite to the free services.
 EVILFLOWERS_ISBN_METADATA_DELAY = float(os.getenv("EVILFLOWERS_ISBN_METADATA_DELAY", 1.0))
+# Seconds one provider may take (HTTP request or Z39.50 session).
+EVILFLOWERS_ISBN_METADATA_TIMEOUT = float(os.getenv("EVILFLOWERS_ISBN_METADATA_TIMEOUT", 10))
+# Contact address sent to Crossref (`mailto`, its "polite pool"); empty: the anonymous pool.
+EVILFLOWERS_CROSSREF_MAILTO = os.getenv("EVILFLOWERS_CROSSREF_MAILTO", "")
+# Google Books API key (1Password "Elvira – Google Books API"). Without it `googlebooks` is skipped: keyless
+# requests share a daily quota of 0.
+EVILFLOWERS_GOOGLE_BOOKS_API_KEY = os.getenv("EVILFLOWERS_GOOGLE_BOOKS_API_KEY", "")
+# Slovak National Library union catalogue, Z39.50 `host:port/database`.
+EVILFLOWERS_SNK_Z3950 = os.getenv("EVILFLOWERS_SNK_Z3950", "z3950.snk.sk:1111/clas01")
 
 KAFKA_BROKER_URL = f"{os.getenv('KAFKA_HOST', '127.0.0.1')}:{int(os.getenv('KAFKA_PORT', 9092))}"

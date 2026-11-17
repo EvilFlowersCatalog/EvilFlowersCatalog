@@ -1,0 +1,66 @@
+{% extends "console/page.html" %}
+{% load i18n static %}
+{# IP-035: one model as a server-paged Tabulator grid (`apps.console.views.grid`). #}
+
+{% block vendor %}
+<link rel="stylesheet" href="{% static 'console/vendor/tabulator.min.css' %}">
+<link rel="stylesheet" href="{% static 'console/css/grid.css' %}">
+<script src="{% static 'console/vendor/tabulator.min.js' %}"></script>
+<script src="{% static 'console/js/grid.js' %}"></script>
+{% endblock %}
+
+{% block console_breadcrumbs %} › <a href="{{ changelist_url }}">{{ opts.verbose_name_plural|capfirst }}</a>{% endblock %}
+
+{% block console_content %}
+{{ grid_columns|json_script:"grid-columns" }}
+<div class="console-grid"
+     x-data="consoleGrid({ api: '{{ grid_api_url|escapejs }}', storageKey: '{{ grid_storage_key|escapejs }}', big: {{ grid_big|yesno:'true,false' }} })"
+     x-init="init()"
+     :class="{ 'console-grid-compact': compact }">
+
+  <div class="console-toolbar">
+    {% if grid_searchable %}
+    <label class="console-grid-search">
+      <span class="console-grid-search-icon">{% include "console/icon.html" with name="search" %}</span>
+      <input type="search" x-model="q" @input.debounce.400ms="reload()" placeholder="{% translate 'Search' %}" aria-label="{% translate 'Search' %}">
+    </label>
+    {% endif %}
+    <span class="console-muted console-grid-count" x-cloak x-show="total !== null">
+      <span x-text="(estimated ? '≈ ' : '') + Console.number(total)"></span> {% translate 'rows' %}
+    </span>
+    <span class="console-badge muted" x-cloak x-show="filters > 0" x-text="filters + ' {% translate 'filters' %}'"></span>
+    <button type="button" class="console-btn" x-cloak x-show="filters > 0 || q" @click="clearFilters()">{% translate 'Clear' %}</button>
+    <span class="spacer"></span>
+
+    <div class="console-grid-menu" @click.outside="columnsOpen = false">
+      <button type="button" class="console-btn" @click="columnsOpen = !columnsOpen" :aria-expanded="columnsOpen">
+        {% include "console/icon.html" with name="table" %}{% translate 'Columns' %}
+      </button>
+      <div class="console-grid-popover" x-cloak x-show="columnsOpen">
+        <template x-for="column in columns" :key="column.field">
+          <label class="console-grid-check">
+            <input type="checkbox" :checked="column.visible" @change="toggleColumn(column, $event.target.checked)">
+            <span x-text="column.title"></span>
+          </label>
+        </template>
+        <button type="button" class="console-btn" style="margin-top: 0.5rem;" @click="resetColumns()">{% translate 'Reset' %}</button>
+      </div>
+    </div>
+    <button type="button" class="console-btn" @click="toggleDensity()" :aria-pressed="compact" title="{% translate 'Row density' %}">
+      <span x-text="compact ? '{% translate 'Comfortable' %}' : '{% translate 'Compact' %}'"></span>
+    </button>
+    <button type="button" class="console-btn" @click="reload()" title="{% translate 'Reload' %}">{% include "console/icon.html" with name="refresh" %}</button>
+    <a class="console-btn" :href="csvUrl()" title="{% translate 'Download the filtered rows as CSV (at most 50 000)' %}">{% include "console/icon.html" with name="download" %}CSV</a>
+    <a class="console-btn" href="{{ changelist_url }}">{% include "console/icon.html" with name="list" %}{% translate 'Classic list' %}</a>
+    {% if add_url %}<a class="console-btn primary" href="{{ add_url }}">{% include "console/icon.html" with name="plus" %}{% translate 'Add' %}</a>{% endif %}
+  </div>
+
+  {% if grid_big %}
+  <p class="console-muted console-grid-hint">{% blocktranslate %}A large table: text filters match exactly, only indexed columns sort, and the unfiltered row count is the planner's estimate.{% endblocktranslate %}</p>
+  {% endif %}
+  <p class="console-muted console-grid-hint">{% blocktranslate %}Filters: numbers and dates take <code>&gt;=</code>, <code>&lt;</code>, … or a range <code>2026-01-01..2026-02-01</code>; <code>null</code> finds empty values.{% endblocktranslate %}</p>
+
+  <div class="console-error" x-cloak x-show="error" x-text="error"></div>
+  <div x-ref="table"></div>
+</div>
+{% endblock %}

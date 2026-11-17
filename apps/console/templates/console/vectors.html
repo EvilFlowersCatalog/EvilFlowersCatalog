@@ -1,0 +1,140 @@
+{% extends "console/page.html" %}
+{% load i18n static %}
+{# IP-035: the vector explorer. Data: console/api/vectors/{map,neighbours,entries,coverage,passages}/ (apps.console.views.vectors). #}
+
+{% block vendor %}
+<link rel="stylesheet" href="{% static 'console/css/explorers.css' %}">
+<script src="{% static 'console/vendor/echarts.min.js' %}"></script>
+<script src="{% static 'console/js/vectors.js' %}"></script>
+{% endblock %}
+
+{% block console_content %}
+<div x-data="vectorsPage({
+      mapUrl: '{% url 'admin:console_vectors_map' %}',
+      neighboursUrl: '{% url 'admin:console_vectors_neighbours' %}',
+      entriesUrl: '{% url 'admin:console_vectors_entries' %}',
+      coverageUrl: '{% url 'admin:console_vectors_coverage' %}',
+      passagesUrl: '{% url 'admin:console_vectors_passages' %}',
+      graphUrl: '{% url 'admin:console_graph' as g %}{{ g }}',
+      entry: '{{ request.GET.entry|escapejs }}'
+    })" x-init="init()" class="explorer">
+  <p class="console-lede">{% blocktranslate with limit=map_limit %}The publications' embeddings, projected to two dimensions (PCA), coloured as you choose. Vectors of different models are never mixed; above {{ limit }} points a fixed sample is drawn. Click a point for its nearest neighbours by cosine distance.{% endblocktranslate %}</p>
+
+  <section class="console-panel" style="margin-bottom: 1rem;">
+    <header>
+      <h2>{% translate 'Coverage' %}</h2>
+      <span class="console-badge" :class="service.enabled ? 'ok' : 'muted'" x-text="service.enabled ? ('tei-embed: ' + (service.model || 'model unknown')) : '{% translate 'embedding service not configured' %}'"></span>
+    </header>
+    <div class="body">
+      <div class="console-kpis" style="margin: 0;">
+        <template x-for="item in coverage" :key="item.model">
+          <div class="console-kpi">
+            <div class="label" x-text="item.label"></div>
+            <div class="value" :class="item.ratio !== null && item.ratio < 0.9 ? 'accent' : ''" x-text="item.ratio === null ? '—' : Math.round(item.ratio * 100) + ' %'"></div>
+            <div class="vectors-bar"><span :style="'width:' + Math.round((item.ratio || 0) * 100) + '%'"></span></div>
+            <div class="hint">
+              <span x-text="Console.number(item.with_vector) + ' / ' + Console.number(item.rows)"></span>
+              <span x-show="item.estimated">· {% translate 'estimated' %}</span>
+              <span x-show="item.dimensions" x-text="'· ' + item.dimensions + ' dims'"></span>
+            </div>
+            <template x-for="model in item.models" :key="model.model">
+              <div class="hint console-mono" x-text="(model.model || '—') + ': ' + Console.number(model.rows)"></div>
+            </template>
+          </div>
+        </template>
+      </div>
+    </div>
+  </section>
+
+  <div class="console-split">
+    <section class="console-panel">
+      <header>
+        <h2>{% translate 'Map' %}</h2>
+        <select x-model="source" @change="loadMap()" aria-label="{% translate 'Vectors' %}">
+          <option value="entry">{% translate 'search embedding (entry)' %}</option>
+          <option value="run">{% translate 'document vector (extraction run)' %}</option>
+        </select>
+        <select x-model="colour" @change="loadMap()" aria-label="{% translate 'Colour by' %}">
+          <option value="catalog">{% translate 'by catalog' %}</option>
+          <option value="language">{% translate 'by language' %}</option>
+          <option value="category">{% translate 'by category' %}</option>
+        </select>
+        <span class="console-muted" x-show="map" x-cloak x-text="mapSummary()"></span>
+        <span class="spacer" style="flex:1"></span>
+        <span class="console-muted" x-show="loadingMap" x-cloak>{% translate 'Projecting…' %}</span>
+      </header>
+      <div class="console-error" x-show="mapError" x-cloak x-text="mapError" style="margin: 0.75rem;"></div>
+      <div x-ref="chart" class="vectors-chart"></div>
+    </section>
+
+    <aside class="explorer-aside">
+      <section class="console-panel">
+        <header><h2>{% translate 'Nearest neighbours' %}</h2></header>
+        <div class="body">
+          <div class="explorer-search" style="max-width: none;" @click.outside="results = []">
+            <input type="search" placeholder="{% translate 'Find a publication…' %}" x-model="query" @input.debounce.300ms="searchEntries()" aria-label="{% translate 'Publication' %}">
+            <ul class="explorer-results" x-show="results.length" x-cloak>
+              <template x-for="item in results" :key="item.id">
+                <li><button type="button" @click="pick(item.id)"><span x-text="item.title"></span> <span class="console-muted console-mono" x-text="item.model ? '' : '(no vector)'"></span></button></li>
+              </template>
+            </ul>
+          </div>
+          <div class="console-error" x-show="neighbourError" x-cloak x-text="neighbourError" style="margin-top: 0.6rem;"></div>
+          <template x-if="neighbourData">
+            <div style="margin-top: 0.75rem;">
+              <div class="explorer-title"><span class="explorer-kind" data-kind="entry">{% translate 'entry' %}</span> <a :href="neighbourData.entry.url" x-text="neighbourData.entry.title"></a></div>
+              <div class="console-muted console-mono" style="font-size: 0.75rem; margin-bottom: 0.4rem;" x-text="neighbourData.model"></div>
+              <ul class="vectors-list">
+                <template x-for="item in neighbourData.items" :key="item.id">
+                  <li>
+                    <span class="title"><a :href="item.url" x-text="item.title"></a></span>
+                    <span class="score" x-text="item.similarity.toFixed(3)"></span>
+                    <button type="button" class="console-btn" @click="pick(item.id)" title="{% translate 'Its neighbours' %}">→</button>
+                  </li>
+                </template>
+              </ul>
+              <div class="console-toolbar" style="margin-top: 0.6rem;" x-show="graphUrl">
+                <a class="console-btn" :href="graphUrl + '?node=entry:' + neighbourData.entry.id">{% translate 'Open in graph' %}</a>
+              </div>
+            </div>
+          </template>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <section class="console-panel" style="margin-top: 1rem;">
+    <header>
+      <h2>{% translate 'Passage search' %}</h2>
+      <span class="console-muted">{% translate 'By meaning and by words, as readers and the assistant search' %}</span>
+    </header>
+    <div class="body">
+      <div class="console-toolbar">
+        <input type="search" style="flex: 1;" placeholder="{% translate 'Ask about a topic…' %}" x-model="passageQuery" @keydown.enter.prevent="searchPassages()" aria-label="{% translate 'Passage query' %}">
+        <button type="button" class="console-btn primary" @click="searchPassages()" :disabled="passageQuery.trim().length < 3">{% translate 'Search' %}</button>
+      </div>
+      <div class="console-error" x-show="passageError" x-cloak x-text="passageError"></div>
+      <template x-if="passages">
+        <div>
+          <p class="console-muted" style="font-size: 0.8rem;">
+            <span x-text="passages.degraded ? '{% translate 'Words only: the query could not be embedded.' %}' : '{% translate 'Meaning and words.' %}'"></span>
+            <span x-text="Console.number(passages.indexed) + ' {% translate 'publications indexed by meaning' %}'"></span>
+          </p>
+          <template x-for="hit in passages.items" :key="hit.entry_id">
+            <div class="vectors-passage">
+              <div><a :href="hit.url" x-text="hit.title || hit.entry_id"></a> <span class="score console-muted console-mono" x-text="hit.score.toFixed(3)"></span></div>
+              <template x-for="passage in hit.passages" :key="passage.paragraph_id">
+                <div style="margin-top: 0.35rem;">
+                  <span class="console-muted" x-text="'p. ' + passage.page + (passage.section ? ' · ' + passage.section : '')"></span>
+                  <div x-html="passage.snippet || Console.escape(passage.text || '—')"></div>
+                </div>
+              </template>
+            </div>
+          </template>
+          <p class="console-empty" x-show="!passages.items.length">{% translate 'Nothing found.' %}</p>
+        </div>
+      </template>
+    </div>
+  </section>
+</div>
+{% endblock %}
