@@ -1,13 +1,15 @@
-"""Instance settings over REST (#20): the registry with current values, and writes. Superusers only."""
+"""Instance settings over REST (#20): the registry with current values, and writes. Superusers only, except
+the listing filtered to `public=true` (#212), which anyone reads."""
 
 import json
 from http import HTTPStatus
+from typing import Dict, Optional
 
 from django.utils.translation import gettext as _
 
 from apps import openapi
-from apps.api.response import SingleResponse
-from apps.core import settings_store
+from apps.api.response import GeneralResponse, SingleResponse, SingleResponseModel
+from apps.core import capabilities, settings_store
 from apps.core.errors import ProblemDetailException
 from apps.core.views import SecuredView
 
@@ -47,19 +49,47 @@ def _refused(error: settings_store.SettingError) -> ProblemDetailException:
     )
 
 
+class SettingListResponse(SingleResponseModel):
+    #: present with `include=capabilities`
+    capabilities: Optional[Dict[str, bool]] = None
+
+
+def _public_filter(request) -> Optional[bool]:
+    raw = request.GET.get("public")
+    if raw is None or raw == "":
+        return None
+    value = raw.lower()
+    if value in ("1", "true", "yes"):
+        return True
+    if value in ("0", "false", "no"):
+        return False
+    raise ProblemDetailException(_("`public` must be true or false."), status=HTTPStatus.BAD_REQUEST)
+
+
 class SettingCollection(SecuredView):
     @openapi.metadata(
         description=(
             "Every instance setting the code declares: its key, JSON Schema, description, default, the Django "
-            "setting it falls back to, the effective `value` and its `source` (`stored`, `setting` or "
-            "`default`). The portal renders its settings form from this. Administrators only."
+            "setting it falls back to, `public`, the effective `value` and its `source` (`stored`, `setting` or "
+            "`default`). The portal renders its settings form from this. Administrators only, except "
+            "`public=true`: the keys marked public (`portal.features`, ...), which anyone may read, anonymous "
+            "readers included. A secret key is never public. `include=capabilities` adds `capabilities`, what "
+            "the deployment can do whatever the settings say (`assistant`, `extraction`, `hybrid_search`, "
+            "`lcp`, `graph`, `harvest`); the portal hides a feature whose capability is false (#212)."
         ),
         tags=["Settings"],
         summary="List instance settings",
     )
     def get(self, request):
-        _require_superuser(request)
-        return SingleResponse(request, data=settings_store.describe_all())
+        public = _public_filter(request)
+        if public is not True:
+            _require_superuser(request)
+        include = {part.strip() for part in request.GET.get("include", "").split(",") if part.strip()}
+        payload = SettingListResponse(
+            response=settings_store.describe_all(public=public),
+            capabilities=capabilities.states() if "capabilities" in include else None,
+        )
+        return GeneralResponse(request, data=payload)
 
 
 class SettingDetail(SecuredView):

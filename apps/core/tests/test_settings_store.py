@@ -134,6 +134,77 @@ class SettingsApiTests(SettingsFixtures):
         response = self.client.get("/api/v1/settings/nope.key", headers=self.headers(self.admin))
         self.assertEqual(response.status_code, 404)
 
+    def test_portal_features_defaults_to_empty_and_takes_only_booleans(self):
+        url = "/api/v1/settings/portal.features"
+        described = self.client.get(url, headers=self.headers(self.admin)).json()["response"]
+        self.assertEqual((described["value"], described["source"], described["public"]), ({}, "default", True))
+        refused = self.client.put(
+            url, {"value": {"assistant": "no"}}, content_type="application/json", headers=self.headers(self.admin)
+        )
+        self.assertEqual(refused.status_code, 422)
+        stored = self.client.put(
+            url, {"value": {"assistant": False}}, content_type="application/json", headers=self.headers(self.admin)
+        )
+        self.assertEqual(stored.status_code, 200, stored.content)
+        self.assertEqual(settings_store.get("portal.features"), {"assistant": False})
+
+    @override_settings(
+        EVILFLOWERS_ASSISTANT_ENABLED=True,
+        EVILFLOWERS_ASSISTANT_OLLAMA_MODEL="",
+        EVILFLOWERS_EXTRACTION_ENABLED=False,
+        EVILFLOWERS_EMBEDDING_URL="",
+        EVILFLOWERS_READIUM_LCPSV_URL="http://lcp",
+    )
+    def test_public_listing_is_anonymous_and_lists_only_public_keys(self):
+        settings_store.update("portal.features", {"assistant": False})
+        settings_store.update("content.external_processor_default", "local")
+        response = self.client.get("/api/v1/settings?public=true&include=capabilities")
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        items = {item["key"]: item for item in body["response"]}
+        public = {item.key for item in settings_store.definitions() if item.is_public}
+        self.assertEqual(set(items), public)
+        self.assertEqual(items["portal.features"]["value"], {"assistant": False})
+        self.assertNotIn("content.external_processor_default", items)
+        capabilities = body["capabilities"]
+        self.assertEqual(set(capabilities), {"assistant", "extraction", "hybrid_search", "lcp", "graph", "harvest"})
+        self.assertEqual(
+            (
+                capabilities["assistant"],
+                capabilities["extraction"],
+                capabilities["hybrid_search"],
+                capabilities["lcp"],
+            ),
+            (False, False, False, True),
+        )
+
+    def test_a_secret_key_is_never_public(self):
+        secret = settings_store.SettingDefinition(
+            key="test.secret_public", schema={"type": "string"}, description="t", default="x", secret=True, public=True
+        )
+        settings_store.register(secret)
+        self.addCleanup(settings_store._registry.pop, secret.key, None)
+        self.assertNotIn(secret.key, {item["key"] for item in settings_store.describe_all(public=True)})
+        listed = self.client.get("/api/v1/settings?public=true").json()["response"]
+        self.assertNotIn(secret.key, {item["key"] for item in listed})
+
+    def test_without_the_public_filter_the_listing_stays_for_administrators(self):
+        self.assertEqual(self.client.get("/api/v1/settings").status_code, 403)
+        self.assertEqual(self.client.get("/api/v1/settings?public=false").status_code, 403)
+        self.assertEqual(self.client.get("/api/v1/settings?public=maybe").status_code, 400)
+        everything = self.client.get("/api/v1/settings", headers=self.headers(self.admin)).json()
+        self.assertIsNone(everything["capabilities"])
+        private = self.client.get("/api/v1/settings?public=false", headers=self.headers(self.admin)).json()
+        self.assertNotIn("portal.features", {item["key"] for item in private["response"]})
+
+    def test_a_capability_is_declared_by_its_requirements(self):
+        from apps.core.capabilities import Capability
+
+        self.assertTrue(Capability("x", "", settings=("SECRET_KEY",), app="apps.core", probe=lambda: True).available())
+        self.assertFalse(Capability("x", "", app="apps.not_installed").available())
+        self.assertFalse(Capability("x", "", settings=("EVILFLOWERS_NO_SUCH_SETTING",)).available())
+        self.assertFalse(Capability("x", "", probe=lambda: False).available())
+
     def test_api_keys_carry_a_processor_only_admins_may_declare_local(self):
         created = self.client.post(
             "/api/v1/api_keys",

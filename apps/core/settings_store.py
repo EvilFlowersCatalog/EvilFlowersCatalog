@@ -16,7 +16,8 @@ this module and `apps.content` registers its keys from `AppConfig.ready()`.
 Stored values are cached in Redis as one map and dropped when a write commits, so
 a read costs no query and a change applies to the next request.
 
-REST: `/api/v1/settings` (superusers). MCP: `get_setting`, `update_setting`.
+REST: `/api/v1/settings` (superusers; `?public=true` lists the keys marked `public` for anyone, and
+`include=capabilities` adds `apps.core.capabilities`, #212). MCP: `get_setting`, `update_setting`.
 """
 
 import logging
@@ -80,6 +81,9 @@ class SettingDefinition:
     #: Values that are secrets are never returned by the API. None of the current keys is one.
     secret: bool = False
     tags: List[str] = field(default_factory=list)
+    #: Readable by anyone, anonymous readers included, through `GET /api/v1/settings?public=true` (#212). The
+    #: portal builds its menu from these. A `secret` key is never public, whatever this says.
+    public: bool = False
 
     def default_value(self) -> Any:
         return self.default() if callable(self.default) else self.default
@@ -106,7 +110,12 @@ class SettingDefinition:
             "default": self.default_value(),
             "fallback": self.fallback,
             "permission": self.permission,
+            "public": self.is_public,
         }
+
+    @property
+    def is_public(self) -> bool:
+        return self.public and not self.secret
 
 
 _registry: Dict[str, SettingDefinition] = {}
@@ -179,8 +188,9 @@ def describe(key: str) -> dict:
     return payload
 
 
-def describe_all() -> List[dict]:
-    return [describe(item.key) for item in definitions()]
+def describe_all(public: Optional[bool] = None) -> List[dict]:
+    """Every key, or with `public` only the keys whose `is_public` equals it (#212)."""
+    return [describe(item.key) for item in definitions() if public is None or item.is_public == public]
 
 
 def update(key: str, value: Any, user=None, dry_run: bool = False) -> dict:
@@ -261,6 +271,22 @@ register(
         default="",
         fallback="EVILFLOWERS_BRANDING_LOGO",
         tags=["branding"],
+    )
+)
+
+# The portal owns the feature keys (`assistant`, `graph`, `passageSearch`, ...); the catalog validates only the
+# shape, so a new portal feature needs no catalog release (#212).
+register(
+    SettingDefinition(
+        key="portal.features",
+        schema={"type": "object", "additionalProperties": {"type": "boolean"}},
+        description=(
+            "Portal features switched on (true) or off (false), by key. A key not listed follows the portal "
+            "build. A feature whose capability the catalog reports off stays hidden whatever this says."
+        ),
+        default=dict,
+        tags=["portal"],
+        public=True,
     )
 )
 
