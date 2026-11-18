@@ -42,6 +42,7 @@ changes are documented before implementation.
 | IP-033 | [OAI-PMH 2.0 Data Provider](posts/ip-033-oai-pmh-data-provider.md) | :white_check_mark: Implemented (verified on dev with an independent harvester and the official XSDs, #196 closed; URN-ISBN fix + `oai_sync` backfill knowledge#74; `marc21` library review pending; portal elvira-portal#54) | 2026-11-16 |
 | IP-034 | [Metadata Harvesting Client and Two-Way Dataverse Sync](posts/ip-034-harvesting-client-dataverse-sync.md) | ✅ Accepted (unified connector design implemented and tested locally, uncommitted; Dataverse connector untested live until the dev Dataverse redeploy, knowledge#73; portal elvira-portal#55) | 2026-11-16 |
 | IP-035 | [The Administration Console — Django Admin for the Whole Database, in Switchable Modules](posts/ip-035-administration-console.md) | 📝 Draft (implemented and tested locally incl. a Playwright check on production settings, uncommitted; dev deployment knowledge#81 and Review Questions Q1–Q5 open) | 2026-11-17 |
+| IP-036 | [Reader Grants and a Database-Free Range Path — User Acquisitions That Stream Well](posts/ip-036-reader-grants-and-range-fast-path.md) | ✅ Accepted (Q1–Q10 answered; Phases 0–5 implemented and tested locally, uncommitted; #215 closed; dev measurement knowledge#88 open) | 2026-11-18 |
 
 **Note on the Readium cluster.** IP-001, IP-003 (feature scope), IP-004, IP-007, IP-008,
 IP-009, and IP-011 together constitute the completed Readium LCP delivery and are all

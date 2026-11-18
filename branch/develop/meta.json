@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "3ae653f0cfebefd60e17c1f8523a9e861561a2e1",
-    "short": "3ae653f",
-    "message": "PDF streaming",
+    "sha": "355dd6176a34604f5b867b706340070904b83740",
+    "short": "355dd61",
+    "message": "Reader Grants and a Database-Free Range Path",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/3ae653f0cfebefd60e17c1f8523a9e861561a2e1"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/355dd6176a34604f5b867b706340070904b83740"
   },
-  "deployed_at": "2026-11-18T00:15:28Z",
+  "deployed_at": "2026-11-18T02:25:39Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

@@ -122,13 +122,54 @@ Rejected:
   take over only the transfer of a chunk, the short part under gevent; a sidecar
   per catalog pod is not worth the infrastructure. Decided against on 2026-11-18.
 
+## Whose copy (IP-036)
+
+`EVILFLOWERS_PERSONALISED_COPY_SCOPE` (`apps/files/copies.py`):
+
+- `reader` (default): one copy per reader and variant, in `personalised/<user id>/`, shared by every grant of that
+  reader with the same page range. The licence page and QR carry the reader (name, id) and a **copy id** (the
+  copy's digest); the `ENTRY_DOWNLOADED` activity records grant and copy id. Re-opens never render again. A shared
+  grant is watermarked with whoever signed in opens it; anonymous recipients get a per-request render as before.
+- `grant`: one copy per grant, in `personalised/<grant id>/`, watermarked with the grant id (before IP-036).
+
+**Pre-render** (`EVILFLOWERS_PERSONALISED_PRERENDER`, on): a new personal grant of a PDF (`POST
+/api/v1/user-acquisitions`) queues `prerender_personalised_copy` after commit with a 15 s countdown. A GET that
+follows at once takes the render lock itself and the task then finds the copy ready; a later GET finds it rendered.
+`AcquisitionDownload` creates grants it redirects to at once, so it never queues one.
+
 ## Each range after the first
 
 The first request of a session (no `Range`) resolves the copy and **pins** it:
-name, size, ETag, Last-Modified in the cache for 15 minutes after the last use
-(`personalised.pin`). A range reads the pin, so it costs the user acquisition
-lookup, the permission and IP checks, two cache operations and the bytes; not
-the authors query, the source `stat`, the annotation query or the copy `stat`.
+name, size, ETag, Last-Modified in the cache for 15 minutes after the last use and
+2 hours at most (`personalised.pin`). The owner's pin is keyed by grant and query
+only; another reader of a shared grant has their own.
+
+**Full path** (bearer tokens, IP-036 Q5): the user acquisition lookup, the
+permission and IP checks, the pin and the bytes; not the authors query, the
+source `stat`, the annotation query or the copy `stat`.
+
+**Fast path** (signed `stream_url`, `EVILFLOWERS_FILES_RANGE_FAST_PATH`, on): the
+owner's pin also holds the access facts (owner, entry, `expire_at`, IP-block flag)
+and three **revocation tokens** (grant, user, entry; `apps/files/revocation.py`). A
+signed range checks the HMAC, reads the pin and the tokens (four cache round trips:
+the pin, two touches, the tokens),
+checks expiry and the IP block in memory and serves the bytes: **no database query,
+no rate limit, no authentication backend.** Anything it cannot vouch for goes to
+the full path, which answers with the usual checks.
+
+Revocation is immediate:
+
+- every save or delete of a grant, user or entry drops its token after commit,
+  so any pin made before stops matching on the next range (a cache error there is
+  logged, never fails the save; the revocation is then late by at most the pin's
+  2 h maximum age);
+- a missing token (eviction, flush) means "unknown": full path, which mints a new
+  one and re-pins. Eviction costs speed, never safety;
+- tokens are read before the grant's facts are re-read when pinning, so a
+  revocation that commits in between leaves a pin that is stale at once;
+- `QuerySet.update()` sends no signal: code that changes grants, users'
+  `is_active` or entries' `config` that way must call `revocation.revoke()`.
+
 A pin is dropped with its copy's marker; a new open always re-resolves (an edited
 annotation shows).
 

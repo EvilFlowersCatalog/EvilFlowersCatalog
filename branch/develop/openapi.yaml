@@ -5761,7 +5761,7 @@
         },
         "operationId": "UserAcquisitionManagement.post",
         "summary": "Create new user acquisition",
-        "description": "Create a new user acquisition record, granting a user access to a specific catalog entry. Supports both personal and shared acquisition types. Validates user permissions for the target entry and handles single acquisition mode restrictions. Returns existing acquisition with redirect if already exists in single mode.",
+        "description": "Create a new user acquisition record, granting a user access to a specific catalog entry. Supports both personal and shared acquisition types. Validates user permissions for the target entry. A personal request that matches a live grant of the same user, acquisition and page range answers 303 with that grant instead (IP-036); an expired grant is never reused (#215).",
         "tags": [
           "User Acquisitions"
         ]
@@ -5835,6 +5835,50 @@
         "operationId": "UserAcquisitionDetail.get",
         "summary": "Get user acquisition details",
         "description": "Retrieve detailed information about a specific user acquisition record. Returns acquisition metadata, associated entry details, user information, and access permissions. Validates that the requesting user has permission to view the acquisition record.",
+        "tags": [
+          "User Acquisitions"
+        ]
+      },
+      "delete": {
+        "parameters": [],
+        "responses": {
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
+                }
+              }
+            },
+            "description": "_('User acquisition not found')"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
+                }
+              }
+            },
+            "description": "_('Insufficient permissions')"
+          },
+          "204": {
+            "description": "Revoked (or already expired)"
+          },
+          "401": {
+            "description": "The credentials sent are missing, expired or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "UserAcquisitionDetail.delete",
+        "summary": "Revoke user acquisition",
+        "description": "Revoke a user acquisition: it expires now (IP-036). Every read path refuses it from the next request on (downloads answer 410, ranges of an open reading session included); the record, its annotations and its history stay. Allowed for its holder, a manager of the entry's catalog and superusers. Revoking an already expired grant changes nothing.",
         "tags": [
           "User Acquisitions"
         ]
@@ -11902,26 +11946,6 @@
       "get": {
         "parameters": [],
         "responses": {
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
-                }
-              }
-            },
-            "description": "request"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
-                }
-              }
-            },
-            "description": "request"
-          },
           "404": {
             "content": {
               "application/json": {
@@ -11945,6 +11969,9 @@
           "416": {
             "description": "The range starts past the end of the file"
           },
+          "403": {
+            "description": "No access, or the signed URL has expired"
+          },
           "206": {
             "description": "The requested byte range"
           },
@@ -11955,6 +11982,16 @@
                 "schema": {
                   "type": "string",
                   "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The credentials sent are missing, expired or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
                 }
               }
             }
@@ -19146,7 +19183,8 @@
           "/readium-amount-below-active-count",
           "/feed-url-name-taken",
           "/password-change-required",
-          "/rate-limited"
+          "/rate-limited",
+          "/user-acquisition-expired"
         ],
         "title": "DetailType",
         "type": "string"
