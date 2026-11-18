@@ -71,6 +71,22 @@ def build_personalised_base(acquisition_id: str) -> dict:
 
 
 @shared_task
+def prerender_personalised_copy(user_acquisition_id: str) -> dict:
+    """Render a new grant's personalised copy before its first GET (IP-036 Phase 5)."""
+    from apps.core.models import UserAcquisition
+    from apps.files.copies import prerender
+
+    user_acquisition = (
+        UserAcquisition.objects.select_related("acquisition", "acquisition__entry", "user")
+        .filter(pk=user_acquisition_id)
+        .first()
+    )
+    if user_acquisition is None:
+        return {"rendered": False, "reason": "missing"}
+    return {"rendered": prerender(user_acquisition)}
+
+
+@shared_task
 def sync_ldap_profiles() -> dict:
     """IP-025: import e-mails (and names) of LDAP users who have not logged in since the mapping changed."""
     from apps.core.models import AuthSource

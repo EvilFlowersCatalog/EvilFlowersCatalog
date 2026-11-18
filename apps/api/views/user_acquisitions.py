@@ -1,8 +1,10 @@
+import logging
 from http import HTTPStatus
 from uuid import UUID
 
-from django.conf import settings
+from django.http import HttpResponse
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
 
@@ -17,6 +19,8 @@ from apps.core.models import UserAcquisition, UserActivity
 from apps.core.services.activity import ActivityService
 from apps.core.views import SecuredView
 from apps.openapi.types import ParameterLocation
+
+logger = logging.getLogger(__name__)
 
 
 class UserAcquisitionManagement(SecuredView):
@@ -44,7 +48,7 @@ class UserAcquisitionManagement(SecuredView):
         )
 
     @openapi.metadata(
-        description="Create a new user acquisition record, granting a user access to a specific catalog entry. Supports both personal and shared acquisition types. Validates user permissions for the target entry and handles single acquisition mode restrictions. Returns existing acquisition with redirect if already exists in single mode.",
+        description="Create a new user acquisition record, granting a user access to a specific catalog entry. Supports both personal and shared acquisition types. Validates user permissions for the target entry. A personal request that matches a live grant of the same user, acquisition and page range answers 303 with that grant instead (IP-036); an expired grant is never reused (#215).",
         tags=["User Acquisitions"],
         summary="Create new user acquisition",
     )
@@ -57,14 +61,14 @@ class UserAcquisitionManagement(SecuredView):
         if not has_object_permission("check_entry_read", request.user, form.cleaned_data["acquisition_id"].entry):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
-        if (
-            form.cleaned_data["type"] == UserAcquisition.UserAcquisitionType.PERSONAL
-            and settings.EVILFLOWERS_USER_ACQUISITION_MODE == "single"
-        ):
-            user_acquisition = UserAcquisition.objects.filter(
-                acquisition=form.cleaned_data["acquisition_id"],
-                type=UserAcquisition.UserAcquisitionType.PERSONAL,
-                user=request.user,
+        if form.cleaned_data["type"] == UserAcquisition.UserAcquisitionType.PERSONAL:
+            # IP-036: an equivalent live grant (same acquisition and page range) is handed back, never an expired
+            # one (#215); another range is another grant. Shared grants are links and always new.
+            user_acquisition = UserAcquisition.objects.equivalent(
+                request.user,
+                form.cleaned_data["acquisition_id"],
+                UserAcquisition.UserAcquisitionType.PERSONAL,
+                form.cleaned_data.get("range") or None,
             ).first()
 
             if user_acquisition:
@@ -122,7 +126,9 @@ class UserAcquisitionDetail(SecuredView):
                 detail_type=DetailType.NOT_FOUND,
             )
 
-        if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
+        # The grant's own record stays visible to its holder after it expired (#215): `expire_at` tells why
+        # the content no longer opens. Only reading the content checks expiry.
+        if not has_object_permission("check_user_acquisition_view", request.user, user_acquisition):
             raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
 
         return SingleResponse(
@@ -131,3 +137,42 @@ class UserAcquisitionDetail(SecuredView):
                 user_acquisition, context={"user": request.user, "request": request}
             ),
         )
+
+    @openapi.metadata(
+        description="Revoke a user acquisition: it expires now (IP-036). Every read path refuses it from the next "
+        "request on (downloads answer 410, ranges of an open reading session included); the record, its annotations "
+        "and its history stay. Allowed for its holder, a manager of the entry's catalog and superusers. Revoking an "
+        "already expired grant changes nothing.",
+        tags=["User Acquisitions"],
+        summary="Revoke user acquisition",
+    )
+    @openapi.response(HTTPStatus.NO_CONTENT, "Revoked (or already expired)")
+    @openapi.response(HTTPStatus.FORBIDDEN, "Not the holder or a manager of the catalog")
+    @openapi.response(HTTPStatus.NOT_FOUND, "No such user acquisition")
+    def delete(self, request, user_acquisition_id: UUID):
+        user_acquisition = (
+            UserAcquisition.objects.select_related("acquisition__entry__catalog")
+            .filter(pk=user_acquisition_id)
+            .first()
+        )
+        if user_acquisition is None:
+            raise ProblemDetailException(
+                _("User acquisition not found"), status=HTTPStatus.NOT_FOUND, detail_type=DetailType.NOT_FOUND
+            )
+
+        holder = request.user.is_authenticated and user_acquisition.user_id == request.user.pk
+        catalog = user_acquisition.acquisition.entry.catalog
+        if not holder and not has_object_permission("check_catalog_manage", request.user, catalog):
+            raise ProblemDetailException(_("Insufficient permissions"), status=HTTPStatus.FORBIDDEN)
+
+        if not user_acquisition.is_expired:
+            # A save, not an update: the signals revoke the fast path's pins and expire the content grant (#175).
+            user_acquisition.expire_at = timezone.now()
+            user_acquisition.save(update_fields=["expire_at", "updated_at"])
+            logger.info(
+                "user_acquisition.revoked id=%s by=%s holder=%s",
+                user_acquisition.pk,
+                request.user.pk,
+                holder,
+            )
+        return HttpResponse(status=HTTPStatus.NO_CONTENT)

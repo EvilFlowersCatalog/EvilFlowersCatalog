@@ -63,7 +63,18 @@ class EntryChecker(AbacChecker):
 
 class UserAcquisitionChecker(AbacChecker):
     @staticmethod
+    def check_user_acquisition_view(user: User, obj: UserAcquisition):
+        """The grant's record (`GET /api/v1/user-acquisitions/<id>`): its holder sees it, expired or not."""
+        if obj.type == UserAcquisition.UserAcquisitionType.SHARED:
+            return True
+
+        return obj.user == user
+
+    @staticmethod
     def check_user_acquisition_read(user: User, obj: UserAcquisition):
+        # An expired grant opens nothing (#215): annotations, regions, extraction, the reader copy.
+        if obj.is_expired:
+            return False
         if obj.type == UserAcquisition.UserAcquisitionType.SHARED:
             return True
 

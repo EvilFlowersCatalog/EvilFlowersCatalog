@@ -102,8 +102,13 @@ def _render_version() -> str:
     return "base-1" if settings.EVILFLOWERS_PERSONALISED_SHARED_BASE else "full-1"
 
 
-def copy_name(user_acquisition: UserAcquisition, context: dict, page, annotation_map: dict) -> str:
-    """Storage name of the copy these inputs render to."""
+def copy_name(user_acquisition: UserAcquisition, context: dict, page, annotation_map: dict, *, reader=None) -> str:
+    """Storage name of the copy these inputs render to.
+
+    `reader` (IP-036, `reader` scope): the copy belongs to that user, in `personalised/<user id>/`, and is shared by
+    all their grants with the same inputs; `context` then holds no grant id (the copy id is this name's digest).
+    Without it (`grant` scope): one copy per grant, in `personalised/<grant id>/`.
+    """
     acquisition = user_acquisition.acquisition
     key = {
         "render": _render_version(),
@@ -115,8 +120,18 @@ def copy_name(user_acquisition: UserAcquisition, context: dict, page, annotation
         "annotations": {str(number): items for number, items in annotation_map.items()},
         "context": context,
     }
+    owner = user_acquisition.pk
+    if reader is not None:
+        key["scope"] = "reader"
+        key["reader"] = str(reader.pk)
+        owner = reader.pk
     digest = hashlib.sha256(json.dumps(key, sort_keys=True, default=str).encode()).hexdigest()[:40]
-    return f"{PREFIX}/{user_acquisition.pk}/{digest}{guess_extension(acquisition.mime) or ''}"
+    return f"{PREFIX}/{owner}/{digest}{guess_extension(acquisition.mime) or ''}"
+
+
+def copy_digest(name: str) -> str:
+    """The digest part of a copy's name: the copy id printed in a reader-scoped watermark."""
+    return name.rsplit("/", 1)[-1].split(".", 1)[0]
 
 
 def ensure_copy(
@@ -220,23 +235,37 @@ def render_source(acquisition: Acquisition, modifier) -> Tuple[File, bool]:
     return acquisition.content, False
 
 
-def _pin_key(user_acquisition_id, variant: str) -> str:
-    return f"personalised-pin:{user_acquisition_id}:{hashlib.sha256(variant.encode()).hexdigest()[:16]}"
+#: A pin never outlives this, however often it is read (IP-036): a backstop under the revocation tokens.
+PIN_MAX_SECONDS = 2 * 3600
 
 
-def pin(user_acquisition_id, variant: str, served: dict) -> None:
+def _pin_key(user_acquisition_id, variant: str, reader_id=None) -> str:
+    """Pins of a grant's owner need only the grant id and the query, so the signed-URL fast path can find them
+    before it knows anything else; another reader of a shared grant gets a pin of their own."""
+    digest = hashlib.sha256(variant.encode()).hexdigest()[:16]
+    if reader_id is None:
+        return f"personalised-pin:{user_acquisition_id}:{digest}"
+    return f"personalised-pin:{user_acquisition_id}:{reader_id}:{digest}"
+
+
+def pin(user_acquisition_id, variant: str, served: dict, reader_id=None) -> None:
     """Remember what the first request of a reading session served (`served`: name, copy, size, etag, …)."""
-    cache.set(_pin_key(user_acquisition_id, variant), served, PIN_SECONDS)
+    # A re-pin (fresh access facts) keeps the session's first `pinned_at`: the maximum age counts from the first.
+    cache.set(_pin_key(user_acquisition_id, variant, reader_id), {"pinned_at": time.time(), **served}, PIN_SECONDS)
 
 
-def pinned(user_acquisition_id, variant: str) -> Optional[dict]:
+def pinned(user_acquisition_id, variant: str, reader_id=None) -> Optional[dict]:
     """What this session's first request served, while it is still pinned and its copy still complete.
 
-    Refreshes both: a range read keeps the copy from idling out, as `ensure_copy` would.
+    Refreshes both: a range read keeps the copy from idling out, as `ensure_copy` would. A pin older than
+    `PIN_MAX_SECONDS` is dropped however recently it was read.
     """
-    key = _pin_key(user_acquisition_id, variant)
+    key = _pin_key(user_acquisition_id, variant, reader_id)
     served = cache.get(key)
     if served is None:
+        return None
+    if time.time() - served.get("pinned_at", 0) > PIN_MAX_SECONDS:
+        cache.delete(key)
         return None
     if served.get("copy") and not cache.touch(_ready_key(served["name"]), _idle_seconds()):
         # The copy was evicted (or never finished): resolve it again.

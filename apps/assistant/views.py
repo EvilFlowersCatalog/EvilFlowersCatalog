@@ -15,7 +15,6 @@ from django.conf import settings
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from django.utils.translation import gettext as _
-from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
 from apps.api.response import Ordering, PaginationResponse, SingleResponse
@@ -34,7 +33,7 @@ from apps.content import access
 from apps.core.errors import AuthorizationException, ProblemDetailException, UnauthorizedException, ValidationException
 from apps.core.models import Annotation, UserAcquisition
 from apps.core.views import SecuredView
-from apps.files.views import _check_ip_block
+from apps.files.views import check_user_acquisition_access
 from evil_flowers_catalog import telemetry
 
 
@@ -67,10 +66,7 @@ class AssistantView(SecuredView):
 
         The model reads exactly what the reader is allowed to open, and nothing more.
         """
-        if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:
-            if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
-                raise AuthorizationException(request)
-        _check_ip_block(request, user_acquisition.acquisition.entry)
+        check_user_acquisition_access(request, user_acquisition)
         return user_acquisition
 
     def _chat_document(self, request, chat: Chat, entry=None) -> Optional[ReaderDocument]:

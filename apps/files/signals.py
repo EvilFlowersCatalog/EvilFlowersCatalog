@@ -25,10 +25,11 @@ import posixpath
 from typing import Iterable, Optional
 
 from django.db import transaction
-from django.db.models.signals import post_delete
+from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
-from apps.core.models import Acquisition, Catalog, Entry
+from apps.core.models import Acquisition, Catalog, Entry, User, UserAcquisition
+from apps.files import revocation
 from apps.files.storage import get_storage
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,45 @@ def remove_catalog_files(sender, instance: Catalog, **kwargs):
     """Whatever is left under `catalogs/<slug>/` after its entries went."""
     if instance.url_name:
         schedule_removal(folders=[f"catalogs/{instance.url_name}"])
+
+
+# --- IP-036: revocation tokens of the database-free range path -------------------------------------------------
+#
+# Every save or delete revokes: no field diffing, so nothing that changes access can be missed by a diff.
+# `QuerySet.update()` sends no signal; code that changes grants, users' `is_active` or entries' `config` that
+# way must call `revocation.revoke()` itself.
+
+
+@receiver(post_save, sender=UserAcquisition, dispatch_uid="files.revoke_grant_saved")
+@receiver(post_delete, sender=UserAcquisition, dispatch_uid="files.revoke_grant_deleted")
+def revoke_grant(sender, instance: UserAcquisition, **kwargs):
+    if instance.pk is not None:
+        revocation.revoke(revocation.GRANT, instance.pk)
+
+
+@receiver(post_save, sender=User, dispatch_uid="files.revoke_user_saved")
+@receiver(post_delete, sender=User, dispatch_uid="files.revoke_user_deleted")
+def revoke_user(sender, instance: User, **kwargs):
+    if instance.pk is not None:
+        revocation.revoke(revocation.USER, instance.pk)
+
+
+@receiver(post_save, sender=Entry, dispatch_uid="files.revoke_entry_saved")
+def revoke_entry(sender, instance: Entry, **kwargs):
+    revocation.revoke(revocation.ENTRY, instance.pk)
+
+
+# --- IP-036 Phase 5: render a new grant's copy before its first GET ---------------------------------------------
+
+
+@receiver(post_save, sender=UserAcquisition, dispatch_uid="files.prerender_copy")
+def prerender_copy(sender, instance: UserAcquisition, created: bool, **kwargs):
+    """Queue the copy of a new personal grant of a modified (PDF) acquisition. See `copies.queue_prerender`."""
+    if not created or getattr(instance, "_skip_prerender", False):
+        return
+    from apps.files import copies
+
+    copies.queue_prerender(instance)
 
 
 __all__ = ["delete_folder", "entry_folder", "schedule_removal"]

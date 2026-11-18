@@ -56,6 +56,9 @@ class AcquisitionDownloadTests(TestCase):
         override = override_settings(EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR=root)
         override.enable()
         self.addCleanup(override.disable)
+        # The field built its storage at import, from the real data directory: point it at this test's root, or
+        # every copy rendered here lands in `data/evilflowers/storage/personalised/`.
+        mock.patch.object(Acquisition._meta.get_field("content"), "storage", get_storage()).start()
         cache.clear()
         # No broker in tests: the shared base is built only where a test runs the worker's job itself.
         self.queue_base_patcher = mock.patch.object(personalised, "queue_base")
@@ -220,9 +223,10 @@ class AcquisitionDownloadTests(TestCase):
         headers = self._headers()
         first = self.client.get(url, headers=headers)
         storage = user_acquisition.acquisition.content.storage
-        _folders, files = storage.listdir(f"personalised/{user_acquisition.pk}")
+        # IP-036 reader scope: the reader's folder, not the grant's.
+        _folders, files = storage.listdir(f"personalised/{self.user.pk}")
         self.assertEqual(len(files), 1)
-        cache.delete(personalised._ready_key(f"personalised/{user_acquisition.pk}/{files[0]}"))
+        cache.delete(personalised._ready_key(f"personalised/{self.user.pk}/{files[0]}"))
 
         with mock.patch.object(personalised, "copy_name", wraps=personalised.copy_name) as copy_name:
             part = self.client.get(url, headers={**headers, "Range": "bytes=0-9"})
@@ -301,13 +305,22 @@ class AcquisitionDownloadTests(TestCase):
             response = self.client.get(self._ua_url(user_acquisition), headers={**headers, **extra})
             self.assertNotIn("Content-Encoding", response.headers)
 
+    def _reader(self, username: str) -> User:
+        reader = User(username=username, name="Re", surname="Ader", auth_source=self.user.auth_source)
+        reader.set_unusable_password()
+        reader.save()
+        return reader
+
+    def _headers_for(self, user) -> dict:
+        key = ApiKey.objects.create(user=user, name="test")
+        return {"Authorization": f"Bearer {JWTFactory(user.pk).api_key(str(key.pk))}"}
+
     def test_copies_share_one_normalised_base(self):
         first = self._user_acquisition(self._pdf())
-        readers = [first] + [
-            UserAcquisition.objects.create(
-                acquisition=first.acquisition, user=self.user, type=UserAcquisition.UserAcquisitionType.PERSONAL
-            )
-            for _ in range(2)
+        # Three readers (one reader's grants share one copy under IP-036 reader scope).
+        readers = [(first, self.user)] + [
+            (UserAcquisition.objects.create(acquisition=first.acquisition, user=reader), reader)
+            for reader in (self._reader("second"), self._reader("third"))
         ]
         # The worker's job, run inline: `queue_base` hands the build to Celery in production.
         self.queue_base.side_effect = personalised.build_base
@@ -315,7 +328,10 @@ class AcquisitionDownloadTests(TestCase):
             mock.patch.object(PDFModifier, "normalise", autospec=True, side_effect=PDFModifier.normalise) as base,
             mock.patch.object(PDFModifier, "generate", autospec=True, side_effect=PDFModifier.generate) as generate,
         ):
-            bodies = [self._body(self.client.get(self._ua_url(ua), headers=self._headers())) for ua in readers]
+            bodies = [
+                self._body(self.client.get(self._ua_url(ua), headers=self._headers_for(reader)))
+                for ua, reader in readers
+            ]
         self.assertEqual(base.call_count, 1)
         # The first reader never waits for the base: rendered in full from the source, as before.
         self.assertEqual([call.kwargs["normalised"] for call in generate.call_args_list], [False, True, True])

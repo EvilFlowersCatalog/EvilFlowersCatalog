@@ -19,7 +19,6 @@ from django.db.models import Count, Q
 from django.http import FileResponse
 from django.urls import reverse
 from django.utils.translation import gettext as _
-from object_checker.base_object_checker import has_object_permission
 
 from apps import openapi
 from apps.api.response import SingleResponse
@@ -38,7 +37,7 @@ from apps.extraction.forms import JobReportForm, ParagraphsForm, RegionsForm, St
 from apps.extraction.models import ExtractionRun, Region
 from apps.extraction.serializers import ExtractionRunSerializer, ExtractionStatusSerializer, RegionSerializer
 from apps.files.storage import get_storage
-from apps.files.views import _check_ip_block
+from apps.files.views import check_user_acquisition_access
 from apps.openapi.types import ParameterLocation
 from evil_flowers_catalog import domain_metrics
 
@@ -342,10 +341,7 @@ class ReaderView(SecuredView):
             raise ProblemDetailException(
                 _("User acquisition not found"), status=HTTPStatus.NOT_FOUND, detail_type=DetailType.NOT_FOUND
             )
-        if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:
-            if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
-                raise AuthorizationException(request)
-        _check_ip_block(request, user_acquisition.acquisition.entry)
+        check_user_acquisition_access(request, user_acquisition)
         return user_acquisition
 
     @staticmethod

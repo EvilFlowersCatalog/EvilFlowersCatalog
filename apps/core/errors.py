@@ -24,6 +24,7 @@ class DetailType(Enum):
     FEED_URL_NAME_TAKEN = "/feed-url-name-taken"
     PASSWORD_CHANGE_REQUIRED = "/password-change-required"
     RATE_LIMITED = "/rate-limited"
+    USER_ACQUISITION_EXPIRED = "/user-acquisition-expired"
 
 
 class ProblemDetail(Serializer):

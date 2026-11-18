@@ -67,6 +67,8 @@ class ContentGrant(BaseModel):
     granted_at = models.DateTimeField()
     #: The source was deleted (a copy removed); the grant no longer counts.
     revoked_at = models.DateTimeField(null=True, blank=True)
+    #: An own copy's `UserAcquisition.expire_at` (#215): past it, the grant no longer counts. Licences end by state.
+    expires_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.source}:{self.source_id} {self.source_state}"

@@ -388,7 +388,15 @@ EVILFLOWERS_OAI_RECONCILE_SCHEDULE = os.getenv("EVILFLOWERS_OAI_RECONCILE_SCHEDU
 
 EVILFLOWERS_ENFORCE_USER_ACQUISITIONS = bool(int(os.getenv("EVILFLOWERS_ENFORCE_USER_ACQUISITIONS", "0")))
 
-EVILFLOWERS_USER_ACQUISITION_MODE = os.getenv("EVILFLOWERS_USER_ACQUISITION_MODE", "single")
+# IP-036: `EVILFLOWERS_USER_ACQUISITION_MODE` (single/multiple) is gone. A personal request reuses the reader's live
+# grant of the same acquisition and page range, or creates one (`UserAcquisition.objects.equivalent`).
+# Whose personalised copy a download is: `reader` (one per reader and variant, watermarked with the reader and a copy
+# id; re-opens never render again) or `grant` (one per grant, watermarked with the grant id, as before IP-036).
+EVILFLOWERS_PERSONALISED_COPY_SCOPE = os.getenv("EVILFLOWERS_PERSONALISED_COPY_SCOPE", "reader")
+# Signed-URL ranges of a pinned reading session served without the database (IP-036 Phase 3); 0 = full path always.
+EVILFLOWERS_FILES_RANGE_FAST_PATH = bool(int(os.getenv("EVILFLOWERS_FILES_RANGE_FAST_PATH", "1")))
+# Render the copy of a new personal grant of a PDF in a worker before its first GET (IP-036 Phase 5).
+EVILFLOWERS_PERSONALISED_PRERENDER = bool(int(os.getenv("EVILFLOWERS_PERSONALISED_PRERENDER", "1")))
 
 # IP blocking: comma-separated CIDR ranges (e.g. "147.175.0.0/16,158.195.0.0/16"), null disables
 _ip_ranges = os.getenv("EVILFLOWERS_ALLOWED_IP_RANGES")

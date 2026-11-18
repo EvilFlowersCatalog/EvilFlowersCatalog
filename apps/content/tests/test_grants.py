@@ -66,6 +66,20 @@ class GrantTests(TestCase):
         self.assertIsNotNone(ContentGrant.objects.get(source_id=copy_id).revoked_at)
         self.assertEqual(decide(self.inside, self.own_copy).basis, "open")
 
+    def test_an_expired_copy_no_longer_grants(self):
+        # #215: the grant follows the copy's `expire_at`; an expired own copy unlocks nothing.
+        copy = UserAcquisition.objects.get(user=self.reader, acquisition__entry=self.own_copy)
+        self.assertEqual(decide(self.inside, self.own_copy).basis, "loan")
+
+        copy.expire_at = timezone.now() - timedelta(minutes=1)
+        copy.save()
+        self.assertEqual(ContentGrant.objects.get(source_id=copy.pk).expires_at, copy.expire_at)
+        self.assertEqual(decide(self.inside, self.own_copy).basis, "open")
+
+        copy.expire_at = timezone.now() + timedelta(days=1)
+        copy.save()
+        self.assertEqual(decide(self.inside, self.own_copy).basis, "loan")
+
     def test_cancelled_never_grants(self):
         self._license(self.lcp, License.LicenseState.CANCELLED)
         self.assertNotIn(

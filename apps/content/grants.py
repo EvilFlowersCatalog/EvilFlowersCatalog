@@ -76,6 +76,7 @@ def record_acquisition(user_acquisition) -> None:
             "pages": user_acquisition.range,
             "granted_at": user_acquisition.created_at or timezone.now(),
             "revoked_at": None,
+            "expires_at": user_acquisition.expire_at,
         },
     )
 
@@ -105,7 +106,7 @@ def backfill() -> Dict[str, int]:
             record_license(license, opened_at=license.starts_at)
             counts["licenses"] += 1
         rows = UserAcquisition.objects.select_related("acquisition").only(
-            "id", "user_id", "type", "range", "created_at", "acquisition__entry_id"
+            "id", "user_id", "type", "range", "created_at", "expire_at", "acquisition__entry_id"
         )
         for user_acquisition in rows.iterator(chunk_size=500):
             user_acquisition._grant_entry_id = user_acquisition.acquisition.entry_id

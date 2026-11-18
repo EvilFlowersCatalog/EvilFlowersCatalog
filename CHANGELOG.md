@@ -12,10 +12,27 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 - **Added**: Extraction locators ([#171]): run-independent keys for paragraphs, figures and sections that survive a re-extraction (`exact` → `relocated` by quote → `page_only`). `GET /api/v1/locators/{entry_id}/{key}` with a Readium Locator projection, MCP resources `evilflowers://entry/{id}/locator/{key}` and `/outline`, `locator_key` in the citation ledger. Graph section keys no longer contain the run id. Migration `extraction.0011`; `POST_PROCESS_VERSION` 2 backfills through the post-process sweep
 - **Added**: Content policies ([#174]): versioned rule documents (tiers per basis, caps, grants, budget, log) with five presets (`parity`, `open-access`, `licensed-standard`, `licensed-strict`, `campus-only`). REST `/api/v1/content-policies` (list, schema, versions, explain, assign) and MCP `list_content_policies`, `get_content_policy`, `update_content_policy`, `assign_content_policy`, `explain_access`. Resolution entry → catalog (`catalogs.content_policy`) → `content.default_policy` → `parity`. API keys gain `processor: local | external`. Migrations `content.0001`, `content.0002`
 - **Changed**: One content gate, `apps.content.access.decide()`, behind every surface that shows publication text ([#172]): assistant reading tools and bound chats, citations, passages, figures, locators, graph headings and MCP resources. Under `parity` every surface returns what it did before
+- **Added**: PDF range streaming for the viewer ([#214]):
+  - Range contract: CORS exposes `Accept-Ranges`, `Content-Range`, `ETag` and `Content-Disposition`; strong `ETag` and `Last-Modified`; `If-Range`; `HEAD`.
+  - Counting: one open counts once (only a GET without `Range` counts); popularity is bumped with one `UPDATE`.
+  - Signed reusable `stream_url` on user acquisitions (`EVILFLOWERS_FILES_SIGNED_URL_TTL`).
+  - Personalised copies render from a shared normalised base built by a worker (`EVILFLOWERS_PERSONALISED_SHARED_BASE`, `EVILFLOWERS_PERSONALISED_BASE_IDLE_HOURS`).
+  - Ranges reuse a per-open pin.
+- **Fixed**: `UserAcquisition.expire_at` is enforced ([#215]). An expired grant answers `410` with problem type `/user-acquisition-expired` on every read path, shared links included. It is never reused and no longer counts in the content gate. Migration `content.0006`
+- **Added**: Reader grants and a database-free range path (IP-036):
+  - Personalised copies belong to the reader (`EVILFLOWERS_PERSONALISED_COPY_SCOPE=reader|grant`), and re-opens never render again.
+  - Signed-URL ranges of a pinned session run without database queries, with immediate revocation (`EVILFLOWERS_FILES_RANGE_FAST_PATH`).
+  - A new grant's PDF is rendered ahead by a worker (`EVILFLOWERS_PERSONALISED_PRERENDER`).
+  - `DELETE /api/v1/user-acquisitions/{id}` revokes a grant by expiring it.
+- **Changed**: A personal `POST /api/v1/user-acquisitions` reuses a live grant with the same acquisition and page range; another range is a new grant (IP-036)
 - **Fixed**: The library graph works under the app role without superuser rights ([#147]). AGE loads from `$libdir/plugins/age`, and `LOAD 'age'` remains only as a superuser fallback. The graph's existence is read from `pg_catalog`. `graph.0001` passes when the graph cannot be created. `graph_rebuild` names the missing piece
 
 ### Upgrade notes (0.16.0)
 
+- ⚠️ `EVILFLOWERS_USER_ACQUISITION_MODE` is removed (IP-036). Remove it from the environment; the catalog warns at start while it is set. Behaviour now matches `single`, with the page range taken into account
+- ⚠️ Expired user acquisitions answer `410` (`/user-acquisition-expired`) instead of downloading (#215). Clients should request a new grant
+- ⚠️ The licence page's "Document ID" is a copy id under `reader` scope, not the user acquisition id. Set `EVILFLOWERS_PERSONALISED_COPY_SCOPE=grant` to keep per-grant copies and ids
+- Every personalised copy re-renders once after the upgrade (new copy names). The worker must run the new tasks `build_personalised_base` and `prerender_personalised_copy`
 - ⚠️ Apache AGE needs evilflowers-postgresql with `$libdir/plugins/age.so` (evilflowers-postgresql#5). A superuser runs `CREATE EXTENSION age` before the catalog migrates and grants the app role `USAGE ON SCHEMA ag_catalog` and `CREATE ON DATABASE` (knowledge#45). Then run `manage.py graph_rebuild`
 
 [#20]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/20
@@ -27,6 +44,8 @@ This changelog suppose to follow rules defined in the [changelog.md](https://cha
 [#172]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/172
 [#174]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/174
 [#212]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/212
+[#214]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/214
+[#215]: https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues/215
 
 ## 0.15.0 : 2026-11-12 (The Library Reads Back)
 

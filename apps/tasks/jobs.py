@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from django.conf import settings
 
-from apps.core.models import Acquisition
+from apps.core.models import Acquisition, UserAcquisition
 from apps.tasks.contract import maintenance, run_only
 
 maintenance(
@@ -33,6 +33,14 @@ run_only(
     "Normalise a PDF once, after its first reader, so later readers' copies render from it (#214).",
     subject_model=Acquisition,
     subject_arg=("acquisition_id", 0),
+)
+run_only(
+    "files.personalised_prerender",
+    "apps.tasks.tasks.prerender_personalised_copy",
+    "Pre-render a personalised copy",
+    "Render a new personal grant's copy before its first download (IP-036).",
+    subject_model=UserAcquisition,
+    subject_arg=("user_acquisition_id", 0),
 )
 maintenance(
     "maintenance.sync_ldap_profiles",

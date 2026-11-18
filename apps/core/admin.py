@@ -563,7 +563,14 @@ class UserAdmin(ConsoleMixin, BaseUserAdmin):
 
     @admin.action(description=_("Deactivate selected users"))
     def deactivate(self, request, queryset):
-        updated = queryset.exclude(pk=request.user.pk).update(is_active=False)
+        from apps.files import revocation
+
+        targets = queryset.exclude(pk=request.user.pk)
+        user_ids = list(targets.values_list("pk", flat=True))
+        updated = targets.update(is_active=False)
+        # `update()` sends no signal: end the users' database-free reading sessions explicitly (IP-036).
+        for user_id in user_ids:
+            revocation.revoke(revocation.USER, user_id)
         self.message_user(request, _("%(count)s users deactivated.") % {"count": updated})
 
 

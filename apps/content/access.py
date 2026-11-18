@@ -257,11 +257,19 @@ class _Facts:
         if self._grants is None:
             self._grants = {}
             if self.user is not None:
+                from django.db.models import Q
+                from django.utils import timezone
+
                 from apps.content.models import ContentGrant
 
-                rows = ContentGrant.objects.filter(
-                    user=self.user, entry_id__in=[entry.pk for entry in self.entries], revoked_at__isnull=True
-                ).values_list("entry_id", "source", "source_state", "first_opened_at")
+                # An own copy past its `expire_at` no longer grants anything (#215).
+                rows = (
+                    ContentGrant.objects.filter(
+                        user=self.user, entry_id__in=[entry.pk for entry in self.entries], revoked_at__isnull=True
+                    )
+                    .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
+                    .values_list("entry_id", "source", "source_state", "first_opened_at")
+                )
                 for entry_id, source, state, opened in rows:
                     self._grants.setdefault(str(entry_id), []).append((source, state, opened))
         return self._grants

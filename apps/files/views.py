@@ -2,19 +2,19 @@ import base64
 import hashlib
 import ipaddress
 import logging
+import time
 import uuid
 from typing import Optional
-from collections import defaultdict
 from http import HTTPStatus
 from mimetypes import guess_extension
 
 from django.conf import settings
 from django.db.models import F
 from django.http import FileResponse
+from django.http.response import HttpResponseBase
 from django.urls import reverse
 from django.utils.cache import get_conditional_response
 from django.utils.http import http_date, quote_etag
-from django.utils.module_loading import import_string
 from django.utils.text import slugify
 from django.utils.translation import gettext as _
 from object_checker.base_object_checker import has_object_permission
@@ -22,17 +22,22 @@ from object_checker.base_object_checker import has_object_permission
 from apps import openapi
 from apps.api.response import SingleResponse, SeeOtherResponse
 from apps.core.errors import ProblemDetailException, DetailType, AuthorizationException
-from apps.core.fields.multirange import depack
-from apps.core.models import Acquisition, Entry, UserAcquisition, AnnotationItem, UserActivity, ReadEvent
+from apps.core.models import Acquisition, Entry, UserAcquisition, UserActivity, ReadEvent
 from apps.core.modifiers import InvalidPage
 from apps.core.services.activity import ActivityService
 from apps.core.services.reads import ReadService
 from apps.core.views import SecuredView
-from apps.files import personalised, signing
-from apps.files.ranges import Validators, counts_as_open, file_validators, ranged_file_response
+from apps.files import copies, personalised, revocation, signing
+from apps.files.ranges import (
+    Validators,
+    counts_as_open,
+    file_validators,
+    is_continuation,
+    ranged_file_response,
+)
 from apps.files.services import AcquisitionStorageError, AcquisitionStorageService
 from apps.openapi.types import ParameterLocation
-from evil_flowers_catalog import domain_metrics
+from evil_flowers_catalog import domain_metrics, tracing
 
 logger = logging.getLogger(__name__)
 
@@ -57,24 +62,50 @@ def _get_client_ip(request) -> str:
     return request.META.get("REMOTE_ADDR")
 
 
-def _check_ip_block(request, entry: Entry):
-    if not entry.read_config("evilflowers_ip_block"):
-        return
-
+def _ip_allowed(request) -> bool:
+    """Whether the client's address is inside `EVILFLOWERS_ALLOWED_IP_RANGES` (all are, without the setting)."""
     allowed_ranges = settings.EVILFLOWERS_ALLOWED_IP_RANGES
     if allowed_ranges is None:
-        return
-
+        return True
     client_ip = ipaddress.ip_address(_get_client_ip(request))
-    for cidr in allowed_ranges:
-        if client_ip in ipaddress.ip_network(cidr, strict=False):
-            return
+    return any(client_ip in ipaddress.ip_network(cidr, strict=False) for cidr in allowed_ranges)
+
+
+def _content_storage():
+    """The storage acquisitions' files (and their personalised copies) live in, without loading a row."""
+    return Acquisition._meta.get_field("content").storage
+
+
+def _check_ip_block(request, entry: Entry):
+    if not entry.read_config("evilflowers_ip_block") or _ip_allowed(request):
+        return
 
     raise ProblemDetailException(
         _("Access denied"),
         status=HTTPStatus.FORBIDDEN,
         detail=_("Your IP address is not allowed to access this resource"),
     )
+
+
+def check_user_acquisition_access(request, user_acquisition: UserAcquisition) -> None:
+    """What every reader of a copy is checked for: the download, its extraction views and the assistant.
+
+    - An expired grant (#215), of any type, shared included: 410 with its own problem type, so a client can tell
+      "ask for a new grant" from "forbidden".
+    - A personal grant opens only for its owner.
+    - The entry's IP block.
+    """
+    if user_acquisition.is_expired:
+        raise ProblemDetailException(
+            _("This access has expired"),
+            status=HTTPStatus.GONE,
+            detail_type=DetailType.USER_ACQUISITION_EXPIRED,
+            detail=_("Request the publication again to get a new access."),
+        )
+    if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:
+        if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
+            raise AuthorizationException(request)
+    _check_ip_block(request, user_acquisition.acquisition.entry)
 
 
 class AcquisitionDownload(SecuredView):
@@ -105,39 +136,17 @@ class AcquisitionDownload(SecuredView):
             raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND)
 
         if request.user.is_authenticated and settings.EVILFLOWERS_ENFORCE_USER_ACQUISITIONS:
-            if settings.EVILFLOWERS_USER_ACQUISITION_MODE == "single":
-                user_acquisition = UserAcquisition.objects.filter(
-                    acquisition=acquisition,
-                    user=request.user,
-                    type=UserAcquisition.UserAcquisitionType.PERSONAL,
-                ).first()
-
-                if not user_acquisition:
-                    user_acquisition = UserAcquisition.objects.create(
-                        acquisition=acquisition,
-                        user=request.user,
-                        type=UserAcquisition.UserAcquisitionType.PERSONAL,
-                    )
-            else:
-                # A ranged reader re-requests the same download many times; only its GET without `Range` opens
-                # a copy (#214). A range or a HEAD reuses the reader's latest one.
-                user_acquisition = None
-                if not counts_as_open(request):
-                    user_acquisition = (
-                        UserAcquisition.objects.filter(
-                            acquisition=acquisition,
-                            user=request.user,
-                            type=UserAcquisition.UserAcquisitionType.PERSONAL,
-                        )
-                        .order_by("-created_at")
-                        .first()
-                    )
-                if user_acquisition is None:
-                    user_acquisition = UserAcquisition.objects.create(
-                        acquisition=acquisition,
-                        user=request.user,
-                        type=UserAcquisition.UserAcquisitionType.PERSONAL,
-                    )
+            # IP-036: the reader's live whole-book grant, or a new one (#215: never an expired one).
+            user_acquisition = UserAcquisition.objects.equivalent(
+                request.user, acquisition, UserAcquisition.UserAcquisitionType.PERSONAL, None
+            ).first()
+            if user_acquisition is None:
+                user_acquisition = UserAcquisition(
+                    acquisition=acquisition, user=request.user, type=UserAcquisition.UserAcquisitionType.PERSONAL
+                )
+                # Redirected to its download at once: that GET renders the copy, a pre-render would only race it.
+                user_acquisition._skip_prerender = True
+                user_acquisition.save()
 
             params = request.GET.copy()
 
@@ -249,6 +258,109 @@ class UserAcquisitionDownload(SecuredView):
             for value in values
         )
 
+    def dispatch(self, request, *args, **kwargs):
+        # IP-036 Phase 3: a signed-URL range of a pinned session never reaches the database, the rate limit or the
+        # authentication backends; anything the fast path cannot vouch for takes the full path below.
+        response = self._fast_range(request, kwargs.get("user_acquisition_id"))
+        if response is not None:
+            return response
+        return super().dispatch(request, *args, **kwargs)
+
+    def _fast_range(self, request, user_acquisition_id) -> Optional[HttpResponseBase]:
+        """Serve a range from the owner's pin, or None for the full path.
+
+        Preconditions (all, else None): the setting; `GET` with `Range` or `HEAD`; a valid signed URL (bearer tokens
+        keep the full path, IP-036 Q5); not base64; a pin with access facts; its three revocation tokens current;
+        the grant not expired; the IP block passed. A refusal is left to the full path, which answers it with the
+        same checks and messages as every other request.
+        """
+        if not settings.EVILFLOWERS_FILES_RANGE_FAST_PATH or user_acquisition_id is None:
+            return None
+        if request.method == "GET":
+            if not is_continuation(request):
+                return None
+        elif request.method != "HEAD":
+            return None
+        if "sig" not in request.GET or request.GET.get("format") == "base64":
+            return None
+        if not signing.verify(user_acquisition_id, request.GET.get("exp"), request.GET.get("sig")):
+            return None
+        served = personalised.pinned(user_acquisition_id, self._variant(request))
+        facts = (served or {}).get("access")
+        if facts is None:
+            return None
+        if not revocation.matches(facts["tokens"], self._access_subjects(user_acquisition_id, facts)):
+            return None
+        if facts["expire_at"] is not None and facts["expire_at"] <= time.time():
+            return None
+        if facts["ip_block"] and not _ip_allowed(request):
+            return None
+
+        response = ranged_file_response(
+            request,
+            _content_storage(),
+            served["name"],
+            content_type=served["mime"],
+            filename=served["filename"],
+            as_attachment=True,
+            validators=Validators(size=served["size"], etag=served["etag"], last_modified=served["last_modified"]),
+        )
+        response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE
+        tracing.set_attributes({"evilflowers.files.fast_path": True})
+        return response
+
+    @staticmethod
+    def _access_subjects(user_acquisition_id, facts: dict) -> dict:
+        return {
+            "grant": (revocation.GRANT, str(user_acquisition_id)),
+            "user": (revocation.USER, facts["owner_id"]),
+            "entry": (revocation.ENTRY, facts["entry_id"]),
+        }
+
+    def _access_current(self, served: dict, user_acquisition: UserAcquisition) -> bool:
+        facts = served.get("access")
+        if facts is None:
+            return False
+        return revocation.matches(facts["tokens"], self._access_subjects(user_acquisition.pk, facts))
+
+    @staticmethod
+    def _access_facts(user_acquisition: UserAcquisition) -> Optional[dict]:
+        """What the fast path checks instead of the database, with the revocation tokens to trust it by.
+
+        Tokens are read (or minted) first and the facts re-read after: a revocation that commits in between changes
+        a token, so the pin is stale at once (IP-036, no race). None when the facts moved meanwhile.
+        """
+        entry = user_acquisition.acquisition.entry
+        subjects = {
+            "grant": (revocation.GRANT, str(user_acquisition.pk)),
+            "user": (revocation.USER, str(user_acquisition.user_id)),
+            "entry": (revocation.ENTRY, str(entry.pk)),
+        }
+        minted = revocation.mint(subjects.values())
+        if len(minted) != len(subjects):
+            return None
+        now = (
+            UserAcquisition.objects.filter(pk=user_acquisition.pk)
+            .values("expire_at", "type", "user_id", "user__is_active", "acquisition__entry__config")
+            .first()
+        )
+        seen = {
+            "expire_at": user_acquisition.expire_at,
+            "type": user_acquisition.type,
+            "user_id": user_acquisition.user_id,
+            "user__is_active": user_acquisition.user.is_active,
+            "acquisition__entry__config": entry.config,
+        }
+        if now != seen:
+            return None
+        return {
+            "owner_id": str(user_acquisition.user_id),
+            "entry_id": str(entry.pk),
+            "expire_at": user_acquisition.expire_at.timestamp() if user_acquisition.expire_at else None,
+            "ip_block": bool(entry.read_config("evilflowers_ip_block")),
+            "tokens": {name: minted[subject] for name, subject in subjects.items()},
+        }
+
     @openapi.metadata(
         description="Download UserAcquisition content. Honours a single `Range` and its `If-Range`; "
         "`stream_url` of the user acquisition carries `exp` and `sig` instead of an `Authorization` header.",
@@ -271,17 +383,15 @@ class UserAcquisitionDownload(SecuredView):
     @openapi.response(HTTPStatus.OK, "The whole file")
     @openapi.response(HTTPStatus.PARTIAL_CONTENT, "The requested byte range")
     @openapi.response(HTTPStatus.FORBIDDEN, "No access, or the signed URL has expired")
+    @openapi.response(HTTPStatus.GONE, "The user acquisition has expired (`/user-acquisition-expired`)")
     @openapi.response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE, "The range starts past the end of the file")
     def get(self, request, user_acquisition_id: uuid.UUID):
         user_acquisition = getattr(self, "_user_acquisition", None) or _load_user_acquisition(user_acquisition_id)
 
-        if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:
-            if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
-                raise AuthorizationException(request)
+        # Before the pin, the render and the counting: an expired grant gets no byte (#215).
+        check_user_acquisition_access(request, user_acquisition)
 
-        _check_ip_block(request, user_acquisition.acquisition.entry)
-
-        modified = user_acquisition.acquisition.mime in settings.EVILFLOWERS_MODIFIERS
+        modified = copies.is_modified(user_acquisition)
         # A ranged reader re-requests the same download many times; only its GET without `Range` counts (#214).
         counted = counts_as_open(request)
         mime = user_acquisition.acquisition.mime
@@ -289,9 +399,18 @@ class UserAcquisitionDownload(SecuredView):
         # An anonymous copy carries a random id and base64 is never ranged: those are never pinned.
         pinnable = not request.user.is_anonymous and not as_base64
         variant = self._variant(request) if pinnable else ""
+        # The owner's sessions are pinned by grant and query only (the fast path's key); another reader of a
+        # shared grant has pins of their own (IP-036).
+        pin_reader = None if not pinnable or request.user.pk == user_acquisition.user_id else request.user.pk
 
         if pinnable and not counted:
-            served = personalised.pinned(user_acquisition.pk, variant)
+            served = personalised.pinned(user_acquisition.pk, variant, pin_reader)
+            if served is not None and pin_reader is None and not self._access_current(served, user_acquisition):
+                # A token went missing or moved (eviction, a revocation of something that did not change this
+                # grant's facts): re-pin with fresh facts, so the session's next ranges are fast again.
+                access = self._access_facts(user_acquisition)
+                if access is not None:
+                    personalised.pin(user_acquisition.pk, variant, {**served, "access": access}, pin_reader)
             if served is not None:
                 response = ranged_file_response(
                     request,
@@ -311,17 +430,6 @@ class UserAcquisitionDownload(SecuredView):
             # One column, not `entry.save()`: a save rewrote the whole row and its search vector
             # (150 ms on KU) and touched the catalog, its feeds and the OAI record on every open (#214).
             Entry.objects.filter(pk=user_acquisition.acquisition.entry_id).update(popularity=F("popularity") + 1)
-
-            ActivityService.record(
-                request.user,
-                user_acquisition.acquisition.entry,
-                UserActivity.ActivityAction.ENTRY_DOWNLOADED,
-                {
-                    "acquisition_id": str(user_acquisition.acquisition_id),
-                    "mime": user_acquisition.acquisition.mime,
-                    "via": "user_acquisition",
-                },
-            )
             # #194: scoped by the acquisition, not this user acquisition: the portal creates one per open.
             ReadService.record(
                 user_acquisition.acquisition.entry,
@@ -336,55 +444,25 @@ class UserAcquisitionDownload(SecuredView):
         )
 
         stored_copy = None
+        copy_id = None
         if modified:
-            context = {
-                "id": str(uuid.uuid4()) if request.user.is_anonymous else str(user_acquisition.id),
-                "user_id": str(user_acquisition.user_id),
-                "title": user_acquisition.acquisition.entry.title,
-                "username": user_acquisition.user.username,
-                "authors": ", ".join([a.full_name for a in user_acquisition.acquisition.entry.authors.all()]),
-                "language": (
-                    user_acquisition.acquisition.entry.language.alpha2
-                    if user_acquisition.acquisition.entry.language
-                    else None
-                ),
-            }
-            modifier = import_string(settings.EVILFLOWERS_MODIFIERS[user_acquisition.acquisition.mime])(
-                context=context,
-                pages=depack(user_acquisition.range) if user_acquisition.range else None,
-            )
-
-            annotation_map = defaultdict(list)
-            if request.GET.get("annotations", None) == "true":
-                annotation_items = AnnotationItem.objects.filter(annotation__user_acquisition=user_acquisition).values(
-                    "page", "content"
-                )
-                for item in annotation_items:
-                    annotation_map[item["page"]].append(item["content"])
-                annotation_map = dict(annotation_map)
-
-            page = request.GET.get("page", None)
-            annotation_map = dict(annotation_map)
-
-            def render():
-                # From the shared normalised base when there is one (#214): the full rewrite runs once per file.
-                source, normalised = personalised.render_source(user_acquisition.acquisition, modifier)
-                try:
-                    return modifier.generate(source, page, annotation_map=annotation_map, normalised=normalised)
-                finally:
-                    if normalised:
-                        source.close()
-
             source_storage = user_acquisition.acquisition.content.storage
             try:
+                # Whose copy, under which name and with which watermark: `copies` (IP-036 reader scope).
                 # Rendered once and stored, so every byte range of this download is cut from the same copy (#70).
                 # An anonymous copy carries a random id and base64 is never ranged: those are rendered per request.
-                if pinnable:
-                    if _stored_size(user_acquisition.acquisition.content):
-                        stored_copy = personalised.copy_name(user_acquisition, context, page, annotation_map)
-                        if not personalised.ensure_copy(source_storage, stored_copy, render):
-                            stored_copy = None
-                content = None if stored_copy else render()
+                copy = copies.prepare(
+                    user_acquisition,
+                    request.user,
+                    page=request.GET.get("page", None),
+                    annotations=request.GET.get("annotations", None) == "true",
+                )
+                copy_id = copy.copy_id
+                if pinnable and copy.name and _stored_size(user_acquisition.acquisition.content):
+                    stored_copy = copy.name
+                    if not copy.ensure():
+                        stored_copy = None
+                content = None if stored_copy else copy.render()
             except InvalidPage:
                 raise ProblemDetailException(_("Page not found"), status=HTTPStatus.NOT_FOUND)
             except Exception as exc:
@@ -398,6 +476,21 @@ class UserAcquisitionDownload(SecuredView):
             stored_size = _stored_size(content)
             if not stored_size:
                 raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND)
+
+        if counted:
+            # The copy id maps a leaked reader-scoped copy (its watermark prints the id) back to this grant and open.
+            ActivityService.record(
+                request.user,
+                user_acquisition.acquisition.entry,
+                UserActivity.ActivityAction.ENTRY_DOWNLOADED,
+                {
+                    "acquisition_id": str(user_acquisition.acquisition_id),
+                    "user_acquisition_id": str(user_acquisition.pk),
+                    "copy_id": copy_id,
+                    "mime": user_acquisition.acquisition.mime,
+                    "via": "user_acquisition",
+                },
+            )
 
         if as_base64:
             response = SingleResponse(request, data={"data": base64.b64encode(content.read()).decode()})
@@ -430,17 +523,19 @@ class UserAcquisitionDownload(SecuredView):
                 validators=validators,
             )
             if pinnable:
-                personalised.pin(
-                    user_acquisition.pk,
-                    variant,
-                    {
-                        "name": served_name,
-                        "copy": bool(stored_copy),
-                        "mime": mime or None,
-                        "filename": sanitized_filename,
-                        **validators.as_dict(),
-                    },
-                )
+                served = {
+                    "name": served_name,
+                    "copy": bool(stored_copy),
+                    "mime": mime or None,
+                    "filename": sanitized_filename,
+                    **validators.as_dict(),
+                }
+                if pin_reader is None:
+                    # The owner's session: what the signed-URL fast path needs to serve ranges without the database.
+                    access = self._access_facts(user_acquisition)
+                    if access is not None:
+                        served["access"] = access
+                personalised.pin(user_acquisition.pk, variant, served, pin_reader)
         response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE
         if counted:
             domain_metrics.record_acquisition_served(mime, "user_acquisition", "file")
