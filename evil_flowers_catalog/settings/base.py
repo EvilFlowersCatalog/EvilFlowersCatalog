@@ -427,20 +427,6 @@ EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE = os.getenv(
     "EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE", "private, max-age=0, must-revalidate"
 )
 
-# File bytes sent by nginx instead of a gunicorn worker (#214, docs/files/streaming.md). Unset: Django
-# streams every byte (the default). Set `EVILFLOWERS_FILES_ACCEL_LOCATION` (e.g. `/_files/`) and, with
-# filesystem storage, every download still runs its checks here and then answers `X-Accel-Redirect:
-# <location><name>` with no body; nginx serves the file from an `internal` location. Object storage never
-# takes this path. `EVILFLOWERS_FILES_ACCEL_STORAGE_ROOT` (e.g. `/usr/src/app/private`): the directory the
-# nginx location maps to, when it is not the storage directory itself; names are taken relative to it.
-EVILFLOWERS_FILES_ACCEL = (
-    {
-        "location": os.environ["EVILFLOWERS_FILES_ACCEL_LOCATION"],
-        "storage_root": os.getenv("EVILFLOWERS_FILES_ACCEL_STORAGE_ROOT") or None,
-    }
-    if os.getenv("EVILFLOWERS_FILES_ACCEL_LOCATION")
-    else None
-)
 # Lifetime of the signed, reusable download URL of a user acquisition (`stream_url`, #214), in seconds:
 # long enough for a reading session, never past the acquisition's own expiry.
 EVILFLOWERS_FILES_SIGNED_URL_TTL = int(os.getenv("EVILFLOWERS_FILES_SIGNED_URL_TTL", 6 * 3600))

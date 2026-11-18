@@ -301,19 +301,6 @@ class AcquisitionDownloadTests(TestCase):
             response = self.client.get(self._ua_url(user_acquisition), headers={**headers, **extra})
             self.assertNotIn("Content-Encoding", response.headers)
 
-    def test_x_accel_offload_runs_the_checks_then_hands_over(self):
-        user_acquisition = self._user_acquisition(self._pdf())
-        with override_settings(EVILFLOWERS_FILES_ACCEL={"location": "/_files/", "storage_root": None}):
-            response = self.client.get(self._ua_url(user_acquisition), headers=self._headers())
-            refused = self.client.get(self._ua_url(user_acquisition))
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response["X-Accel-Redirect"].startswith(f"/_files/personalised/{user_acquisition.pk}/"))
-        self.assertEqual(response["Cache-Control"], "private, max-age=0, must-revalidate")
-        self.assertEqual(response.content, b"")
-        self.assertNotIn("X-Accel-Redirect", refused.headers)
-        self.entry.refresh_from_db()
-        self.assertEqual(self.entry.popularity, 1)
-
     def test_copies_share_one_normalised_base(self):
         first = self._user_acquisition(self._pdf())
         readers = [first] + [

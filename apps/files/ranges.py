@@ -20,14 +20,9 @@ them for a file that sits in the storage backend unchanged.
 pdf.js disables ranges when it sees `Content-Encoding`; the GZip middleware
 skips every response that carries `Accept-Ranges` (`apps.api.middleware.gzip`).
 
-Two ways to send the bytes:
-
-- Django (the default): the range is read from the storage backend and streamed.
-- nginx (`EVILFLOWERS_FILES_ACCEL`, filesystem storage only): the view runs every
-  check as before and answers `X-Accel-Redirect: <location><name>` with no body.
-  nginx serves the file from an `internal` location with `sendfile`, ranges,
-  `If-Range` and `416` of its own (docs/files/streaming.md). Object storage
-  never takes this path.
+The range is read from the storage backend and streamed by the web worker
+(S3: the store returns just those bytes). No nginx offload: decided against in
+#214, the checks run per request anyway and the transfer is the short part.
 
 Only for bytes that are the same on every request. A personalised PDF is
 rendered once and stored first (`apps.files.personalised`); ranges are cut
@@ -36,16 +31,13 @@ from that copy, never from two different renders.
 
 import hashlib
 import mimetypes
-import os
 import re
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Iterator, Optional, Tuple
-from urllib.parse import quote
 
-from django.conf import settings
-from django.core.files.storage import FileSystemStorage, Storage
+from django.core.files.storage import Storage
 from django.http import FileResponse, HttpResponse, StreamingHttpResponse
 from django.http.response import HttpResponseBase
 from django.utils.crypto import constant_time_compare
@@ -185,26 +177,6 @@ def _open_part(storage: Storage, name: str, start: int, length: int) -> Iterator
     return _read(storage.open(name, "rb"), start, length)
 
 
-def accel_path(storage: Storage, name: str) -> Optional[str]:
-    """The `X-Accel-Redirect` URI for `name`, or None when the bytes must go through Django.
-
-    Filesystem storage only: an S3 object has no path nginx could open (`S3Storage.path` exists but is not one).
-    """
-    config = settings.EVILFLOWERS_FILES_ACCEL
-    if not config or not isinstance(storage, FileSystemStorage):
-        return None
-    location = config["location"]
-    root = config.get("storage_root")
-    if root:
-        relative = os.path.relpath(storage.path(name), root)
-        if relative.startswith(".."):
-            # The file lives outside what nginx serves: never send a path it would refuse or misread.
-            return None
-    else:
-        relative = name
-    return quote(f"{location.rstrip('/')}/{relative.lstrip('/')}", safe="/")
-
-
 def _set_validators(response: HttpResponseBase, validators: Validators) -> None:
     response["Accept-Ranges"] = "bytes"
     response["ETag"] = validators.etag
@@ -227,18 +199,6 @@ def ranged_file_response(
     `validators` (size, ETag, Last-Modified) skips the `stat` when the caller already knows them.
     """
     content_type = content_type or mimetypes.guess_type(filename or name)[0] or "application/octet-stream"
-
-    target = accel_path(storage, name)
-    if target is not None:
-        # nginx answers the range, `If-Range` and `416` itself, with validators of its own.
-        response = HttpResponse(content_type=content_type)
-        response["X-Accel-Redirect"] = target
-        disposition = content_disposition_header(as_attachment, filename)
-        if disposition:
-            response["Content-Disposition"] = disposition
-        # `Content-Length: 0` of this empty body is not passed on: nginx sends the file's own length.
-        response["Accept-Ranges"] = "bytes"
-        return response
 
     if validators is None:
         validators = file_validators(storage, name)

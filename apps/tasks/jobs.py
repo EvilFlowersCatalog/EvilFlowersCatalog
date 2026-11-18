@@ -4,7 +4,8 @@ from datetime import timedelta
 
 from django.conf import settings
 
-from apps.tasks.contract import maintenance
+from apps.core.models import Acquisition
+from apps.tasks.contract import maintenance, run_only
 
 maintenance(
     "maintenance.backup",
@@ -24,6 +25,14 @@ maintenance(
     "apps.tasks.tasks.cleanup_personalised_copies",
     "Delete idle personalised copies",
     "Delete personalised copies no reader used for a while (#70).",
+)
+run_only(
+    "files.personalised_base",
+    "apps.tasks.tasks.build_personalised_base",
+    "Shared base of personalised copies",
+    "Normalise a PDF once, after its first reader, so later readers' copies render from it (#214).",
+    subject_model=Acquisition,
+    subject_arg=("acquisition_id", 0),
 )
 maintenance(
     "maintenance.sync_ldap_profiles",

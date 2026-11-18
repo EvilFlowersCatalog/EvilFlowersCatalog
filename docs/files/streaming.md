@@ -3,7 +3,7 @@
 The viewer (pdf.js `getDocument({url})`) reads a book in byte ranges: one plain
 `GET` (headers only, then aborted), then `Range: bytes=…` requests of
 `rangeChunkSize` (64 KiB by default) for the pages it draws. This page is the
-server half of that contract and the two ways the bytes can leave the server.
+server half of that contract. Rollout: knowledge#88.
 
 ![Sequence](../diagrams/sequence-pdf-range-streaming.png)
 
@@ -117,6 +117,10 @@ Rejected:
 - **Caching bytes in Redis or memcached**: every copy is personal, so a range is
   asked for once per reader; the hit rate would be close to zero. The kernel page
   cache already keeps hot files, bounded by the kernel.
+- **nginx offload** (`X-Accel-Redirect` to a sidecar or the gateway nginx): every
+  range still passes through Django for auth, IP block and licence, so nginx would
+  take over only the transfer of a chunk, the short part under gevent; a sidecar
+  per catalog pod is not worth the infrastructure. Decided against on 2026-11-18.
 
 ## Each range after the first
 
@@ -131,61 +135,15 @@ annotation shows).
 **Viewer side** (EvilFlowersViewer#151): `rangeChunkSize` is the largest lever
 left. 64 KiB means ~100 requests for a 6.7 MB book; 512 KiB–1 MiB cuts that 8–16×.
 
-## Two ways to send the bytes
-
-### Django (default)
+## Sending the bytes
 
 The range is read from storage and streamed by the gunicorn (gevent) worker.
 Object storage (S3) asks the store for exactly the range (`open_range`).
 
-### nginx (`EVILFLOWERS_FILES_ACCEL`, off by default)
-
-Filesystem storage only; object storage always takes the Django path.
-
-```
-EVILFLOWERS_FILES_ACCEL_LOCATION=/_files/
-# Optional: the directory the nginx location maps to, when it is a parent of the storage directory.
-EVILFLOWERS_FILES_ACCEL_STORAGE_ROOT=/usr/src/app/private
-```
-
-Every request still runs every check in Django (auth, signed URL, IP block,
-licence, `ensure_copy`, counting) and then answers an empty `200` with
-`X-Accel-Redirect: /_files/<name>`, `Content-Type`, `Content-Disposition` and
-`Cache-Control: private, …`. nginx serves the file from an `internal` location
-with `sendfile`, ranges, `If-Range` and `416` of its own (its own `ETag` too).
-
-nginx keeps only a few upstream headers across the internal redirect
-(`Content-Type`, `Content-Disposition`, `Cache-Control`, `Expires`,
-`Accept-Ranges`, `Set-Cookie`). CORS headers must be put back from
-`$upstream_http_*`:
-
-```nginx
-location /_files/ {
-    internal;
-    alias /usr/src/app/private/;          # = EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR (or ..._ACCEL_STORAGE_ROOT)
-    sendfile on;
-    tcp_nopush on;
-    open_file_cache max=2000 inactive=60s; # fds and stats of hot books, bounded
-    open_file_cache_valid 30s;
-    gzip off;                              # pdf.js turns ranges off on Content-Encoding
-
-    add_header Access-Control-Allow-Origin      $upstream_http_access_control_allow_origin always;
-    add_header Access-Control-Allow-Credentials $upstream_http_access_control_allow_credentials always;
-    add_header Access-Control-Expose-Headers    $upstream_http_access_control_expose_headers always;
-    add_header Vary                             $upstream_http_vary always;
-    add_header Server-Timing                    $upstream_http_server_timing always;
-}
-```
-
-The snippet has not been run against a live nginx yet (EvilFlowersCatalog/knowledge#87).
-
-**Is it worth deploying?** Each range still passes through Django for its checks;
-nginx takes over only the transfer (zero-copy `sendfile` instead of the worker
-reading 64 KiB through Python). Under gevent that transfer is short, so measure
-the Django path with the shared base and the pin first (trace: download span vs
-`personalise.*`), and with larger viewer chunks, before adding a sidecar. Where an
-nginx with the storage volume already exists (Compose prod gateway), turning it
-on is cheap.
+The proxies in front of the catalog must pass ranges through untouched: no
+`gzip` of `application/pdf`, no `proxy_cache` of `/data/v1/user-acquisitions`
+(per user), and `proxy_buffering off` on that location at the edge
+(knowledge#88).
 
 ## EPUB and Readium
 
@@ -205,4 +163,3 @@ curl -sI -H 'Range: bytes=0-9' -H "If-Range: $ETAG" "$STREAM_URL"       # 206 wh
 - One open in the viewer (url mode) = popularity + 1.
 - Trace of the first request: `personalise.render` (+ `personalise.save`); of a
   range: no `personalise.*` span.
-- With offload on: the gunicorn span ends in milliseconds and nginx's access log shows the 206s.

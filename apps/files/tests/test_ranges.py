@@ -7,7 +7,7 @@ import time
 from unittest import mock
 
 from django.core.files.base import ContentFile
-from django.core.files.storage import FileSystemStorage, Storage
+from django.core.files.storage import FileSystemStorage
 from django.http import FileResponse, HttpResponse
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
@@ -17,7 +17,6 @@ from apps.core.models import AuthSource, Catalog, Entry, User
 from apps.files.ranges import (
     Unsatisfiable,
     Validators,
-    accel_path,
     counts_as_open,
     is_continuation,
     parse_range,
@@ -161,32 +160,6 @@ class RangedFileResponseTests(SimpleTestCase):
         self.assertEqual(response["ETag"], '"given-2048"')
         self.assertNotIn("Last-Modified", response.headers)
 
-    def test_x_accel_redirect_when_offloaded(self):
-        with override_settings(EVILFLOWERS_FILES_ACCEL={"location": "/_files/", "storage_root": None}):
-            response = self.serve(HTTP_RANGE="bytes=0-9")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["X-Accel-Redirect"], "/_files/catalogs/x/book.pdf")
-        self.assertEqual(response.content, b"")
-        self.assertEqual(response["Content-Type"], "application/pdf")
-        self.assertIn('attachment; filename="book.pdf"', response["Content-Disposition"])
-        self.assertNotIn("Content-Range", response.headers)
-
-    def test_x_accel_relative_to_the_storage_root(self):
-        parent = self.root.rsplit("/", 1)[0]
-        accel = {"location": "/_files", "storage_root": parent}
-        with override_settings(EVILFLOWERS_FILES_ACCEL=accel):
-            self.assertEqual(
-                accel_path(self.storage, self.name), f"/_files/{self.root.rsplit('/', 1)[1]}/catalogs/x/book.pdf"
-            )
-        # A file outside the mapped root is never redirected.
-        with override_settings(EVILFLOWERS_FILES_ACCEL={"location": "/_files/", "storage_root": "/elsewhere"}):
-            self.assertIsNone(accel_path(self.storage, self.name))
-
-    def test_object_storage_never_takes_x_accel(self):
-        storage = mock.Mock(spec=Storage)
-        with override_settings(EVILFLOWERS_FILES_ACCEL={"location": "/_files/", "storage_root": None}):
-            self.assertIsNone(accel_path(storage, "catalogs/x/book.pdf"))
-
     def test_open_range_backend(self):
         """S3: the backend's `open_range` is asked for exactly the bytes, nothing seeks."""
         stream = mock.Mock()
@@ -253,14 +226,6 @@ class GZipSkipsFilesTests(SimpleTestCase):
         from django.http import StreamingHttpResponse
 
         response = StreamingHttpResponse(iter([b"event: status\ndata: {}\n\n"]), content_type="text/event-stream")
-        response = self.middleware.process_response(self.request, response)
-        self.assertFalse(response.has_header("Content-Encoding"))
-
-    def test_offloaded_answer_not_compressed(self):
-        # pdf.js turns ranges off when it sees Content-Encoding (#214).
-        response = HttpResponse(content_type="application/pdf")
-        response["Accept-Ranges"] = "bytes"
-        response["X-Accel-Redirect"] = "/_files/x.pdf"
         response = self.middleware.process_response(self.request, response)
         self.assertFalse(response.has_header("Content-Encoding"))
 
