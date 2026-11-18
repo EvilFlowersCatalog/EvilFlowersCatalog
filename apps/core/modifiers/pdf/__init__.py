@@ -61,6 +61,22 @@ class PDFModifier:
         "encryption": fitz.PDF_ENCRYPT_NONE,
     }
 
+    # A reader's copy rendered from the shared base (`normalise`, #214): the source objects were already
+    # compacted, cleaned, compressed and decrypted once, for every reader. Only the licence page, the
+    # watermark and the annotations are new.
+    #   garbage=1     Drop unreferenced objects: the pages a page range (`select`) left out must not stay
+    #                 in the file. Cheap, unlike the duplicate search of garbage=4.
+    #   deflate       Compress the new content streams.
+    #   use_objstms=1 Keep the object-stream layout of the base (size of the full render).
+    # One revision, never an incremental update: an appended update would leave the clean source as a
+    # prefix of the file, a cut away from a copy without licence page or watermark.
+    LIGHT_SAVE_OPTIONS = {
+        "garbage": 1,
+        "deflate": True,
+        "use_objstms": 1,
+        "encryption": fitz.PDF_ENCRYPT_NONE,
+    }
+
     def __init__(self, context: ModifierContext, pages: Optional[List]):
         # Build the default context per-instance so ``generated_at`` reflects the
         # real generation time. It was previously a class attribute evaluated once
@@ -98,9 +114,23 @@ class PDFModifier:
         self._insert_license_page(document)
         return File(io.BytesIO(document.tobytes(**self.SAVE_OPTIONS)))
 
+    def normalise(self, file: File) -> File:
+        """The publication rewritten with `SAVE_OPTIONS` and nothing else: the shared base of every reader's copy.
+
+        Carries no reader data, so one stored base serves every reader (`apps.files.personalised`).
+        """
+        document = fitz.open(stream=file.read())
+        return File(io.BytesIO(document.tobytes(**self.SAVE_OPTIONS)))
+
     def generate(
-        self, file: File, page_num: Optional[int] = None, annotation_map: dict[int, list[str]] = None
+        self,
+        file: File,
+        page_num: Optional[int] = None,
+        annotation_map: dict[int, list[str]] = None,
+        *,
+        normalised: bool = False,
     ) -> File:
+        """The reader's copy. `normalised`: `file` is the output of `normalise`, so a light save suffices."""
         document = fitz.open(stream=file.read())
 
         if not annotation_map:
@@ -148,7 +178,8 @@ class PDFModifier:
             except ValueError:
                 raise InvalidPage()
 
-        return File(io.BytesIO(document.tobytes(**self.SAVE_OPTIONS)))
+        options = self.LIGHT_SAVE_OPTIONS if normalised else self.SAVE_OPTIONS
+        return File(io.BytesIO(document.tobytes(**options)))
 
     def _set_metadata(self, document: fitz.Document):
         username = self._context.get("username")

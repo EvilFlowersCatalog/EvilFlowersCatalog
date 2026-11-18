@@ -17,7 +17,7 @@ from apps.api.services.entry import InvalidAcquisitionFile, check_acquisition_fi
 from apps.core.auth import JWTFactory
 from apps.core.models import Acquisition, ApiKey, AuthSource, Catalog, Entry, User, UserAcquisition
 from apps.core.modifiers.pdf import PDFModifier
-from apps.files import personalised
+from apps.files import personalised, signing
 from apps.files.services import AcquisitionStorageError, AcquisitionStorageService
 from apps.files.storage import get_storage
 
@@ -56,6 +56,12 @@ class AcquisitionDownloadTests(TestCase):
         override = override_settings(EVILFLOWERS_STORAGE_FILESYSTEM_DATADIR=root)
         override.enable()
         self.addCleanup(override.disable)
+        cache.clear()
+        # No broker in tests: the shared base is built only where a test runs the worker's job itself.
+        self.queue_base_patcher = mock.patch.object(personalised, "queue_base")
+        self.queue_base = self.queue_base_patcher.start()
+        self.queue_base.stop = self.queue_base_patcher.stop
+        self.addCleanup(mock.patch.stopall)
 
         source = AuthSource.objects.create(name="database", driver=AuthSource.Driver.DATABASE)
         # Superuser: catalog permissions are not what these tests are about.
@@ -138,8 +144,242 @@ class AcquisitionDownloadTests(TestCase):
         self.assertEqual(self._body(head) + self._body(tail), body)
 
         self.entry.refresh_from_db()
-        # The 200 and the range from byte 0 are first requests; the continuation is not counted again.
-        self.assertEqual(self.entry.popularity, 2)
+        # #214: only the GET without Range opens the book; the range from byte 0 is part of that open.
+        self.assertEqual(self.entry.popularity, 1)
+
+    # --- #214: streaming contract ---------------------------------------------------------------------------
+
+    def _user_acquisition(self, content: bytes, mime=Acquisition.AcquisitionMIME.PDF) -> UserAcquisition:
+        acquisition = self._acquisition(content, mime=mime)
+        return UserAcquisition.objects.create(
+            acquisition=acquisition, user=self.user, type=UserAcquisition.UserAcquisitionType.PERSONAL
+        )
+
+    def _ua_url(self, user_acquisition, query="") -> str:
+        url = reverse("files:user-acquisition-download", kwargs={"user_acquisition_id": user_acquisition.pk})
+        return f"{url}?{query}" if query else url
+
+    def test_one_open_counts_once_and_head_never(self):
+        user_acquisition = self._user_acquisition(self._pdf())
+        url = self._ua_url(user_acquisition)
+        headers = self._headers()
+
+        self.assertEqual(self.client.head(url, headers=headers).status_code, 200)
+        opened = self.client.get(url, headers=headers)
+        first = self.client.get(url, headers={**headers, "Range": "bytes=0-65535"})
+        self.assertEqual(opened.status_code, 200)
+        self.assertEqual(first.status_code, 206)
+
+        self.entry.refresh_from_db()
+        self.assertEqual(self.entry.popularity, 1)
+
+    def test_the_copy_carries_a_strong_etag_and_honours_if_range(self):
+        user_acquisition = self._user_acquisition(self._pdf())
+        url = self._ua_url(user_acquisition)
+        headers = self._headers()
+
+        whole = self.client.get(url, headers=headers)
+        etag = whole["ETag"]
+        body = self._body(whole)
+        self.assertRegex(etag, r'^"[0-9a-f]{24}-\d+"$')
+        self.assertTrue(etag.endswith(f'-{len(body)}"'))
+        self.assertIn("Last-Modified", whole.headers)
+
+        part = self.client.get(url, headers={**headers, "Range": "bytes=0-9", "If-Range": etag})
+        self.assertEqual(part.status_code, 206)
+        self.assertEqual(part["ETag"], etag)
+        stale = self.client.get(url, headers={**headers, "Range": "bytes=0-9", "If-Range": '"other-1"'})
+        self.assertEqual(stale.status_code, 200)
+
+        head = self.client.head(url, headers=headers)
+        self.assertEqual(head["ETag"], etag)
+        self.assertEqual(head["Content-Length"], str(len(body)))
+
+    def test_ranges_read_the_pin_not_the_copy_name(self):
+        user_acquisition = self._user_acquisition(self._pdf())
+        url = self._ua_url(user_acquisition)
+        headers = self._headers()
+        body = self._body(self.client.get(url, headers=headers))
+
+        with mock.patch.object(personalised, "copy_name", wraps=personalised.copy_name) as copy_name:
+            parts = [
+                self._body(self.client.get(url, headers={**headers, "Range": f"bytes={start}-{start + 99}"}))
+                for start in range(0, 300, 100)
+            ]
+        copy_name.assert_not_called()
+        self.assertEqual(b"".join(parts), body[:300])
+
+        # A new open (GET without Range) resolves the copy again: an edited annotation shows.
+        with mock.patch.object(personalised, "copy_name", wraps=personalised.copy_name) as copy_name:
+            self.client.get(url, headers=headers)
+        copy_name.assert_called_once()
+
+    def test_an_evicted_copy_is_resolved_again(self):
+        user_acquisition = self._user_acquisition(self._pdf())
+        url = self._ua_url(user_acquisition)
+        headers = self._headers()
+        first = self.client.get(url, headers=headers)
+        storage = user_acquisition.acquisition.content.storage
+        _folders, files = storage.listdir(f"personalised/{user_acquisition.pk}")
+        self.assertEqual(len(files), 1)
+        cache.delete(personalised._ready_key(f"personalised/{user_acquisition.pk}/{files[0]}"))
+
+        with mock.patch.object(personalised, "copy_name", wraps=personalised.copy_name) as copy_name:
+            part = self.client.get(url, headers={**headers, "Range": "bytes=0-9"})
+        self.assertEqual(part.status_code, 206)
+        copy_name.assert_called_once()  # the pin was dropped with the copy's marker
+        # Rendered again under the same name, with other bytes (`generated_at`): the ETag must differ,
+        # or an If-Range would approve ranges of two renders.
+        self.assertNotEqual(part["ETag"], first["ETag"])
+        stale = self.client.get(url, headers={**headers, "Range": "bytes=0-9", "If-Range": first["ETag"]})
+        self.assertEqual(stale.status_code, 200)
+
+    def test_signed_url_reads_without_a_token(self):
+        user_acquisition = self._user_acquisition(self._pdf())
+        detail = self.client.get(
+            reverse("api:user-acquisition-detail", kwargs={"user_acquisition_id": user_acquisition.pk}),
+            headers=self._headers(),
+        )
+        self.assertEqual(detail.status_code, 200, detail.content[:300])
+        response = detail.json()["response"]
+        stream_url = response["stream_url"]
+        self.assertIn("sig=", stream_url)
+        self.assertIsNotNone(response["stream_url_expires_at"])
+
+        whole = self.client.get(stream_url)
+        self.assertEqual(whole.status_code, 200, whole.content[:300] if not whole.streaming else "")
+        body = self._body(whole)
+        self.assertTrue(body.startswith(b"%PDF-"))
+        part = self.client.get(stream_url, headers={"Range": "bytes=0-99"})
+        self.assertEqual(part.status_code, 206)
+        self.assertEqual(self._body(part), body[:100])
+        # The same personalised copy as the token-authenticated reader's: same ETag.
+        self.assertEqual(
+            self.client.get(self._ua_url(user_acquisition), headers=self._headers())["ETag"], whole["ETag"]
+        )
+
+    def test_a_bad_or_expired_signature_is_refused(self):
+        user_acquisition = self._user_acquisition(self._pdf())
+        query, _expires = signing.signed_query(user_acquisition)
+        other = self._user_acquisition(self._pdf())
+        # A signature names one user acquisition only.
+        self.assertEqual(self.client.get(self._ua_url(other, query)).status_code, 403)
+        self.assertEqual(self.client.get(self._ua_url(user_acquisition, query + "0")).status_code, 403)
+        expired, _ = signing.signed_query(user_acquisition, now=0)
+        self.assertEqual(self.client.get(self._ua_url(user_acquisition, expired)).status_code, 403)
+        self.assertEqual(self.client.get(self._ua_url(user_acquisition, query)).status_code, 200)
+
+    def test_signed_url_is_for_the_owner_only(self):
+        user_acquisition = self._user_acquisition(self._pdf())
+        stranger = User(username="stranger", name="S", surname="T", auth_source=self.user.auth_source)
+        stranger.set_unusable_password()
+        stranger.save()
+        UserAcquisition.objects.filter(pk=user_acquisition.pk).update(type=UserAcquisition.UserAcquisitionType.SHARED)
+        key = ApiKey.objects.create(user=stranger, name="test")
+        response = self.client.get(
+            reverse("api:user-acquisition-detail", kwargs={"user_acquisition_id": user_acquisition.pk}),
+            headers={"Authorization": f"Bearer {JWTFactory(stranger.pk).api_key(str(key.pk))}"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["response"]["stream_url"])
+
+    @override_settings(CORS_ALLOWED_ORIGINS=["https://portal.example"])
+    def test_range_headers_are_exposed_to_the_portal(self):
+        user_acquisition = self._user_acquisition(EPUB, mime=Acquisition.AcquisitionMIME.MOBI)
+        response = self.client.get(
+            self._ua_url(user_acquisition),
+            headers={**self._headers(), "Range": "bytes=0-9", "Origin": "https://portal.example"},
+        )
+        self.assertEqual(response.status_code, 206)
+        exposed = {name.strip().lower() for name in response["Access-Control-Expose-Headers"].split(",")}
+        self.assertTrue({"accept-ranges", "content-range", "etag", "content-disposition"} <= exposed)
+
+    def test_pdf_is_never_compressed(self):
+        user_acquisition = self._user_acquisition(self._pdf())
+        headers = {**self._headers(), "Accept-Encoding": "gzip"}
+        for extra in ({}, {"Range": "bytes=0-9"}):
+            response = self.client.get(self._ua_url(user_acquisition), headers={**headers, **extra})
+            self.assertNotIn("Content-Encoding", response.headers)
+
+    def test_x_accel_offload_runs_the_checks_then_hands_over(self):
+        user_acquisition = self._user_acquisition(self._pdf())
+        with override_settings(EVILFLOWERS_FILES_ACCEL={"location": "/_files/", "storage_root": None}):
+            response = self.client.get(self._ua_url(user_acquisition), headers=self._headers())
+            refused = self.client.get(self._ua_url(user_acquisition))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response["X-Accel-Redirect"].startswith(f"/_files/personalised/{user_acquisition.pk}/"))
+        self.assertEqual(response["Cache-Control"], "private, max-age=0, must-revalidate")
+        self.assertEqual(response.content, b"")
+        self.assertNotIn("X-Accel-Redirect", refused.headers)
+        self.entry.refresh_from_db()
+        self.assertEqual(self.entry.popularity, 1)
+
+    def test_copies_share_one_normalised_base(self):
+        first = self._user_acquisition(self._pdf())
+        readers = [first] + [
+            UserAcquisition.objects.create(
+                acquisition=first.acquisition, user=self.user, type=UserAcquisition.UserAcquisitionType.PERSONAL
+            )
+            for _ in range(2)
+        ]
+        # The worker's job, run inline: `queue_base` hands the build to Celery in production.
+        self.queue_base.side_effect = personalised.build_base
+        with (
+            mock.patch.object(PDFModifier, "normalise", autospec=True, side_effect=PDFModifier.normalise) as base,
+            mock.patch.object(PDFModifier, "generate", autospec=True, side_effect=PDFModifier.generate) as generate,
+        ):
+            bodies = [self._body(self.client.get(self._ua_url(ua), headers=self._headers())) for ua in readers]
+        self.assertEqual(base.call_count, 1)
+        # The first reader never waits for the base: rendered in full from the source, as before.
+        self.assertEqual([call.kwargs["normalised"] for call in generate.call_args_list], [False, True, True])
+        self.assertEqual(self.queue_base.call_count, 1)
+        self.assertEqual(len(set(bodies)), 3)  # each copy is personal
+        for body in bodies:
+            self.assertEqual(len(fitz.open(stream=body)), 4)  # licence page inserted after the first page
+
+    def test_a_queue_failure_never_fails_the_read(self):
+        self.queue_base.stop()
+        user_acquisition = self._user_acquisition(self._pdf())
+        with mock.patch(
+            "apps.tasks.tasks.build_personalised_base.apply_async", side_effect=ConnectionError("broker down")
+        ) as queued:
+            response = self.client.get(self._ua_url(user_acquisition), headers=self._headers())
+            again = self.client.get(self._ua_url(user_acquisition), headers=self._headers())
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(again.status_code, 200)
+        queued.assert_called_once()  # queued once per file however many readers ask meanwhile
+
+    @override_settings(EVILFLOWERS_PERSONALISED_SHARED_BASE=False)
+    def test_without_the_shared_base_a_copy_is_rendered_in_full(self):
+        user_acquisition = self._user_acquisition(self._pdf())
+        with mock.patch.object(PDFModifier, "normalise", autospec=True) as base:
+            response = self.client.get(self._ua_url(user_acquisition), headers=self._headers())
+        base.assert_not_called()
+        self.assertTrue(self._body(response).startswith(b"%PDF-"))
+
+    def test_a_page_range_leaves_no_trace_of_other_pages(self):
+        document = fitz.open()
+        for number in range(3):
+            page = document.new_page()
+            page.insert_text((72, 72), f"SECRET-PAGE-{number + 1}")
+        user_acquisition = self._user_acquisition(document.tobytes())
+        UserAcquisition.objects.filter(pk=user_acquisition.pk).update(range="1-1")
+        response = self.client.get(self._ua_url(user_acquisition), headers=self._headers())
+        self.assertEqual(response.status_code, 200)
+
+        copy = fitz.open(stream=self._body(response))
+        text = "".join(page.get_text() for page in copy)
+        self.assertIn("SECRET-PAGE-1", text)
+        self.assertNotIn("SECRET-PAGE-2", text)
+        # No unreferenced leftover of the pages the range excluded, in either string form of a content stream.
+        streams = b"".join(copy.xref_stream(xref) or b"" for xref in range(1, copy.xref_length()))
+
+        def found(text: str) -> bool:
+            return text.encode() in streams or text.encode().hex().encode() in streams
+
+        self.assertTrue(found("SECRET-PAGE-1"))
+        self.assertFalse(found("SECRET-PAGE-2"))
+        self.assertFalse(found("SECRET-PAGE-3"))
 
     def test_annotations_name_a_new_copy(self):
         acquisition = self._acquisition(self._pdf(), mime=Acquisition.AcquisitionMIME.PDF)

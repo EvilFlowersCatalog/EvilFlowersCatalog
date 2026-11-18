@@ -59,6 +59,18 @@ def cleanup_personalised_copies() -> dict:
 
 
 @shared_task
+def build_personalised_base(acquisition_id: str) -> dict:
+    """Normalise one acquisition's file into the shared base of its readers' copies (#214), off the request path."""
+    from apps.core.models import Acquisition
+    from apps.files.personalised import build_base
+
+    acquisition = Acquisition.objects.select_related("entry").filter(pk=acquisition_id).first()
+    if acquisition is None:
+        return {"built": False, "reason": "missing"}
+    return {"built": build_base(acquisition)}
+
+
+@shared_task
 def sync_ldap_profiles() -> dict:
     """IP-025: import e-mails (and names) of LDAP users who have not logged in since the mapping changed."""
     from apps.core.models import AuthSource

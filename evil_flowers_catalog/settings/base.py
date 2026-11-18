@@ -427,6 +427,29 @@ EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE = os.getenv(
     "EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE", "private, max-age=0, must-revalidate"
 )
 
+# File bytes sent by nginx instead of a gunicorn worker (#214, docs/files/streaming.md). Unset: Django
+# streams every byte (the default). Set `EVILFLOWERS_FILES_ACCEL_LOCATION` (e.g. `/_files/`) and, with
+# filesystem storage, every download still runs its checks here and then answers `X-Accel-Redirect:
+# <location><name>` with no body; nginx serves the file from an `internal` location. Object storage never
+# takes this path. `EVILFLOWERS_FILES_ACCEL_STORAGE_ROOT` (e.g. `/usr/src/app/private`): the directory the
+# nginx location maps to, when it is not the storage directory itself; names are taken relative to it.
+EVILFLOWERS_FILES_ACCEL = (
+    {
+        "location": os.environ["EVILFLOWERS_FILES_ACCEL_LOCATION"],
+        "storage_root": os.getenv("EVILFLOWERS_FILES_ACCEL_STORAGE_ROOT") or None,
+    }
+    if os.getenv("EVILFLOWERS_FILES_ACCEL_LOCATION")
+    else None
+)
+# Lifetime of the signed, reusable download URL of a user acquisition (`stream_url`, #214), in seconds:
+# long enough for a reading session, never past the acquisition's own expiry.
+EVILFLOWERS_FILES_SIGNED_URL_TTL = int(os.getenv("EVILFLOWERS_FILES_SIGNED_URL_TTL", 6 * 3600))
+# Personalised PDFs are rendered from a shared, normalised base of the source (#214,
+# apps/files/personalised.py): the full rewrite runs once per file (in a Celery worker, after the file's
+# first reader) instead of once per reader. A base outlives its last use by BASE_IDLE_HOURS.
+EVILFLOWERS_PERSONALISED_SHARED_BASE = bool(int(os.getenv("EVILFLOWERS_PERSONALISED_SHARED_BASE", "1")))
+EVILFLOWERS_PERSONALISED_BASE_IDLE_HOURS = float(os.getenv("EVILFLOWERS_PERSONALISED_BASE_IDLE_HOURS", 7 * 24))
+
 # MCP (Model Context Protocol) server — IP-014.
 # The endpoint is mounted only when enabled, so an operator who does not want
 # the catalog reachable by agents gets a 404, not a disabled-but-present route.
@@ -1115,6 +1138,12 @@ CORS_EXPOSE_HEADERS = [
     "Retry-After",
     # The request's trace id, for the portal's Faro SDK and its error screen (IP-029).
     "Server-Timing",
+    # pdf.js range streaming (#214): none of these is CORS-safelisted, and without Accept-Ranges and
+    # Content-Range a cross-origin viewer silently falls back to downloading the whole file.
+    "Accept-Ranges",
+    "Content-Range",
+    "ETag",
+    "Content-Disposition",
 ]
 # W3C trace context from a browser-instrumented portal (IP-029): without these in the preflight answer the
 # browser drops the request, so a reader's click could never be the root of the trace it causes.

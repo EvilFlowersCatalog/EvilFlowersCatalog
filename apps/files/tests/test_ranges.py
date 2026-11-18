@@ -1,18 +1,28 @@
 """HTTP Range on stored files (#70)."""
 
+import os
 import shutil
 import tempfile
+import time
 from unittest import mock
 
 from django.core.files.base import ContentFile
-from django.core.files.storage import FileSystemStorage
+from django.core.files.storage import FileSystemStorage, Storage
 from django.http import FileResponse, HttpResponse
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from apps.api.middleware.gzip import GZipMiddleware
 from apps.core.models import AuthSource, Catalog, Entry, User
-from apps.files.ranges import Unsatisfiable, is_continuation, parse_range, ranged_file_response
+from apps.files.ranges import (
+    Unsatisfiable,
+    Validators,
+    accel_path,
+    counts_as_open,
+    is_continuation,
+    parse_range,
+    ranged_file_response,
+)
 
 BODY = bytes(range(256)) * 8  # 2048 bytes
 
@@ -43,12 +53,19 @@ class ParseRangeTests(SimpleTestCase):
             parse_range("bytes=-10", 0)
 
     def test_continuation(self):
+        # #214: pdf.js opens with a plain GET, then asks for `bytes=0-65535`: that range is not a second open.
         factory = RequestFactory()
         self.assertFalse(is_continuation(factory.get("/")))
-        self.assertFalse(is_continuation(factory.get("/", HTTP_RANGE="bytes=0-65535")))
-        self.assertFalse(is_continuation(factory.get("/", HTTP_RANGE="bytes=0-1,5-6")))
+        self.assertTrue(is_continuation(factory.get("/", HTTP_RANGE="bytes=0-65535")))
+        self.assertTrue(is_continuation(factory.get("/", HTTP_RANGE="bytes=0-1,5-6")))
         self.assertTrue(is_continuation(factory.get("/", HTTP_RANGE="bytes=65536-131071")))
         self.assertTrue(is_continuation(factory.get("/", HTTP_RANGE="bytes=-1024")))
+
+    def test_only_a_get_without_range_counts(self):
+        factory = RequestFactory()
+        self.assertTrue(counts_as_open(factory.get("/")))
+        self.assertFalse(counts_as_open(factory.get("/", HTTP_RANGE="bytes=0-65535")))
+        self.assertFalse(counts_as_open(factory.head("/")))
 
 
 class RangedFileResponseTests(SimpleTestCase):
@@ -100,6 +117,75 @@ class RangedFileResponseTests(SimpleTestCase):
         response = self.serve(HTTP_RANGE="bytes=0-9", HTTP_IF_RANGE='"abc"')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(_body(response), BODY)
+
+    def test_strong_validators_on_every_answer(self):
+        whole, part = self.serve(), self.serve(HTTP_RANGE="bytes=0-9")
+        self.assertTrue(whole["ETag"].startswith('"'))
+        self.assertEqual(whole["ETag"], part["ETag"])
+        self.assertTrue(whole["ETag"].endswith('-2048"'))
+        self.assertIn("Last-Modified", whole.headers)
+        self.assertEqual(whole["Last-Modified"], part["Last-Modified"])
+
+    def test_matching_if_range_keeps_the_range(self):
+        # A Last-Modified date is a strong validator only for a file older than a second.
+        past = time.time() - 60
+        os.utime(self.storage.path(self.name), (past, past))
+        whole = self.serve()
+        by_tag = self.serve(HTTP_RANGE="bytes=0-9", HTTP_IF_RANGE=whole["ETag"])
+        self.assertEqual(by_tag.status_code, 206)
+        self.assertEqual(_body(by_tag), BODY[:10])
+        by_date = self.serve(HTTP_RANGE="bytes=0-9", HTTP_IF_RANGE=whole["Last-Modified"])
+        self.assertEqual(by_date.status_code, 206)
+        # A weak tag never matches (strong comparison, RFC 9110 §13.1.5).
+        weak = self.serve(HTTP_RANGE="bytes=0-9", HTTP_IF_RANGE=f"W/{whole['ETag']}")
+        self.assertEqual(weak.status_code, 200)
+
+    def test_a_rewritten_file_fails_if_range(self):
+        etag = self.serve()["ETag"]
+        self.storage.delete(self.name)
+        self.storage.save(self.name, ContentFile(BODY[::-1]))
+        response = self.serve(HTTP_RANGE="bytes=0-9", HTTP_IF_RANGE=etag)
+        self.assertEqual(response.status_code, 200)
+
+    def test_given_validators_skip_the_stat(self):
+        validators = Validators(size=2048, etag='"given-2048"', last_modified=None)
+        with (
+            mock.patch.object(self.storage, "size") as size,
+            mock.patch.object(self.storage, "get_modified_time") as modified,
+        ):
+            response = ranged_file_response(
+                self.factory.get("/", HTTP_RANGE="bytes=0-9"), self.storage, self.name, validators=validators
+            )
+        size.assert_not_called()
+        modified.assert_not_called()
+        self.assertEqual(response["ETag"], '"given-2048"')
+        self.assertNotIn("Last-Modified", response.headers)
+
+    def test_x_accel_redirect_when_offloaded(self):
+        with override_settings(EVILFLOWERS_FILES_ACCEL={"location": "/_files/", "storage_root": None}):
+            response = self.serve(HTTP_RANGE="bytes=0-9")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["X-Accel-Redirect"], "/_files/catalogs/x/book.pdf")
+        self.assertEqual(response.content, b"")
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn('attachment; filename="book.pdf"', response["Content-Disposition"])
+        self.assertNotIn("Content-Range", response.headers)
+
+    def test_x_accel_relative_to_the_storage_root(self):
+        parent = self.root.rsplit("/", 1)[0]
+        accel = {"location": "/_files", "storage_root": parent}
+        with override_settings(EVILFLOWERS_FILES_ACCEL=accel):
+            self.assertEqual(
+                accel_path(self.storage, self.name), f"/_files/{self.root.rsplit('/', 1)[1]}/catalogs/x/book.pdf"
+            )
+        # A file outside the mapped root is never redirected.
+        with override_settings(EVILFLOWERS_FILES_ACCEL={"location": "/_files/", "storage_root": "/elsewhere"}):
+            self.assertIsNone(accel_path(self.storage, self.name))
+
+    def test_object_storage_never_takes_x_accel(self):
+        storage = mock.Mock(spec=Storage)
+        with override_settings(EVILFLOWERS_FILES_ACCEL={"location": "/_files/", "storage_root": None}):
+            self.assertIsNone(accel_path(storage, "catalogs/x/book.pdf"))
 
     def test_open_range_backend(self):
         """S3: the backend's `open_range` is asked for exactly the bytes, nothing seeks."""
@@ -167,6 +253,14 @@ class GZipSkipsFilesTests(SimpleTestCase):
         from django.http import StreamingHttpResponse
 
         response = StreamingHttpResponse(iter([b"event: status\ndata: {}\n\n"]), content_type="text/event-stream")
+        response = self.middleware.process_response(self.request, response)
+        self.assertFalse(response.has_header("Content-Encoding"))
+
+    def test_offloaded_answer_not_compressed(self):
+        # pdf.js turns ranges off when it sees Content-Encoding (#214).
+        response = HttpResponse(content_type="application/pdf")
+        response["Accept-Ranges"] = "bytes"
+        response["X-Accel-Redirect"] = "/_files/x.pdf"
         response = self.middleware.process_response(self.request, response)
         self.assertFalse(response.has_header("Content-Encoding"))
 

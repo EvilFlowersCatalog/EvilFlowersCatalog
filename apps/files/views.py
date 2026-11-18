@@ -28,9 +28,10 @@ from apps.core.modifiers import InvalidPage
 from apps.core.services.activity import ActivityService
 from apps.core.services.reads import ReadService
 from apps.core.views import SecuredView
-from apps.files import personalised
-from apps.files.ranges import is_continuation, ranged_file_response
+from apps.files import personalised, signing
+from apps.files.ranges import Validators, counts_as_open, file_validators, ranged_file_response
 from apps.files.services import AcquisitionStorageError, AcquisitionStorageService
+from apps.openapi.types import ParameterLocation
 from evil_flowers_catalog import domain_metrics
 
 logger = logging.getLogger(__name__)
@@ -118,9 +119,10 @@ class AcquisitionDownload(SecuredView):
                         type=UserAcquisition.UserAcquisitionType.PERSONAL,
                     )
             else:
-                # A ranged reader re-requests the same download many times; only its first request opens a copy.
+                # A ranged reader re-requests the same download many times; only its GET without `Range` opens
+                # a copy (#214). A range or a HEAD reuses the reader's latest one.
                 user_acquisition = None
-                if is_continuation(request):
+                if not counts_as_open(request):
                     user_acquisition = (
                         UserAcquisition.objects.filter(
                             acquisition=acquisition,
@@ -148,7 +150,8 @@ class AcquisitionDownload(SecuredView):
                 + params.urlencode()
             )
 
-        if not is_continuation(request):
+        counted = counts_as_open(request)
+        if counted:
             # Atomic popularity increment (IP-010 M8 pattern).
             Entry.objects.filter(pk=acquisition.entry_id).update(popularity=F("popularity") + 1)
 
@@ -179,24 +182,98 @@ class AcquisitionDownload(SecuredView):
             raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND) from exc
 
         response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE
-        if not is_continuation(request):
+        if counted:
             domain_metrics.record_acquisition_served(acquisition.mime, "acquisition", "file")
         return response
 
 
+#: Query parameters that authenticate a request but do not change what it serves.
+_CREDENTIAL_PARAMS = frozenset({"exp", "sig", "access_token"})
+
+
+def _load_user_acquisition(user_acquisition_id) -> UserAcquisition:
+    try:
+        return UserAcquisition.objects.select_related("acquisition", "acquisition__entry", "user").get(
+            pk=user_acquisition_id
+        )
+    except UserAcquisition.DoesNotExist:
+        raise ProblemDetailException(
+            _("User acquisition not found"),
+            status=HTTPStatus.NOT_FOUND,
+            detail_type=DetailType.NOT_FOUND,
+        )
+
+
 class UserAcquisitionDownload(SecuredView):
-    @openapi.metadata(description="Download UserAcquisition content", tags=["Files"])
-    def get(self, request, user_acquisition_id: uuid.UUID):
-        try:
-            user_acquisition = UserAcquisition.objects.select_related("acquisition", "acquisition__entry").get(
-                pk=user_acquisition_id
-            )
-        except UserAcquisition.DoesNotExist:
+    """A reader's copy of one acquisition, served in byte ranges (#70, #214).
+
+    A reading session is one GET without `Range` (counted) followed by ranges (never counted). The first
+    request resolves the copy and pins it (`personalised.pin`); every range after it is a cache lookup,
+    the access checks and the bytes.
+    """
+
+    def _authenticate(self, request):
+        # A signed URL (`stream_url`, #214) stands in for the owner's credential: pdf.js repeats one URL
+        # for every range, long after a bearer token may have expired. Resolved here, before the rate limit,
+        # so a reading session counts against its reader and not against the campus NAT address.
+        if "sig" in request.GET:
+            return self._signed_owner(request)
+        return super()._authenticate(request)
+
+    def _signed_owner(self, request):
+        user_acquisition_id = self.kwargs["user_acquisition_id"]
+        if not signing.verify(user_acquisition_id, request.GET.get("exp"), request.GET.get("sig")):
             raise ProblemDetailException(
-                _("User acquisition not found"),
-                status=HTTPStatus.NOT_FOUND,
-                detail_type=DetailType.NOT_FOUND,
+                _("This download link has expired or is not valid."),
+                status=HTTPStatus.FORBIDDEN,
+                detail_type=DetailType.FORBIDDEN,
             )
+        user_acquisition = _load_user_acquisition(user_acquisition_id)
+        if not user_acquisition.user.is_active:
+            raise ProblemDetailException(
+                _("This download link has expired or is not valid."),
+                status=HTTPStatus.FORBIDDEN,
+                detail_type=DetailType.FORBIDDEN,
+            )
+        self._user_acquisition = user_acquisition
+        request.auth_method = "signed_url"
+        return user_acquisition.user
+
+    @staticmethod
+    def _variant(request) -> str:
+        """What, besides the user acquisition, decides the bytes: the query without its credentials."""
+        return "&".join(
+            f"{key}={value}"
+            for key, values in sorted(request.GET.lists())
+            if key not in _CREDENTIAL_PARAMS
+            for value in values
+        )
+
+    @openapi.metadata(
+        description="Download UserAcquisition content. Honours a single `Range` and its `If-Range`; "
+        "`stream_url` of the user acquisition carries `exp` and `sig` instead of an `Authorization` header.",
+        tags=["Files"],
+    )
+    @openapi.parameter(
+        name="exp",
+        param_type=int,
+        location=ParameterLocation.QUERY,
+        description="Expiry of a signed URL (Unix seconds), from `stream_url`",
+        required=False,
+    )
+    @openapi.parameter(
+        name="sig",
+        param_type=str,
+        location=ParameterLocation.QUERY,
+        description="Signature of a signed URL, from `stream_url`",
+        required=False,
+    )
+    @openapi.response(HTTPStatus.OK, "The whole file")
+    @openapi.response(HTTPStatus.PARTIAL_CONTENT, "The requested byte range")
+    @openapi.response(HTTPStatus.FORBIDDEN, "No access, or the signed URL has expired")
+    @openapi.response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE, "The range starts past the end of the file")
+    def get(self, request, user_acquisition_id: uuid.UUID):
+        user_acquisition = getattr(self, "_user_acquisition", None) or _load_user_acquisition(user_acquisition_id)
 
         if user_acquisition.type == UserAcquisition.UserAcquisitionType.PERSONAL:
             if not has_object_permission("check_user_acquisition_read", request.user, user_acquisition):
@@ -205,12 +282,35 @@ class UserAcquisitionDownload(SecuredView):
         _check_ip_block(request, user_acquisition.acquisition.entry)
 
         modified = user_acquisition.acquisition.mime in settings.EVILFLOWERS_MODIFIERS
-        # A ranged reader re-requests the same download many times; only its first request counts.
-        counted = not is_continuation(request)
+        # A ranged reader re-requests the same download many times; only its GET without `Range` counts (#214).
+        counted = counts_as_open(request)
+        mime = user_acquisition.acquisition.mime
+        as_base64 = request.GET.get("format", None) == "base64"
+        # An anonymous copy carries a random id and base64 is never ranged: those are never pinned.
+        pinnable = not request.user.is_anonymous and not as_base64
+        variant = self._variant(request) if pinnable else ""
+
+        if pinnable and not counted:
+            served = personalised.pinned(user_acquisition.pk, variant)
+            if served is not None:
+                response = ranged_file_response(
+                    request,
+                    user_acquisition.acquisition.content.storage,
+                    served["name"],
+                    content_type=served["mime"],
+                    filename=served["filename"],
+                    as_attachment=True,
+                    validators=Validators(
+                        size=served["size"], etag=served["etag"], last_modified=served["last_modified"]
+                    ),
+                )
+                response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE
+                return response
 
         if counted:
-            user_acquisition.acquisition.entry.popularity = user_acquisition.acquisition.entry.popularity + 1
-            user_acquisition.acquisition.entry.save()
+            # One column, not `entry.save()`: a save rewrote the whole row and its search vector
+            # (150 ms on KU) and touched the catalog, its feeds and the OAI record on every open (#214).
+            Entry.objects.filter(pk=user_acquisition.acquisition.entry_id).update(popularity=F("popularity") + 1)
 
             ActivityService.record(
                 request.user,
@@ -267,13 +367,19 @@ class UserAcquisitionDownload(SecuredView):
             annotation_map = dict(annotation_map)
 
             def render():
-                return modifier.generate(user_acquisition.acquisition.content, page, annotation_map=annotation_map)
+                # From the shared normalised base when there is one (#214): the full rewrite runs once per file.
+                source, normalised = personalised.render_source(user_acquisition.acquisition, modifier)
+                try:
+                    return modifier.generate(source, page, annotation_map=annotation_map, normalised=normalised)
+                finally:
+                    if normalised:
+                        source.close()
 
             source_storage = user_acquisition.acquisition.content.storage
             try:
                 # Rendered once and stored, so every byte range of this download is cut from the same copy (#70).
                 # An anonymous copy carries a random id and base64 is never ranged: those are rendered per request.
-                if not request.user.is_anonymous and request.GET.get("format", None) != "base64":
+                if pinnable:
                     if _stored_size(user_acquisition.acquisition.content):
                         stored_copy = personalised.copy_name(user_acquisition, context, page, annotation_map)
                         if not personalised.ensure_copy(source_storage, stored_copy, render):
@@ -289,36 +395,52 @@ class UserAcquisitionDownload(SecuredView):
                 ) from exc
         else:
             content = user_acquisition.acquisition.content
-            if not _stored_size(content):
+            stored_size = _stored_size(content)
+            if not stored_size:
                 raise ProblemDetailException(_("Acquisition file not found"), status=HTTPStatus.NOT_FOUND)
 
-        mime = user_acquisition.acquisition.mime
-        if request.GET.get("format", None) == "base64":
+        if as_base64:
             response = SingleResponse(request, data={"data": base64.b64encode(content.read()).decode()})
             domain_metrics.record_acquisition_served(mime, "user_acquisition", "base64")
             return response
 
         if stored_copy:
-            response = ranged_file_response(
-                request,
-                source_storage,
-                stored_copy,
-                content_type=mime or None,
-                filename=sanitized_filename,
-                as_attachment=True,
-            )
+            # The copy's name is a digest of its inputs, not of its bytes: a copy evicted and rendered again
+            # under the same name differs (`generated_at`). The ETag hashes name, size and mtime (µs), so a
+            # client never stitches ranges of two renders.
+            validators = file_validators(source_storage, stored_copy)
+            served_name = stored_copy
         elif modified:
             # A copy rendered for this request alone: no Accept-Ranges, the next render would differ.
+            validators = served_name = None
+        else:
+            validators = file_validators(content.storage, content.name, size=stored_size)
+            served_name = content.name
+
+        if served_name is None:
             response = FileResponse(content, as_attachment=True, filename=sanitized_filename)
         else:
             response = ranged_file_response(
                 request,
-                content.storage,
-                content.name,
+                source_storage if stored_copy else content.storage,
+                served_name,
                 content_type=mime or None,
                 filename=sanitized_filename,
                 as_attachment=True,
+                validators=validators,
             )
+            if pinnable:
+                personalised.pin(
+                    user_acquisition.pk,
+                    variant,
+                    {
+                        "name": served_name,
+                        "copy": bool(stored_copy),
+                        "mime": mime or None,
+                        "filename": sanitized_filename,
+                        **validators.as_dict(),
+                    },
+                )
         response["Cache-Control"] = settings.EVILFLOWERS_FILES_CACHE_CONTROL_PRIVATE
         if counted:
             domain_metrics.record_acquisition_served(mime, "user_acquisition", "file")
@@ -380,7 +502,15 @@ def _cover_response(request, entry: Entry, file, content_hash: Optional[str], co
     if response is None:
         if not file.storage.exists(file.name):
             raise ProblemDetailException(_("Entry image file not found"), status=HTTPStatus.NOT_FOUND)
-        response = ranged_file_response(request, file.storage, file.name, content_type=content_type, filename=filename)
+        # The cover's own ETag, so an `If-Range` is compared with the validator the client was given (#214).
+        response = ranged_file_response(
+            request,
+            file.storage,
+            file.name,
+            content_type=content_type,
+            filename=filename,
+            validators=Validators(size=file.storage.size(file.name), etag=etag, last_modified=last_modified),
+        )
     response["ETag"] = etag
     if last_modified is not None:
         response["Last-Modified"] = http_date(last_modified)

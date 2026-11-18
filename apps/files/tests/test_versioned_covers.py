@@ -110,7 +110,9 @@ class VersionedCoverTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
         self.entry.refresh_from_db()
-        self.assertGreater(self.entry.touched_at, touched)  # the read did save the entry
+        # #214: a read bumps popularity with one UPDATE and no longer saves (and touches) the entry.
+        self.assertEqual(self.entry.touched_at, touched)
+        self.assertEqual(self.entry.popularity, 1)
         self.assertEqual((self.entry.image_hash, self.entry.thumbnail_hash), hashes)
         again = self.client.get(self.thumbnail_path(), headers={"If-None-Match": etag})
         self.assertEqual(again.status_code, 304)

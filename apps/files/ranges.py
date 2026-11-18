@@ -1,33 +1,55 @@
 """
-HTTP Range on stored files (#70, RFC 9110 §14).
+HTTP Range on stored files (#70, #214; RFC 9110 §13.1.5, §14).
 
 Django has no built-in `206 Partial Content`: `FileResponse` always sends the
 whole body. The viewer (pdf.js `getDocument({url})`) asks for byte ranges so it
 can draw page 1 before the rest of the book has arrived; this module answers
 them for a file that sits in the storage backend unchanged.
 
-- No `Range`, a malformed one, several ranges, or an `If-Range` → the whole
-  file, `200`, with `Accept-Ranges: bytes` and `Content-Length`. Ignoring the
-  header is always allowed (§14.2); this code emits no validators, so an
-  `If-Range` can never be proven to match.
+- No `Range`, a malformed one or several ranges → the whole file, `200`, with
+  `Accept-Ranges: bytes` and `Content-Length`. Ignoring the header is always
+  allowed (§14.2).
 - One satisfiable range → `206` with `Content-Range` and only those bytes.
 - A range that starts past the end → `416` with `Content-Range: bytes */size`.
+- Every answer carries a strong `ETag` and `Last-Modified`. An `If-Range` that
+  matches them (strong comparison; a weak tag never matches) keeps the `206`;
+  any other `If-Range` gets the whole file, so a client never stitches ranges
+  of two different files.
+- `HEAD` (Django runs `get`) answers the same headers; the WSGI server drops the body.
 
-Only for bytes that are the same on every request. A personalised PDF
-(`PDFModifier.generate`, new `generated_at` on each call) is rendered once and
-stored first (`apps.files.personalised`); ranges are cut from that copy, never
-from two different renders.
+pdf.js disables ranges when it sees `Content-Encoding`; the GZip middleware
+skips every response that carries `Accept-Ranges` (`apps.api.middleware.gzip`).
+
+Two ways to send the bytes:
+
+- Django (the default): the range is read from the storage backend and streamed.
+- nginx (`EVILFLOWERS_FILES_ACCEL`, filesystem storage only): the view runs every
+  check as before and answers `X-Accel-Redirect: <location><name>` with no body.
+  nginx serves the file from an `internal` location with `sendfile`, ranges,
+  `If-Range` and `416` of its own (docs/files/streaming.md). Object storage
+  never takes this path.
+
+Only for bytes that are the same on every request. A personalised PDF is
+rendered once and stored first (`apps.files.personalised`); ranges are cut
+from that copy, never from two different renders.
 """
 
+import hashlib
 import mimetypes
+import os
 import re
+import time
+from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Iterator, Optional, Tuple
+from urllib.parse import quote
 
-from django.core.files.storage import Storage
+from django.conf import settings
+from django.core.files.storage import FileSystemStorage, Storage
 from django.http import FileResponse, HttpResponse, StreamingHttpResponse
 from django.http.response import HttpResponseBase
-from django.utils.http import content_disposition_header
+from django.utils.crypto import constant_time_compare
+from django.utils.http import content_disposition_header, http_date, parse_http_date_safe, quote_etag
 
 CHUNK_SIZE = 64 * 1024
 
@@ -36,6 +58,18 @@ _RANGE = re.compile(r"^\s*bytes\s*=\s*(\d*)\s*-\s*(\d*)\s*$", re.IGNORECASE)
 
 class Unsatisfiable(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class Validators:
+    """What a response says about the file it serves: its length and its strong validators."""
+
+    size: int
+    etag: str
+    last_modified: Optional[int] = None
+
+    def as_dict(self) -> dict:
+        return {"size": self.size, "etag": self.etag, "last_modified": self.last_modified}
 
 
 def parse_range(header: Optional[str], size: int) -> Optional[Tuple[int, int]]:
@@ -70,16 +104,62 @@ def parse_range(header: Optional[str], size: int) -> Optional[Tuple[int, int]]:
 
 
 def is_continuation(request) -> bool:
-    """True for a range request past byte 0: the rest of a download already counted.
+    """True for any byte-range request: a part of a download, never a download of its own (#214).
 
-    pdf.js fetches one book in dozens of ranges; popularity and activity count the first one only.
+    pdf.js opens a book with one plain GET (headers only, then aborted) and fetches
+    every byte after that in ranges, `bytes=0-65535` included. Counting the range from
+    byte 0 as a new download counted each open twice.
     """
-    header = request.headers.get("Range")
+    header = request.headers.get("Range", "")
+    return header.strip().lower().startswith("bytes")
+
+
+def counts_as_open(request) -> bool:
+    """Popularity, activity and reads count a GET without `Range` only: one per opened book."""
+    return request.method == "GET" and not is_continuation(request)
+
+
+def file_etag(name: str, size: int, modified: Optional[float]) -> str:
+    """A strong ETag for a stored file: a rewrite under the same name changes its time (to the µs) or size."""
+    digest = hashlib.sha256(f"{name}|{size}|{modified!r}".encode()).hexdigest()[:24]
+    return quote_etag(f"{digest}-{size}")
+
+
+def _modified(storage: Storage, name: str) -> Optional[float]:
+    try:
+        return storage.get_modified_time(name).timestamp()
+    except (NotImplementedError, OSError, AttributeError, ValueError):
+        return None
+
+
+def file_validators(
+    storage: Storage, name: str, *, size: Optional[int] = None, etag: Optional[str] = None
+) -> Validators:
+    """Size, ETag and Last-Modified of `name`. One `stat` on a filesystem; `etag` skips the hash."""
+    if size is None:
+        size = storage.size(name)
+    modified = _modified(storage, name)
+    return Validators(
+        size=size,
+        etag=etag or file_etag(name, size, modified),
+        last_modified=int(modified) if modified is not None else None,
+    )
+
+
+def if_range_matches(header: Optional[str], validators: Validators) -> bool:
+    """RFC 9110 §13.1.5: a strong ETag equal to ours, or exactly our Last-Modified date."""
     if not header:
+        return True
+    header = header.strip()
+    if header.startswith("W/"):
         return False
-    match = _RANGE.match(header)
-    # An unparsable Range is ignored and the whole file is served, so it counts.
-    return match is not None and match.group(1) != "0"
+    if header.startswith('"'):
+        return constant_time_compare(header, validators.etag)
+    date = parse_http_date_safe(header)
+    if date is None or validators.last_modified is None:
+        return False
+    # A date is a strong validator only when the file is at least a second older than now (§8.8.2.2).
+    return date == validators.last_modified and validators.last_modified <= time.time() - 1
 
 
 def _read(handle, start: int, length: int) -> Iterator[bytes]:
@@ -105,6 +185,33 @@ def _open_part(storage: Storage, name: str, start: int, length: int) -> Iterator
     return _read(storage.open(name, "rb"), start, length)
 
 
+def accel_path(storage: Storage, name: str) -> Optional[str]:
+    """The `X-Accel-Redirect` URI for `name`, or None when the bytes must go through Django.
+
+    Filesystem storage only: an S3 object has no path nginx could open (`S3Storage.path` exists but is not one).
+    """
+    config = settings.EVILFLOWERS_FILES_ACCEL
+    if not config or not isinstance(storage, FileSystemStorage):
+        return None
+    location = config["location"]
+    root = config.get("storage_root")
+    if root:
+        relative = os.path.relpath(storage.path(name), root)
+        if relative.startswith(".."):
+            # The file lives outside what nginx serves: never send a path it would refuse or misread.
+            return None
+    else:
+        relative = name
+    return quote(f"{location.rstrip('/')}/{relative.lstrip('/')}", safe="/")
+
+
+def _set_validators(response: HttpResponseBase, validators: Validators) -> None:
+    response["Accept-Ranges"] = "bytes"
+    response["ETag"] = validators.etag
+    if validators.last_modified is not None:
+        response["Last-Modified"] = http_date(validators.last_modified)
+
+
 def ranged_file_response(
     request,
     storage: Storage,
@@ -113,19 +220,39 @@ def ranged_file_response(
     content_type: Optional[str] = None,
     filename: str = "",
     as_attachment: bool = False,
+    validators: Optional[Validators] = None,
 ) -> HttpResponseBase:
-    """Serve `name` from `storage`, honouring a single `Range: bytes=…` request header."""
-    size = storage.size(name)
+    """Serve `name` from `storage`, honouring a single `Range: bytes=…` and its `If-Range`.
+
+    `validators` (size, ETag, Last-Modified) skips the `stat` when the caller already knows them.
+    """
+    content_type = content_type or mimetypes.guess_type(filename or name)[0] or "application/octet-stream"
+
+    target = accel_path(storage, name)
+    if target is not None:
+        # nginx answers the range, `If-Range` and `416` itself, with validators of its own.
+        response = HttpResponse(content_type=content_type)
+        response["X-Accel-Redirect"] = target
+        disposition = content_disposition_header(as_attachment, filename)
+        if disposition:
+            response["Content-Disposition"] = disposition
+        # `Content-Length: 0` of this empty body is not passed on: nginx sends the file's own length.
+        response["Accept-Ranges"] = "bytes"
+        return response
+
+    if validators is None:
+        validators = file_validators(storage, name)
+    size = validators.size
 
     try:
         byte_range = parse_range(request.headers.get("Range"), size)
     except Unsatisfiable:
         response = HttpResponse(status=HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
         response["Content-Range"] = f"bytes */{size}"
-        response["Accept-Ranges"] = "bytes"
+        _set_validators(response, validators)
         return response
 
-    if byte_range is not None and request.headers.get("If-Range"):
+    if byte_range is not None and not if_range_matches(request.headers.get("If-Range"), validators):
         byte_range = None
 
     if byte_range is None:
@@ -133,20 +260,18 @@ def ranged_file_response(
             storage.open(name, "rb"), as_attachment=as_attachment, filename=filename, content_type=content_type
         )
         response["Content-Length"] = str(size)
-        response["Accept-Ranges"] = "bytes"
+        _set_validators(response, validators)
         return response
 
     start, end = byte_range
     length = end - start + 1
     response = StreamingHttpResponse(
-        _open_part(storage, name, start, length),
-        status=HTTPStatus.PARTIAL_CONTENT,
-        content_type=content_type or mimetypes.guess_type(filename or name)[0] or "application/octet-stream",
+        _open_part(storage, name, start, length), status=HTTPStatus.PARTIAL_CONTENT, content_type=content_type
     )
     disposition = content_disposition_header(as_attachment, filename)
     if disposition:
         response["Content-Disposition"] = disposition
     response["Content-Range"] = f"bytes {start}-{end}/{size}"
     response["Content-Length"] = str(length)
-    response["Accept-Ranges"] = "bytes"
+    _set_validators(response, validators)
     return response
