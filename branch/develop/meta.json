@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "b064eea3b27920265bbb579a4ac24e03adae8734",
-    "short": "b064eea",
-    "message": "Portal feature switches #212",
+    "sha": "3ae653f0cfebefd60e17c1f8523a9e861561a2e1",
+    "short": "3ae653f",
+    "message": "PDF streaming",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/b064eea3b27920265bbb579a4ac24e03adae8734"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/3ae653f0cfebefd60e17c1f8523a9e861561a2e1"
   },
-  "deployed_at": "2026-11-17T18:55:17Z",
+  "deployed_at": "2026-11-18T00:15:28Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }

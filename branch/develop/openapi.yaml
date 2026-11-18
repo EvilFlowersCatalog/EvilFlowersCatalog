@@ -11902,16 +11902,6 @@
       "get": {
         "parameters": [],
         "responses": {
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
-                }
-              }
-            },
-            "description": "_('Acquisition file not found')"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -11932,6 +11922,16 @@
             },
             "description": "request"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apps__core__errors__ProblemDetail"
+                }
+              }
+            },
+            "description": "_('Acquisition file not found')"
+          },
           "410": {
             "content": {
               "application/json": {
@@ -11942,8 +11942,14 @@
             },
             "description": "_('The file of this publication is damaged or missing.')"
           },
+          "416": {
+            "description": "The range starts past the end of the file"
+          },
+          "206": {
+            "description": "The requested byte range"
+          },
           "200": {
-            "description": "Success",
+            "description": "The whole file",
             "content": {
               "application/octet-stream": {
                 "schema": {
@@ -11956,7 +11962,7 @@
         },
         "operationId": "UserAcquisitionDownload.get",
         "summary": "Download a reader's copy",
-        "description": "Download UserAcquisition content",
+        "description": "Download UserAcquisition content. Honours a single `Range` and its `If-Range`; `stream_url` of the user acquisition carries `exp` and `sig` instead of an `Authorization` header.",
         "tags": [
           "Files"
         ]
@@ -18118,6 +18124,32 @@
             "default": null,
             "title": "Url",
             "type": "string"
+          },
+          "stream_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The download URL with a signed, reusable credential (the owner only); valid until `stream_url_expires_at`.",
+            "title": "Stream Url"
+          },
+          "stream_url_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stream Url Expires At"
           },
           "entry": {
             "$ref": "#/components/schemas/apps__api__serializers__entries__EntrySerializer__Base"
