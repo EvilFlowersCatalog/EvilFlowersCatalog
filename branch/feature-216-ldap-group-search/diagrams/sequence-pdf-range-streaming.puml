@@ -1,0 +1,71 @@
+@startuml sequence-pdf-range-streaming
+!include elvira.iuml
+' =============================================================================
+' What: one open of a PDF in the viewer is one counted GET and many uncounted
+'       ranges; the first GET renders the reader's copy (from a shared base
+'       a worker built after the file's first reader) and pins it; every
+'       range after it reads the pin and is cut from that one stored copy.
+' Kind: UML sequence diagram, catalog code (issue 214, IP-036). Scope: user-acquisition
+'       download by its owner via the signed URL. Omitted: base64 format, anonymous
+'       shared copies, the pre-render task, bearer tokens (always the full path).
+' Source: apps/files/views.py (UserAcquisitionDownload), apps/files/ranges.py,
+'         apps/files/personalised.py, apps/files/signing.py,
+'         apps/files/copies.py, apps/files/revocation.py,
+'         apps/core/modifiers/pdf/__init__.py, apps/tasks/tasks.py,
+'         docs/files/streaming.md (2026-11-18).
+' =============================================================================
+
+title PDF range streaming: count once, render once, pin, cut ranges (issue 214, 2026-11-18)
+
+actor "Reader" as reader
+participant "Portal ·\npdf.js" as viewer
+participant "Catalog API\n(gunicorn)" as api
+database "Redis cache" as cache
+database "Storage\n(NFS / S3)" as storage
+participant "Celery worker" as worker
+
+reader -> viewer : open book
+viewer -> api : POST /api/v1/user-acquisitions
+api --> viewer : 201 { url, <b>stream_url</b> (?exp&sig), stream_url_expires_at }
+
+== first request: GET without Range (counted) ==
+viewer -> api : GET stream_url
+api -> api : verify sig → owner; IP block; permission
+api -> api : popularity + 1 (one UPDATE), activity, read
+api -> cache : ready marker of copy?
+alt copy missing
+  api -> cache : lock copy
+  api -> cache : ready marker of the file's base?
+  alt base ready
+    api -> storage : render copy from base (licence page, QR with reader + copy id, annotations;\ngarbage=1, deflate, objstms) → personalised/<reader id>/<digest>.pdf
+  else first reader of the file
+    api -> worker : queue build_personalised_base (once per file)
+    api -> storage : render copy from source in full (as before)
+  end
+  api -> cache : ready marker, unlock
+end
+worker -> storage : normalise source once (garbage=4, clean, deflate, objstms)\n→ personalised/_base/ (no reader data)
+worker -> cache : base ready marker (7 days after last use)
+api -> cache : pin (name, size, ETag, Last-Modified + access facts\nand revocation tokens), 15 min idle, 2 h at most
+api --> viewer : 200, Accept-Ranges, Content-Length,\nstrong ETag (hash of name, size, mtime), Last-Modified
+viewer -> viewer : abort body after headers
+
+== every range after it (never counted) ==
+loop pages drawn
+  viewer -> api : GET stream_url, Range: bytes=a-b
+  api -> api : verify sig (HMAC, no database)
+  api -> cache : read pin (copy + access facts) and the\ngrant/user/entry revocation tokens
+  alt tokens current, not expired, IP allowed (IP-036 fast path)
+    api -[$accent_msg()]> storage : <b>read bytes a..b of the copy (no database query)</b>
+    api --> viewer : 206, Content-Range, ETag
+  else token missing or changed (a revocation, an eviction)
+    api -> api : full path: grant row, permission, expiry (410), IP block
+    api -> cache : mint tokens, re-read the facts, re-pin
+    api -> storage : read bytes a..b of the copy
+    api --> viewer : 206 (or 403 / 410)
+  end
+end
+
+caption A signed range of a pinned session never touches the database: the pin holds the copy's validators and the access facts,\nand three revocation tokens (grant, user, entry; reset on every save after commit) make a revocation count on the next range.\nThe copy belongs to the reader (all their grants share it); the base holds no reader data; the copy is one revision.
+footer ELVIRA · FIIT STU · EvilFlowersCatalog · docs/diagrams/sequence-pdf-range-streaming.puml
+@enduml
