@@ -3,183 +3,228 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>API reference · ELVIRA</title>
-  <meta name="description" content="OpenAPI reference of the EvilFlowers Catalog, the server behind ELVIRA, for its development branch, feature branches and releases.">
-  <link rel="icon" href="https://elvira.digital/img/favicon.ico">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Literata:opsz,wght@7..72,500..700&display=swap">
-  <link rel="stylesheet" href="/EvilFlowersCatalog/assets/elvira.css">
+  <meta name="theme-color" content="#0b0d10" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <title>EvilFlowers Catalog — Documentation</title>
+  <meta name="description" content="OPDS 1.2 digital publication catalog server — OpenAPI documentation across branches and releases.">
+  <link rel="icon" href="/EvilFlowersCatalog/logo.png" type="image/png">
+  <link rel="preconnect" href="https://rsms.me/">
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
   <link rel="stylesheet" href="/EvilFlowersCatalog/assets/index.css">
   <script>
-    // Colour mode before paint, shared with the Redoc pages and elvira.digital (Docusaurus `theme`).
+    // Theme preference must apply before paint to avoid flashes.
     (function () {
       try {
-        var mode = localStorage.getItem("redoc.colorMode") || localStorage.getItem("theme");
+        var saved = localStorage.getItem("efc-theme");
+        if (saved === "light" || saved === "dark") {
+          document.documentElement.setAttribute("data-theme", saved);
+        }
       } catch (_) {}
-      if (mode !== "light" && mode !== "dark") {
-        mode = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-      }
-      document.documentElement.classList.add(mode);
     })();
   </script>
 </head>
 <body>
-  <header class="e-bar">
-    <a class="e-brand" href="https://elvira.digital/" aria-label="ELVIRA, home">
-      <span class="e-wordmark">ELVIRA</span>
-      <span class="e-org">Slovak University of Technology</span>
-    </a>
-    <nav class="e-nav" aria-label="ELVIRA">
-      <a class="e-site" href="https://elvira.digital/docs/intro">Docs</a>
-      <a class="e-site" href="https://elvira.digital/how-it-works">How it works</a>
-      <a class="e-site" href="https://elvira.digital/news">News</a>
-      <a class="e-site" href="https://elvira.digital/releases">Releases</a>
-      <a href="/EvilFlowersCatalog/" aria-current="page">API</a>
-      <a href="https://github.com/EvilFlowersCatalog">GitHub</a>
-      <button type="button" class="e-mode" aria-label="Switch colour mode" data-mode-toggle>
-        <svg class="e-moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 .278a.77.77 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277q.792-.001 1.533-.16a.79.79 0 0 1 .81.316.73.73 0 0 1-.031.893A8.35 8.35 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.75.75 0 0 1 6 .278"/></svg>
-        <svg class="e-sun" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0m0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13m8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5M3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8m10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0m-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0m9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707M4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708"/></svg>
-      </button>
-    </nav>
-  </header>
-
   <main class="page">
+    <header class="topbar">
+      <a class="brand" href="/EvilFlowersCatalog/">
+        <img class="brand__logo" src="/EvilFlowersCatalog/logo.png" alt="EvilFlowers logo">
+        <span>
+          <span class="brand__title">EvilFlowers Catalog</span><br>
+          <span class="brand__sub">Documentation</span>
+        </span>
+      </a>
+      <button type="button" class="theme-toggle" aria-label="Toggle color theme" data-theme-toggle>
+        <svg class="icon-moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 .278a.77.77 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.77.77 0 0 1 .81 1.094A8 8 0 1 1 6 .278M4.858 1.311A7.27 7.27 0 0 0 1.025 7.752a7.265 7.265 0 0 0 7.318 7.252 7.27 7.27 0 0 0 6.42-3.821 8.6 8.6 0 0 1-1.36.105c-4.872 0-8.825-3.927-8.825-8.776 0-.486.04-.965.115-1.434q.21-.078.16-.067Z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0m0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13m8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5M3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8m10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0m-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0m9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707M4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708"/></svg>
+      </button>
+    </header>
+
     <section class="hero">
-      <p class="eyebrow">EvilFlowers Catalog</p>
-      <h1>API reference</h1>
-      <p>The catalog is the server behind ELVIRA: OPDS feeds for reading apps, Readium LCP lending, OAI-PMH for aggregators, an MCP server for AI clients and the REST API that manages it all. Pick the version you run.</p>
-      <div class="hero__actions">
-        <a class="button button--primary" href="/EvilFlowersCatalog/branch/develop/">Development branch</a>
-        <a class="button" href="/EvilFlowersCatalog/release/0.15.0/">Latest release (0.15.0)</a>
-        <a class="button" href="https://github.com/EvilFlowersCatalog/evilflowers-protocol">OpenAPI files</a>
+      <h1>EvilFlowers Catalog</h1>
+      <p>OPDS 1.2 digital publication catalog server. Browse the OpenAPI reference for the active development branch, feature branches, and tagged releases.</p>
+      <div class="hero__chips">
+        <a class="hero__chip" href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
+          GitHub
+        </a>
+        <a class="hero__chip" href="https://github.com/EvilFlowersCatalog/evilflowers-protocol">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zm9.5 1a.5.5 0 0 1 .5.5v8a2.5 2.5 0 0 1-2.5 2.5h-5a.5.5 0 0 1 0-1h5A1.5 1.5 0 0 0 13 12.5v-8a.5.5 0 0 1 .5-.5"/></svg>
+          Protocol
+        </a>
       </div>
     </section>
 
-    <div class="columns">
-      <section>
-        <header class="section__header">
-          <h2 class="section__title">Releases</h2>
-          <span class="section__count">2</span>
-        </header>
-        <ul class="entries">
-        <li class="entry entry--primary">
-          <a class="entry__link" href="/EvilFlowersCatalog/release/0.15.0/">
-            <span class="entry__name">0.15.0</span>
-            <span class="badge badge--accent">latest</span>
-            <span class="entry__arrow" aria-hidden="true">→</span>
-          </a>
-          <div class="entry__meta"><a class="meta__commit" href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/0f1e54596caf732ac38261b06f6bd1914e2d5cdc" title="0f1e54596caf732ac38261b06f6bd1914e2d5cdc">0f1e545</a><time datetime="2026-11-12T21:43:04Z" data-relative>2026-11-12T21:43:04Z</time><span class="meta__message">Merge pull request #144 from EvilFlowersCatalog/develop</span></div>
-        </li>
-        <li class="entry">
-          <a class="entry__link" href="/EvilFlowersCatalog/release/0.14.0/">
-            <span class="entry__name">0.14.0</span>
-            
-            <span class="entry__arrow" aria-hidden="true">→</span>
-          </a>
-          <div class="entry__meta"><a class="meta__commit" href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e9a396eaa9e7d318dc36c0ec83a50226257ff72b" title="e9a396eaa9e7d318dc36c0ec83a50226257ff72b">e9a396e</a><time datetime="2026-09-10T09:58:03Z" data-relative>2026-09-10T09:58:03Z</time><span class="meta__message">Readium, OPDS 2.0 &amp; MCP (#75)</span></div>
-        </li>
-        </ul>
-      </section>
-
-      <section>
-        <header class="section__header">
-          <h2 class="section__title">Branches</h2>
-          <span class="section__count">6</span>
-        </header>
-        <ul class="entries">
+    <section class="section">
+      <header class="section__header">
+        <h2 class="section__title">Branches</h2>
+        <span class="section__count">6</span>
+      </header>
+      <ul class="entries">
         <li class="entry entry--primary">
           <a class="entry__link" href="/EvilFlowersCatalog/branch/develop/">
-            <span class="entry__name">develop</span>
-            <span class="badge badge--accent">development</span>
-            <span class="entry__arrow" aria-hidden="true">→</span>
+            <div class="entry__row">
+              <span class="entry__name">develop</span>
+              <span class="badge badge--accent">main</span>
+            </div>
+            <div class="entry__meta">
+              <span class="meta__chip" title="587e7f5ac0f1796a7e5a3e159659a9b878db88ea"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122v1.256a2.251 2.251 0 0 1-1.875 2.218l-1.5.25a.75.75 0 0 0-.625.74V11.378a2.251 2.251 0 1 1-1.5 0V8.622A2.25 2.25 0 0 1 8.625 6.4l1.5-.25a.751.751 0 0 0 .625-.74V4.372A2.251 2.251 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM5 2.5a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5Zm-.75 2.872a2.251 2.251 0 1 1 1.5 0v5.256a2.251 2.251 0 1 1-1.5 0Z"/></svg>587e7f5</span><span class="meta__chip"><time datetime="2026-11-20T18:07:42Z" data-relative></time></span><span class="meta__message">Merge pull request #217 from EvilFlowersCatalog/feature/216-ldap-group-search</span>
+            </div>
+            <svg class="entry__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
           </a>
-          <div class="entry__meta"><a class="meta__commit" href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/587e7f5ac0f1796a7e5a3e159659a9b878db88ea" title="587e7f5ac0f1796a7e5a3e159659a9b878db88ea">587e7f5</a><time datetime="2026-11-20T18:07:42Z" data-relative>2026-11-20T18:07:42Z</time><span class="meta__message">Merge pull request #217 from EvilFlowersCatalog/feature/216-ldap-group-search</span></div>
         </li>
         <li class="entry">
           <a class="entry__link" href="/EvilFlowersCatalog/branch/master/">
-            <span class="entry__name">master</span>
-            
-            <span class="entry__arrow" aria-hidden="true">→</span>
+            <div class="entry__row">
+              <span class="entry__name">master</span>
+              
+            </div>
+            <div class="entry__meta">
+              <span class="meta__chip" title="0f1e54596caf732ac38261b06f6bd1914e2d5cdc"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122v1.256a2.251 2.251 0 0 1-1.875 2.218l-1.5.25a.75.75 0 0 0-.625.74V11.378a2.251 2.251 0 1 1-1.5 0V8.622A2.25 2.25 0 0 1 8.625 6.4l1.5-.25a.751.751 0 0 0 .625-.74V4.372A2.251 2.251 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM5 2.5a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5Zm-.75 2.872a2.251 2.251 0 1 1 1.5 0v5.256a2.251 2.251 0 1 1-1.5 0Z"/></svg>0f1e545</span><span class="meta__chip"><time datetime="2026-11-12T21:27:44Z" data-relative></time></span><span class="meta__message">Merge pull request #144 from EvilFlowersCatalog/develop</span>
+            </div>
+            <svg class="entry__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
           </a>
-          <div class="entry__meta"><a class="meta__commit" href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/0f1e54596caf732ac38261b06f6bd1914e2d5cdc" title="0f1e54596caf732ac38261b06f6bd1914e2d5cdc">0f1e545</a><time datetime="2026-11-12T21:27:44Z" data-relative>2026-11-12T21:27:44Z</time><span class="meta__message">Merge pull request #144 from EvilFlowersCatalog/develop</span></div>
         </li>
         <li class="entry">
           <a class="entry__link" href="/EvilFlowersCatalog/branch/fix-relative-acquisition-redirect/">
-            <span class="entry__name">fix/relative-acquisition-redirect</span>
-            
-            <span class="entry__arrow" aria-hidden="true">→</span>
+            <div class="entry__row">
+              <span class="entry__name">fix/relative-acquisition-redirect</span>
+              
+            </div>
+            <div class="entry__meta">
+              <span class="meta__chip" title="e8c3e9e51cadc86e3f28814315919e5bc0f7f8fb"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122v1.256a2.251 2.251 0 0 1-1.875 2.218l-1.5.25a.75.75 0 0 0-.625.74V11.378a2.251 2.251 0 1 1-1.5 0V8.622A2.25 2.25 0 0 1 8.625 6.4l1.5-.25a.751.751 0 0 0 .625-.74V4.372A2.251 2.251 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM5 2.5a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5Zm-.75 2.872a2.251 2.251 0 1 1 1.5 0v5.256a2.251 2.251 0 1 1-1.5 0Z"/></svg>e8c3e9e</span><span class="meta__chip"><time datetime="2026-11-08T16:14:25Z" data-relative></time></span><span class="meta__message">fix(api): relative Location on the existing user-acquisition redirect</span>
+            </div>
+            <svg class="entry__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
           </a>
-          <div class="entry__meta"><a class="meta__commit" href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/e8c3e9e51cadc86e3f28814315919e5bc0f7f8fb" title="e8c3e9e51cadc86e3f28814315919e5bc0f7f8fb">e8c3e9e</a><time datetime="2026-11-08T16:14:25Z" data-relative>2026-11-08T16:14:25Z</time><span class="meta__message">fix(api): relative Location on the existing user-acquisition redirect</span></div>
         </li>
         <li class="entry">
           <a class="entry__link" href="/EvilFlowersCatalog/branch/fix-public-https-scheme/">
-            <span class="entry__name">fix/public-https-scheme</span>
-            
-            <span class="entry__arrow" aria-hidden="true">→</span>
+            <div class="entry__row">
+              <span class="entry__name">fix/public-https-scheme</span>
+              
+            </div>
+            <div class="entry__meta">
+              <span class="meta__chip" title="43e65000d6c8b0ffdd1fc7c2fce9b211875faf14"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122v1.256a2.251 2.251 0 0 1-1.875 2.218l-1.5.25a.75.75 0 0 0-.625.74V11.378a2.251 2.251 0 1 1-1.5 0V8.622A2.25 2.25 0 0 1 8.625 6.4l1.5-.25a.751.751 0 0 0 .625-.74V4.372A2.251 2.251 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM5 2.5a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5Zm-.75 2.872a2.251 2.251 0 1 1 1.5 0v5.256a2.251 2.251 0 1 1-1.5 0Z"/></svg>43e6500</span><span class="meta__chip"><time datetime="2026-11-08T15:50:29Z" data-relative></time></span><span class="meta__message">fix(api): treat requests for the public https host as https</span>
+            </div>
+            <svg class="entry__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
           </a>
-          <div class="entry__meta"><a class="meta__commit" href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/43e65000d6c8b0ffdd1fc7c2fce9b211875faf14" title="43e65000d6c8b0ffdd1fc7c2fce9b211875faf14">43e6500</a><time datetime="2026-11-08T15:50:29Z" data-relative>2026-11-08T15:50:29Z</time><span class="meta__message">fix(api): treat requests for the public https host as https</span></div>
         </li>
         <li class="entry">
           <a class="entry__link" href="/EvilFlowersCatalog/branch/fix-lcpl-download-url-https/">
-            <span class="entry__name">fix/lcpl-download-url-https</span>
-            
-            <span class="entry__arrow" aria-hidden="true">→</span>
+            <div class="entry__row">
+              <span class="entry__name">fix/lcpl-download-url-https</span>
+              
+            </div>
+            <div class="entry__meta">
+              <span class="meta__chip" title="1f5508fae2719608adb7838d2d90a9e193cea023"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122v1.256a2.251 2.251 0 0 1-1.875 2.218l-1.5.25a.75.75 0 0 0-.625.74V11.378a2.251 2.251 0 1 1-1.5 0V8.622A2.25 2.25 0 0 1 8.625 6.4l1.5-.25a.751.751 0 0 0 .625-.74V4.372A2.251 2.251 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM5 2.5a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5Zm-.75 2.872a2.251 2.251 0 1 1 1.5 0v5.256a2.251 2.251 0 1 1-1.5 0Z"/></svg>1f5508f</span><span class="meta__chip"><time datetime="2026-11-08T15:27:27Z" data-relative></time></span><span class="meta__message">style: black</span>
+            </div>
+            <svg class="entry__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
           </a>
-          <div class="entry__meta"><a class="meta__commit" href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/1f5508fae2719608adb7838d2d90a9e193cea023" title="1f5508fae2719608adb7838d2d90a9e193cea023">1f5508f</a><time datetime="2026-11-08T15:27:27Z" data-relative>2026-11-08T15:27:27Z</time><span class="meta__message">style: black</span></div>
         </li>
         <li class="entry">
           <a class="entry__link" href="/EvilFlowersCatalog/branch/ai-update/">
-            <span class="entry__name">ai-update</span>
-            
-            <span class="entry__arrow" aria-hidden="true">→</span>
+            <div class="entry__row">
+              <span class="entry__name">ai-update</span>
+              
+            </div>
+            <div class="entry__meta">
+              <span class="meta__chip" title="d21976c96c4f3f5060c599176bba220596aeab02"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122v1.256a2.251 2.251 0 0 1-1.875 2.218l-1.5.25a.75.75 0 0 0-.625.74V11.378a2.251 2.251 0 1 1-1.5 0V8.622A2.25 2.25 0 0 1 8.625 6.4l1.5-.25a.751.751 0 0 0 .625-.74V4.372A2.251 2.251 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM5 2.5a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5Zm-.75 2.872a2.251 2.251 0 1 1 1.5 0v5.256a2.251 2.251 0 1 1-1.5 0Z"/></svg>d21976c</span><span class="meta__chip"><time datetime="2026-11-05T11:11:40Z" data-relative></time></span><span class="meta__message">feat(assistant): regex search over the PDF for every agent</span>
+            </div>
+            <svg class="entry__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
           </a>
-          <div class="entry__meta"><a class="meta__commit" href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/d21976c96c4f3f5060c599176bba220596aeab02" title="d21976c96c4f3f5060c599176bba220596aeab02">d21976c</a><time datetime="2026-11-05T11:11:40Z" data-relative>2026-11-05T11:11:40Z</time><span class="meta__message">feat(assistant): regex search over the PDF for every agent</span></div>
         </li>
-        </ul>
-      </section>
-    </div>
-  </main>
+      </ul>
+    </section>
 
-  <footer class="footer">
-    <div class="footer__inner">
-      <span>Built <time datetime="2026-11-20T18:07:45Z" data-relative>2026-11-20T18:07:45Z</time> from <a href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog">EvilFlowersCatalog</a> · Slovak University of Technology in Bratislava</span>
+    <section class="section">
+      <header class="section__header">
+        <h2 class="section__title">Releases</h2>
+        <span class="section__count">2</span>
+      </header>
+      <ul class="entries">
+        <li class="entry">
+          <a class="entry__link" href="/EvilFlowersCatalog/release/0.15.0/">
+            <div class="entry__row">
+              <span class="entry__name">0.15.0</span>
+              <span class="badge badge--muted">release</span>
+            </div>
+            <div class="entry__meta">
+              <span class="meta__chip" title="0f1e54596caf732ac38261b06f6bd1914e2d5cdc"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122v1.256a2.251 2.251 0 0 1-1.875 2.218l-1.5.25a.75.75 0 0 0-.625.74V11.378a2.251 2.251 0 1 1-1.5 0V8.622A2.25 2.25 0 0 1 8.625 6.4l1.5-.25a.751.751 0 0 0 .625-.74V4.372A2.251 2.251 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM5 2.5a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5Zm-.75 2.872a2.251 2.251 0 1 1 1.5 0v5.256a2.251 2.251 0 1 1-1.5 0Z"/></svg>0f1e545</span><span class="meta__chip"><time datetime="2026-11-12T21:43:04Z" data-relative></time></span><span class="meta__message">Merge pull request #144 from EvilFlowersCatalog/develop</span>
+            </div>
+            <svg class="entry__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
+          </a>
+        </li>
+        <li class="entry">
+          <a class="entry__link" href="/EvilFlowersCatalog/release/0.14.0/">
+            <div class="entry__row">
+              <span class="entry__name">0.14.0</span>
+              <span class="badge badge--muted">release</span>
+            </div>
+            <div class="entry__meta">
+              <span class="meta__chip" title="e9a396eaa9e7d318dc36c0ec83a50226257ff72b"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122v1.256a2.251 2.251 0 0 1-1.875 2.218l-1.5.25a.75.75 0 0 0-.625.74V11.378a2.251 2.251 0 1 1-1.5 0V8.622A2.25 2.25 0 0 1 8.625 6.4l1.5-.25a.751.751 0 0 0 .625-.74V4.372A2.251 2.251 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM5 2.5a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5Zm-.75 2.872a2.251 2.251 0 1 1 1.5 0v5.256a2.251 2.251 0 1 1-1.5 0Z"/></svg>e9a396e</span><span class="meta__chip"><time datetime="2026-09-10T09:58:03Z" data-relative></time></span><span class="meta__message">Readium, OPDS 2.0 &amp; MCP (#75)</span>
+            </div>
+            <svg class="entry__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"/></svg>
+          </a>
+        </li>
+      </ul>
+    </section>
+
+    <footer class="footer">
+      <span>Generated <time datetime="2026-11-20T18:08:08Z" data-relative>2026-11-20T18:08:08Z</time></span>
       <span class="footer__links">
-        <a href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/blob/develop/CHANGELOG.md">Changelog</a>
         <a href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/issues">Issues</a>
-        <a href="https://elvira.digital/">elvira.digital</a>
+        <a href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/blob/develop/CHANGELOG.md">Changelog</a>
+        <a href="https://github.com/EvilFlowersCatalog/EvilFlowersCatalog">Source</a>
       </span>
-    </div>
-  </footer>
+    </footer>
+  </main>
 
   <script>
     (function () {
       var root = document.documentElement;
-      var button = document.querySelector("[data-mode-toggle]");
-      button && button.addEventListener("click", function () {
-        var dark = root.classList.contains("dark")
-          || (!root.classList.contains("light") && matchMedia("(prefers-color-scheme: dark)").matches);
-        var next = dark ? "light" : "dark";
-        root.classList.remove("light", "dark");
-        root.classList.add(next);
-        try { localStorage.setItem("redoc.colorMode", next); } catch (_) {}
+      var btn = document.querySelector("[data-theme-toggle]");
+      function preferred() {
+        try { return localStorage.getItem("efc-theme"); } catch (_) { return null; }
+      }
+      btn && btn.addEventListener("click", function () {
+        var current = root.getAttribute("data-theme")
+          || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        var next = current === "dark" ? "light" : "dark";
+        root.setAttribute("data-theme", next);
+        try { localStorage.setItem("efc-theme", next); } catch (_) {}
       });
 
+      // Relative-time rendering.
       var formatter = (typeof Intl !== "undefined" && Intl.RelativeTimeFormat)
-        ? new Intl.RelativeTimeFormat("en", { numeric: "auto" })
+        ? new Intl.RelativeTimeFormat(navigator.language || "en", { numeric: "auto" })
         : null;
-      var units = [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60], ["second", 1]];
-      document.querySelectorAll("time[data-relative][datetime]").forEach(function (el) {
-        var date = new Date(el.getAttribute("datetime"));
-        if (isNaN(date.getTime()) || !formatter) return;
+      function relative(date) {
         var diff = (date.getTime() - Date.now()) / 1000;
+        var units = [
+          ["year",   60 * 60 * 24 * 365],
+          ["month",  60 * 60 * 24 * 30],
+          ["week",   60 * 60 * 24 * 7],
+          ["day",    60 * 60 * 24],
+          ["hour",   60 * 60],
+          ["minute", 60],
+          ["second", 1]
+        ];
         for (var i = 0; i < units.length; i++) {
-          if (Math.abs(diff) >= units[i][1] || units[i][0] === "second") {
-            el.textContent = formatter.format(Math.round(diff / units[i][1]), units[i][0]);
-            break;
+          var unit = units[i][0], secs = units[i][1];
+          if (Math.abs(diff) >= secs || unit === "second") {
+            return formatter
+              ? formatter.format(Math.round(diff / secs), unit)
+              : date.toISOString().slice(0, 10);
           }
         }
-        el.title = date.toLocaleString();
+        return date.toISOString();
+      }
+      document.querySelectorAll("time[data-relative][datetime]").forEach(function (el) {
+        var iso = el.getAttribute("datetime");
+        if (!iso) return;
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return;
+        el.textContent = relative(d);
+        el.title = d.toLocaleString();
       });
     })();
   </script>
