@@ -3,12 +3,12 @@
   "slug": "develop",
   "kind": "branch",
   "commit": {
-    "sha": "355dd6176a34604f5b867b706340070904b83740",
-    "short": "355dd61",
-    "message": "Reader Grants and a Database-Free Range Path",
+    "sha": "587e7f5ac0f1796a7e5a3e159659a9b878db88ea",
+    "short": "587e7f5",
+    "message": "Merge pull request #217 from EvilFlowersCatalog/feature/216-ldap-group-search",
     "author": "Jakub Dubec",
-    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/355dd6176a34604f5b867b706340070904b83740"
+    "url": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog/commit/587e7f5ac0f1796a7e5a3e159659a9b878db88ea"
   },
-  "deployed_at": "2026-11-18T02:25:39Z",
+  "deployed_at": "2026-11-20T18:07:42Z",
   "repository": "https://github.com/EvilFlowersCatalog/EvilFlowersCatalog"
 }
