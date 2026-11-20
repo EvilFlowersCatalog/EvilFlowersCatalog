@@ -1,0 +1,109 @@
+name: Deploy to k3s
+
+# Reusable: restart every catalog Deployment of one instance onto the image `build.yml` just pushed, wait for
+# the rollout, then fail unless every running pod uses that digest. Called by build.yml once per instance
+# (dev, then KU). Infra: knowledge repo, roles/evilflowers_k8s, roles/github_runner; vault Cookbooks/CI-Runner.
+#
+# The instance's Deployments are labelled elvira.stuba.sk/image=evilflowers-catalog +
+# app.kubernetes.io/instance=<instance> by roles/evilflowers_k8s (web, worker, maintenance, beat with
+# catalog_split). They must pin the mutable :develop tag with imagePullPolicy Always: a restart cannot move a
+# Deployment pinned by @sha256, so such a pin fails the job before anything restarts. This job runs on the
+# self-hosted runner INSIDE k3s (runs-on: elvira-k3s); its ServiceAccount arc-deployer may only list/patch
+# Deployments in the namespaces listed in github_runner_deploy_namespaces (must include the target).
+# A push never changes the pods' env; that needs playbooks/evilflowers-k8s.yml.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub environment (branch policy lives there)
+        type: string
+        required: true
+      url:
+        description: The instance's public URL, shown on the deployment
+        type: string
+        required: true
+      namespace:
+        type: string
+        required: true
+      instance:
+        description: app.kubernetes.io/instance of the Deployments (evilflowers_instances key)
+        type: string
+        required: true
+      digest:
+        description: sha256:… pushed by the build job
+        type: string
+        required: true
+
+jobs:
+  rollout:
+    runs-on: elvira-k3s            # ARC scale set (knowledge: roles/github_runner github_runner_scale_set)
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ inputs.url }}
+    concurrency:
+      group: deploy-${{ inputs.namespace }}
+      cancel-in-progress: false
+    permissions: {}
+    env:
+      NAMESPACE: ${{ inputs.namespace }}
+      # Matches the Deployments and their pods alike.
+      SELECTOR: elvira.stuba.sk/image=evilflowers-catalog,app.kubernetes.io/instance=${{ inputs.instance }}
+      DIGEST: ${{ inputs.digest }}
+      KUBECTL_VERSION: v1.31.5     # = the cluster (k3s v1.31.5+k3s1)
+      KUBECTL_SHA256: fbecbfd375b3686002c2e81d51c390172f5ffba3d6b47920d55342cb03f557af   # dl.k8s.io …/linux/amd64/kubectl.sha256
+    steps:
+      # The runner image has no kubectl. The pod is deleted after the job, so nothing is cached.
+      - name: kubectl ${{ env.KUBECTL_VERSION }} (checksum-pinned)
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/kubectl" "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          echo "${KUBECTL_SHA256}  $RUNNER_TEMP/kubectl" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/kubectl"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      # In-cluster credentials: the pod's ServiceAccount arc-deployer.
+      # A selector that matches nothing makes `rollout restart` a silent no-op: fail instead
+      # (e.g. the label not applied yet by knowledge). A Deployment pinned by digest would restart
+      # onto the same old image and then fail the digest check: refuse it before restarting anything
+      # (the pin is deliberate, e.g. a rollback; move it to :develop in knowledge to resume CI deploys).
+      - name: Restart onto the new :develop
+        run: |
+          deployments=$(kubectl -n "$NAMESPACE" get deployment -l "$SELECTOR" -o name)
+          echo "$deployments"
+          if [ -z "$deployments" ]; then
+            echo "::error::no Deployment in $NAMESPACE matches $SELECTOR"
+            exit 1
+          fi
+          pinned=$(kubectl -n "$NAMESPACE" get deployment -l "$SELECTOR" \
+            -o go-template='{{range .items}}{{$d := .metadata.name}}{{range .spec.template.spec.initContainers}}{{$d}} {{.image}}{{"\n"}}{{end}}{{range .spec.template.spec.containers}}{{$d}} {{.image}}{{"\n"}}{{end}}{{end}}' \
+            | grep -F '@sha256:' || true)
+          if [ -n "$pinned" ]; then
+            echo "$pinned"
+            echo "::error::Deployments in $NAMESPACE are pinned by digest; a restart cannot move them (set :develop in knowledge evilflowers_instances.${{ inputs.instance }}.images.catalog)"
+            exit 1
+          fi
+          kubectl -n "$NAMESPACE" rollout restart deployment -l "$SELECTOR"
+
+      # Strategy Recreate + startup probe of up to 300 s (migrations, Celery): same budget as
+      # the role's evilflowers_rollout_timeout. Worker and beat wait for the migrations in an
+      # init container, so they can't finish before evilflowers; each gets the full budget.
+      - name: Wait for the rollout
+        run: |
+          for d in $(kubectl -n "$NAMESPACE" get deployment -l "$SELECTOR" -o name); do
+            kubectl -n "$NAMESPACE" rollout status "$d" --timeout=900s
+          done
+
+      # :develop could have moved, or the pull could have failed silently onto a cached image.
+      # Init containers (wait-for-migrations on worker/beat) run the same image and are checked
+      # too. Pods still terminating are skipped. A newer push cancels this run (workflow
+      # concurrency in build.yml).
+      - name: Running pods use ${{ env.DIGEST }}
+        run: |
+          ids=$(kubectl -n "$NAMESPACE" get pods -l "$SELECTOR" \
+            -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{$pod := .metadata.name}}{{range .status.initContainerStatuses}}{{$pod}} {{.name}} {{.imageID}}{{"\n"}}{{end}}{{range .status.containerStatuses}}{{$pod}} {{.name}} {{.imageID}}{{"\n"}}{{end}}{{end}}{{end}}')
+          echo "$ids"
+          test -n "$ids"
+          if echo "$ids" | grep -v -- "@${DIGEST}\$"; then
+            echo "::error::a running catalog pod does not use ${DIGEST}"
+            exit 1
+          fi

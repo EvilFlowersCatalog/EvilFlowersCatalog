@@ -11,7 +11,7 @@ env:
   REGISTRY: ghcr.io
   DOCKER_BUILDKIT: 1
 
-# A newer push to develop (or a PR update) supersedes the running build + deploy: the deploy
+# A newer push to develop (or a PR update) supersedes the running build + deploys: each deploy
 # checks that the pods run the digest it built, so two overlapping runs would fail each other.
 # master and release tags always finish.
 concurrency:
@@ -97,82 +97,46 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
+  # A push to develop deploys :develop to every k3s instance that follows it, one after the other:
+  # dev first, and KU only once dev rolled out and runs the pushed digest. The steps (restart by
+  # label, rollout wait, digest check) are in deploy-k8s.yml; infra in the knowledge repo
+  # (roles/evilflowers_k8s, roles/github_runner; vault Cookbooks/CI-Runner).
+
   # Development environment = k3s namespace evilflowers-dev (since 2026-11-07; the Compose unit
-  # evilflowers-dev.service is disabled). Infra: knowledge repo, roles/evilflowers_k8s and
-  # vault Cookbooks/Move-Dev-To-K8s, Cookbooks/CI-Runner.
-  #
-  # Every catalog Deployment pins :develop with imagePullPolicy Always, so a new image goes
-  # live with a rollout restart. With catalog_split (knowledge#37) there are three of them —
-  # evilflowers (gunicorn), evilflowers-worker, evilflowers-beat — all labelled
-  # elvira.stuba.sk/image=evilflowers-catalog; without it, only evilflowers. The job restarts
-  # and digest-checks them all by that label, so worker and beat never lag behind the web
-  # code (#137). This job runs on the self-hosted runner INSIDE k3s (runs-on: elvira-k3s);
-  # its ServiceAccount arc-deployer may only list/patch Deployments in the namespaces listed in
-  # github_runner_deploy_namespaces (must include evilflowers-dev).
-  # A push never changes the pod's env; that needs playbooks/evilflowers-k8s.yml.
+  # evilflowers-dev.service is disabled). With catalog_split (knowledge#37) the catalog runs as several
+  # Deployments of one image (gunicorn, Celery worker(s), beat); the deploy restarts and digest-checks
+  # them all by label, so worker and beat never lag behind the web code (#137).
   deploy:
     needs: build
     if: >-
       github.event_name == 'push'
       && github.ref == 'refs/heads/develop'
       && github.repository == 'EvilFlowersCatalog/EvilFlowersCatalog'
-    runs-on: elvira-k3s            # ARC scale set (knowledge: roles/github_runner github_runner_scale_set)
-    environment:
-      name: dev.evilflowers.elvira.stuba.sk
-      url: https://dev.evilflowers.elvira.stuba.sk
-    concurrency:
-      group: deploy-evilflowers-dev
-      cancel-in-progress: false
     permissions: {}
-    env:
-      NAMESPACE: evilflowers-dev
-      # Matches the Deployments and their pods alike.
-      SELECTOR: elvira.stuba.sk/image=evilflowers-catalog,app.kubernetes.io/instance=dev
-      DIGEST: ${{ needs.build.outputs.digest }}
-      KUBECTL_VERSION: v1.31.5     # = the cluster (k3s v1.31.5+k3s1)
-      KUBECTL_SHA256: fbecbfd375b3686002c2e81d51c390172f5ffba3d6b47920d55342cb03f557af   # dl.k8s.io …/linux/amd64/kubectl.sha256
-    steps:
-      # The runner image has no kubectl. The pod is deleted after the job, so nothing is cached.
-      - name: kubectl ${{ env.KUBECTL_VERSION }} (checksum-pinned)
-        run: |
-          curl -fsSLo "$RUNNER_TEMP/kubectl" "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          echo "${KUBECTL_SHA256}  $RUNNER_TEMP/kubectl" | sha256sum -c -
-          chmod +x "$RUNNER_TEMP/kubectl"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+    uses: ./.github/workflows/deploy-k8s.yml
+    with:
+      environment: dev.evilflowers.elvira.stuba.sk
+      url: https://dev.evilflowers.elvira.stuba.sk
+      namespace: evilflowers-dev
+      instance: dev
+      digest: ${{ needs.build.outputs.digest }}
 
-      # In-cluster credentials: the pod's ServiceAccount arc-deployer.
-      # A selector that matches nothing makes `rollout restart` a silent no-op: fail instead
-      # (e.g. the label not applied yet by knowledge).
-      - name: Restart onto the new :develop
-        run: |
-          deployments=$(kubectl -n "$NAMESPACE" get deployment -l "$SELECTOR" -o name)
-          echo "$deployments"
-          if [ -z "$deployments" ]; then
-            echo "::error::no Deployment in $NAMESPACE matches $SELECTOR"
-            exit 1
-          fi
-          kubectl -n "$NAMESPACE" rollout restart deployment -l "$SELECTOR"
-
-      # Strategy Recreate + startup probe of up to 300 s (migrations, Celery): same budget as
-      # the role's evilflowers_rollout_timeout. Worker and beat wait for the migrations in an
-      # init container, so they can't finish before evilflowers; each gets the full budget.
-      - name: Wait for the rollout
-        run: |
-          for d in $(kubectl -n "$NAMESPACE" get deployment -l "$SELECTOR" -o name); do
-            kubectl -n "$NAMESPACE" rollout status "$d" --timeout=900s
-          done
-
-      # :develop could have moved, or the pull could have failed silently onto a cached image.
-      # Init containers (wait-for-migrations on worker/beat) run the same image and are checked
-      # too. Pods still terminating are skipped. A newer push cancels this run (workflow
-      # concurrency).
-      - name: Running pods use ${{ env.DIGEST }}
-        run: |
-          ids=$(kubectl -n "$NAMESPACE" get pods -l "$SELECTOR" \
-            -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{$pod := .metadata.name}}{{range .status.initContainerStatuses}}{{$pod}} {{.name}} {{.imageID}}{{"\n"}}{{end}}{{range .status.containerStatuses}}{{$pod}} {{.name}} {{.imageID}}{{"\n"}}{{end}}{{end}}{{end}}')
-          echo "$ids"
-          test -n "$ids"
-          if echo "$ids" | grep -v -- "@${DIGEST}\$"; then
-            echo "::error::a running catalog pod does not use ${DIGEST}"
-            exit 1
-          fi
+  # KU (Katolícka univerzita) = k3s namespace evilflowers-ku on KU's node e-knihy (since 2026-11-17;
+  # knowledge evilflowers_instances.ku). KU's only environment, so this is KU's production: it follows
+  # develop like dev does (KU runs the dev packages), gated on the dev deploy. Needs, in knowledge
+  # (knowledge#91): evilflowers-ku in github_runner_deploy_namespaces, and the catalog image
+  # on :develop instead of a digest pin (a pin fails this job before any restart).
+  deploy-ku:
+    needs: [build, deploy]
+    if: >-
+      github.event_name == 'push'
+      && github.ref == 'refs/heads/develop'
+      && github.repository == 'EvilFlowersCatalog/EvilFlowersCatalog'
+    permissions: {}
+    uses: ./.github/workflows/deploy-k8s.yml
+    with:
+      environment: api.e-knihy.ku.sk
+      url: https://api.e-knihy.ku.sk
+      namespace: evilflowers-ku
+      instance: ku
+      digest: ${{ needs.build.outputs.digest }}

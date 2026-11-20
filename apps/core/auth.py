@@ -5,7 +5,7 @@ import uuid
 from datetime import timedelta
 from functools import cache
 from http import HTTPStatus
-from typing import Optional, TypedDict, Dict
+from typing import Optional, TypedDict, Dict, List, Tuple
 from urllib.parse import urlparse
 
 import ldap
@@ -26,11 +26,14 @@ from django.utils.translation import gettext as _
 from apps.core.errors import ProblemDetailException
 from apps.core.models import ApiKey, User, AuthSource, UserCatalog
 from apps.core.services.ldap_directory import (
+    GroupSearchConfigError,
     apply_profile,
     ldap_bind,
     ldap_initialize,
+    normalize_dn,
     requested_attributes,
-    search_profile,
+    search_groups,
+    search_profile_entry,
 )
 from evil_flowers_catalog import tracing
 
@@ -194,6 +197,10 @@ class BasicBackend(ModelBackend):
         PROXY_USER_DN: Optional[str]
         PROXY_USER_PASSWORD: Optional[str]
         NOTIFICATION_CONTACT_MAP: Optional[Dict[str, str]]
+        # #216: {"BASE": ..., "FILTER": "...{user_dn}..." or "...{username}..."}; groups from group entries.
+        GROUP_SEARCH: Optional[Dict[str, str]]
+        # #216: true = a login outside SUPERADMIN_GROUP clears is_superuser (default: never revoked).
+        SUPERADMIN_REVOKE: Optional[bool]
 
     @staticmethod
     def _ldap_initialize(config: "BasicBackend.LdapConfig") -> ldap.ldapobject.LDAPObject:
@@ -248,6 +255,7 @@ class BasicBackend(ModelBackend):
                 return None
         else:
             # Direct authentication mode (existing behavior)
+            user_dn = None
             try:
                 ldap_bind(connection, config, config["BIND"].format(username=username), password, mode="user")
             except ldap.LDAPError as e:
@@ -265,24 +273,23 @@ class BasicBackend(ModelBackend):
 
         # Attributes are requested by name: ldap.stuba.sk filters `*` for
         # anonymous binds, and servers keep an operational `memberOf` out of it.
-        attrs = search_profile(connection, config, username, requested_attributes(config))
+        entry = search_profile_entry(connection, config, username, requested_attributes(config))
 
-        if attrs is not None:
+        if entry is not None:
+            entry_dn, attrs = entry
             # Profile attributes and notification contacts — shared with the
             # background sync (`sync_ldap_profiles`, IP-025).
             apply_profile(user, attrs, config)
 
-            # LDAP groups
-            user.groups.clear()
-            for ldap_group in attrs.get(config.get("GROUP_ATTR", "memberOf"), []):
-                if ldap_group.decode() in config["GROUP_MAP"]:
-                    try:
-                        group = Group.objects.get(name=config["GROUP_MAP"][ldap_group.decode()])
-                    except Group.DoesNotExist:
-                        continue
-                    user.groups.add(group)
-                if ldap_group.decode() == config["SUPERADMIN_GROUP"]:
-                    user.is_superuser = True
+            attr_groups = [value.decode() for value in attrs.get(config.get("GROUP_ATTR", "memberOf"), [])]
+            searched_groups, groups_complete = [], True
+            if config.get("GROUP_SEARCH"):
+                # Proxy mode resolved the DN already; direct mode has the profile entry's DN
+                # (BIND may be a UPN like "{username}", not a DN).
+                searched_groups, groups_complete = self._search_groups(
+                    connection, config, entry_dn or user_dn, username, auth_source
+                )
+            self._apply_groups(user, config, attr_groups, searched_groups, groups_complete)
         else:
             logging.warning(
                 f"Could not find user profile for {username} in auth source {auth_source.name}"
@@ -290,7 +297,10 @@ class BasicBackend(ModelBackend):
             )
             return None
 
-        connection.unbind()
+        try:
+            connection.unbind()
+        except ldap.LDAPError:
+            pass  # a connection a failed group search left dead must not fail the login (#216)
         user.save()
 
         for catalog_id, mode in config.get("CATALOGS", {}).items():
@@ -298,6 +308,60 @@ class BasicBackend(ModelBackend):
                 UserCatalog.objects.create(catalog_id=catalog_id, user=user, mode=mode)
 
         return user
+
+    @staticmethod
+    def _search_groups(
+        connection, config: "BasicBackend.LdapConfig", user_dn: Optional[str], username: str, auth_source: AuthSource
+    ) -> Tuple[List[str], bool]:
+        """`GROUP_SEARCH` (#216): `(group DNs, lookup succeeded)`. A failed lookup never fails the login."""
+        if not user_dn:
+            logging.warning(f"LDAP group search skipped for {username}: no user DN (auth source {auth_source.name})")
+            return [], False
+        try:
+            return search_groups(connection, config, user_dn, username), True
+        except (ldap.LDAPError, GroupSearchConfigError) as e:
+            logging.warning(
+                f"LDAP group search failed for {username} (id={auth_source.pk}, name={auth_source.name}): {e}"
+            )
+            return [], False
+
+    @staticmethod
+    def _apply_groups(
+        user: User,
+        config: "BasicBackend.LdapConfig",
+        attr_groups: List[str],
+        searched_groups: List[str],
+        groups_complete: bool,
+    ) -> None:
+        """`GROUP_MAP` and `SUPERADMIN_GROUP` over the user's directory groups.
+
+        `GROUP_ATTR` values match exactly, as they always have. `GROUP_SEARCH` results are DNs the
+        server spells its own way, so they match ignoring case and spacing (`normalize_dn`).
+        `SUPERADMIN_REVOKE` clears `is_superuser` when the groups do not contain
+        `SUPERADMIN_GROUP` — only when that group is configured and the group lookup succeeded,
+        so a directory hiccup never demotes an administrator.
+        """
+        group_map = config.get("GROUP_MAP") or {}
+        superadmin_group = config.get("SUPERADMIN_GROUP")
+
+        group_names = [group_map[group] for group in attr_groups if group in group_map]
+        is_admin = superadmin_group is not None and superadmin_group in attr_groups
+        if searched_groups:
+            searched = {normalize_dn(dn) for dn in searched_groups}
+            group_names += [value for key, value in group_map.items() if normalize_dn(key) in searched]
+            is_admin = is_admin or (bool(superadmin_group) and normalize_dn(superadmin_group) in searched)
+
+        user.groups.clear()
+        for name in dict.fromkeys(group_names):
+            try:
+                user.groups.add(Group.objects.get(name=name))
+            except Group.DoesNotExist:
+                continue
+
+        if is_admin:
+            user.is_superuser = True
+        elif config.get("SUPERADMIN_REVOKE") and superadmin_group and groups_complete:
+            user.is_superuser = False
 
     def _database(self, request, username: str, password: str) -> Optional[User]:
         return super().authenticate(request, username=username, password=password)

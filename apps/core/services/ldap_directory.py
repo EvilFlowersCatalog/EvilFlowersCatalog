@@ -18,15 +18,18 @@ What the sync refreshes is deliberately narrower than a login: profile
 attributes (`USER_ATTR_MAP`) and notification contacts
 (`NOTIFICATION_CONTACT_MAP`). Group membership and the superuser flag stay a
 login-time decision — a background job that can grant administrator rights
-from a directory read is not something to run unattended.
+from a directory read is not something to run unattended. That includes the
+group-entry lookup of `GROUP_SEARCH` (#216): `search_groups` is called from the
+login path only.
 """
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse, urlunparse
 
 import ldap
+import ldap.dn
 import ldap.filter
 from django.db import transaction
 
@@ -102,8 +105,8 @@ def first_value(attrs: dict, name: str) -> Optional[str]:
     return value.strip() or None
 
 
-def search_profile(connection, config: dict, username: str, attributes: List[str]) -> Optional[dict]:
-    """The directory entry for `username`, or None when the directory has none."""
+def search_profile_entry(connection, config: dict, username: str, attributes: List[str]) -> Optional[Tuple[str, dict]]:
+    """`(dn, attrs)` of the directory entry for `username`, or None when the directory has none."""
     address, port = _server(config)
     with tracing.client_span("ldap search", system="ldap", server_address=address, server_port=port) as span:
         message_id = connection.search(
@@ -118,9 +121,64 @@ def search_profile(connection, config: dict, username: str, attributes: List[str
         for dn, attrs in results or []:
             if dn:
                 span.set_attribute("evilflowers.ldap.found", True)
-                return attrs
+                return dn, attrs
         span.set_attribute("evilflowers.ldap.found", False)
         return None
+
+
+def search_profile(connection, config: dict, username: str, attributes: List[str]) -> Optional[dict]:
+    """The directory entry's attributes for `username`, or None when the directory has none."""
+    entry = search_profile_entry(connection, config, username, attributes)
+    return entry[1] if entry else None
+
+
+class GroupSearchConfigError(ValueError):
+    """`GROUP_SEARCH` is not usable as configured (missing `BASE`/`FILTER`, unknown placeholder)."""
+
+
+def search_groups(connection, config: dict, user_dn: str, username: str) -> List[str]:
+    """DNs of the group entries that list the user (#216): the optional `GROUP_SEARCH` of an auth source.
+
+    For directories that keep membership only on the group entry (`groupOfNames`/`member`,
+    `posixGroup`/`memberUid`) and have no `memberOf` overlay — KU's `dr01.ku.sk`. `FILTER` may use
+    `{user_dn}` and `{username}`, both escaped. No attributes are requested: only the DNs matter.
+
+    Runs on the connection the caller already bound for the profile search. Raises
+    `GroupSearchConfigError` for an unusable config and `ldap.LDAPError` for a directory failure;
+    the login path turns both into a warning. Login-time only: `sync_users` never calls it.
+    """
+    group_search = config.get("GROUP_SEARCH")
+    if not isinstance(group_search, dict) or not group_search.get("BASE") or not group_search.get("FILTER"):
+        raise GroupSearchConfigError("GROUP_SEARCH needs BASE and FILTER")
+    try:
+        search_filter = group_search["FILTER"].format(
+            user_dn=ldap.filter.escape_filter_chars(user_dn),
+            username=ldap.filter.escape_filter_chars(username),
+        )
+    except (KeyError, IndexError, ValueError) as error:
+        raise GroupSearchConfigError(f"GROUP_SEARCH FILTER: {error!r}") from error
+
+    address, port = _server(config)
+    with tracing.client_span(
+        "ldap search",
+        system="ldap",
+        server_address=address,
+        server_port=port,
+        attributes={"evilflowers.ldap.purpose": "groups"},
+    ) as span:
+        message_id = connection.search(group_search["BASE"], ldap.SCOPE_SUBTREE, search_filter, ["1.1"])
+        _type, results = connection.result(message_id, timeout=SEARCH_TIMEOUT)
+        groups = [dn for dn, _attrs in results or [] if dn]  # referrals: (None, [urls])
+        span.set_attribute("evilflowers.ldap.groups", len(groups))
+        return groups
+
+
+def normalize_dn(dn: str) -> str:
+    """A DN compared without case or spacing differences (`CN=X, DC=SK` = `cn=x,dc=sk`)."""
+    try:
+        return ldap.dn.dn2str(ldap.dn.str2dn(dn)).lower()
+    except ldap.DECODING_ERROR:
+        return dn.strip().lower()
 
 
 @dataclass
@@ -279,12 +337,16 @@ def sync_users(
 __all__ = [
     "ContactChange",
     "DirectorySyncError",
+    "GroupSearchConfigError",
     "ProfileChange",
     "SyncReport",
     "apply_profile",
     "first_value",
     "ldap_initialize",
+    "normalize_dn",
     "requested_attributes",
+    "search_groups",
     "search_profile",
+    "search_profile_entry",
     "sync_users",
 ]
